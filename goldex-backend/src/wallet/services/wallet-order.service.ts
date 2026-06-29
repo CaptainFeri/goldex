@@ -1,0 +1,387 @@
+import { Injectable, Logger, BadRequestException } from '@nestjs/common';
+import { InjectRepository } from '@nestjs/typeorm';
+import { Repository, DataSource } from 'typeorm';
+import { WalletEntity } from '../entities/wallet.entity';
+import { TransactionEntity } from '../entities/transaction.entity';
+import { MESQAL_TO_GRAM } from '../../common/constants';
+import { PricePairEntity } from '../../admin-pair/entity/price.pair.entity';
+import { OrderEntity } from '../../order/order.entity';
+import { OrderSideEnum } from '../../order/enum/order.side.enum';
+import { OrderStatusEnum } from '../../order/enum/order.status.enum';
+import { TransactionTypeEnum } from '../enum/transaction.type.enum';
+import { TransactionStatusEnum } from '../enum/transaction.status.enum';
+import { SystemLedgerEntity } from '../../financial/entity/system-ledger.entity';
+import { SystemLedgerType } from '../../financial/enum/system-ledger-type.enum';
+
+@Injectable()
+export class WalletOrderService {
+  private readonly logger = new Logger(WalletOrderService.name);
+
+  constructor(
+    @InjectRepository(WalletEntity)
+    private readonly walletRepo: Repository<WalletEntity>,
+    @InjectRepository(TransactionEntity)
+    private readonly transactionRepo: Repository<TransactionEntity>,
+    private readonly dataSource: DataSource,
+  ) {}
+
+  async freezeForOrder(
+    order: OrderEntity,
+    pricePair: PricePairEntity,
+  ): Promise<void> {
+    const queryRunner = this.dataSource.createQueryRunner();
+    await queryRunner.connect();
+    await queryRunner.startTransaction();
+
+    try {
+      if (order.side === OrderSideEnum.BUY) {
+        const quoteWallet = await this.getWallet(queryRunner, order.userId, pricePair.quoteSymbol.id);
+        // Lock the DISPLAY-priced cost (what the user is charged), not the pure price.
+        const unitPrice = Number(order.customerPrice) || Number(order.price) || 0;
+        const lockAmount = Number(order.quantity) * unitPrice;
+
+        if (quoteWallet.freeBalance < lockAmount) {
+          this.logger.warn(
+            `Insufficient ${pricePair.quoteSymbol.slug} balance for order ${order.orderCode}: required ${lockAmount}, available ${quoteWallet.freeBalance}`,
+          );
+          // Plain i18n key — the response interceptor translates message.<KEY>.
+          throw new BadRequestException("INSUFFICIENT_BALANCE");
+        }
+
+        // A freeze just holds funds (free → locked) within the user's own
+        // wallet — it's not a money movement, so we don't record a transaction
+        // for it. The hold is visible via the wallet's locked balance, and the
+        // actual spend is recorded once on completion. This also keeps a
+        // rejected/cancelled order showing only the positive (+) refund.
+        quoteWallet.freeBalance = Number((quoteWallet.freeBalance - lockAmount).toFixed(8));
+        quoteWallet.lockedBalance = Number((quoteWallet.lockedBalance + lockAmount).toFixed(8));
+        await queryRunner.manager.save(quoteWallet);
+      } else {
+        const baseWallet = await this.getWallet(queryRunner, order.userId, pricePair.baseSymbol.id);
+        const lockAmount = Number(order.quantity);
+
+        if (baseWallet.freeBalance < lockAmount) {
+          this.logger.warn(
+            `Insufficient ${pricePair.baseSymbol.slug} balance for order ${order.orderCode}: required ${lockAmount}, available ${baseWallet.freeBalance}`,
+          );
+          // Plain i18n key — the response interceptor translates message.<KEY>.
+          throw new BadRequestException("INSUFFICIENT_BALANCE");
+        }
+
+        // Hold only (free → locked); not recorded as a transaction. See the BUY
+        // branch above.
+        baseWallet.freeBalance = Number((baseWallet.freeBalance - lockAmount).toFixed(8));
+        baseWallet.lockedBalance = Number((baseWallet.lockedBalance + lockAmount).toFixed(8));
+        await queryRunner.manager.save(baseWallet);
+      }
+
+      await queryRunner.commitTransaction();
+      this.logger.log(`Balance locked for order ${order.orderCode}`);
+    } catch (err) {
+      await queryRunner.rollbackTransaction();
+      throw err;
+    } finally {
+      await queryRunner.release();
+    }
+  }
+
+  async confirmOrderExecution(
+    order: OrderEntity,
+    pricePair: PricePairEntity,
+  ): Promise<void> {
+    if (
+      order.status === OrderStatusEnum.COMPLETED ||
+      order.status === OrderStatusEnum.REJECTED ||
+      order.status === OrderStatusEnum.CANCELLED
+    ) {
+      this.logger.warn(
+        `Order ${order.orderCode} already in terminal state ${order.status}, skipping confirm`,
+      );
+      return;
+    }
+
+    const queryRunner = this.dataSource.createQueryRunner();
+    await queryRunner.connect();
+    await queryRunner.startTransaction();
+
+    try {
+      const baseWallet = await this.getWallet(queryRunner, order.userId, pricePair.baseSymbol.id);
+      const quoteWallet = await this.getWallet(queryRunner, order.userId, pricePair.quoteSymbol.id);
+
+      // Settlement model (profit always realised in the BASE asset, XAU):
+      //   BUY  → user pays the DISPLAY price; that IRR buys more gold at the
+      //          provider's (pure) price than the user receives (qty*(1-rate)),
+      //          so the platform keeps the difference as XAU profit per provider.
+      //   SELL → user gives full gold, receives netQty*price IRR; commission qty*rate XAU.
+      const qty = Number(order.quantity); // grams
+      // order.price is the customer-shown price; the pure provider price comes
+      // from the per-mesghal price (which is stored pure).
+      const displayPrice = Number(order.price) || 0; // customer price (charged on a BUY)
+      const price =
+        Number(order.mesghalPrice) > 0 ? Number(order.mesghalPrice) / MESQAL_TO_GRAM : displayPrice; // pure gram price
+
+      if (order.side === OrderSideEnum.BUY) {
+        const rate = Number(pricePair.buyCommission) || 0;
+        const totalCost = Number((qty * displayPrice).toFixed(8)); // IRR the user pays (display)
+        const netQty = Number((qty * (1 - rate / 100)).toFixed(8)); // gold the user receives
+        // Gold that the user's IRR buys at the provider's pure price.
+        const goldFromProvider = price > 0 ? Number((totalCost / price).toFixed(8)) : netQty;
+        // Profit (spread + commission) realised in XAU, held against the provider.
+        const profitXau = Number((goldFromProvider - netQty).toFixed(8));
+
+        quoteWallet.lockedBalance = Number((quoteWallet.lockedBalance - totalCost).toFixed(8));
+        baseWallet.freeBalance = Number((baseWallet.freeBalance + netQty).toFixed(8));
+
+        await queryRunner.manager.save(quoteWallet);
+        await queryRunner.manager.save(baseWallet);
+
+        await this.createTransaction(queryRunner, baseWallet, order, {
+          transactionType: TransactionTypeEnum.BUY,
+          amount: netQty,
+          price: displayPrice,
+          fee: profitXau,
+          description: `Buy order ${order.orderCode} executed: received ${netQty} ${pricePair.baseSymbol.slug}`,
+          metadata: {
+            profitXau,
+            commissionRate: rate,
+            displayPrice,
+            providerPrice: price,
+            goldFromProvider,
+            unit: pricePair.baseSymbol.slug,
+          },
+        });
+
+        await this.createTransaction(queryRunner, quoteWallet, order, {
+          transactionType: TransactionTypeEnum.ORDER,
+          amount: -totalCost,
+          price: displayPrice,
+          description: `Buy order ${order.orderCode} executed: spent ${totalCost} ${pricePair.quoteSymbol.slug}`,
+        });
+
+        if (profitXau > 0) {
+          await this.recordSystemProfit(queryRunner, {
+            symbolId: pricePair.baseSymbol.id,
+            type: SystemLedgerType.COMMISSION_BUY,
+            amount: profitXau,
+            order,
+            description: `Buy profit (spread+commission) for ${order.orderCode} via ${order.metadata?.providerKey ?? "?"}`,
+          });
+        }
+      } else {
+        const rate = Number(pricePair.sellCommission) || 0;
+        // Commission is taken in XAU: the user surrenders the full `qty` gold, but
+        // we only pay revenue for the net (after-commission) gold and keep the rest
+        // (qty*rate) as profit in the BASE asset.
+        const netQty = Number((qty * (1 - rate / 100)).toFixed(8)); // gold sold to market
+        const commission = Number((qty - netQty).toFixed(8)); // commission in XAU (base)
+        const netRevenue = Number((netQty * price).toFixed(8)); // IRR the user receives
+
+        baseWallet.lockedBalance = Number((baseWallet.lockedBalance - qty).toFixed(8));
+        quoteWallet.freeBalance = Number((quoteWallet.freeBalance + netRevenue).toFixed(8));
+
+        await queryRunner.manager.save(baseWallet);
+        await queryRunner.manager.save(quoteWallet);
+
+        await this.createTransaction(queryRunner, baseWallet, order, {
+          transactionType: TransactionTypeEnum.SELL,
+          amount: -qty,
+          price,
+          fee: commission,
+          description: `Sell order ${order.orderCode} executed: sold ${qty} ${pricePair.baseSymbol.slug} (commission ${commission} ${pricePair.baseSymbol.slug})`,
+          metadata: { commission, commissionRate: rate, unit: pricePair.baseSymbol.slug },
+        });
+
+        await this.createTransaction(queryRunner, quoteWallet, order, {
+          transactionType: TransactionTypeEnum.ORDER,
+          amount: netRevenue,
+          price,
+          description: `Sell order ${order.orderCode} executed: received ${netRevenue} ${pricePair.quoteSymbol.slug}`,
+        });
+
+        if (commission > 0) {
+          await this.recordSystemProfit(queryRunner, {
+            symbolId: pricePair.baseSymbol.id,
+            type: SystemLedgerType.COMMISSION_SELL,
+            amount: commission,
+            order,
+            description: `Sell commission for ${order.orderCode} (${rate}%) in ${pricePair.baseSymbol.slug}`,
+          });
+        }
+      }
+
+      order.executedQuantity = qty;
+      order.status = 'COMPLETED' as any;
+      order.completedAt = new Date();
+      order.totalValue = Number((qty * price).toFixed(8));
+      order.averagePrice = price;
+      await queryRunner.manager.save(order);
+
+      await queryRunner.commitTransaction();
+      this.logger.log(`Order ${order.orderCode} execution confirmed, wallets updated`);
+    } catch (err) {
+      await queryRunner.rollbackTransaction();
+      throw err;
+    } finally {
+      await queryRunner.release();
+    }
+  }
+
+  // Unlocks the balance frozen for an order and moves it to a terminal state.
+  // Used both when a provider rejects an order (REJECTED) and when the user
+  // cancels an open order (CANCELLED).
+  async rejectOrder(
+    order: OrderEntity,
+    pricePair: PricePairEntity,
+    finalStatus: OrderStatusEnum = OrderStatusEnum.REJECTED,
+  ): Promise<void> {
+    if (
+      order.status === OrderStatusEnum.COMPLETED ||
+      order.status === OrderStatusEnum.REJECTED ||
+      order.status === OrderStatusEnum.CANCELLED
+    ) {
+      this.logger.warn(
+        `Order ${order.orderCode} already in terminal state ${order.status}, skipping reject`,
+      );
+      return;
+    }
+
+    const queryRunner = this.dataSource.createQueryRunner();
+    await queryRunner.connect();
+    await queryRunner.startTransaction();
+
+    const isCancel = finalStatus === OrderStatusEnum.CANCELLED;
+    const txType = isCancel ? TransactionTypeEnum.ORDER_CANCEL : TransactionTypeEnum.ORDER_REJECTED;
+    const verb = isCancel ? 'cancelled' : 'rejected';
+
+    try {
+      if (order.side === OrderSideEnum.BUY) {
+        const quoteWallet = await this.getWallet(queryRunner, order.userId, pricePair.quoteSymbol.id);
+        const lockedAmount = Number(order.quantity) * (Number(order.price) || 0);
+
+        quoteWallet.lockedBalance = Number((quoteWallet.lockedBalance - lockedAmount).toFixed(8));
+        quoteWallet.freeBalance = Number((quoteWallet.freeBalance + lockedAmount).toFixed(8));
+        await queryRunner.manager.save(quoteWallet);
+
+        await this.createTransaction(queryRunner, quoteWallet, order, {
+          transactionType: txType,
+          amount: lockedAmount, // positive: funds returned to free balance
+          description: `Buy order ${order.orderCode} ${verb}: unlocked ${lockedAmount} ${pricePair.quoteSymbol.slug}`,
+        });
+      } else {
+        const baseWallet = await this.getWallet(queryRunner, order.userId, pricePair.baseSymbol.id);
+        const lockedAmount = Number(order.quantity);
+
+        baseWallet.lockedBalance = Number((baseWallet.lockedBalance - lockedAmount).toFixed(8));
+        baseWallet.freeBalance = Number((baseWallet.freeBalance + lockedAmount).toFixed(8));
+        await queryRunner.manager.save(baseWallet);
+
+        await this.createTransaction(queryRunner, baseWallet, order, {
+          transactionType: txType,
+          amount: lockedAmount, // positive: funds returned to free balance
+          description: `Sell order ${order.orderCode} ${verb}: unlocked ${lockedAmount} ${pricePair.baseSymbol.slug}`,
+        });
+      }
+
+      order.status = finalStatus;
+      if (finalStatus === OrderStatusEnum.CANCELLED) order.cancelledAt = new Date();
+      await queryRunner.manager.save(order);
+
+      await queryRunner.commitTransaction();
+      this.logger.log(`Order ${order.orderCode} ${finalStatus.toLowerCase()}, balance unlocked`);
+    } catch (err) {
+      await queryRunner.rollbackTransaction();
+      throw err;
+    } finally {
+      await queryRunner.release();
+    }
+  }
+
+  private async getWallet(
+    queryRunner: any,
+    userId: string,
+    symbolId: string,
+  ): Promise<WalletEntity> {
+    let wallet = await queryRunner.manager.findOne(WalletEntity, {
+      where: { userId, symbolId },
+      lock: { mode: 'pessimistic_write' },
+    });
+
+    if (!wallet) {
+      wallet = queryRunner.manager.create(WalletEntity, {
+        userId,
+        symbolId,
+        freeBalance: 0,
+        lockedBalance: 0,
+        status: 'ACTIVE',
+      });
+      wallet = await queryRunner.manager.save(wallet);
+    }
+
+    // Postgres returns numeric/decimal columns as strings; coerce so arithmetic
+    // (especially `+`, which would otherwise concatenate) works correctly.
+    wallet.freeBalance = Number(wallet.freeBalance) || 0;
+    wallet.lockedBalance = Number(wallet.lockedBalance) || 0;
+    wallet.frozenFreeBalance = Number(wallet.frozenFreeBalance) || 0;
+    wallet.frozenLockedBalance = Number(wallet.frozenLockedBalance) || 0;
+
+    return wallet;
+  }
+
+  // Credits the platform's system ledger with profit (commission) from a trade,
+  // within the same transaction as the wallet movements.
+  private async recordSystemProfit(
+    queryRunner: any,
+    params: {
+      symbolId: string;
+      type: SystemLedgerType;
+      amount: number;
+      order: OrderEntity;
+      description: string;
+    },
+  ): Promise<void> {
+    await queryRunner.manager.save(SystemLedgerEntity, {
+      symbolId: params.symbolId,
+      type: params.type,
+      amount: params.amount,
+      orderId: params.order.id,
+      userId: params.order.userId,
+      providerKey: params.order.metadata?.providerKey ?? null,
+      description: params.description,
+    });
+  }
+
+  private async createTransaction(
+    queryRunner: any,
+    wallet: WalletEntity,
+    order: OrderEntity,
+    params: {
+      transactionType: TransactionTypeEnum;
+      amount: number;
+      price?: number;
+      fee?: number;
+      description: string;
+      metadata?: any;
+    },
+  ): Promise<TransactionEntity> {
+    const tx = this.transactionRepo.create({
+      walletId: wallet.id,
+      wallet,
+      orderId: order.id,
+      order,
+      transactionId: `TXN-${crypto.randomUUID().split('-')[0].toUpperCase()}`,
+      transactionType: params.transactionType,
+      status: TransactionStatusEnum.COMPLETED,
+      amount: params.amount,
+      fee: params.fee || 0,
+      price: params.price || 0,
+      description: params.description,
+      metadata: {
+        ...params.metadata,
+        orderCode: order.orderCode,
+        timestamp: new Date().toISOString(),
+      },
+      completedAt: new Date(),
+    });
+    return queryRunner.manager.save(tx);
+  }
+}

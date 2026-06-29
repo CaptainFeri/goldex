@@ -1,0 +1,409 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Real-Time Market Prices</title>
+    <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
+    <style>
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+      body {
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+        background: #0f172a;
+        color: #e2e8f0;
+        min-height: 100vh;
+      }
+      .container {
+        max-width: 1000px;
+        margin: 0 auto;
+        padding: 24px;
+      }
+      header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 24px;
+      }
+      h1 {
+        font-size: 24px;
+        font-weight: 600;
+        color: #f1f5f9;
+      }
+      .status {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        font-size: 13px;
+      }
+      .dot {
+        width: 10px;
+        height: 10px;
+        border-radius: 50%;
+        background: #ef4444;
+        transition: background 0.3s;
+      }
+      .dot.connected {
+        background: #22c55e;
+        box-shadow: 0 0 8px #22c55e88;
+      }
+      .pairs-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+        gap: 16px;
+      }
+      .card {
+        background: #1e293b;
+        border-radius: 12px;
+        padding: 20px;
+        border: 1px solid #334155;
+        transition:
+          border-color 0.3s,
+          box-shadow 0.3s;
+      }
+      .card:hover {
+        border-color: #475569;
+      }
+      .card-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 16px;
+      }
+      .pair-name {
+        font-size: 18px;
+        font-weight: 600;
+        color: #f1f5f9;
+      }
+      .provider {
+        font-size: 11px;
+        color: #64748b;
+        background: #0f172a;
+        padding: 3px 8px;
+        border-radius: 6px;
+      }
+      .prices {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 12px;
+      }
+      .price-box {
+        padding: 12px;
+        border-radius: 8px;
+        text-align: center;
+      }
+      .price-box.buy {
+        background: #052e16;
+        border: 1px solid #166534;
+      }
+      .price-box.sell {
+        background: #450a0a;
+        border: 1px solid #991b1b;
+      }
+      .price-label {
+        font-size: 11px;
+        text-transform: uppercase;
+        letter-spacing: 1px;
+        margin-bottom: 4px;
+      }
+      .price-box.buy .price-label {
+        color: #4ade80;
+      }
+      .price-box.sell .price-label {
+        color: #f87171;
+      }
+      .price-value {
+        font-size: 22px;
+        font-weight: 700;
+        font-variant-numeric: tabular-nums;
+      }
+      .price-box.buy .price-value {
+        color: #4ade80;
+      }
+      .price-box.sell .price-value {
+        color: #f87171;
+      }
+      .details {
+        display: flex;
+        justify-content: space-between;
+        margin-top: 12px;
+        font-size: 12px;
+        color: #64748b;
+      }
+      .detail-item {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+      }
+      .detail-label {
+        font-size: 10px;
+        text-transform: uppercase;
+      }
+      .detail-value {
+        font-weight: 500;
+        color: #94a3b8;
+        margin-top: 2px;
+      }
+      .updated {
+        font-size: 11px;
+        color: #475569;
+        margin-top: 12px;
+        text-align: center;
+      }
+      .empty {
+        text-align: center;
+        padding: 60px 20px;
+        color: #64748b;
+      }
+      .empty h2 {
+        font-size: 18px;
+        margin-bottom: 8px;
+      }
+      .empty p {
+        font-size: 14px;
+      }
+      .search {
+        display: flex;
+        gap: 12px;
+        margin-bottom: 20px;
+      }
+      .search input {
+        flex: 1;
+        padding: 10px 16px;
+        border-radius: 8px;
+        border: 1px solid #334155;
+        background: #1e293b;
+        color: #e2e8f0;
+        font-size: 14px;
+        outline: none;
+      }
+      .search input:focus {
+        border-color: #6366f1;
+      }
+      .controls {
+        display: flex;
+        gap: 8px;
+      }
+      .controls button {
+        padding: 8px 16px;
+        border-radius: 8px;
+        border: 1px solid #334155;
+        background: #1e293b;
+        color: #e2e8f0;
+        cursor: pointer;
+        font-size: 13px;
+        transition: background 0.2s;
+      }
+      .controls button:hover {
+        background: #334155;
+      }
+      .controls button.active {
+        background: #6366f1;
+        border-color: #6366f1;
+      }
+      .flash {
+        animation: flash-gold 0.4s ease;
+      }
+      @keyframes flash-gold {
+        0% {
+          border-color: #fbbf24;
+          box-shadow: 0 0 12px #fbbf2444;
+        }
+        100% {
+          border-color: #334155;
+          box-shadow: none;
+        }
+      }
+      @media (max-width: 700px) {
+        .pairs-grid {
+          grid-template-columns: 1fr;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="container">
+      <header>
+        <h1>Real-Time Market Prices</h1>
+        <div class="status">
+          <span class="dot" id="statusDot"></span>
+          <span id="statusText">Connecting...</span>
+          <span id="pairCount" style="margin-left: 12px; color: #64748b; font-size: 12px"></span>
+        </div>
+      </header>
+
+      <div class="search">
+        <input
+          type="text"
+          id="searchInput"
+          placeholder="Search pairs (e.g. GOLD-IRR, SILVER)..."
+          oninput="filterPairs()"
+        />
+        <div class="controls">
+          <button class="active" onclick="setView('all')" id="viewAll">All</button>
+          <button onclick="setView('gain')" id="viewGain">With Gain</button>
+        </div>
+      </div>
+
+      <div id="pairsContainer" class="pairs-grid"></div>
+    </div>
+
+    <script>
+      const WS_URL = `http://localhost:4040/market`;
+      let socket;
+      let allPairs = [];
+      let currentView = "all";
+      let searchTerm = "";
+
+      function connect() {
+        socket = io(WS_URL, { transports: ["websocket", "polling"] });
+
+        socket.on("connect", () => {
+          updateStatus(true);
+          subscribePrices();
+        });
+
+        socket.on("disconnect", () => updateStatus(false));
+        socket.on("connect_error", () => updateStatus(false));
+
+        socket.on("price-update", (data) => {
+          for (const [pairKey, priceData] of Object.entries(data)) {
+            updatePair(pairKey, priceData);
+          }
+        });
+
+        socket.on("price-error", (data) => {
+          console.warn("Price error:", data.message);
+        });
+      }
+
+      function updateStatus(connected) {
+        const dot = document.getElementById("statusDot");
+        const text = document.getElementById("statusText");
+        dot.className = connected ? "dot connected" : "dot";
+        text.textContent = connected ? "Connected" : "Disconnected";
+      }
+
+      function subscribePrices() {
+        // Subscribe to common pairs — server will respond with whatever it has
+        socket.emit("subscribe-prices", { pairs: ["__all__"] });
+      }
+
+      function updatePair(pairKey, data) {
+        const existing = document.getElementById(`card-${pairKey}`);
+        if (existing) {
+          // Animate flash
+          existing.classList.remove("flash");
+          void existing.offsetWidth;
+          existing.classList.add("flash");
+        }
+
+        allPairs = allPairs.filter((p) => p.pair !== pairKey);
+        allPairs.push({ pair: pairKey, ...data });
+        renderPairs();
+      }
+
+      function renderPairs() {
+        const container = document.getElementById("pairsContainer");
+        const pairCount = document.getElementById("pairCount");
+
+        let filtered = allPairs;
+        if (searchTerm) {
+          filtered = filtered.filter((p) => p.pair.toLowerCase().includes(searchTerm));
+        }
+        if (currentView === "gain") {
+          filtered = filtered.filter((p) => p.baseGain && parseFloat(p.baseGain) > 0);
+        }
+
+        pairCount.textContent = `${filtered.length} pairs`;
+
+        if (filtered.length === 0) {
+          container.innerHTML = `
+          <div class="empty" style="grid-column:1/-1">
+            <h2>No pairs found</h2>
+            <p>${allPairs.length === 0 ? "Waiting for price data..." : "Try a different search or filter"}</p>
+          </div>`;
+          return;
+        }
+
+        container.innerHTML = filtered
+          .map(
+            (p) => `
+        <div class="card" id="card-${p.pair}">
+          <div class="card-header">
+            <span class="pair-name">${p.pair}</span>
+            <span class="provider">${p.bestBuyProvider || "?"} / ${p.bestSellProvider || "?"}</span>
+          </div>
+          <div class="prices">
+            <div class="price-box buy">
+              <div class="price-label">Buy</div>
+              <div class="price-value">${formatPrice(p.displayBuyPrice)}</div>
+            </div>
+            <div class="price-box sell">
+              <div class="price-label">Sell</div>
+              <div class="price-value">${formatPrice(p.displaySellPrice)}</div>
+            </div>
+          </div>
+          <div class="details">
+            <div class="detail-item">
+              <span class="detail-label">Raw Buy</span>
+              <span class="detail-value">${formatPrice(p.bestBuyPrice)}</span>
+            </div>
+            <div class="detail-item">
+              <span class="detail-label">Raw Sell</span>
+              <span class="detail-value">${formatPrice(p.bestSellPrice)}</span>
+            </div>
+            <div class="detail-item">
+              <span class="detail-label">Commission</span>
+              <span class="detail-value">${p.buyCommission || 0}% / ${p.sellCommission || 0}%</span>
+            </div>
+            <div class="detail-item">
+              <span class="detail-label">Gain</span>
+              <span class="detail-value">${p.baseGain || 0}${p.baseGainType === "percent" ? "%" : ""}</span>
+            </div>
+          </div>
+          <div class="updated">${timeAgo(p.lastUpdated)}</div>
+        </div>
+      `
+          )
+          .join("");
+      }
+
+      function formatPrice(val) {
+        if (val == null || isNaN(val) || val === 0) return "—";
+        return Number(val).toLocaleString("en-US", { minimumFractionDigits: 0, maximumFractionDigits: 2 });
+      }
+
+      function timeAgo(iso) {
+        if (!iso) return "";
+        const diff = Date.now() - new Date(iso).getTime();
+        if (diff < 1000) return "just now";
+        const sec = Math.floor(diff / 1000);
+        if (sec < 60) return `${sec}s ago`;
+        const min = Math.floor(sec / 60);
+        return `${min}m ago`;
+      }
+
+      function filterPairs() {
+        searchTerm = document.getElementById("searchInput").value.toLowerCase();
+        renderPairs();
+      }
+
+      function setView(view) {
+        currentView = view;
+        document.querySelectorAll(".controls button").forEach((b) => b.classList.remove("active"));
+        document.getElementById(view === "all" ? "viewAll" : "viewGain").classList.add("active");
+        renderPairs();
+      }
+
+      // Connect when page loads
+      connect();
+
+      // Also fetch via REST to prime the cache
+      fetch(`/api/pairs`).catch(() => {});
+    </script>
+  </body>
+</html>

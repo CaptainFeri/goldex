@@ -1,0 +1,87 @@
+services:
+  goldex-service:
+    container_name: goldex-service
+    restart: always
+    build:
+      context: .
+      dockerfile: Dockerfile
+    env_file:
+      - .env
+    environment:
+      - BASE_APP_POSTGRES_URL=postgres
+    depends_on:
+      - postgres
+      - pgadmin
+    ports:
+      - 4040:3003
+    networks:
+      - goldex-network
+
+  postgres:
+    container_name: goldex-postgres-db
+    image: postgres:latest
+    restart: always
+    env_file:
+      - .env
+    environment:
+      - POSTGRES_USER=${GOLDEX_AUTH_POSTGRES_USERNAME}
+      - POSTGRES_PASSWORD=${GOLDEX_AUTH_POSTGRES_PASSWORD}
+      - POSTGRES_DB=${GOLDEX_AUTH_POSTGRES_DBNAME}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - 5432:5432
+    networks:
+      - goldex-network
+
+  pgadmin:
+    container_name: goldex-pgadmin
+    image: dpage/pgadmin4
+    restart: always
+    env_file:
+      - .env
+    environment:
+      - PGADMIN_DEFAULT_EMAIL=${PGADMIN_DEFAULT_EMAIL}
+      - PGADMIN_DEFAULT_PASSWORD=${PGADMIN_DEFAULT_PASSWORD}
+    volumes:
+      - pgadmin_data:/var/lib/pgadmin
+    ports:
+      - 5050:80
+    networks:
+      - goldex-network
+
+  rabbitmq:
+    image: rabbitmq:4-management-alpine
+    container_name: goldex-rabbitmq
+    restart: always
+    ports:
+      - "${RABBITMQ_PORT:-5672}:5672"
+      - "${RABBITMQ_MGMT_PORT:-15672}:15672"
+    environment:
+      - RABBITMQ_DEFAULT_USER=${RABBITMQ_USER:-guest}
+      - RABBITMQ_DEFAULT_PASS=${RABBITMQ_PASS:-guest}
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+    networks:
+      - goldex-network
+
+  redis:
+    image: redis:latest
+    container_name: goldex-redis-server
+    ports:
+      - "${REDIS_PORT}:6379"
+    environment:
+      - REDIS_HOST=${REDIS_HOST}
+      - REDIS_PORT=${REDIS_PORT}
+      - REDIS_TTL=${REDIS_TTL}
+    command: redis-server --appendonly yes
+    networks:
+      - goldex-network
+
+volumes:
+  rabbitmq_data:
+  postgres_data:
+  pgadmin_data:
+
+networks:
+  goldex-network:

@@ -1,0 +1,23 @@
+import { Injectable } from "@nestjs/common";
+import { MailgunMailService } from "../providers/mailgun-mail.service";
+import { MailService } from "../../shared/interface/mail-service.interface";
+
+@Injectable()
+export class MailStrategyService {
+  private readonly strategies: Map<string, MailService> = new Map();
+
+  constructor(private readonly mailgunMailService: MailgunMailService) {
+    // Register available strategies
+    // this.strategies.set('mailgun', mailgunMailService);
+  }
+
+  getStrategy(provider: string): MailService {
+    const strategy = this.strategies.get(provider);
+
+    if (!strategy) {
+      throw new Error(`Mail provider "${provider}" not supported`);
+    }
+
+    return strategy;
+  }
+}
