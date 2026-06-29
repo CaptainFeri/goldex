@@ -1,0 +1,196 @@
+import { useState } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { api, unwrap, apiError } from "../api/client";
+import { Card, Loading, ErrorState, Empty, Badge, Modal } from "../components/ui";
+import { GAIN_TYPES, SYMBOL_TYPES, UNIT_TYPES, PAYMENT_GATEWAYS } from "../lib/enums";
+
+function toArray(x: any): any[] {
+  if (Array.isArray(x)) return x;
+  if (x && Array.isArray(x.items)) return x.items;
+  if (x && Array.isArray(x.data)) return x.data;
+  return [];
+}
+
+const EMPTY = {
+  name: "",
+  slug: "",
+  picPath: "",
+  gain: 0,
+  gainType: "number",
+  symbolType: "material",
+  unitType: "number",
+  paymentGateWayType: "up",
+  hasPaymentGateway: false,
+  isActive: true,
+};
+
+function SymbolForm({ initial, onClose }: { initial?: any; onClose: () => void }) {
+  const qc = useQueryClient();
+  const editing = !!initial?.id;
+  const [form, setForm] = useState<any>({ ...EMPTY, ...initial });
+  const set = (k: string, v: any) => setForm((f: any) => ({ ...f, [k]: v }));
+
+  const save = useMutation({
+    mutationFn: (body: any) =>
+      editing ? api.patch(`/admin/symbols/${initial.id}`, body) : api.post("/admin/symbols", body),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["symbols"] });
+      onClose();
+    },
+  });
+
+  function submit(e: React.FormEvent) {
+    e.preventDefault();
+    save.mutate({
+      name: form.name,
+      slug: form.slug,
+      picPath: form.picPath || "/icons/default.png",
+      gain: Number(form.gain) || 0,
+      gainType: form.gainType,
+      symbolType: form.symbolType,
+      unitType: form.unitType,
+      paymentGateWayType: form.paymentGateWayType,
+      hasPaymentGateway: !!form.hasPaymentGateway,
+      isActive: !!form.isActive,
+    });
+  }
+
+  return (
+    <Modal title={editing ? "ویرایش نماد" : "افزودن نماد"} onClose={onClose}>
+      <form onSubmit={submit}>
+        <div className="grid grid-2">
+          <div className="field">
+            <label>نام</label>
+            <input className="input" value={form.name} onChange={(e) => set("name", e.target.value)} required />
+          </div>
+          <div className="field">
+            <label>اسلاگ (مثل XAU)</label>
+            <input className="input mono" dir="ltr" value={form.slug} onChange={(e) => set("slug", e.target.value)} required />
+          </div>
+          <div className="field">
+            <label>نوع نماد</label>
+            <select className="select" value={form.symbolType} onChange={(e) => set("symbolType", e.target.value)}>
+              {SYMBOL_TYPES.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+            </select>
+          </div>
+          <div className="field">
+            <label>واحد</label>
+            <select className="select" value={form.unitType} onChange={(e) => set("unitType", e.target.value)}>
+              {UNIT_TYPES.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+            </select>
+          </div>
+          <div className="field">
+            <label>سود (gain)</label>
+            <input className="input mono" dir="ltr" value={form.gain} onChange={(e) => set("gain", e.target.value)} />
+          </div>
+          <div className="field">
+            <label>نوع سود</label>
+            <select className="select" value={form.gainType} onChange={(e) => set("gainType", e.target.value)}>
+              {GAIN_TYPES.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+            </select>
+          </div>
+          <div className="field">
+            <label>درگاه پرداخت</label>
+            <select className="select" value={form.paymentGateWayType} onChange={(e) => set("paymentGateWayType", e.target.value)}>
+              {PAYMENT_GATEWAYS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+            </select>
+          </div>
+          <div className="field">
+            <label>مسیر آیکون</label>
+            <input className="input mono" dir="ltr" value={form.picPath} onChange={(e) => set("picPath", e.target.value)} placeholder="/icons/xau.png" />
+          </div>
+        </div>
+        <div className="row" style={{ gap: 20, margin: "4px 0 16px" }}>
+          <label className="row" style={{ gap: 6 }}>
+            <input type="checkbox" checked={form.hasPaymentGateway} onChange={(e) => set("hasPaymentGateway", e.target.checked)} />
+            دارای درگاه پرداخت
+          </label>
+          <label className="row" style={{ gap: 6 }}>
+            <input type="checkbox" checked={form.isActive} onChange={(e) => set("isActive", e.target.checked)} />
+            فعال
+          </label>
+        </div>
+        {save.isError && <div className="error-text">{apiError(save.error)}</div>}
+        <div className="row" style={{ justifyContent: "flex-end", gap: 10 }}>
+          <button type="button" className="btn ghost" onClick={onClose}>انصراف</button>
+          <button className="btn primary" disabled={save.isPending}>{save.isPending ? <span className="spin" /> : "ذخیره"}</button>
+        </div>
+      </form>
+    </Modal>
+  );
+}
+
+export default function SymbolsPage() {
+  const qc = useQueryClient();
+  const [form, setForm] = useState<{ open: boolean; initial?: any }>({ open: false });
+
+  const list = useQuery({
+    queryKey: ["symbols"],
+    queryFn: async () => unwrap<any>((await api.get("/admin/symbols/active")).data),
+  });
+  const toggle = useMutation({
+    mutationFn: (p: { id: string; isActive: boolean }) => api.patch(`/admin/symbols/${p.id}/status`, { isActive: p.isActive }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["symbols"] }),
+  });
+  const remove = useMutation({
+    mutationFn: (id: string) => api.delete(`/admin/symbols/${id}`),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["symbols"] }),
+  });
+
+  const symbols = toArray(list.data);
+
+  return (
+    <Card
+      title="نمادها"
+      action={<button className="btn primary sm" onClick={() => setForm({ open: true })}>+ افزودن نماد</button>}
+    >
+      {(toggle.isError || remove.isError) && <div className="error-text">{apiError(toggle.error || remove.error)}</div>}
+      {list.isLoading ? (
+        <Loading />
+      ) : list.isError ? (
+        <ErrorState message={apiError(list.error)} />
+      ) : symbols.length === 0 ? (
+        <Empty />
+      ) : (
+        <div className="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>نام</th>
+                <th>اسلاگ</th>
+                <th>نوع</th>
+                <th>واحد</th>
+                <th>وضعیت</th>
+                <th>عملیات</th>
+              </tr>
+            </thead>
+            <tbody>
+              {symbols.map((s) => (
+                <tr key={s.id}>
+                  <td>{s.name ?? "—"}</td>
+                  <td className="mono">{s.slug ?? "—"}</td>
+                  <td>{s.symbolType ?? "—"}</td>
+                  <td>{s.unitType ?? "—"}</td>
+                  <td>{s.isActive ? <Badge kind="green">فعال</Badge> : <Badge kind="gray">غیرفعال</Badge>}</td>
+                  <td>
+                    <div className="row">
+                      <button className="btn sm" onClick={() => setForm({ open: true, initial: s })}>ویرایش</button>
+                      <button className="btn sm" disabled={toggle.isPending} onClick={() => toggle.mutate({ id: s.id, isActive: !s.isActive })}>
+                        {s.isActive ? "غیرفعال" : "فعال"}
+                      </button>
+                      <button className="btn sm danger" disabled={remove.isPending} onClick={() => window.confirm("حذف نماد؟") && remove.mutate(s.id)}>
+                        حذف
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {form.open && <SymbolForm initial={form.initial} onClose={() => setForm({ open: false })} />}
+    </Card>
+  );
+}

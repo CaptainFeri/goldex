@@ -1,0 +1,221 @@
+import { useState } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { api, unwrap, apiError } from "../api/client";
+import { Card, Loading, ErrorState, Empty, Badge, Modal } from "../components/ui";
+import { fmtNum, pairLabel } from "../lib/format";
+import { MARKET_TYPES } from "../lib/enums";
+import type { PricePair } from "../api/types";
+
+function toArray(x: any): any[] {
+  return Array.isArray(x) ? x : x?.data ?? x?.items ?? [];
+}
+const baseSlug = (p: any) => p.baseSymbol?.slug ?? p.baseCode ?? "—";
+const quoteSlug = (p: any) => p.quoteSymbol?.slug ?? p.quoteCode ?? "—";
+
+const EMPTY = {
+  baseCode: "",
+  quoteCode: "",
+  price: 0,
+  isValid: true,
+  buyCommission: 0.01,
+  sellCommission: 0.01,
+  tradingViewSymbol: "",
+  minBuy: 0.001,
+  maxBuy: 100,
+  minSell: 0.001,
+  maxSell: 100,
+  decimals: 2,
+  marketType: "formal",
+};
+
+function PairForm({ initial, symbols, onClose }: { initial?: any; symbols: any[]; onClose: () => void }) {
+  const qc = useQueryClient();
+  const editing = !!initial?.id;
+  const [form, setForm] = useState<any>({
+    ...EMPTY,
+    ...(initial
+      ? {
+          baseCode: baseSlug(initial),
+          quoteCode: quoteSlug(initial),
+          price: Number(initial.price ?? initial.bestBuyPrice ?? 0),
+          isValid: !!initial.isValid,
+          buyCommission: Number(initial.buyCommission ?? 0.01),
+          sellCommission: Number(initial.sellCommission ?? 0.01),
+          tradingViewSymbol: initial.tradingViewSymbol ?? "",
+          minBuy: Number(initial.minBuy ?? 0.001),
+          maxBuy: Number(initial.maxBuy ?? 100),
+          minSell: Number(initial.minSell ?? 0.001),
+          maxSell: Number(initial.maxSell ?? 100),
+          decimals: Number(initial.decimals ?? 2),
+          marketType: initial.marketType ?? "formal",
+        }
+      : {}),
+  });
+  const set = (k: string, v: any) => setForm((f: any) => ({ ...f, [k]: v }));
+
+  const save = useMutation({
+    mutationFn: (body: any) => (editing ? api.patch(`/admin/pair/${initial.id}`, body) : api.post("/admin/pair", body)),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["pairs"] });
+      onClose();
+    },
+  });
+
+  function submit(e: React.FormEvent) {
+    e.preventDefault();
+    const n = (v: any) => Number(v) || 0;
+    save.mutate({
+      baseCode: form.baseCode,
+      quoteCode: form.quoteCode,
+      price: n(form.price),
+      isValid: !!form.isValid,
+      buyCommission: n(form.buyCommission),
+      sellCommission: n(form.sellCommission),
+      tradingViewSymbol: form.tradingViewSymbol || `${form.baseCode}${form.quoteCode}`,
+      minBuy: n(form.minBuy),
+      maxBuy: n(form.maxBuy),
+      minSell: n(form.minSell),
+      maxSell: n(form.maxSell),
+      decimals: n(form.decimals),
+      marketType: form.marketType,
+    });
+  }
+
+  const slugs = symbols.map((s) => s.slug).filter(Boolean);
+  const numField = (k: string, label: string) => (
+    <div className="field">
+      <label>{label}</label>
+      <input className="input mono" dir="ltr" value={form[k]} onChange={(e) => set(k, e.target.value)} />
+    </div>
+  );
+
+  return (
+    <Modal wide title={editing ? "ویرایش جفت‌ارز" : "افزودن جفت‌ارز"} onClose={onClose}>
+      <form onSubmit={submit}>
+        <div className="grid grid-3">
+          <div className="field">
+            <label>پایه</label>
+            <select className="select" value={form.baseCode} onChange={(e) => set("baseCode", e.target.value)} required>
+              <option value="">—</option>
+              {slugs.map((s) => <option key={s} value={s}>{s}</option>)}
+            </select>
+          </div>
+          <div className="field">
+            <label>مظنه</label>
+            <select className="select" value={form.quoteCode} onChange={(e) => set("quoteCode", e.target.value)} required>
+              <option value="">—</option>
+              {slugs.map((s) => <option key={s} value={s}>{s}</option>)}
+            </select>
+          </div>
+          {numField("price", "قیمت")}
+          {numField("buyCommission", "کارمزد خرید")}
+          {numField("sellCommission", "کارمزد فروش")}
+          {numField("decimals", "اعشار")}
+          {numField("minBuy", "حداقل خرید")}
+          {numField("maxBuy", "حداکثر خرید")}
+          {numField("minSell", "حداقل فروش")}
+          {numField("maxSell", "حداکثر فروش")}
+          <div className="field">
+            <label>نماد تریدینگ‌ویو</label>
+            <input className="input mono" dir="ltr" value={form.tradingViewSymbol} onChange={(e) => set("tradingViewSymbol", e.target.value)} placeholder="XAUUSD" />
+          </div>
+          <div className="field">
+            <label>نوع بازار</label>
+            <select className="select" value={form.marketType} onChange={(e) => set("marketType", e.target.value)}>
+              {MARKET_TYPES.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+            </select>
+          </div>
+        </div>
+        <label className="row" style={{ gap: 6, margin: "4px 0 16px" }}>
+          <input type="checkbox" checked={form.isValid} onChange={(e) => set("isValid", e.target.checked)} />
+          معتبر
+        </label>
+        {save.isError && <div className="error-text">{apiError(save.error)}</div>}
+        <div className="row" style={{ justifyContent: "flex-end", gap: 10 }}>
+          <button type="button" className="btn ghost" onClick={onClose}>انصراف</button>
+          <button className="btn primary" disabled={save.isPending}>{save.isPending ? <span className="spin" /> : "ذخیره"}</button>
+        </div>
+      </form>
+    </Modal>
+  );
+}
+
+export default function PairsPage() {
+  const qc = useQueryClient();
+  const [form, setForm] = useState<{ open: boolean; initial?: any }>({ open: false });
+
+  const list = useQuery({
+    queryKey: ["pairs"],
+    queryFn: async () => unwrap<PricePair[]>((await api.get("/admin/pair")).data),
+  });
+  const symbols = useQuery({
+    queryKey: ["symbols-active"],
+    queryFn: async () => toArray(unwrap<any>((await api.get("/admin/symbols/active")).data)),
+  });
+
+  const toggle = useMutation({
+    mutationFn: (id: string) => api.patch(`/admin/pair/${id}/validity`, {}),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["pairs"] }),
+  });
+  const remove = useMutation({
+    mutationFn: (id: string) => api.delete(`/admin/pair/${id}`),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["pairs"] }),
+  });
+
+  const pairs = list.data ?? [];
+
+  return (
+    <Card
+      title="جفت‌ارزها"
+      action={<button className="btn primary sm" onClick={() => setForm({ open: true })}>+ افزودن جفت‌ارز</button>}
+    >
+      {(toggle.isError || remove.isError) && <div className="error-text">{apiError(toggle.error || remove.error)}</div>}
+      {list.isLoading ? (
+        <Loading />
+      ) : list.isError ? (
+        <ErrorState message={apiError(list.error)} />
+      ) : pairs.length === 0 ? (
+        <Empty />
+      ) : (
+        <div className="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>پایه</th>
+                <th>مظنه</th>
+                <th>قیمت خرید</th>
+                <th>قیمت فروش</th>
+                <th>اعتبار</th>
+                <th>عملیات</th>
+              </tr>
+            </thead>
+            <tbody>
+              {pairs.map((p: any) => (
+                <tr key={p.id}>
+                  <td><Badge kind="gold">{baseSlug(p)}</Badge></td>
+                  <td>{quoteSlug(p)}</td>
+                  <td className="mono">{fmtNum(p.bestBuyPrice ?? p.price, 2)}</td>
+                  <td className="mono">{fmtNum(p.bestSellPrice ?? p.price, 2)}</td>
+                  <td>{p.isValid ? <Badge kind="green">معتبر</Badge> : <Badge kind="gray">نامعتبر</Badge>}</td>
+                  <td>
+                    <div className="row">
+                      <button className="btn sm" onClick={() => setForm({ open: true, initial: p })}>ویرایش</button>
+                      <button className="btn sm" disabled={toggle.isPending} onClick={() => toggle.mutate(p.id)}>
+                        {p.isValid ? "غیرفعال" : "فعال"}
+                      </button>
+                      <button className="btn sm danger" disabled={remove.isPending} onClick={() => window.confirm("حذف جفت‌ارز؟") && remove.mutate(p.id)}>
+                        حذف
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {form.open && <PairForm initial={form.initial} symbols={symbols.data ?? []} onClose={() => setForm({ open: false })} />}
+    </Card>
+  );
+}

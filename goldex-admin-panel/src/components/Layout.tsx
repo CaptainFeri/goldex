@@ -1,0 +1,94 @@
+import { NavLink, Outlet, useLocation } from "react-router-dom";
+import { useAuth } from "../auth/auth";
+
+const NAV = [
+  { section: "نمای کلی" },
+  { to: "/", label: "داشبورد", icon: "▦", end: true },
+  { to: "/compare", label: "مقایسه تأمین‌کنندگان", icon: "📈" },
+  { section: "مدیریت" },
+  { to: "/kyc", label: "احراز هویت", icon: "🪪" },
+  { to: "/wallets", label: "کیف‌پول‌ها", icon: "👛" },
+  { to: "/finance", label: "مالی", icon: "💰" },
+  { to: "/provider-finance", label: "مالی تأمین‌کنندگان", icon: "🏦" },
+  { section: "بازار" },
+  { to: "/symbols", label: "نمادها", icon: "◈" },
+  { to: "/pairs", label: "جفت‌ارزها", icon: "⇄" },
+  { to: "/mappings", label: "نگاشت تأمین‌کننده", icon: "🔗" },
+  { section: "سیستم" },
+  { to: "/admins", label: "مدیران", icon: "👤" },
+];
+
+const TITLES: Record<string, string> = {
+  "/": "داشبورد",
+  "/compare": "مقایسه قیمت تأمین‌کنندگان",
+  "/kyc": "مدیریت احراز هویت",
+  "/wallets": "مدیریت کیف‌پول",
+  "/finance": "مالی — سفارش‌ها، تراکنش‌ها و دفتر سیستم",
+  "/provider-finance": "مالی تأمین‌کنندگان — بدهکار/بستانکار و تسویه",
+  "/symbols": "مدیریت نمادها",
+  "/pairs": "مدیریت جفت‌ارزها",
+  "/mappings": "نگاشت تأمین‌کننده به جفت‌ارز",
+  "/admins": "مدیریت مدیران",
+};
+
+export default function Layout() {
+  const { admin, logout } = useAuth();
+  const loc = useLocation();
+  const title = TITLES[loc.pathname] ?? "Goldex";
+
+  return (
+    <div className="app-shell">
+      <aside className="sidebar">
+        <div className="brand">
+          <div className="brand-logo">G</div>
+          <div>
+            <div className="brand-name">Goldex</div>
+            <div className="brand-sub">پنل مدیریت</div>
+          </div>
+        </div>
+
+        {NAV.map((item, i) =>
+          "section" in item ? (
+            <div className="nav-section" key={`s-${i}`}>
+              {item.section}
+            </div>
+          ) : (
+            <NavLink
+              key={item.to}
+              to={item.to!}
+              end={item.end}
+              className={({ isActive }) => "nav-item" + (isActive ? " active" : "")}
+            >
+              <span className="ico">{item.icon}</span>
+              {item.label}
+            </NavLink>
+          )
+        )}
+
+        <div className="sidebar-footer">
+          <div className="row spread">
+            <div>
+              <div style={{ fontWeight: 600 }}>{admin?.phone ?? admin?.email ?? "مدیر"}</div>
+              <div style={{ fontSize: 11, color: "var(--text-faint)" }}>{admin?.role}</div>
+            </div>
+            <button className="btn ghost sm" onClick={logout}>
+              خروج
+            </button>
+          </div>
+        </div>
+      </aside>
+
+      <div className="main">
+        <header className="topbar">
+          <div>
+            <h1>{title}</h1>
+            <div className="crumb">Goldex Back Office</div>
+          </div>
+        </header>
+        <div className="content">
+          <Outlet />
+        </div>
+      </div>
+    </div>
+  );
+}
