@@ -1,0 +1,130 @@
+import { useState } from 'react'
+import { useAuth } from '../context/AuthContext'
+import { useNavigate, useLocation } from 'react-router-dom'
+import { BrandHeader, ThemeToggle } from './UI'
+
+const navItems = [
+  { label: 'Trade', path: '/trade', icon: TradeIcon },
+  { label: 'Wallet', path: '/wallet', icon: WalletIcon },
+  { label: 'Profile', path: '/profile', icon: UserIcon },
+  { label: 'Verification', path: '/kyc', icon: ShieldIcon },
+  { label: 'Sessions', path: '/sessions', icon: DeviceIcon },
+  { label: 'Settings', path: '/settings', icon: SettingsIcon },
+]
+
+function TradeIcon() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="nav-icon">
+      <path d="M3 17l5-5 4 4 7-8" /><path d="M16 8h4v4" />
+    </svg>
+  )
+}
+
+function WalletIcon() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="nav-icon">
+      <rect x="3" y="6" width="18" height="13" rx="2" /><path d="M3 10h18" /><circle cx="17" cy="14" r="1" />
+    </svg>
+  )
+}
+
+function ShieldIcon() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="nav-icon">
+      <path d="M12 3l7 3v5c0 4.5-3 8-7 10-4-2-7-5.5-7-10V6l7-3z" />
+      <path d="M9 12l2 2 4-4" />
+    </svg>
+  )
+}
+
+function UserIcon() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="nav-icon">
+      <circle cx="12" cy="8" r="4" /><path d="M4 20c0-4 3.6-7 8-7s8 3 8 7" />
+    </svg>
+  )
+}
+
+function DeviceIcon() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="nav-icon">
+      <rect x="3" y="3" width="18" height="14" rx="2" /><path d="M8 21h8M12 17v4" />
+    </svg>
+  )
+}
+
+function SettingsIcon() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="nav-icon">
+      <circle cx="12" cy="12" r="3" />
+      <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
+    </svg>
+  )
+}
+
+function LogoutIcon() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="nav-icon">
+      <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" /><polyline points="16 17 21 12 16 7" /><line x1="21" y1="12" x2="9" y2="12" />
+    </svg>
+  )
+}
+
+export default function Sidebar({ user }) {
+  const { logout } = useAuth()
+  const navigate = useNavigate()
+  const location = useLocation()
+  const [loggingOut, setLoggingOut] = useState(false)
+
+  const initials = user
+    ? `${(user.firstName || '?')[0]}${(user.lastName || '?')[0]}`.toUpperCase()
+    : '?'
+
+  const handleLogout = async () => {
+    setLoggingOut(true)
+    await logout()
+    navigate('/login')
+  }
+
+  return (
+    <aside className="sidebar">
+      <div className="sidebar-header">
+        <BrandHeader />
+      </div>
+
+      <div style={{ padding: '1.25rem 1.5rem', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+        <div className="avatar" style={{ width: 40, height: 40, fontSize: '1rem' }}>{initials}</div>
+        <div>
+          <div style={{ fontSize: '0.9rem', fontWeight: 500, color: 'var(--text-primary)' }}>
+            {user?.firstName} {user?.lastName}
+          </div>
+          <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{user?.phone || user?.phoneNumber}</div>
+        </div>
+      </div>
+
+      <nav className="sidebar-nav">
+        {navItems.map(({ label, path, icon: Icon }) => (
+          <button
+            key={path}
+            className={`nav-item ${location.pathname === path ? 'active' : ''}`}
+            onClick={() => navigate(path)}
+          >
+            <Icon />
+            {label}
+          </button>
+        ))}
+      </nav>
+
+      <div className="sidebar-footer">
+        <div className="sidebar-theme-row">
+          <span>Theme</span>
+          <ThemeToggle />
+        </div>
+        <button className="nav-item" onClick={handleLogout} disabled={loggingOut}>
+          <LogoutIcon />
+          {loggingOut ? 'Signing out…' : 'Sign out'}
+        </button>
+      </div>
+    </aside>
+  )
+}

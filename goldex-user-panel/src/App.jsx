@@ -1,0 +1,43 @@
+import { Routes, Route, Navigate } from 'react-router-dom'
+import { AuthProvider } from './context/AuthContext'
+import ProtectedRoute from './components/ProtectedRoute'
+import AppLayout from './components/AppLayout'
+import AuthPage from './pages/AuthPage'
+import ForgotPasswordPage from './pages/ForgotPasswordPage'
+import ResetPasswordPage from './pages/ResetPasswordPage'
+import ProfilePage from './pages/ProfilePage'
+import TradePage from './pages/TradePage'
+import WalletPage from './pages/WalletPage'
+import KycPage from './pages/KycPage'
+import SessionsPage from './pages/SessionsPage'
+import SettingsPage from './pages/SettingsPage'
+
+export default function App() {
+  return (
+    <AuthProvider>
+      <Routes>
+        <Route path="/login" element={<AuthPage />} />
+        <Route path="/register" element={<AuthPage />} />
+        <Route path="/forgot-password" element={<ForgotPasswordPage />} />
+        <Route path="/reset-password" element={<ResetPasswordPage />} />
+
+        <Route
+          element={
+            <ProtectedRoute>
+              <AppLayout />
+            </ProtectedRoute>
+          }
+        >
+          <Route path="/trade" element={<TradePage />} />
+          <Route path="/wallet" element={<WalletPage />} />
+          <Route path="/profile" element={<ProfilePage />} />
+          <Route path="/kyc" element={<KycPage />} />
+          <Route path="/sessions" element={<SessionsPage />} />
+          <Route path="/settings" element={<SettingsPage />} />
+        </Route>
+
+        <Route path="*" element={<Navigate to="/login" replace />} />
+      </Routes>
+    </AuthProvider>
+  )
+}

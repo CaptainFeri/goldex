@@ -1,0 +1,138 @@
+import http from './http'
+
+// Public calls (no/ignored auth) pass { skipAuth: true } so a stale token is
+// never attached.
+const PUBLIC = { skipAuth: true }
+
+const unwrap = (res) => res.data.data
+
+export const authApi = {
+  sendOtp: async (phone) =>
+    unwrap(await http.post('/auth/send-otp', { phone }, PUBLIC)),
+
+  verifyOtp: async (phone, otp) =>
+    unwrap(await http.post('/auth/verify-otp', { phone, otp }, PUBLIC)),
+
+  completeRegistration: async (payload, tempToken) =>
+    unwrap(await http.post('/auth/complete-registration', payload, {
+      headers: { Authorization: `Bearer ${tempToken}` }
+    })),
+
+  login: async (phone, password) =>
+    unwrap(await http.post('/auth/login', { phone, password }, PUBLIC)),
+
+  logout: async (deviceId) =>
+    unwrap(await http.post('/auth/logout', { deviceId })),
+
+  forgetPassword: async (email) =>
+    unwrap(await http.post('/auth/forget-password', { email }, PUBLIC)),
+
+  // The reset token arrives via the email link and is used as a bearer token.
+  resetPassword: async (resetToken, newPassword) =>
+    unwrap(await http.post('/auth/reset-password', { newPassword }, {
+      headers: { Authorization: `Bearer ${resetToken}` }, skipAuth: true
+    }))
+}
+
+export const profileApi = {
+  getProfile: async () =>
+    unwrap(await http.get('/profile/profile')),
+
+  updateProfile: async (payload) =>
+    unwrap(await http.patch('/profile/profile', payload)),
+
+  updatePassword: async (currentPassword, newPassword) =>
+    unwrap(await http.patch('/profile/password', { currentPassword, newPassword })),
+
+  getLoginHistory: async (pageNumber = 1, pageSize = 100) =>
+    unwrap(await http.get(`/profile/login?pageNumber=${pageNumber}&pageSize=${pageSize}`)),
+
+  getSettings: async () =>
+    unwrap(await http.get('/profile/settings')),
+
+  updateSettings: async (payload) =>
+    unwrap(await http.patch('/profile/settings', payload)),
+
+  uploadAvatar: async (file) => {
+    const form = new FormData()
+    form.append('avatar', file)
+    return unwrap(await http.patch('/profile/avatar', form))
+  },
+
+  deleteAvatar: async () =>
+    unwrap(await http.delete('/profile/avatar'))
+}
+
+export const kycApi = {
+  // Overall KYC record: { level: 'NONE'|'LEVEL_1'|…, status: 'PENDING'|'APPROVED'|'REJECTED', nationalId, birthDate, … } or null
+  getKyc: async () =>
+    unwrap(await http.get('/kyc')),
+
+  getStats: async () =>
+    unwrap(await http.get('/kyc/stats')),
+
+  getDocuments: async () =>
+    unwrap(await http.get('/kyc/documents')),
+
+  verifyLevel1: async (nationalId) =>
+    unwrap(await http.post('/kyc/level-1', { nationalId })),
+
+  // payload: { iban, birthDate, bank, depositNumber }
+  verifyLevel2: async (payload) =>
+    unwrap(await http.post('/kyc/level-2', payload)),
+
+  uploadDocument: async ({ file, fileTarget, description }) => {
+    const form = new FormData()
+    form.append('file', file)
+    form.append('fileTarget', fileTarget)
+    if (description) form.append('description', description)
+    return unwrap(await http.post('/kyc/upload', form))
+  },
+
+  deleteDocument: async (documentId) =>
+    unwrap(await http.delete(`/kyc/documents/${documentId}`))
+}
+
+export const walletApi = {
+  // List of wallets with balances: [{ id, symbol, freeBalance, lockedBalance, totalBalance, availableBalance, status }]
+  getWallets: async () =>
+    unwrap(await http.get('/user-wallet')),
+
+  // { transactions, total }
+  getTransactions: async (params = {}) =>
+    unwrap(await http.get('/user-wallet/transactions', { params }))
+}
+
+export const marketApi = {
+  // Valid trading pairs with base/quote symbols and current prices
+  getPairs: async () =>
+    unwrap(await http.get('/market/pairs'))
+}
+
+export const orderApi = {
+  // payload: { pricePairId, side, orderType, quantity, price?, commission?, notes? }
+  create: async (payload) =>
+    unwrap(await http.post('/orders', payload)),
+
+  // returns { orders, total }
+  list: async (params = {}) =>
+    unwrap(await http.get('/orders', { params })),
+
+  get: async (id) =>
+    unwrap(await http.get(`/orders/${id}`)),
+
+  cancel: async (id) =>
+    unwrap(await http.delete(`/orders/${id}/cancel`))
+}
+
+export const baseInfoApi = {
+  getCountries: async (searchKey = '') =>
+    unwrap(await http.get('/base-info/countries', {
+      params: { pageNumber: 1, pageSize: 100, searchKey: searchKey || undefined }
+    })),
+
+  getLanguages: async (searchKey = '') =>
+    unwrap(await http.get('/base-info/languages', {
+      params: { pageNumber: 1, pageSize: 100, searchKey: searchKey || undefined }
+    }))
+}
