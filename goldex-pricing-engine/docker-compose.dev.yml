@@ -1,0 +1,204 @@
+version: '3.8'
+
+services:
+  # ======================
+  # Redis
+  # ======================
+  redis:
+    image: redis:7-alpine
+    container_name: pricing-engine-redis
+    restart: unless-stopped
+    ports:
+      - '${REDIS_EXTERNAL_PORT:-6379}:6379'
+    volumes:
+      - redis-data:/data
+    command: redis-server --appendonly yes --save 60 1 --loglevel warning
+    networks:
+      - goldex-network-dev
+    environment:
+      - REDIS_PASSWORD=${REDIS_PASSWORD:-}
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ======================
+  # Redis Insight (optional UI)
+  # ======================
+  redis-insight:
+    image: redis/redisinsight:latest
+    container_name: pricing-engine-redis-insight
+    restart: unless-stopped
+    ports:
+      - '${REDIS_INSIGHT_PORT:-5540}:5540'
+    volumes:
+      - redis-insight-data:/db
+    networks:
+      - goldex-network-dev
+    depends_on:
+      redis:
+        condition: service_healthy
+
+  # ======================
+  # PostgreSQL
+  # ======================
+  postgres:
+    image: postgres:15-alpine
+    container_name: pricing-engine-postgres
+    restart: unless-stopped
+    ports:
+      - '${POSTGRES_EXTERNAL_PORT:-5432}:5432'
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      POSTGRES_DB: ${POSTGRES_DB:-gold_price_db}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    networks:
+      - goldex-network-dev
+    healthcheck:
+      test:
+        ['CMD-SHELL', 'pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-gold_price_db}']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ======================
+  # RabbitMQ
+  # ======================
+  # rabbitmq:
+  #   image: rabbitmq:4-management-alpine
+  #   container_name: pricing-engine-rabbitmq
+  #   restart: unless-stopped
+  #   ports:
+  #     - '5672:5672'
+  #     - '15672:15672'
+  #   environment:
+  #     RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:-guest}
+  #     RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:-guest}
+  #   volumes:
+  #     - rabbitmq-data:/var/lib/rabbitmq
+  #   networks:
+  #     - goldex-network-dev
+  #   healthcheck:
+  #     test: ['CMD', 'rabbitmq-diagnostics', 'check_port_connectivity']
+  #     interval: 10s
+  #     timeout: 5s
+  #     retries: 5
+
+  # ======================
+  # pgAdmin (optional DB UI)
+  # ======================
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    container_name: pricing-engine-pgadmin
+    restart: unless-stopped
+    environment:
+      PGADMIN_DEFAULT_EMAIL: ${PGADMIN_EMAIL:-admin@example.com}
+      PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_PASSWORD:-admin}
+      PGADMIN_CONFIG_SERVER_MODE: 'False'
+    ports:
+      - '${PGADMIN_EXTERNAL_PORT:-5050}:80'
+    volumes:
+      - pgadmin-data:/var/lib/pgadmin
+    networks:
+      - goldex-network-dev
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  # ======================
+  # Mock / stress-test sandbox (Zaryar + TalaAb upstreams)
+  # ======================
+  mock:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: mock
+    container_name: pricing-engine-mock
+    restart: unless-stopped
+    ports:
+      - '${MOCK_EXTERNAL_PORT:-5000}:5000'
+    environment:
+      MOCK_PORT: 5000
+      MOCK_TICK_MS: ${MOCK_TICK_MS:-10000}
+      MOCK_JITTER_PCT: ${MOCK_JITTER_PCT:-0.003}
+      MOCK_EXTRA_ITEMS: ${MOCK_EXTRA_ITEMS:-0}
+    networks:
+      - goldex-network-dev
+
+  # ======================
+  # Node.js Application
+  # ======================
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: runner
+    container_name: pricing-engine-app
+    restart: unless-stopped
+    ports:
+      - '${APP_EXTERNAL_PORT:-3000}:3000'
+    environment:
+      # Redis
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-}
+      # PostgreSQL
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_USERNAME: ${POSTGRES_USER:-postgres}
+      DB_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      DB_DATABASE: ${POSTGRES_DB:-gold_price_db}
+      # RabbitMQ
+      RABBITMQ_HOST: rabbitmq
+      RABBITMQ_PORT: 5672
+      RABBITMQ_URL: amqp://${RABBITMQ_USER:-guest}:${RABBITMQ_PASSWORD:-guest}@${RABBITMQ_HOST:-rabbitmq}:${RABBITMQ_PORT}
+      # Mock sandbox (used by seed migrations to build provider URLs)
+      MOCK_HOST: mock
+      MOCK_PORT: 5000
+      # App
+      PORT: 3000
+      NODE_ENV: production
+    networks:
+      - goldex-network-dev
+    depends_on:
+      redis:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+      mock:
+        condition: service_started
+      # rabbitmq:
+      #   condition: service_started
+    volumes:
+      - ./logs:/app/logs
+    healthcheck:
+      test: ['CMD', 'wget', '--no-verbose', '--tries=1', '--spider', 'http://localhost:3000/health']
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+# ======================
+# Networks & Volumes
+# ======================
+# networks:
+#   pricing-engine-network-dev:
+#     driver: bridge
+
+networks:
+  goldex-network-dev:
+    external: true
+
+volumes:
+  redis-data:
+    driver: local
+  redis-insight-data:
+    driver: local
+  postgres-data:
+    driver: local
+  pgadmin-data:
+    driver: local
+  # rabbitmq-data:
+  #   driver: local

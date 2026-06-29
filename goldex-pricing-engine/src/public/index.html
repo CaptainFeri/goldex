@@ -1,0 +1,880 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Price Engine – Live Dashboard</title>
+    <style>
+      * { box-sizing: border-box; }
+      body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: #f0f2f5; margin: 0; padding: 20px; }
+      .container { max-width: 1600px; margin: 0 auto; }
+      h1 { color: #1e3c72; border-left: 5px solid #2a5298; padding-left: 20px; margin-top: 0; }
+      .status-bar { background: white; border-radius: 8px; padding: 12px 20px; margin: 20px 0; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; }
+      .refresh-btn { background: #2a5298; color: white; border: none; padding: 6px 12px; border-radius: 4px; cursor: pointer; }
+      .tabs { display: flex; gap: 10px; margin-bottom: 20px; border-bottom: 2px solid #ddd; flex-wrap: wrap; }
+      .tab-btn { background: #e2e8f0; border: none; padding: 8px 20px; border-radius: 20px 20px 0 0; cursor: pointer; font-weight: 500; }
+      .tab-btn.active { background: #1e3c72; color: white; }
+      .tab-content { display: none; }
+      .tab-content.active { display: block; }
+      .status-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(360px, 1fr)); gap: 20px; margin-bottom: 30px; }
+      .status-card { background: white; border-radius: 16px; box-shadow: 0 4px 12px rgba(0,0,0,0.08); overflow: hidden; }
+      .status-header { padding: 16px 20px; color: white; display: flex; justify-content: space-between; align-items: center; }
+      .status-header.online { background: linear-gradient(135deg, #2c7a4d, #1e5a3a); }
+      .status-header.offline { background: linear-gradient(135deg, #9b2c2c, #742a2a); }
+      .provider-name { font-size: 1.2rem; font-weight: bold; }
+      .status-badge { background: rgba(255,255,255,0.2); padding: 4px 10px; border-radius: 30px; font-size: 0.7rem; }
+      .status-body { padding: 16px 20px; }
+      .status-row { display: flex; justify-content: space-between; margin-bottom: 12px; font-size: 0.9rem; }
+      .status-label { color: #4a5568; font-weight: 500; }
+      .status-value { font-weight: 600; color: #2d3748; }
+      .last-update { font-size: 0.8rem; color: #718096; margin-top: 12px; padding-top: 8px; border-top: 1px solid #e2e8f0; }
+      .health-icon { width: 10px; height: 10px; border-radius: 50%; display: inline-block; margin-right: 6px; }
+      .health-good { background: #2c7a4d; box-shadow: 0 0 5px #2c7a4d; }
+      .health-bad { background: #9b2c2c; box-shadow: 0 0 5px #9b2c2c; }
+      .category-section { background: white; border-radius: 12px; margin-bottom: 30px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); overflow-x: auto; }
+      .category-header { background: #1e3c72; color: white; padding: 12px 20px; font-size: 1.2rem; font-weight: bold; }
+      table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
+      th { background: #f8f9fc; padding: 10px 8px; text-align: left; border-bottom: 2px solid #e2e8f0; }
+      td { padding: 10px 8px; border-bottom: 1px solid #edf2f7; vertical-align: middle; }
+      .price-buy { color: #2c7a4d; font-weight: 500; }
+      .price-sell { color: #c53030; font-weight: 500; }
+      .badge { display: inline-block; padding: 2px 6px; border-radius: 20px; font-size: 0.7rem; font-weight: bold; }
+      .badge-true { background: #c6f6d5; color: #22543d; }
+      .badge-false { background: #fed7d7; color: #742a2a; }
+      .no-data { text-align: center; color: #888; padding: 20px; }
+      .error-message { background: #fed7d7; color: #742a2a; padding: 10px; border-radius: 8px; margin-bottom: 20px; }
+      .success-message { background: #c6f6d5; color: #22543d; padding: 10px; border-radius: 8px; margin-bottom: 20px; }
+      .footer { text-align: center; margin-top: 30px; font-size: 0.8rem; color: #718096; }
+      .api-selector { margin-bottom: 20px; display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+      select, input, textarea { padding: 6px 12px; border-radius: 6px; border: 1px solid #ccc; }
+      textarea { width: 100%; min-height: 80px; font-family: monospace; }
+      pre { background: #1e1e1e; color: #d4d4d4; padding: 15px; border-radius: 8px; overflow-x: auto; font-size: 0.8rem; }
+      .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+      .form-grid label { font-weight: 500; color: #4a5568; }
+      .form-grid input, .form-grid select { width: 100%; }
+      .form-section { background: white; border-radius: 12px; padding: 20px; margin-bottom: 20px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); }
+      .form-section h3 { margin-top: 0; color: #1e3c72; }
+      .btn { padding: 8px 16px; border: none; border-radius: 6px; cursor: pointer; font-weight: 500; display: inline-flex; align-items: center; gap: 6px; }
+      .btn-primary { background: #2a5298; color: white; }
+      .btn-success { background: #2c7a4d; color: white; }
+      .btn-danger { background: #c53030; color: white; }
+      .btn-warning { background: #d69e2e; color: white; }
+      .btn-sm { padding: 4px 10px; font-size: 0.8rem; }
+      .btn-outline { background: transparent; border: 1px solid #ccc; }
+      .provider-actions { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 4px; }
+      .modal-overlay { display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.5); z-index: 1000; justify-content: center; align-items: center; }
+      .modal-overlay.active { display: flex; }
+      .modal { background: white; border-radius: 12px; padding: 24px; width: 600px; max-width: 95vw; max-height: 90vh; overflow-y: auto; box-shadow: 0 20px 60px rgba(0,0,0,0.3); }
+      .modal h2 { margin-top: 0; }
+      .modal-actions { display: flex; gap: 10px; justify-content: flex-end; margin-top: 20px; }
+      .otp-inline { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+      .float-right { float: right; }
+      @media (max-width: 768px) { table { font-size: 0.7rem; } th, td { padding: 6px 4px; } .form-grid { grid-template-columns: 1fr; } }
+    </style>
+  </head>
+  <body>
+    <div class="container">
+      <h1>Price Engine – Live Dashboard</h1>
+      <div class="status-bar">
+        <span>Last refresh: <span id="lastRefresh">—</span> (auto every 10s)</span>
+        <button class="refresh-btn" id="refreshBtn">Refresh Now</button>
+      </div>
+
+      <div class="tabs">
+        <button class="tab-btn active" data-tab="status">Provider Status</button>
+        <button class="tab-btn" data-tab="consolidated">Consolidated Market</button>
+        <button class="tab-btn" data-tab="perProvider">Per-Provider Market</button>
+        <button class="tab-btn" data-tab="bestPrices">Best Prices</button>
+        <button class="tab-btn" data-tab="arbitrage">Arbitrage Mesh</button>
+        <button class="tab-btn" data-tab="manager">Provider Manager</button>
+        <button class="tab-btn" data-tab="raw">Raw APIs</button>
+      </div>
+
+      <div id="tab-status" class="tab-content active"><div id="status-container" class="status-grid"></div></div>
+      <div id="tab-consolidated" class="tab-content"><div id="consolidated-container"></div></div>
+      <div id="tab-perProvider" class="tab-content"><div id="perProvider-container"></div></div>
+      <div id="tab-bestPrices" class="tab-content"><div id="bestPrices-container"></div></div>
+      <div id="tab-arbitrage" class="tab-content"><div id="arbitrage-container"></div></div>
+      <div id="tab-manager" class="tab-content"><div id="manager-container"></div></div>
+
+      <div id="tab-raw" class="tab-content">
+        <div class="api-selector">
+          <label>Endpoint:</label>
+          <select id="apiSelect">
+            <optgroup label="CRUD (bare entity/array)">
+              <option value="/providers">/providers</option>
+              <option value="/providers/UUID">/providers/:id</option>
+              <option value="/providers/UUID/toggle-active">/providers/:id/toggle-active</option>
+            </optgroup>
+            <optgroup label="OTP (bare {message} / entity)">
+              <option value="/providers/UUID/send-otp">/providers/:id/send-otp</option>
+              <option value="/providers/UUID/verify-otp">/providers/:id/verify-otp</option>
+            </optgroup>
+            <optgroup label="Key-based (wrapped {data:...})">
+              <option value="/providers/KEY/status">/providers/:key/status</option>
+              <option value="/providers/KEY/items">/providers/:key/items</option>
+              <option value="/providers/KEY/prices">/providers/:key/prices</option>
+              <option value="/providers/KEY/tracked-items">/providers/:key/tracked-items</option>
+              <option value="/providers/KEY/deal/ITEM_ID">/providers/:key/deal/:itemId</option>
+              <option value="/providers/KEY/refresh">/providers/:key/refresh</option>
+            </optgroup>
+            <optgroup label="Global Views (wrapped {data:...})">
+              <option value="/providers/all-prices">/providers/all-prices</option>
+              <option value="/providers/integrated-prices">/providers/integrated-prices</option>
+              <option value="/providers/market-map">/providers/market-map</option>
+              <option value="/providers/consolidated-market">/providers/consolidated-market</option>
+            </optgroup>
+          </select>
+          <button class="btn btn-primary" id="fetchRawBtn">Send Request</button>
+          <label>Method:</label>
+          <select id="rawMethod">
+            <option>GET</option><option>POST</option><option>PATCH</option>
+          </select>
+          <label>Body (JSON):</label>
+          <input id="rawBody" placeholder='{"key":"value"}' style="width:180px;" />
+        </div>
+        <pre id="rawOutput">Select an endpoint and click Send Request</pre>
+      </div>
+
+      <div class="footer">All data from http://localhost:3000 | Auto-refresh every 10 seconds</div>
+    </div>
+
+    <!-- Edit Provider Modal -->
+    <div class="modal-overlay" id="editModal">
+      <div class="modal">
+        <h2 id="modalTitle">Edit Provider</h2>
+        <div class="form-grid">
+          <div><label>Key</label><input id="editKey" /></div>
+          <div><label>Category</label><select id="editCategory"><option>zaryar</option><option>talaab</option></select></div>
+          <div><label>Base URL</label><input id="editBaseUrl" /></div>
+          <div><label>API Base URL</label><input id="editApiBaseUrl" /></div>
+          <div><label>Send OTP URL</label><input id="editSendOtpUrl" /></div>
+          <div><label>Verify Code URL</label><input id="editVerifyCodeUrl" /></div>
+          <div><label>Phone</label><input id="editPhone" /></div>
+          <div><label>Refresh (ms)</label><input id="editRefreshMs" type="number" /></div>
+        </div>
+        <div class="modal-actions">
+          <button class="btn btn-success" id="editSaveBtn">Save</button>
+          <button class="btn btn-outline" id="editCancelBtn">Cancel</button>
+        </div>
+      </div>
+    </div>
+
+    <script>
+      const API = 'http://localhost:3000';
+      const R = `${API}/providers`;
+
+      let interval, activeTab = 'status';
+      const firstLoad = { status: true, consolidated: true, perProvider: true, bestPrices: true, arbitrage: true, manager: true };
+      let marketMapCache = null, providersCache = [], editingId = null;
+
+      const uuidRx = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+      const isUuid = v => v && uuidRx.test(v);
+
+      // ---------- Response helpers ----------
+      // CRUD routes return bare entity/array.
+      // Key-based & global-view routes wrap in {data:...}.
+      // sendOtp returns {message:"..."} directly.
+      function unpack(json) {
+        if (json && typeof json === 'object' && !Array.isArray(json) && 'data' in json) return json.data;
+        return json;
+      }
+
+      function esc(s) { return s ? String(s).replace(/[&<>]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]||c)) : ''; }
+
+      function fmtPrice(p) {
+        if (p == null) return '\u2014';
+        const n = typeof p === 'number' ? p : parseFloat(p);
+        return isNaN(n) ? '\u2014' : new Intl.NumberFormat('fa-IR').format(Math.round(n)) + ' \u062A\u0648\u0645\u0627\u0646';
+      }
+
+      function stamp() { document.getElementById('lastRefresh').textContent = new Date().toLocaleTimeString(); }
+
+      async function api(method, url, body) {
+        const opts = { method, headers: { 'Content-Type': 'application/json' } };
+        if (body != null) opts.body = JSON.stringify(body);
+        const res = await fetch(url, opts);
+        const text = await res.text();
+        let data;
+        try { data = JSON.parse(text); } catch { data = text; }
+        return { ok: res.ok, status: res.status, raw: data, data: unpack(data) };
+      }
+
+      // CRUD: GET /providers -> bare array
+      async function listProviders() {
+        const r = await api('GET', R);
+        return r.ok ? (Array.isArray(r.raw) ? r.raw : r.data || []) : [];
+      }
+
+      // ---------- Provider Status tab ----------
+      async function loadStatus(force) {
+        const el = document.getElementById('status-container');
+        if (force && firstLoad.status) el.innerHTML = '<div class="no-data">Loading...</div>';
+        try {
+          const list = await listProviders();
+          providersCache = list;
+          const cards = await Promise.all(list.map(async p => {
+            let connected = false, items = 0, lastUpd = null;
+            try {
+              const r = await api('GET', `${R}/${p.key}/status`);
+              if (r.ok) connected = r.data.connected;
+            } catch {}
+            try {
+              const r = await api('GET', `${R}/${p.key}/items`);
+              if (r.ok) items = (r.data || []).length;
+            } catch {}
+            try {
+              const r = await api('GET', `${R}/market-map`);
+              if (r.ok && r.data && r.data[p.key]) lastUpd = r.data[p.key].lastUpdate;
+            } catch {}
+            return { ...p, connected, trackedItems: items, lastUpdate: lastUpd };
+          }));
+          renderStatus(cards);
+          firstLoad.status = false;
+        } catch (e) {
+          if (firstLoad.status) el.innerHTML = `<div class="error-message">${e.message}</div>`;
+        }
+      }
+
+      function renderStatus(list) {
+        let html = '';
+        for (const p of list) {
+          const cls = p.connected ? 'online' : 'offline';
+          const txt = p.connected ? 'Connected' : 'Disconnected';
+          const hCls = p.connected ? 'health-good' : 'health-bad';
+          const lu = p.lastUpdate ? new Date(p.lastUpdate).toLocaleString() : '\u2014';
+          html += `<div class="status-card">
+            <div class="status-header ${cls}">
+              <span class="provider-name">${esc(p.key)}</span>
+              <span class="status-badge">${esc(p.category)}</span>
+            </div>
+            <div class="status-body">
+              <div class="status-row"><span class="status-label"><span class="health-icon ${hCls}"></span> Status:</span><span class="status-value">${txt}</span></div>
+              <div class="status-row"><span class="status-label">Active:</span><span class="status-value">${p.active ? 'Yes' : 'No'}</span></div>
+              <div class="status-row"><span class="status-label">Tracked:</span><span class="status-value">${p.trackedItems}</span></div>
+              <div class="status-row"><span class="status-label">Phone:</span><span class="status-value">${esc(p.phone || '\u2014')}</span></div>
+              <div class="status-row"><span class="status-label">Base URL:</span><span class="status-value" style="font-size:0.8rem">${esc(p.baseUrl)}</span></div>
+              ${p.sendOtpUrl ? `<div class="status-row"><span class="status-label">Send OTP:</span><span class="status-value" style="font-size:0.75rem">${esc(p.sendOtpUrl)}</span></div>` : ''}
+              ${p.verifyCodeUrl ? `<div class="status-row"><span class="status-label">Verify:</span><span class="status-value" style="font-size:0.75rem">${esc(p.verifyCodeUrl)}</span></div>` : ''}
+              <div class="last-update">Last price: ${lu}</div>
+            </div>
+          </div>`;
+        }
+        el('status-container').innerHTML = html || '<div class="no-data">No providers</div>';
+        stamp();
+      }
+
+      // ---------- Consolidated Market tab ----------
+      async function loadConsolidated() {
+        try {
+          const providers = await listProviders();
+          // Fetch prices individually per provider (covers disconnected ones with cached data)
+          const priceData = {};
+          for (const p of providers) {
+            try {
+              const r = await api('GET', `${R}/${p.key}/prices`);
+              if (r.ok && Array.isArray(r.data)) priceData[p.key] = r.data;
+            } catch {}
+          }
+          renderConsolidated(priceData, providers);
+          firstLoad.consolidated = false;
+        } catch (e) {
+          if (firstLoad.consolidated) el('consolidated-container').innerHTML = `<div class="error-message">${e.message}</div>`;
+        }
+      }
+
+      function renderConsolidated(priceData, providerList) {
+        const keys = Object.keys(priceData);
+        // Build item-centric view: itemName -> { groupId, unit, providers: { providerKey -> priceData } }
+        const items = {};
+        for (const provKey of keys) {
+          for (const p of (priceData[provKey] || [])) {
+            const name = p.itemName || `Item #${p.itemId}`;
+            if (!items[name]) items[name] = { groupId: p.groupId, unit: p.unit, providers: {} };
+            if (p.groupId) items[name].groupId = p.groupId;
+            if (p.unit) items[name].unit = p.unit;
+            items[name].providers[provKey] = p;
+          }
+        }
+        const allProvKeys = providerList.filter(p => p.active).map(p => p.key);
+        // Also add any provider that has data but isn't active
+        for (const k of keys) { if (!allProvKeys.includes(k)) allProvKeys.push(k); }
+        if (!allProvKeys.length) {
+          el('consolidated-container').innerHTML = '<div class="no-data">No providers registered</div>';
+          stamp(); return;
+        }
+        let html = '<div class="category-section"><div class="category-header">Cross-Provider Price Comparison</div>';
+        html += '<table><thead><tr><th>Item</th><th>Unit</th>';
+        for (const pk of allProvKeys) html += `<th colspan="2">${esc(pk)}</th>`;
+        html += '</tr><tr><th></th><th></th>';
+        for (const pk of allProvKeys) html += '<th>Buy</th><th>Sell</th>';
+        html += '</tr></thead><tbody>';
+        for (const [name, item] of Object.entries(items)) {
+          const isM = item.groupId === 1 || item.unit === 'گرم';
+          html += `<tr><td><strong>${esc(name)}</strong></td><td>${esc(item.unit || '\u2014')}</td>`;
+          for (const pk of allProvKeys) {
+            const p = item.providers[pk];
+            if (p) {
+              const buyVal = isM && p.buyPricePerGram != null ? p.buyPricePerGram : p.buyPrice;
+              const sellVal = isM && p.sellPricePerGram != null ? p.sellPricePerGram : p.sellPrice;
+              html += `<td class="price-buy">${fmtPrice(buyVal)}</td><td class="price-sell">${fmtPrice(sellVal)}</td>`;
+            } else {
+              html += '<td class="no-data">—</td><td class="no-data">—</td>';
+            }
+          }
+          html += '</tr>';
+        }
+        html += '</tbody></table></div>';
+        el('consolidated-container').innerHTML = html;
+        stamp();
+      }
+
+      // ---------- Per-Provider Market tab ----------
+      async function loadMarketMap() {
+        try {
+          const [mapR, providers] = await Promise.all([
+            api('GET', `${R}/market-map`),
+            listProviders(),
+          ]);
+          const mapData = mapR.ok ? mapR.data || {} : {};
+          // Fetch individual prices for providers not covered by market-map
+          for (const p of providers) {
+            if (!mapData[p.key]) {
+              try {
+                const pr = await api('GET', `${R}/${p.key}/prices`);
+                if (pr.ok && Array.isArray(pr.data) && pr.data.length) {
+                  const items = {};
+                  for (const price of pr.data) {
+                    items[String(price.itemId)] = {
+                      name: price.itemName || `Item #${price.itemId}`,
+                      itemId: price.itemId,
+                      unit: price.unit || '—',
+                      groupId: price.groupId || 0,
+                      groupName: price.groupName || '',
+                      buyPrice: price.buyPrice,
+                      sellPrice: price.sellPrice,
+                      buyPricePerGram: price.buyPricePerGram,
+                      sellPricePerGram: price.sellPricePerGram,
+                      canBuy: price.canBuy !== false,
+                      canSell: price.canSell !== false,
+                    };
+                  }
+                  mapData[p.key] = { items, lastUpdate: null };
+                }
+              } catch {}
+            }
+          }
+          marketMapCache = mapData;
+          renderPerProvider(mapData, providers);
+          firstLoad.perProvider = false;
+          if (activeTab === 'arbitrage') calcArbitrage();
+        } catch (e) {
+          if (firstLoad.perProvider) el('perProvider-container').innerHTML = `<div class="error-message">${e.message}</div>`;
+        }
+      }
+
+      function renderPerProvider(d, providers) {
+        if (!providers || !providers.length) {
+          el('perProvider-container').innerHTML = '<div class="no-data">No providers registered</div>'; return;
+        }
+        let html = '';
+        for (const prov of providers) {
+          const key = prov.key;
+          const pd = d && d[key];
+          const entries = pd ? Object.entries(pd.items || {}) : [];
+          const lu = pd && pd.lastUpdate ? new Date(pd.lastUpdate).toLocaleString() : '\u2014';
+          const statusLabel = prov.active ? (entries.length ? 'Active' : 'No data') : 'Inactive';
+          const headerColor = prov.active ? '#1e3c72' : '#718096';
+          html += `<div class="category-section" style="opacity: ${prov.active ? 1 : 0.6}">
+            <div class="category-header" style="background:${headerColor}">${esc(key)}
+              <span style="float:right;font-size:0.8rem;font-weight:normal">${statusLabel} | last: ${lu}</span>
+            </div>`;
+          if (!entries.length) {
+            html += '<div class="no-data" style="padding:16px">No items tracked for this provider.</div>';
+          } else {
+            html += `<table><thead><tr><th>Item</th><th>Unit</th><th>Buy</th><th>Sell</th><th>Buy/g</th><th>Sell/g</th><th>CanBuy</th><th>CanSell</th></tr></thead><tbody>`;
+            for (const [id, it] of entries) {
+              const isM = it.groupId === 1 || it.unit === '\u06AF\u0631\u0645';
+              html += `<tr><td><strong>${esc(it.name || `Item ${id}`)}</strong><br><small>ID: ${id}</small></td>
+                <td>${esc(it.unit || '\u2014')}</td>
+                <td class="price-buy">${fmtPrice(it.buyPrice)}</td><td class="price-sell">${fmtPrice(it.sellPrice)}</td>
+                ${isM ? `<td class="price-buy">${fmtPrice(it.buyPricePerGram)}</td><td class="price-sell">${fmtPrice(it.sellPricePerGram)}</td>` : '<td colspan="2">\u2014</td>'}
+                <td><span class="badge badge-${it.canBuy}">${it.canBuy ? 'Yes' : 'No'}</span></td>
+                <td><span class="badge badge-${it.canSell}">${it.canSell ? 'Yes' : 'No'}</span></td>
+              </tr>`;
+            }
+            html += '</tbody></table>';
+          }
+          html += '</div>';
+        }
+        el('perProvider-container').innerHTML = html;
+        stamp();
+      }
+
+      // ---------- Best Prices tab ----------
+      async function loadBestPrices() {
+        try {
+          const r = await api('GET', `${R}/best-prices`);
+          if (!r.ok) throw new Error(`HTTP ${r.status}`);
+          renderBestPrices(r.data);
+          firstLoad.bestPrices = false;
+        } catch (e) {
+          if (firstLoad.bestPrices) el('bestPrices-container').innerHTML = `<div class="error-message">${e.message}</div>`;
+        }
+      }
+
+      function renderBestPrices(d) {
+        if (!d || !Object.keys(d).length) {
+          el('bestPrices-container').innerHTML = '<div class="no-data">No price data available</div>'; return;
+        }
+        let html = '';
+        for (const [groupName, group] of Object.entries(d)) {
+          const entries = Object.entries(group.items);
+          if (!entries.length) continue;
+          html += `<div class="category-section"><div class="category-header">${esc(groupName)} (${group.totalItems} items)</div>`;
+          html += '<table><thead><tr><th>Item</th><th>Unit</th><th>Best Buy (from)</th><th>Price</th><th>Best Sell (from)</th><th>Price</th><th>Spread</th><th>Profit</th></tr></thead><tbody>';
+          for (const [itemName, item] of entries) {
+            const bestBuy = item.bestBuy ? `${esc(item.bestBuy.provider)}` : '\u2014';
+            const bestSell = item.bestSell ? `${esc(item.bestSell.provider)}` : '\u2014';
+            const buyPrice = item.bestBuy ? fmtPrice(item.bestBuy.price) : '\u2014';
+            const sellPrice = item.bestSell ? fmtPrice(item.bestSell.price) : '\u2014';
+            const spread = item.bestBuy && item.bestSell ? fmtPrice(item.spread) : '\u2014';
+            const pct = item.bestBuy && item.bestSell ? item.spreadPercent.toFixed(2) + '%' : '\u2014';
+            const profClr = item.spread > 0 ? '#2c7a4d' : '#c53030';
+            html += `<tr>
+              <td><strong>${esc(itemName)}</strong></td>
+              <td>${esc(item.unit)}</td>
+              <td class="price-buy">${buyPrice}</td><td>${bestBuy}</td>
+              <td class="price-sell">${sellPrice}</td><td>${bestSell}</td>
+              <td style="color:${profClr}">${pct}</td>
+              <td style="color:${profClr};font-weight:bold">${spread}</td>
+            </tr>`;
+          }
+          html += '</tbody></table></div>';
+        }
+        el('bestPrices-container').innerHTML = html || '<div class="no-data">No items with price data</div>';
+        stamp();
+      }
+
+      // ---------- Arbitrage tab ----------
+      function calcArbitrage() {
+        const el = document.getElementById('arbitrage-container');
+        if (!marketMapCache || !Object.keys(marketMapCache).length) {
+          el.innerHTML = '<div class="no-data">No market data. Refresh first.</div>'; return;
+        }
+        // Collect all items with per-gram (or direct) prices across all providers
+        const items = [];
+        for (const [prov, pd] of Object.entries(marketMapCache)) {
+          for (const [id, it] of Object.entries(pd.items || {})) {
+            let b = it.buyPricePerGram, s = it.sellPricePerGram;
+            if (b == null && it.unit === '\u06AF\u0631\u0645') { b = it.buyPrice; s = it.sellPrice; }
+            if (b == null || s == null) continue;
+            items.push({
+              name: it.name || `Item ${id}`, itemId: +id, prov,
+              buy: b, sell: s,
+              canBuy: it.canBuy !== false, canSell: it.canSell !== false,
+              unit: it.unit || 'g',
+            });
+          }
+        }
+        if (!items.length) { el.innerHTML = '<div class="no-data">No items with per-gram prices</div>'; return; }
+
+        // --- Same-item arbitrage (existing logic) ---
+        const grouped = new Map();
+        for (const it of items) {
+          if (!grouped.has(it.name)) grouped.set(it.name, { buys: [], sells: [], provs: new Set() });
+          const g = grouped.get(it.name);
+          if (it.canBuy) g.buys.push({ prov: it.prov, price: it.buy });
+          if (it.canSell) g.sells.push({ prov: it.prov, price: it.sell });
+          g.provs.add(it.prov);
+        }
+        const sameItemOpps = [];
+        for (const [name, g] of grouped) {
+          if (!g.buys.length || !g.sells.length) continue;
+          const bestBuy = Math.min(...g.buys.map(x => x.price));
+          const bestSell = Math.max(...g.sells.map(x => x.price));
+          if (bestSell > bestBuy) {
+            sameItemOpps.push({
+              type: 'same-item',
+              name, spread: bestSell / bestBuy, profit: bestSell - bestBuy,
+              buyFrom: g.buys.find(x => x.price === bestBuy).prov, buyPrice: bestBuy,
+              sellTo: g.sells.find(x => x.price === bestSell).prov, sellPrice: bestSell,
+              actions: [
+                { step: 'buy', item: name, provider: g.buys.find(x => x.price === bestBuy).prov, price: bestBuy },
+                { step: 'sell', item: name, provider: g.sells.find(x => x.price === bestSell).prov, price: bestSell },
+              ],
+            });
+          }
+        }
+        sameItemOpps.sort((a, b) => b.spread - a.spread);
+
+        // --- Cross-item arbitrage (action chains) ---
+        // Find cheapest buy across all items vs most expensive sell across all items (same unit class)
+        const allBuys = items.filter(i => i.canBuy).map(i => ({ prov: i.prov, item: i.name, itemId: i.itemId, price: i.buy }));
+        const allSells = items.filter(i => i.canSell).map(i => ({ prov: i.prov, item: i.name, itemId: i.itemId, price: i.sell }));
+        allBuys.sort((a, b) => a.price - b.price);
+        allSells.sort((a, b) => b.price - a.price);
+
+        // Generate cross-item action chains (top combinations)
+        const crossItemActions = [];
+        const visitedBuy = new Set(), visitedSell = new Set();
+        for (const buy of allBuys) {
+          if (visitedBuy.has(buy.item + buy.prov)) continue;
+          for (const sell of allSells) {
+            if (visitedSell.has(sell.item + sell.prov)) continue;
+            if (buy.prov === sell.prov) continue;
+            const profit = sell.price - buy.price;
+            if (profit > 0) {
+              visitedBuy.add(buy.item + buy.prov);
+              visitedSell.add(sell.item + sell.prov);
+              crossItemActions.push({
+                type: 'cross-item',
+                name: `${buy.item} \u2192 ${sell.item}`,
+                spread: sell.price / buy.price,
+                profit,
+                buyFrom: buy.prov, buyPrice: buy.price, buyItem: buy.item,
+                sellTo: sell.prov, sellPrice: sell.price, sellItem: sell.item,
+                actions: [
+                  { step: 'buy', item: buy.item, provider: buy.prov, price: buy.price },
+                  { step: 'sell', item: sell.item, provider: sell.prov, price: sell.price },
+                ],
+              });
+              break; // one sell per buy
+            }
+          }
+        }
+        crossItemActions.sort((a, b) => b.spread - a.spread);
+
+        // Combine and render
+        let html = '';
+
+        // --- Same-item arbitrage table ---
+        if (sameItemOpps.length) {
+          html += '<div class="category-section"><div class="category-header">Same-Item Arbitrage</div>';
+          html += '<table><thead><tr><th>Item</th><th>Buy from</th><th>Price</th><th>Sell to</th><th>Price</th><th>Spread</th><th>Profit/g</th></tr></thead><tbody>';
+          for (const o of sameItemOpps.slice(0, 20)) {
+            const pct = ((o.spread - 1) * 100).toFixed(2);
+            const clr = '#2c7a4d';
+            html += `<tr><td><strong>${esc(o.name)}</strong></td><td>${esc(o.buyFrom)}</td><td class="price-buy">${fmtPrice(o.buyPrice)}</td><td>${esc(o.sellTo)}</td><td class="price-sell">${fmtPrice(o.sellPrice)}</td><td style="color:${clr}">${pct}%</td><td style="color:${clr}">${fmtPrice(o.profit)}</td></tr>`;
+          }
+          html += '</tbody></table></div>';
+        }
+
+        // --- Cross-item arbitrage (Actions) ---
+        if (crossItemActions.length) {
+          html += '<div class="category-section"><div class="category-header">\u2697\uFE0F Cross-Item Actions (Biggest Profit Trades)</div>';
+          html += '<table><thead><tr><th>#</th><th>Action</th><th>Item</th><th>Provider</th><th>Price/g</th><th>Profit/g</th></tr></thead><tbody>';
+          let seq = 0;
+          for (const o of crossItemActions.slice(0, 10)) {
+            for (const a of o.actions) {
+              seq++;
+              const priceCls = a.step === 'buy' ? 'price-buy' : 'price-sell';
+              const arrow = a.step === 'buy' ? '\u2B07\uFE0F' : '\u2B06\uFE0F';
+              html += `<tr>
+                <td>${seq}</td>
+                <td><strong>${arrow} ${a.step === 'buy' ? 'BUY' : 'SELL'}</strong></td>
+                <td>${esc(a.item)}</td>
+                <td>${esc(a.provider)}</td>
+                <td class="${priceCls}">${fmtPrice(a.price)}</td>
+                <td style="color:#2c7a4d;font-weight:bold">${a.step === 'sell' ? fmtPrice(o.profit) : '\u2014'}</td>
+              </tr>`;
+            }
+          }
+          html += '</tbody></table></div>';
+        }
+
+        // --- Cash-to-cash cycle on profitable same-item ---
+        const profitable = sameItemOpps.filter(o => o.spread > 1);
+        if (profitable.length) {
+          let prod = 1;
+          for (const p of profitable) prod *= p.spread;
+          html += `<div class="category-section"><div class="category-header">\uD83D\uDCB0 Cash-to-Cash Cycle (All Profitable Items)</div>
+            <div style="padding:12px 20px;background:#e6ffed;border-left:4px solid #2c7a4d;">
+              <strong>1 Toman \u2192 ${prod.toFixed(6)} Toman</strong> (${((prod-1)*100).toFixed(2)}% return) across ${profitable.length} items
+            </div>
+            <table><thead><tr><th>#</th><th>Action</th><th>Item</th><th>Provider</th><th>Price/g</th></tr></thead><tbody>`;
+          let s = 1;
+          for (const p of profitable) {
+            html += `<tr><td>${s++}</td><td>\u2B07\uFE0F Buy</td><td>${esc(p.name)}</td><td>${esc(p.buyFrom)}</td><td class="price-buy">${fmtPrice(p.buyPrice)}</td></tr>`;
+            html += `<tr><td>${s++}</td><td>\u2B06\uFE0F Sell</td><td>${esc(p.name)}</td><td>${esc(p.sellTo)}</td><td class="price-sell">${fmtPrice(p.sellPrice)}</td></tr>`;
+          }
+          html += '</tbody></table></div>';
+        }
+
+        // --- Action chains as flat list ---
+        const allActions = [...sameItemOpps, ...crossItemActions].sort((a, b) => b.spread - a.spread);
+        if (allActions.length) {
+          html += '<div class="category-section"><div class="category-header">\uD83D\uDD04 All Trade Actions (Sorted by Profit)</div>';
+          html += '<table><thead><tr><th>#</th><th>Type</th><th>Action Sequence</th><th>Spread</th><th>Profit/g</th></tr></thead><tbody>';
+          let i = 0;
+          for (const o of allActions.slice(0, 20)) {
+            i++;
+            const steps = o.actions.map(a =>
+              `${a.step === 'buy' ? '\u2B07\uFE0FBuy' : '\u2B06\uFE0FSell'} ${esc(a.item)} ${a.step === 'buy' ? 'from' : 'to'} ${esc(a.provider)}`
+            ).join(' \u2192 ');
+            html += `<tr>
+              <td>${i}</td>
+              <td><span class="badge" style="background:${o.type === 'same-item' ? '#c6f6d5' : '#bee3f8'};color:${o.type === 'same-item' ? '#22543d' : '#2a4365'}">${o.type === 'same-item' ? 'Same' : 'Cross'}</span></td>
+              <td>${steps}</td>
+              <td style="color:#2c7a4d;font-weight:bold">${((o.spread - 1) * 100).toFixed(2)}%</td>
+              <td style="color:#2c7a4d;font-weight:bold">${fmtPrice(o.profit)}</td>
+            </tr>`;
+          }
+          html += '</tbody></table></div>';
+        }
+
+        if (!html) html = '<div class="no-data">No arbitrage opportunities found.</div>';
+        el.innerHTML = html;
+        stamp();
+        firstLoad.arbitrage = false;
+      }
+
+      // ---------- Provider Manager tab ----------
+      async function loadManager() {
+        const list = await listProviders();
+        providersCache = list;
+        renderManager(list);
+        firstLoad.manager = false;
+      }
+
+      function renderManager(list) {
+        // --- Create form ---
+        let html = `<div class="form-section">
+          <h3>Register Provider</h3>
+          <div class="form-grid">
+            <div><label>Key</label><input id="inpKey" value="new-provider" /></div>
+            <div><label>Category</label><select id="inpCat"><option>zaryar</option><option>talaab</option></select></div>
+            <div><label>Base URL</label><input id="inpBase" value="https://example.com/signalr" /></div>
+            <div><label>API Base URL</label><input id="inpApi" value="https://example.com" /></div>
+            <div><label>Send OTP URL</label><input id="inpSendUrl" placeholder="Overrides default" /></div>
+            <div><label>Verify URL</label><input id="inpVerifyUrl" placeholder="Overrides default" /></div>
+            <div><label>Phone</label><input id="inpPhone" value="+989123456789" /></div>
+            <div><label>Refresh (ms)</label><input id="inpRefresh" type="number" value="60000" /></div>
+          </div>
+          <div style="margin-top:12px"><button class="btn btn-success" id="btnCreate">Create</button></div>
+        </div>`;
+
+        // --- OTP flow ---
+        const selOpts = list.map(p => `<option value="${p.id}">${esc(p.key)} (${esc(p.category)})</option>`).join('');
+        html += `<div class="form-section">
+          <h3>OTP Flow</h3>
+          <div class="form-grid">
+            <div><label>Provider</label><select id="otpSel">${selOpts}</select></div>
+            <div><label>Phone</label><input id="otpPhone" value="+989123456789" /></div>
+          </div>
+          <div class="otp-inline" style="margin-top:12px">
+            <button class="btn btn-primary" id="btnSendOtp">Send OTP</button>
+            <label>Code:</label><input id="otpCode" placeholder="4-8 digits" style="width:110px" />
+            <button class="btn btn-success" id="btnVerifyOtp">Verify & Activate</button>
+            <button class="btn btn-warning" id="btnToggle">Toggle Active</button>
+          </div>
+          <div id="otpResult" style="margin-top:8px"></div>
+        </div>`;
+
+        // --- Provider table ---
+        html += `<div class="form-section">
+          <h3>Providers (${list.length})</h3>
+          <table><thead><tr><th>Key</th><th>Category</th><th>Active</th><th>Phone</th><th>Send OTP URL</th><th>Verify URL</th><th>Actions</th></tr></thead><tbody>`;
+        for (const p of list) {
+          html += `<tr>
+            <td><strong>${esc(p.key)}</strong></td>
+            <td>${esc(p.category)}</td>
+            <td><span class="badge badge-${p.active}">${p.active ? 'Yes' : 'No'}</span></td>
+            <td>${esc(p.phone || '\u2014')}</td>
+            <td style="font-size:0.75rem">${esc(p.sendOtpUrl || '\u2014')}</td>
+            <td style="font-size:0.75rem">${esc(p.verifyCodeUrl || '\u2014')}</td>
+            <td><div class="provider-actions">
+              <button class="btn btn-primary btn-sm" onclick="doEdit('${p.id}')">Edit</button>
+              <button class="btn btn-warning btn-sm" onclick="doToggle('${p.id}')">Toggle</button>
+            </div></td>
+          </tr>`;
+        }
+        html += '</tbody></table></div>';
+
+        el('manager-container').innerHTML = html;
+        stamp();
+      }
+
+      // --- Create --- POST /providers -> bare entity
+      async function handleCreate() {
+        const body = {
+          key: v('inpKey'), category: v('inpCat'), baseUrl: v('inpBase'),
+          apiBaseUrl: v('inpApi') || undefined,
+          sendOtpUrl: v('inpSendUrl') || undefined,
+          verifyCodeUrl: v('inpVerifyUrl') || undefined,
+          phone: v('inpPhone'),
+          metadataRefreshIntervalMs: parseInt(v('inpRefresh')) || 60000,
+        };
+        const r = await api('POST', R, body);
+        if (r.ok) { alert('Created'); loadManager(); loadStatus(); }
+        else alert(`Error: ${r.raw?.message || r.raw || 'Unknown'}`);
+      }
+
+      // --- Edit modal ---
+      function doEdit(id) {
+        const p = providersCache.find(x => x.id === id);
+        if (!p || !isUuid(id)) return;
+        editingId = id;
+        el('modalTitle').textContent = `Edit: ${p.key}`;
+        el('editKey').value = p.key;
+        el('editCategory').value = p.category;
+        el('editBaseUrl').value = p.baseUrl;
+        el('editApiBaseUrl').value = p.apiBaseUrl || '';
+        el('editSendOtpUrl').value = p.sendOtpUrl || '';
+        el('editVerifyCodeUrl').value = p.verifyCodeUrl || '';
+        el('editPhone').value = p.phone || '';
+        el('editRefreshMs').value = p.metadataRefreshIntervalMs || 60000;
+        el('editModal').classList.add('active');
+      }
+
+      function closeEdit() { el('editModal').classList.remove('active'); editingId = null; }
+
+      // --- Save edit --- PATCH /providers/:id -> bare entity
+      async function handleSaveEdit() {
+        if (!isUuid(editingId)) return;
+        const body = {
+          key: v('editKey'), category: v('editCategory'), baseUrl: v('editBaseUrl'),
+          apiBaseUrl: v('editApiBaseUrl') || undefined,
+          sendOtpUrl: v('editSendOtpUrl') || undefined,
+          verifyCodeUrl: v('editVerifyCodeUrl') || undefined,
+          phone: v('editPhone'),
+          metadataRefreshIntervalMs: parseInt(v('editRefreshMs')) || 60000,
+        };
+        const r = await api('PATCH', `${R}/${editingId}`, body);
+        if (r.ok) { alert('Updated'); closeEdit(); loadManager(); loadStatus(); }
+        else alert(`Error: ${r.raw?.message || r.raw || 'Unknown'}`);
+      }
+
+      // --- Toggle active --- POST /providers/:id/toggle-active -> bare entity
+      async function doToggle(id) {
+        if (!isUuid(id)) { alert('Invalid UUID'); return; }
+        const r = await api('POST', `${R}/${id}/toggle-active`);
+        if (r.ok) { loadManager(); loadStatus(); }
+        else alert(`Error: ${r.raw?.message || r.raw || 'Unknown'}`);
+      }
+
+      // --- Send OTP --- POST /providers/:id/send-otp -> {message:"..."} directly
+      async function handleSendOtp() {
+        const id = v('otpSel');
+        if (!isUuid(id)) { alert('Select a provider'); return; }
+        const r = await api('POST', `${R}/${id}/send-otp`, { phone: v('otpPhone') });
+        if (r.ok) el('otpResult').innerHTML = `<div class="success-message">${r.raw.message || 'OTP sent'}</div>`;
+        else el('otpResult').innerHTML = `<div class="error-message">${r.raw?.message || r.raw || 'Failed'}</div>`;
+      }
+
+      // --- Verify OTP --- POST /providers/:id/verify-otp -> bare entity
+      async function handleVerifyOtp() {
+        const id = v('otpSel'), otp = v('otpCode');
+        if (!isUuid(id)) { alert('Select a provider'); return; }
+        if (!otp) { alert('Enter OTP code'); return; }
+        el('otpResult').innerHTML = '<div class="no-data">Verifying...</div>';
+        const r = await api('POST', `${R}/${id}/verify-otp`, { otp });
+        if (r.ok) {
+          el('otpResult').innerHTML = '<div class="success-message">Activated!</div>';
+          loadManager(); loadStatus();
+        } else {
+          el('otpResult').innerHTML = `<div class="error-message">${r.raw?.message || r.raw || 'Failed'}</div>`;
+        }
+      }
+
+      // ---------- Raw API ----------
+      function resolvePath(sel) {
+        let path = sel;
+        if (path.includes('UUID')) {
+          if (!providersCache.length) { alert('Open the Manager tab first to load providers'); return null; }
+          const opts = providersCache.map(p => `${p.key}  (${p.id})`).join('\n');
+          const inp = prompt(`Pick a provider (UUID):\n\n${opts}`, providersCache[0]?.key || '');
+          if (!inp) return null;
+          const m = providersCache.find(p => p.key === inp || p.id === inp);
+          if (m) path = path.replace('UUID', m.id);
+          else if (isUuid(inp)) path = path.replace('UUID', inp);
+          else { alert(`No provider matches "${inp}"`); return null; }
+        }
+        if (path.includes('KEY')) {
+          if (!providersCache.length) { alert('Open the Manager tab first to load providers'); return null; }
+          const opts = providersCache.map(p => p.key).join(', ');
+          const inp = prompt(`Provider key (${opts}):`, providersCache[0]?.key || '');
+          if (!inp) return null;
+          path = path.replace('KEY', inp);
+        }
+        if (path.includes('ITEM_ID')) {
+          const inp = prompt('Item ID:', '1');
+          if (!inp) return null;
+          path = path.replace('ITEM_ID', inp);
+        }
+        return path;
+      }
+
+      async function handleRawApi() {
+        const path = resolvePath(v('apiSelect'));
+        if (!path) return;
+        const method = v('rawMethod');
+        const bodyRaw = v('rawBody');
+        let body;
+        try { body = bodyRaw ? JSON.parse(bodyRaw) : undefined; } catch { alert('Invalid JSON body'); return; }
+        const out = el('rawOutput');
+        out.textContent = `${method} ${API}${path} ...`;
+        const r = await api(method, `${API}${path}`, body);
+        out.textContent = `Status: ${r.status}\n\n${JSON.stringify(r.raw, null, 2)}`;
+      }
+
+      // ---------- Tab routing ----------
+      async function refreshTab() {
+        if (activeTab === 'status') await loadStatus(false);
+        else if (activeTab === 'consolidated') await loadConsolidated();
+        else if (activeTab === 'perProvider') await loadMarketMap();
+        else if (activeTab === 'bestPrices') await loadBestPrices();
+        else if (activeTab === 'arbitrage') {
+          if (!marketMapCache || !Object.keys(marketMapCache).length) await loadMarketMap();
+          else calcArbitrage();
+        } else if (activeTab === 'manager') await loadManager();
+      }
+
+      function switchTab(id) {
+        activeTab = id;
+        document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
+        el(`tab-${id}`).classList.add('active');
+        document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+        document.querySelector(`.tab-btn[data-tab="${id}"]`).classList.add('active');
+        const map = {
+          status: () => loadStatus(true),
+          consolidated: () => loadConsolidated(),
+          perProvider: () => loadMarketMap(),
+          bestPrices: () => loadBestPrices(),
+          arbitrage: () => {
+            if (!marketMapCache || !Object.keys(marketMapCache).length) loadMarketMap().then(() => calcArbitrage());
+            else calcArbitrage();
+          },
+          manager: () => loadManager(),
+        };
+        if (firstLoad[id] && map[id]) map[id]();
+      }
+
+      // ---------- Bootstrap ----------
+      function el(x) { return document.getElementById(x); }
+      function v(x) { return el(x).value; }
+
+      loadStatus(true);
+      loadConsolidated();
+      loadMarketMap();
+      if (interval) clearInterval(interval);
+      interval = setInterval(refreshTab, 10000);
+
+      el('refreshBtn').addEventListener('click', refreshTab);
+      el('fetchRawBtn').addEventListener('click', handleRawApi);
+      document.querySelectorAll('.tab-btn').forEach(b => b.addEventListener('click', () => switchTab(b.dataset.tab)));
+      el('editSaveBtn').addEventListener('click', handleSaveEdit);
+      el('editCancelBtn').addEventListener('click', closeEdit);
+      el('editModal').addEventListener('click', function(e) { if (e.target === this) closeEdit(); });
+
+      // Manager event listeners (delegated since content is dynamic)
+      document.addEventListener('click', function(e) {
+        const id = e.target.id;
+        if (id === 'btnCreate') handleCreate();
+        else if (id === 'btnSendOtp') handleSendOtp();
+        else if (id === 'btnVerifyOtp') handleVerifyOtp();
+        else if (id === 'btnToggle') doToggle(v('otpSel'));
+      });
+    </script>
+  </body>
+</html>
