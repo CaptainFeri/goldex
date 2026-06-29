@@ -1,79 +1,166 @@
-# Refactor notes
+# goldex-pricing-engine
 
-## What changed
+> **Real-time pricing engine & arbitrage detection microservice**  
+> Built with NestJS 11 + TypeScript + PostgreSQL + Redis + RabbitMQ
 
-**Separation of concerns** — the original `ProviderService` mixed CRUD,
-OTP/login flows, and upstream HTTP calls in one file. It's now split three ways:
+---
 
-| File | Responsibility |
-|---|---|
-| `provider.service.ts` | Pure CRUD over the `providers` table. No HTTP, no OTP. |
-| `otp.service.ts` | New. Owns the two-step phone OTP flow (send → verify) for any provider category. |
-| `provider-manage.service.ts` | Runtime lifecycle only — starting/stopping/restarting live SignalR/WebSocket connections. No persistence logic. |
+## Overview
 
-**Hot-reload on auth update** — `OtpService.verifyOtp` now calls
-`ProviderManagerService.restartProvider(key)` after saving the new token, so a
-freshly-authenticated provider starts streaming immediately instead of
-requiring an app restart. This also fixed a pre-existing bug where
-`restartProvider` called `findOne(key)` (which expects a UUID `id`, not a
-`key`) — added `ProviderService.findByKey()` and use that instead.
+`goldex-pricing-engine` is a microservice that connects to upstream Iranian gold/currency price providers (Zaryar via SignalR, TalaAb via WebSocket), streams real-time prices, performs cross-provider arbitrage opportunity detection, and broadcasts price data via Redis Pub/Sub and RabbitMQ to downstream consumers.
 
-**Removed**
-- The ~150 lines of hardcoded provider configs (with live tokens) inside
-  `ProviderManagerService.loadConfigurations()`. That method was dead code —
-  nothing called it — and it leaked credentials into source control. Provider
-  configuration is exclusively DB-driven via `ProviderService`/`POST /providers`
-  now.
-- Duplicate/conflicting `ProviderConfig` and `IRealtimePriceProvider`
-  declarations in `realtime-provider.interface.ts` (the file declared each
-  twice; TypeScript was silently using the second).
-- Commented-out dead imports (`TalaAbWebSocketProvider` was commented out in
-  the module but used in the manager).
+---
 
-**Fixed route ordering bug** — `@Get(':id')` was declared before the static
-routes `all-prices`, `integrated-prices`, `market-map`, `consolidated-market`.
-Express/Nest matches routes top-down, so any request to those paths was being
-swallowed by `findOne(':id')` and returning 404s instead of market data.
-Static routes now come first.
+## Tech Stack
 
-**DTOs** — added `SendOtpDto` (validates `mobile` against an Iranian phone
-pattern) and `VerifyOtpDto`. Consolidated all provider DTOs into one
-`dto/provider.dto.ts` file since they're small and tightly related — adjust
-back to separate files if your team's convention prefers one-class-per-file.
+| Category | Technology |
+|----------|-----------|
+| **Framework** | NestJS 11 + TypeScript 6 |
+| **Database** | PostgreSQL (TypeORM with 13 migrations) |
+| **Cache / Pub-Sub** | Redis (ioredis) |
+| **Message Broker** | RabbitMQ (amqplib) |
+| **WebSocket** | ws (client), Socket.IO (server) |
+| **Job Queue** | Bull |
+| **API Docs** | Swagger |
+| **Container** | Docker + docker-compose |
 
-## New API surface
+---
+
+## Features
+
+### Real-time Price Providers
+
+| Provider | Protocol | Authentication |
+|----------|----------|---------------|
+| **Zaryar** | Microsoft SignalR over WebSocket | OTP via SMS |
+| **TalaAb** | Pusher-compatible WebSocket | OTP via SMS |
+
+Both providers are abstracted via `BaseRealtimeProvider` with pluggable OTP handlers.
+
+### Data Flow
 
 ```
-POST   /providers                     create a provider (no auth yet)
-GET    /providers                     list
-GET    /providers/:id                 get one
-PATCH  /providers/:id                 update
-PATCH  /providers/:id/toggle-active   enable/disable
-DELETE /providers/:id                 delete
-
-POST   /providers/:id/otp/send        { "mobile": "09123456789" }
-POST   /providers/:id/otp/verify      { "otp": "12345" }
+Zaryar (SignalR) ──┐
+                   ├──> Pricing Engine ──> Redis Pub/Sub (price:updates)
+TalaAb (WebSocket) ─┘                    └──> RabbitMQ (price.<key>.update)
+                                              └──> Arbitrage Scanner
+                                                    ├──> Redis (arbitrage:updates)
+                                                    └──> RabbitMQ (arbitrage.signal)
 ```
 
-Typical flow for onboarding a new provider:
+### Arbitrage Detection
 
-1. `POST /providers` with `key`, `category` (`zaryar` | `talaab`), `baseUrl`.
-   Leave `auth` empty or include non-secret fields like `shopkeeperId`/`sessionId`
-   for `zaryar`. Provider is created `active: true` but won't have a live
-   connection yet since `onModuleInit` already ran — call refresh after OTP
-   verification, which happens automatically.
-2. `POST /providers/:id/otp/send` with the account's mobile number — triggers
-   the upstream SMS.
-3. `POST /providers/:id/otp/verify` with the received code — stores the token
-   in `auth`, then immediately starts (or restarts) the live connection.
+- Scans all provider prices every 10 seconds (plus real-time debounce)
+- Finds buy-low/sell-high opportunities across providers
+- Per-gram price calculation (mithqal-to-gram conversion)
+- Results broadcast via Redis Pub/Sub and RabbitMQ
 
-All existing runtime/status/prices endpoints are unchanged in behavior, just
-reordered and using `:providerKey` consistently in their docs to distinguish
-from the `:id` (UUID) used in CRUD/OTP routes.
+### Item Classification
 
-## Not changed
+- **Coins** (Bahar Azadi, Emami, etc.)
+- **Molten Gold** (gram-based)
+- **Silver**
 
-`base-realtime.provider.ts`, `item-metadata.service.ts`, `redis.service.ts`,
-`redis.module.ts`, `zaryar-signalr.provider.ts`, `talaab-websocket.provider.ts`,
-`app.module.ts`, `main.ts`, and the migration are functionally identical to
-your originals (only import paths adjusted where files moved).
+---
+
+## API Endpoints
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `CRUD` | `/providers` | Provider configuration management |
+| `POST` | `/providers/:id/otp/send` | Send OTP to provider mobile |
+| `POST` | `/providers/:id/otp/verify` | Verify OTP and activate provider |
+| `GET` | `/providers?all-prices=1` | All current prices |
+| `GET` | `/providers?best-prices=1` | Best prices across providers |
+| `GET` | `/providers/:id/deal-view` | Deal view for a specific item |
+| `GET` | `/arbitrage` | Current arbitrage signals |
+| `POST` | `/arbitrage/scan` | Trigger manual arbitrage scan |
+| `GET` | `/arbitrage/stats` | Arbitrage engine statistics |
+
+---
+
+## Getting Started
+
+```bash
+# Install dependencies
+npm install
+
+# Development (watch mode)
+npm run start:dev
+
+# Build
+npm run build
+
+# Production
+npm run start:prod
+
+# Run mock provider server (for development/testing)
+npm run mock
+```
+
+### Docker
+
+```bash
+docker-compose -f docker-compose.dev.yml up
+```
+
+---
+
+## Mock Server
+
+A standalone mock server (`npm run mock`) that imitates both Zaryar (SignalR) and TalaAb (Pusher) upstreams. Supports:
+
+- Load testing and failure scenarios
+- Shop open/close simulation
+- Control API at `/__mock/*` for dynamic scenario manipulation
+
+---
+
+## Message Brokers
+
+### Redis Pub/Sub Channels
+
+| Channel | Payload | Description |
+|---------|---------|-------------|
+| `price:updates` | Price tick | Every price update from any provider |
+| `arbitrage:updates` | Scan result | Arbitrage opportunity scan results |
+
+### RabbitMQ Exchange: `signalr.providers`
+
+| Routing Key | Description |
+|-------------|-------------|
+| `price.<providerKey>.update` | Price update from a specific provider |
+| `provider.<key>.created/updated/activated/deactivated` | Provider lifecycle events |
+| `provider.<key>.connected/disconnected` | Provider connection state |
+| `provider.<key>.otp.sent/verified` | OTP flow events |
+| `arbitrage.scan` | Scan trigger |
+| `arbitrage.signal` | Arbitrage opportunity signal |
+
+---
+
+## Project Structure
+
+```
+src/
+├── real-time-provider/     # Provider abstraction & implementations
+│   ├── providers/          # ZaryarSignalR, TalaAbWebSocket
+│   ├── interfaces/         # Base provider & OTP handler interfaces
+│   ├── entity/             # Provider, Deal, Balance entities
+│   └── types/              # Provider-specific types
+├── arbitrage/              # Arbitrage detection engine
+├── rabbitmq/               # Message patterns & publishing
+├── redis/                  # Redis service
+├── migrations/             # 13 database migrations
+└── common/                 # Console formatter, utilities
+mock-server/                # Provider mock server
+```
+
+---
+
+## Related Projects
+
+| Project | Description |
+|---------|-------------|
+| `goldex-backend` | Core NestJS API server (RabbitMQ/Redis consumer) |
+| `goldex-admin-panel` | Admin SPA (price comparison charts) |
+| `goldex-user-panel` | Customer-facing trading SPA |

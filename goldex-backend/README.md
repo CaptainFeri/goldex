@@ -1,51 +1,172 @@
-<p align="center">
-  <a href="https://nestjs.com/" target="_blank"><img src="https://nestjs.com/img/logo-small.svg" width="120" alt="Nest Logo" /></a>
-</p>
+# goldex-backend
 
-<h1 align="center">Forex Service</h1>
-<p align="center">
-  A modern, efficient, and scalable server-side application for managing forex operations built with <a href="http://nestjs.com/" target="_blank">NestJS</a> and <a href="http://typescriptlang.org/" target="_blank">TypeScript</a>.
-</p>
-
-<p align="center">
-  <a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/v/@nestjs/core.svg" alt="NPM Version" /></a>
-  <a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/l/@nestjs/core.svg" alt="Package License" /></a>
-  <a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/dm/@nestjs/common.svg" alt="NPM Downloads" /></a>
-  <a href="https://circleci.com/gh/nestjs/nest" target="_blank"><img src="https://img.shields.io/circleci/build/github/nestjs/nest/master" alt="CircleCI" /></a>
-  <a href="https://discord.gg/G7Qnnhy" target="_blank"><img src="https://img.shields.io/badge/discord-online-brightgreen.svg" alt="Discord"/></a>
-</p>
+> **Core backend API service for the Goldex gold exchange platform**  
+> Built with NestJS 11 + TypeScript + PostgreSQL + Redis + RabbitMQ
 
 ---
 
-## ✨ Features
+## Overview
 
-- 💡 **TypeScript-powered** for modern, strongly-typed development.
-- 🌐 **Efficient Forex Management**: Handles exchange rates, currency conversions, and trading functionalities.
-- 🚀 **Scalable Architecture**: Built with NestJS to ensure modularity and maintainability.
-- 📊 **Real-time Forex Updates**: Leverages APIs for up-to-date currency data.
-- 🛡️ **Secure**: Implements best practices for security and performance.
+`goldex-backend` is the monolithic NestJS API server that powers the entire Goldex ecosystem. It handles user authentication (OTP/password/2FA), admin management, order processing, wallet operations, KYC verification, financial tracking, and real-time price streaming via WebSocket.
 
 ---
 
-## 🚀 Project Setup
+## Tech Stack
 
-### Prerequisites
+| Category | Technology |
+|----------|-----------|
+| **Framework** | NestJS 11 + TypeScript 6 |
+| **Database** | PostgreSQL (TypeORM with migrations) |
+| **Cache** | Redis (ioredis) |
+| **Message Broker** | RabbitMQ (amqplib) |
+| **Real-time** | Socket.IO WebSocket gateway |
+| **Auth** | JWT (passport-jwt) + speakeasy 2FA |
+| **File Storage** | MinIO (S3-compatible) |
+| **API Docs** | Swagger (express-basic-auth) |
+| **Logging** | Winston with daily rotation + Filebeat |
+| **Email** | Mailgun |
+| **SMS** | Kavenegar |
+| **i18n** | nestjs-i18n (English / Persian) |
+| **Container** | Docker + docker-compose (dev/stage/prod) |
 
-- Node.js (v14 or higher)
-- npm (v6 or higher)
+---
 
-### Installation
+## Modules
 
-Install the required dependencies:
+### Core Business
+
+| Module | Description |
+|--------|-------------|
+| **User** | Registration (OTP), login (password + 2FA), profile, device tracking, password recovery |
+| **Admin** | Admin auth (mobile + OTP), JWT with role-based authorization |
+| **Order** | Order CRUD, lifecycle management, admin overrides |
+| **Wallet** | Balance management, transactions, freeze/unfreeze |
+| **KYC** | Identity verification via Jibit (document scanning, face match, bank account) |
+| **Financial** | Provider deal/balance snapshots, system ledger |
+| **Discount** | Discount codes and promotions for users |
+
+### Admin Operations
+
+| Module | Description |
+|--------|-------------|
+| **Admin-Mgmt** | Create/suspend/delete admin accounts |
+| **Admin-KYC** | Review and approve/reject KYC documents |
+| **Admin-User** | View user profiles and activity |
+| **Admin-Wallet** | Adjust balances, freeze wallets |
+| **Admin-Symbol** | Manage asset symbols (gain types, payment gateways) |
+| **Admin-Pair** | Manage trading pairs and market types |
+| **Admin-Monitoring** | Proxy pricing-engine Redis data for admin charts |
+| **Admin-Discount** | Manage promotions and discount codes |
+| **Provider-Finance** | Provider settlement management |
+| **Provider-Pair-Mapping** | Map provider items to system pairs |
+
+### Infrastructure
+
+| Module | Description |
+|--------|-------------|
+| **RabbitMQ** | Message broker (consumes pricing-engine events) |
+| **Redis** | Caching and session management |
+| **WebSocket** | Socket.IO market gateway for real-time prices |
+| **MinIO** | S3-compatible file storage for KYC docs/avatars |
+| **SMS** | Kavenegar integration for OTP |
+| **Mail** | Mailgun integration for notifications |
+| **File** | File upload management |
+| **BaseInfo** | Countries, languages, enums |
+
+---
+
+## API
+
+- Base URL: `/api/v1/`
+- Response envelope: `{ status, message, data, errors }`
+- Swagger docs: `/api-docs` (basic-auth protected)
+- API versioning via URI prefix
+
+---
+
+## Getting Started
 
 ```bash
-For Development
-docker compose -f docker-compose.dev.yaml up --build -d
+# Install dependencies
+npm install
 
-For Stage
-docker compose -f docker-compose.stage.yaml up --build -d
+# Set up environment
+cp .env.example .env
 
-For Production
-docker compose -f docker-compose.prod.yaml up --build -d
+# Development (watch mode)
+npm run start:dev
+
+# Build
+npm run build
+
+# Production
+npm run start:prod
+
+# Run tests
+npm test
+```
+
+### Docker
+
+```bash
+# Development environment
+docker-compose -f docker-compose.dev.yaml up
+
+# Staging
+docker-compose -f docker-compose.stage.yaml up
+
+# Production
+docker-compose -f docker-compose.prod.yaml up
+```
+
+Services orchestrated: `goldex-service`, PostgreSQL, pgAdmin, RabbitMQ, Redis
+
+---
+
+## Project Structure
 
 ```
+src/
+├── admin/              # Admin authentication & roles
+├── admin-discount/     # Discount & promotion management
+├── admin-kyc/          # KYC document review
+├── admin-management/   # Admin CRUD operations
+├── admin-monitoring/   # Pricing engine data proxy
+├── admin-pair/         # Trading pair management
+├── admin-symbol/       # Asset symbol management
+├── admin-user/         # User profile viewing
+├── admin-wallet/       # Wallet admin operations
+├── baseinfo/           # Countries, languages, enums
+├── config/             # App, DB, Swagger, migration config
+├── file/               # File upload handling
+├── financial/          # Financial tracking & ledger
+├── i18n/               # en/fa translations
+├── kyc/                # KYC provider integration (Jibit)
+├── logger/             # Winston configuration
+├── mail/               # Email service (Mailgun)
+├── minio/              # S3-compatible storage
+├── migrations/         # 42 database migrations
+├── order/              # Order management
+├── provider-finance/   # Provider settlements
+├── provider-pair-mapping/ # Provider-item mapping
+├── rabbitmq/           # Message broker consumers
+├── redis/              # Redis caching
+├── shared/             # Base entities, enums, filters
+├── sms/                # SMS provider (Kavenegar)
+├── templates/          # Email templates, PWA icons
+├── user/               # User auth, profile, KYC
+├── user-discount/      # User-facing discounts
+├── user-wallet/        # User wallet operations
+├── wallet/             # Core wallet engine
+└── websocket/          # Socket.IO market gateway
+```
+
+---
+
+## Related Projects
+
+| Project | Description |
+|---------|-------------|
+| `goldex-admin-panel` | Admin SPA (React + TypeScript) |
+| `goldex-pricing-engine` | Real-time pricing & arbitrage microservice |
+| `goldex-user-panel` | Customer-facing trading SPA |
