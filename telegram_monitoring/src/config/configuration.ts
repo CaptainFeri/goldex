@@ -1,0 +1,24 @@
+function parseMonitoredChannels(raw: string | undefined): { id?: string; username?: string }[] {
+  if (!raw) return [];
+  return raw
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean)
+    .map((entry) => {
+      if (/^-?\d+$/.test(entry)) return { id: entry };
+      return { username: entry.replace(/^@/, '') };
+    });
+}
+
+export default () => ({
+  telegram: {
+    apiId: parseInt(process.env.TELEGRAM_API_ID ?? '', 10) || 0,
+    apiHash: process.env.TELEGRAM_API_HASH ?? '',
+    phoneNumber: process.env.TELEGRAM_PHONE_NUMBER ?? '',
+    password: process.env.TELEGRAM_PASSWORD,
+    sessionString: process.env.TELEGRAM_SESSION_STRING,
+    sessionFolder: process.env.TELEGRAM_SESSION_FOLDER || 'sessions',
+    monitoredChannels: parseMonitoredChannels(process.env.TELEGRAM_MONITORED_CHANNELS),
+    targetChannel: process.env.TELEGRAM_TARGET_CHANNEL || '',
+  },
+});
