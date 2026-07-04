@@ -1290,3 +1290,34 @@ select.form-input option {
 
 .wallet-bal-row .k { color: var(--text-muted); }
 .wallet-bal-row .v { color: var(--text-secondary); }
+
+.wallet-actions {
+  display: flex;
+  gap: 0.5rem;
+  margin-top: 0.85rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid var(--border);
+}
+.wallet-actions .btn { flex: 1; font-size: 0.78rem; padding: 0.4rem 0; }
+
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.6);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  animation: fadeIn 0.15s ease;
+}
+.modal-overlay .card {
+  width: 100%;
+  max-width: 420px;
+  margin: 1rem;
+  max-height: 90vh;
+  overflow-y: auto;
+}
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}

@@ -125,6 +125,29 @@ export const orderApi = {
     unwrap(await http.delete(`/orders/${id}/cancel`))
 }
 
+export const warehouseApi = {
+  getWarehouses: async () =>
+    unwrap(await http.get('/warehouse')),
+
+  createDeposit: async (payload) =>
+    unwrap(await http.post('/warehouse/deposit', payload)),
+
+  createWithdraw: async (payload) =>
+    unwrap(await http.post('/warehouse/withdraw', payload)),
+
+  getRequests: async (params = {}) =>
+    unwrap(await http.get('/warehouse/requests', { params })),
+
+  cancelRequest: async (id) =>
+    unwrap(await http.post(`/warehouse/requests/${id}/cancel`)),
+
+  getPackets: async (params = {}) =>
+    unwrap(await http.get('/warehouse/packets', { params })),
+
+  getPacket: async (id) =>
+    unwrap(await http.get(`/warehouse/packets/${id}`)),
+}
+
 export const baseInfoApi = {
   getCountries: async (searchKey = '') =>
     unwrap(await http.get('/base-info/countries', {

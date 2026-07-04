@@ -8,6 +8,7 @@ import ResetPasswordPage from './pages/ResetPasswordPage'
 import ProfilePage from './pages/ProfilePage'
 import TradePage from './pages/TradePage'
 import WalletPage from './pages/WalletPage'
+import WarehousePage from './pages/WarehousePage'
 import KycPage from './pages/KycPage'
 import SessionsPage from './pages/SessionsPage'
 import SettingsPage from './pages/SettingsPage'
@@ -30,6 +31,7 @@ export default function App() {
         >
           <Route path="/trade" element={<TradePage />} />
           <Route path="/wallet" element={<WalletPage />} />
+          <Route path="/warehouse" element={<WarehousePage />} />
           <Route path="/profile" element={<ProfilePage />} />
           <Route path="/kyc" element={<KycPage />} />
           <Route path="/sessions" element={<SessionsPage />} />
