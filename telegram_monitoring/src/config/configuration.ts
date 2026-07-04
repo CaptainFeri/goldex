@@ -11,6 +11,11 @@ function parseMonitoredChannels(raw: string | undefined): { id?: string; usernam
 }
 
 export default () => ({
+  redis: {
+    host: process.env.REDIS_HOST || 'localhost',
+    port: parseInt(process.env.REDIS_PORT ?? '6379', 10) || 6379,
+    password: process.env.REDIS_PASSWORD || undefined,
+  },
   telegram: {
     apiId: parseInt(process.env.TELEGRAM_API_ID ?? '', 10) || 0,
     apiHash: process.env.TELEGRAM_API_HASH ?? '',

@@ -1,0 +1,55 @@
+services:
+  redis:
+    image: redis:7-alpine
+    container_name: telegram-monitoring-redis
+    restart: unless-stopped
+    ports:
+      - '6382:6379'
+    volumes:
+      - redis_data:/data
+    networks:
+      - telegram-monitoring-network
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  redis-insight:
+    image: redis/redisinsight:latest
+    container_name: telegram-monitoring-redis-insight
+    restart: unless-stopped
+    ports:
+      - '5542:5540'
+    volumes:
+      - redis_insight_data:/data
+    networks:
+      - telegram-monitoring-network
+    depends_on:
+      redis:
+        condition: service_healthy
+
+  app:
+    container_name: telegram-monitoring-app
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    ports:
+      - '3000:3000'
+    env_file:
+      - .env
+    depends_on:
+      redis:
+        condition: service_healthy
+    volumes:
+      - ./sessions:/app/sessions
+    networks:
+      - telegram-monitoring-network
+
+volumes:
+  redis_data:
+  redis_insight_data:
+
+networks:
+  telegram-monitoring-network:

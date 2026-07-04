@@ -35,7 +35,7 @@ export function sideToAction(side: PriceSideLabel): OurAction {
  * quantity is in kilograms (1 تا = 1kg). Profit scales by the number of
  * mithqals traded, not the kilo count. Override the weight via MITHQAL_GRAMS.
  */
-export const GRAMS_PER_MITHQAL = Number(process.env.MITHQAL_GRAMS) || 4.6083;
+export const GRAMS_PER_MITHQAL = Number(process.env.MITHQAL_GRAMS) || 4.3318;
 export const MITHQALS_PER_KILO = 1000 / GRAMS_PER_MITHQAL;
 
 /** Sub-category, identified by a keyword in the message. */
@@ -120,6 +120,21 @@ export interface PriceSnapshot extends ParsedPrice {
   orderButton?: OrderButton;
 }
 
+/** Side details for an arbitrage opportunity (buy or sell). */
+export interface ArbitrageSideDetail {
+  price: number;
+  messageId: number;
+  date: number;
+  quantity: number;
+  sideLabel: PriceSideLabel;
+  ourAction: OurAction;
+  description?: string;
+  raw?: string;
+  chatId?: string;
+  orderButtonData?: string;
+  orderButtonText?: string;
+}
+
 /** Compact, persisted record of an alerted arbitrage (for the profit report). */
 export interface ArbitrageRecord {
   /** Unix seconds — the later of the two source messages. */
@@ -132,6 +147,28 @@ export interface ArbitrageRecord {
   quantity: number;
   /** spread * quantity, in Toman. */
   totalProfit: number;
+  /** Whether the buy order came before the sell order chronologically. */
+  buyFirst: boolean;
+  /** Verbose buy-side details. */
+  buy: ArbitrageSideDetail;
+  /** Verbose sell-side details. */
+  sell: ArbitrageSideDetail;
+}
+
+/** Wallet state computed from all arbitrage records. */
+export interface WalletState {
+  /** Total gold bought (grams). */
+  totalGoldBought: number;
+  /** Total gold sold (grams). */
+  totalGoldSold: number;
+  /** Net gold position (grams). */
+  netGold: number;
+  /** Total cash spent on buys (Toman). */
+  totalCashSpent: number;
+  /** Total cash received from sells (Toman). */
+  totalCashReceived: number;
+  /** Net cash balance = received - spent (Toman). */
+  netCash: number;
 }
 
 /** Date/category filters for the profit report. */

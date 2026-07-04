@@ -14,10 +14,8 @@ import {
 } from 'telegram/events/CallbackQuery';
 import type { Dialog } from 'telegram/tl/custom/dialog';
 import * as readline from 'node:readline';
-import * as fs from 'node:fs';
-import * as path from 'node:path';
 import { TELEGRAM_OPTIONS } from './telegram.constants';
-import type { TelegramOptions, ChannelTarget } from './interfaces';
+import type { TelegramOptions } from './interfaces';
 import { StructuredLogger } from '../logger/structured-logger';
 import { CustomFile } from 'telegram/client/uploads';
 import { PriceHistoryService } from './price/price-history.service';
@@ -276,11 +274,6 @@ export class TelegramService implements OnModuleInit, OnModuleDestroy {
       raw: message,
     });
 
-    // Opt-in raw capture (set CAPTURE_RAW_MESSAGES=true) for parser debugging.
-    if (process.env.CAPTURE_RAW_MESSAGES === 'true') {
-      this.captureRawMessage(message, chatId, chatTitle);
-    }
-
     await this.processPriceMessage(message);
   }
 
@@ -361,55 +354,6 @@ export class TelegramService implements OnModuleInit, OnModuleDestroy {
     replyMarkup?: Api.TypeReplyMarkup,
   ): OrderButton | undefined {
     return this.extractButtons(replyMarkup)[0]?.[0];
-  }
-
-  /**
-   * Dumps the full raw incoming message (text, formatting entities and the
-   * inline keyboard) to `captures/messages.jsonl`, one JSON object per line.
-   * Used to reverse-engineer the channel's price format before writing the
-   * categorizer/arbitrage logic. Safe to remove once the parser is in place.
-   */
-  private captureRawMessage(
-    message: Api.Message,
-    chatId: string | undefined,
-    chatTitle: string | undefined,
-  ): void {
-    try {
-      const buttons = this.extractButtons(message.replyMarkup);
-
-      const record = {
-        capturedAt: new Date().toISOString(),
-        chatId,
-        chatTitle,
-        messageId: message.id,
-        date: message.date,
-        text: message.message ?? '',
-        // Formatting entities (bold/italic/links) — Telegram's "description"
-        // styling often lives here rather than in the plain text.
-        entities: (message.entities ?? []).map((e: any) => ({
-          type: e.className,
-          offset: e.offset,
-          length: e.length,
-          url: e.url,
-        })),
-        buttons,
-        raw:
-          typeof (message as any).toJSON === 'function'
-            ? (message as any).toJSON()
-            : undefined,
-      };
-
-      const dir = path.resolve(this.options.sessionFolder ?? 'sessions', '..', 'captures');
-      fs.mkdirSync(dir, { recursive: true });
-      fs.appendFileSync(
-        path.join(dir, 'messages.jsonl'),
-        JSON.stringify(record) + '\n',
-        'utf-8',
-      );
-      this.logger.log(`Captured raw message ${message.id} for parser analysis`);
-    } catch (error) {
-      this.logger.error('Failed to capture raw message', error);
-    }
   }
 
   /** Flattens an inline keyboard into a simple [row][button] text/url/data list. */

@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { StructuredLogger } from '../../logger/structured-logger';
 import {
   ArbitrageOpportunity,
+  MITHQALS_PER_KILO,
   OrderButton,
   ParsedPrice,
   PriceSnapshot,
@@ -100,6 +101,9 @@ export class PriceHistoryService {
    * (our buy) for the same product.
    */
   detectArbitrage(parsed: ParsedPrice, asOf: number): ArbitrageOpportunity | null {
+    // Only detect arbitrage on normal (عادی) opportunities — exclude معکوس and شنا.
+    if (parsed.subType !== 'normal') return null;
+
     const arbKey = this.arbitrageKeyFor(parsed);
     const since = asOf - ARBITRAGE_WINDOW_SECONDS;
 
@@ -111,6 +115,7 @@ export class PriceHistoryService {
     let bestBuy: PriceSnapshot | undefined; // lowest فروش (we buy)
 
     for (const s of recent) {
+      if (s.description) continue;
       if (s.ourAction === 'WE_SELL') {
         if (!bestSell || s.price > bestSell.price) bestSell = s;
       } else {
@@ -125,6 +130,8 @@ export class PriceHistoryService {
     if (spread <= this.minProfit) return null;
 
     const quantity = Math.min(bestBuy.quantity, bestSell.quantity);
+    // Price is per mesqal, quantity is in kg. Convert mesqal → gram → kg profit.
+    const totalProfit = Math.round(spread * MITHQALS_PER_KILO * quantity);
     const opportunity: ArbitrageOpportunity = {
       categoryKey: this.categoryKeyFor(parsed),
       subType: parsed.subType,
@@ -133,7 +140,7 @@ export class PriceHistoryService {
       sell: bestSell,
       spread,
       quantity,
-      totalProfit: spread * quantity,
+      totalProfit,
     };
 
     this.logger.logStructured('ARBITRAGE_OPPORTUNITY', {

@@ -1,0 +1,394 @@
+<!doctype html>
+<html lang="fa" dir="rtl">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>نمودار قیمت و آربیتراژ</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
+    <style>
+      :root { color-scheme: light dark; font-family: Tahoma, 'Segoe UI', sans-serif; }
+      body { margin: 0; padding: 16px; background: #0f1115; color: #e6e6e6; }
+      h1 { font-size: 18px; margin: 0 0 12px; }
+      h2 { font-size: 16px; margin: 18px 0 10px; }
+      .filters { display: flex; flex-wrap: wrap; gap: 10px; align-items: end; margin-bottom: 16px; }
+      .field { display: flex; flex-direction: column; gap: 4px; font-size: 12px; }
+      select, input, button { background: #1b1f27; color: #e6e6e6; border: 1px solid #2c3240; border-radius: 6px; padding: 6px 8px; font-size: 13px; }
+      button { cursor: pointer; border-color: #3a6df0; }
+      label.inline { flex-direction: row; align-items: center; gap: 6px; }
+      .chart-wrap { background: #151922; border: 1px solid #232a36; border-radius: 10px; padding: 12px; height: 70vh; }
+      .meta { font-size: 12px; opacity: 0.7; margin-top: 8px; }
+      .wallet-card { background: #151922; border: 1px solid #232a36; border-radius: 10px; padding: 14px; margin-bottom: 12px; }
+      .wallet-card .wallet-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; padding-bottom: 8px; border-bottom: 1px solid #232a36; font-size: 14px; }
+      .wallet-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 10px; }
+      .wallet-stat .wl { font-size: 11px; opacity: 0.6; }
+      .wallet-stat .wv { font-weight: 700; font-size: 13px; }
+      .wallet-stat .wv.green { color: #3ddc84; }
+      .wallet-stat .wv.red { color: #e0524a; }
+      .empty { text-align: center; padding: 40px; opacity: 0.5; }
+      .table-wrap { width: 100%; overflow-x: auto; margin-top: 8px; }
+      table { width: 100%; border-collapse: collapse; font-size: 11px; }
+      th { position: sticky; top: 0; background: #1b1f27; padding: 8px 6px; text-align: center; border-bottom: 2px solid #2c3240; white-space: nowrap; }
+      td { padding: 5px 6px; text-align: center; border-bottom: 1px solid #1f2632; vertical-align: top; }
+      tr:hover td { background: #1a1f2a; }
+      .t-badge { display: inline-block; padding: 1px 6px; border-radius: 3px; font-size: 10px; font-weight: 700; }
+      .t-buy-first { background: #1a4a2a; color: #3ddc84; }
+      .t-sell-first { background: #4a1a1a; color: #e0524a; }
+      .t-buy-cell { color: #3ddc84; font-size: 11px; text-align: right; direction: ltr; }
+      .t-sell-cell { color: #e0524a; font-size: 11px; text-align: right; direction: ltr; }
+      .t-side-label { font-size: 10px; font-weight: 700; }
+      .t-raw { font-size: 10px; color: #8a9aaa; word-break: break-all; max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; display: block; }
+      .t-raw:hover { overflow: visible; white-space: normal; background: #0a0d12; position: relative; z-index: 1; padding: 2px 4px; border-radius: 3px; }
+      .t-profit { color: #3ddc84; font-weight: 700; text-align: center; }
+      .t-order-link { color: #3a6df0; text-decoration: none; font-size: 11px; display: inline-block; margin: 1px 0; }
+      .t-order-link:hover { text-decoration: underline; }
+      .t-tr-buy-first { border-right: 3px solid #3ddc84; }
+      .t-tr-sell-first { border-right: 3px solid #e0524a; }
+      .tabs { display: flex; gap: 4px; margin-bottom: 12px; }
+      .tab { padding: 6px 16px; border: 1px solid #2c3240; border-radius: 6px; cursor: pointer; font-size: 13px; background: transparent; color: #9aa4b2; }
+      .tab.active { background: #3a6df0; border-color: #3a6df0; color: #fff; }
+      .tab-content { display: none; }
+      .tab-content.active { display: block; }
+    </style>
+  </head>
+  <body>
+    <h1>نمودار قیمت خرید و فروش</h1>
+    <p class="meta" style="margin-top: -6px">
+      از دید ما: «خرید بازار» یعنی ما می‌فروشیم و «فروش بازار» یعنی ما می‌خریم.
+    </p>
+
+    <div class="tabs">
+      <div class="tab active" data-tab="chart">نمودار قیمت</div>
+      <div class="tab" data-tab="arbitrage">آربیتراژ</div>
+    </div>
+
+    <div id="tab-chart" class="tab-content active">
+      <div class="filters">
+        <div class="field">
+          <span>دسته</span>
+          <select id="subType"><option value="">همه</option></select>
+        </div>
+        <div class="field">
+          <span>نوع تحویل</span>
+          <select id="deliveryType"><option value="">همه</option></select>
+        </div>
+        <div class="field">
+          <span>سمت ما</span>
+          <select id="action">
+            <option value="">خرید و فروش ما</option>
+            <option value="WE_BUY">فقط خرید ما</option>
+            <option value="WE_SELL">فقط فروش ما</option>
+          </select>
+        </div>
+        <div class="field">
+          <span>از تاریخ</span>
+          <input type="datetime-local" id="from" />
+        </div>
+        <div class="field">
+          <span>تا تاریخ</span>
+          <input type="datetime-local" id="to" />
+        </div>
+        <div class="field">
+          <span>حداکثر نقاط</span>
+          <input type="number" id="limit" value="500" min="10" step="10" style="width: 90px" />
+        </div>
+        <button id="apply">اعمال فیلتر</button>
+        <span class="field inline" id="live">
+          <span id="liveDot" style="width:9px;height:9px;border-radius:50%;background:#888;display:inline-block"></span>
+          <span id="liveText">در حال اتصال…</span>
+        </span>
+      </div>
+
+      <div class="chart-wrap"><canvas id="chart"></canvas></div>
+      <div class="meta" id="meta"></div>
+    </div>
+
+    <div id="tab-arbitrage" class="tab-content">
+      <div class="filters">
+        <div class="field">
+          <span>از تاریخ</span>
+          <input type="datetime-local" id="aFrom" />
+        </div>
+        <div class="field">
+          <span>تا تاریخ</span>
+          <input type="datetime-local" id="aTo" />
+        </div>
+        <div class="field">
+          <span>دسته</span>
+          <select id="aSubType"><option value="">همه</option></select>
+        </div>
+        <button id="aApply">بارگیری</button>
+        <span class="meta" id="aCount" style="font-size:13px"></span>
+      </div>
+
+      <div id="walletCard" class="wallet-card" style="display:none">
+        <div class="wallet-header"><span>کیف پول</span></div>
+        <div class="wallet-grid">
+          <div class="wallet-stat"><div class="wl">طلا خرید</div><div class="wv green" id="wGoldBought">0</div></div>
+          <div class="wallet-stat"><div class="wl">طلا فروش</div><div class="wv red" id="wGoldSold">0</div></div>
+          <div class="wallet-stat"><div class="wl">موجودی طلا</div><div class="wv" id="wNetGold">0</div></div>
+          <div class="wallet-stat"><div class="wl">هزینه خرید</div><div class="wv" id="wCashSpent">0</div></div>
+          <div class="wallet-stat"><div class="wl">درآمد فروش</div><div class="wv" id="wCashReceived">0</div></div>
+          <div class="wallet-stat"><div class="wl">موجودی نقد</div><div class="wv green" id="wNetCash">0</div></div>
+        </div>
+      </div>
+
+      <div id="arbitrageList"></div>
+    </div>
+
+    <script>
+      const SERIES = [
+        { action: 'WE_BUY', label: 'خرید ما', color: '#3ddc84' },
+        { action: 'WE_SELL', label: 'فروش ما', color: '#e0524a' },
+      ];
+      let chart;
+      let pointCount = 0;
+
+      // ---- tabs ----
+      document.querySelectorAll('.tab').forEach((tab) => {
+        tab.addEventListener('click', () => {
+          document.querySelectorAll('.tab').forEach((t) => t.classList.remove('active'));
+          document.querySelectorAll('.tab-content').forEach((c) => c.classList.remove('active'));
+          tab.classList.add('active');
+          document.getElementById('tab-' + tab.dataset.tab).classList.add('active');
+          if (tab.dataset.tab === 'arbitrage') { loadWallet(); loadArbitrageList(); }
+        });
+      });
+
+      // ---- helpers ----
+      function toEpochSeconds(v) { return v ? Math.floor(new Date(v).getTime() / 1000) : undefined; }
+      function epochToLocal(sec) { return new Date(sec * 1000).toLocaleString('fa-IR'); }
+      function fmtPrice(v) { return v.toLocaleString('en-US'); }
+      function msgLink(chatId, msgId) {
+        if (!chatId || !msgId) return null;
+        const m = /^-?100(\d+)$/.exec(chatId);
+        return m ? `https://t.me/c/${m[1]}/${msgId}` : null;
+      }
+
+      // ---- price chart ----
+      function buildQuery() {
+        const p = new URLSearchParams();
+        const v = (id) => document.getElementById(id).value;
+        const s = v('subType'); if (s) p.set('subType', s);
+        const d = v('deliveryType'); if (d) p.set('deliveryType', d);
+        const a = v('action'); if (a) p.set('action', a);
+        const from = toEpochSeconds(v('from')); if (from) p.set('from', from);
+        const to = toEpochSeconds(v('to')); if (to) p.set('to', to);
+        const l = v('limit'); if (l) p.set('limit', l);
+        return p.toString();
+      }
+
+      function toDataset(points, series) {
+        return {
+          label: series.label,
+          action: series.action,
+          borderColor: series.color,
+          backgroundColor: series.color,
+          pointRadius: 2,
+          borderWidth: 1.5,
+          tension: 0.15,
+          data: points.filter(p => p.ourAction === series.action).map(p => ({ x: p.date * 1000, y: p.price, desc: p.description, qty: p.quantity })),
+        };
+      }
+
+      async function loadFilters() {
+        const r = await fetch('/api/prices/filters');
+        const { subTypes, deliveryTypes } = await r.json();
+        for (const id of ['subType', 'aSubType', 'pSubType']) {
+          const sel = document.getElementById(id);
+          if (!sel) continue;
+          for (const s of subTypes) {
+            const o = document.createElement('option');
+            o.value = s.value; o.textContent = s.label; sel.appendChild(o);
+          }
+        }
+        const del = document.getElementById('deliveryType');
+        for (const d of deliveryTypes) { const o = document.createElement('option'); o.value = d; o.textContent = d; del.appendChild(o); }
+      }
+
+      function activeFilters() {
+        return {
+          subType: document.getElementById('subType').value,
+          deliveryType: document.getElementById('deliveryType').value,
+          action: document.getElementById('action').value,
+          from: toEpochSeconds(document.getElementById('from').value),
+          to: toEpochSeconds(document.getElementById('to').value),
+          limit: Number(document.getElementById('limit').value) || 0,
+        };
+      }
+
+      function matchesFilters(p, f) {
+        return (!f.subType || p.subType === f.subType) && (!f.deliveryType || p.deliveryType === f.deliveryType) && (!f.action || p.ourAction === f.action) && (!f.from || p.date >= f.from) && (!f.to || p.date <= f.to);
+      }
+
+      function updateMeta() { document.getElementById('meta').textContent = pointCount + ' نقطه — آخرین داده ' + new Date().toLocaleTimeString('fa-IR'); }
+
+      async function loadBaseline() {
+        const r = await fetch('/api/prices?' + buildQuery());
+        const points = await r.json();
+        chart.data.datasets = SERIES.map(s => toDataset(points, s));
+        chart.update();
+        pointCount = points.length;
+        updateMeta();
+      }
+
+      function appendPoint(p) {
+        const f = activeFilters();
+        if (!matchesFilters(p, f)) return;
+        const ds = chart.data.datasets.find(d => d.action === p.ourAction);
+        if (!ds) return;
+        ds.data.push({ x: p.date * 1000, y: p.price, desc: p.description, qty: p.quantity });
+        if (f.limit && ds.data.length > f.limit) ds.data.shift();
+        chart.update('none');
+        pointCount += 1;
+        updateMeta();
+      }
+
+      function setLive(ok) {
+        document.getElementById('liveDot').style.background = ok ? '#3ddc84' : '#e0524a';
+        document.getElementById('liveText').textContent = ok ? 'زنده' : 'قطع شد — اتصال مجدد…';
+      }
+
+      function openStream() {
+        const es = new EventSource('/api/prices/stream');
+        es.onopen = () => setLive(true);
+        es.onerror = () => setLive(false);
+        es.onmessage = (e) => { try { appendPoint(JSON.parse(e.data)); } catch {} };
+      }
+
+      function initChart() {
+        chart = new Chart(document.getElementById('chart'), {
+          type: 'line', data: { datasets: [] },
+          options: {
+            maintainAspectRatio: false, parsing: false,
+            interaction: { mode: 'nearest', intersect: false },
+            scales: {
+              x: { type: 'linear', ticks: { callback: v => new Date(v).toLocaleTimeString('fa-IR'), color: '#9aa4b2' }, grid: { color: '#222a36' } },
+              y: { ticks: { callback: v => v.toLocaleString('en-US'), color: '#9aa4b2' }, grid: { color: '#222a36' } },
+            },
+            plugins: {
+              legend: { labels: { color: '#e6e6e6' } },
+              tooltip: {
+                callbacks: {
+                  title: items => new Date(items[0].parsed.x).toLocaleString('fa-IR'),
+                  label: item => { const r = item.raw; let s = item.dataset.label + ': ' + r.y.toLocaleString('en-US'); if (r.qty) s += ' — تعداد ' + r.qty; if (r.desc) s += ' — ' + r.desc; return s; },
+                },
+              },
+            },
+          },
+        });
+      }
+
+      // ---- profit summary (kept for backward compat) ----
+      async function loadProfit() {
+        const p = new URLSearchParams();
+        const from = toEpochSeconds(document.getElementById('pFrom')?.value);
+        const to = toEpochSeconds(document.getElementById('pTo')?.value);
+        const subType = document.getElementById('pSubType')?.value;
+        if (from) p.set('from', from); if (to) p.set('to', to); if (subType) p.set('subType', subType);
+        const r = await fetch('/api/arbitrages/summary?' + p.toString());
+        const s = await r.json();
+        const el = document.getElementById('profitTotal');
+        if (el) el.textContent = s.totalProfit.toLocaleString('en-US') + ' تومان — ' + s.count + ' آربیتراژ';
+        const bd = document.getElementById('profitBreakdown');
+        if (bd) bd.textContent = s.byCategory.map(c => c.label + ': ' + c.totalProfit.toLocaleString('en-US') + ' (' + c.count + ')').join('  •  ');
+      }
+
+      // ---- wallet ----
+      function fmtGold(grams) {
+        const kg = grams / 1000;
+        return kg.toLocaleString('fa-IR', { maximumFractionDigits: 3 }) + ' کیلوگرم (' + grams.toLocaleString('en-US') + ' گرم)';
+      }
+      function fmtCash(v) {
+        return v.toLocaleString('en-US') + ' تومان';
+      }
+      async function loadWallet() {
+        const r = await fetch('/api/arbitrages/wallet');
+        const w = await r.json();
+        const card = document.getElementById('walletCard');
+        card.style.display = 'block';
+        document.getElementById('wGoldBought').textContent = fmtGold(w.totalGoldBought);
+        document.getElementById('wGoldSold').textContent = fmtGold(w.totalGoldSold);
+        document.getElementById('wNetGold').textContent = fmtGold(w.netGold);
+        document.getElementById('wCashSpent').textContent = fmtCash(w.totalCashSpent);
+        document.getElementById('wCashReceived').textContent = fmtCash(w.totalCashReceived);
+        document.getElementById('wNetCash').textContent = fmtCash(w.netCash);
+      }
+
+      // ---- arbitrage table ----
+      const SUBTYPE_NAMES = { normal: 'عادی', shena: 'شنا', makus: 'معکوس' };
+
+      function esc(str) { return (str || '').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
+
+      function renderSide(r, side) {
+        const d = r[side];
+        const label = d.ourAction === 'WE_BUY' ? 'خرید ما' : 'فروش ما';
+        const link = msgLink(d.chatId, d.messageId);
+        const orderInfo = d.orderButtonData ? '🧾 ' + esc(d.orderButtonData) : '';
+        const cls = d.ourAction === 'WE_BUY' ? 't-buy-cell' : 't-sell-cell';
+        return `<div class="${cls}">
+          <span class="t-side-label">${label}</span>
+          <div>${fmtPrice(d.price)} × ${d.quantity}</div>
+          <div style="font-size:10px;opacity:0.6">${epochToLocal(d.date)} — ${d.sideLabel}</div>
+          ${orderInfo ? '<div style="font-size:10px;color:#6a7a8a">' + orderInfo + '</div>' : ''}
+          ${link ? '<a class="t-order-link" href="' + link + '" target="_blank">🔗 پیام</a>' : ''}
+          ${d.raw ? '<span class="t-raw" title="' + esc(d.raw) + '">' + esc(d.raw) + '</span>' : ''}
+        </div>`;
+      }
+
+      function renderArbitrageRow(r) {
+        const bf = r.buyFirst;
+        const badgeCls = bf ? 't-buy-first' : 't-sell-first';
+        const badgeTxt = bf ? 'خرید اول' : 'فروش اول';
+        const direction = bf ? 'خرید→فروش' : 'فروش→خرید';
+        const desc = r.buy.description || r.sell.description;
+
+        return `<tr class="${bf ? 't-tr-buy-first' : 't-tr-sell-first'}">
+          <td style="white-space:nowrap">${epochToLocal(r.date)}<br><span class="t-badge ${badgeCls}">${badgeTxt}</span><br><span style="font-size:10px;opacity:0.6">${direction}</span></td>
+          <td>${renderSide(r, 'buy')}</td>
+          <td>${renderSide(r, 'sell')}</td>
+          <td class="t-profit">${fmtPrice(r.totalProfit)}<br><span style="font-size:10px;opacity:0.6;color:#e6e6e6">سود/واحد: ${fmtPrice(r.spread)}</span></td>
+          <td style="font-size:10px;color:#8a9aaa;max-width:140px;text-align:right">${desc ? '<div title="' + esc(desc) + '">📝 ' + esc(desc) + '</div>' : ''}</td>
+        </tr>`;
+      }
+
+      async function loadArbitrageList() {
+        const p = new URLSearchParams();
+        const from = toEpochSeconds(document.getElementById('aFrom').value);
+        const to = toEpochSeconds(document.getElementById('aTo').value);
+        const subType = document.getElementById('aSubType').value;
+        if (from) p.set('from', from); if (to) p.set('to', to); if (subType) p.set('subType', subType);
+
+        const [r, _w] = await Promise.all([
+          fetch('/api/arbitrages?' + p.toString()),
+          loadWallet(),
+        ]);
+        const records = await r.json();
+        const container = document.getElementById('arbitrageList');
+        document.getElementById('aCount').textContent = records.length + ' فرصت';
+
+        if (records.length === 0) {
+          container.innerHTML = '<div class="empty">هیچ فرصت آربیتراژی یافت نشد</div>';
+          return;
+        }
+
+        container.innerHTML = `<div class="table-wrap"><table>
+          <thead><tr>
+            <th>تاریخ / نوع</th><th>خرید</th><th>فروش</th><th>سود کل</th><th>توضیحات</th>
+          </tr></thead>
+          <tbody>${records.reverse().map(renderArbitrageRow).join('')}</tbody>
+        </table></div>`;
+      }
+
+      document.getElementById('apply').addEventListener('click', loadBaseline);
+      document.getElementById('aApply').addEventListener('click', loadArbitrageList);
+
+      (async function start() {
+        initChart();
+        await loadFilters();
+        await loadBaseline();
+        await loadProfit();
+        openStream();
+      })();
+    </script>
+  </body>
+</html>

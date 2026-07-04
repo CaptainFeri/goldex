@@ -1,37 +1,31 @@
 import { Injectable, OnModuleInit } from '@nestjs/common';
 import { OnEvent } from '@nestjs/event-emitter';
-import * as fs from 'node:fs';
-import * as path from 'node:path';
 import { StructuredLogger } from '../../logger/structured-logger';
-import { SUBTYPE_LABELS } from './price.types';
+import { RedisService } from '../../redis/redis.service';
+import { MITHQALS_PER_KILO, SUBTYPE_LABELS } from './price.types';
 import type {
   ArbitrageOpportunity,
   ArbitrageQuery,
   ArbitrageRecord,
+  ArbitrageSideDetail,
   ArbitrageSummary,
   PriceSubType,
+  WalletState,
 } from './price.types';
 
-/**
- * Durably records every alerted arbitrage opportunity and answers
- * "how much would all arbitrages have profited" with date filters.
- *
- * Listens for `telegram.arbitrage` (emitted only for new, above-threshold
- * opportunities) so it captures exactly the trades that were signalled.
- */
+const ARBITRAGE_TTL = Number(process.env.ARBITRAGE_TTL) || 604800;
+const ARBITRAGE_IDS_KEY = 'arbitrage:ids';
+
 @Injectable()
 export class ArbitragePersistenceService implements OnModuleInit {
-  private readonly logger = new StructuredLogger(
-    ArbitragePersistenceService.name,
-  );
-  private readonly file =
-    process.env.ARBITRAGE_DATA_FILE ??
-    path.resolve('data', 'arbitrages.jsonl');
+  private readonly logger = new StructuredLogger(ArbitragePersistenceService.name);
   private readonly records: ArbitrageRecord[] = [];
-  private writeChain: Promise<void> = Promise.resolve();
+  private idCounter = 0;
 
-  onModuleInit(): void {
-    this.load();
+  constructor(private readonly redis: RedisService) {}
+
+  async onModuleInit(): Promise<void> {
+    await this.load();
   }
 
   @OnEvent('telegram.arbitrage')
@@ -39,7 +33,6 @@ export class ArbitragePersistenceService implements OnModuleInit {
     this.add(this.toRecord(opportunity));
   }
 
-  /** Records matching the filters, oldest first. */
   query(filter: ArbitrageQuery = {}): ArbitrageRecord[] {
     return this.records.filter(
       (r) =>
@@ -50,7 +43,6 @@ export class ArbitragePersistenceService implements OnModuleInit {
     );
   }
 
-  /** Total cash profit (and per-category breakdown) for the filtered range. */
   summary(filter: ArbitrageQuery = {}): ArbitrageSummary {
     const matched = this.query(filter);
     const byCat = new Map<PriceSubType, { count: number; totalProfit: number }>();
@@ -76,6 +68,48 @@ export class ArbitragePersistenceService implements OnModuleInit {
     };
   }
 
+  wallet(): WalletState {
+    let totalCashSpent = 0;
+    let totalCashReceived = 0;
+    let totalGoldBought = 0;
+    let totalGoldSold = 0;
+
+    for (const r of this.records) {
+      const buyPrice = r.buy?.price ?? r.buyAt;
+      const sellPrice = r.sell?.price ?? r.sellAt;
+      const mithqals = MITHQALS_PER_KILO * r.quantity;
+      totalCashSpent += Math.round(buyPrice * mithqals);
+      totalCashReceived += Math.round(sellPrice * mithqals);
+      totalGoldBought += r.quantity * 1000;
+      totalGoldSold += r.quantity * 1000;
+    }
+
+    return {
+      totalGoldBought,
+      totalGoldSold,
+      netGold: totalGoldBought - totalGoldSold,
+      totalCashSpent,
+      totalCashReceived,
+      netCash: totalCashReceived - totalCashSpent,
+    };
+  }
+
+  private toSideDetail(snapshot: ArbitrageOpportunity['buy']): ArbitrageSideDetail {
+    return {
+      price: snapshot.price,
+      messageId: snapshot.messageId,
+      date: snapshot.date,
+      quantity: snapshot.quantity,
+      sideLabel: snapshot.sideLabel,
+      ourAction: snapshot.ourAction,
+      description: snapshot.description,
+      raw: snapshot.raw,
+      chatId: snapshot.chatId,
+      orderButtonData: snapshot.orderButton?.data,
+      orderButtonText: snapshot.orderButton?.text,
+    };
+  }
+
   private toRecord(o: ArbitrageOpportunity): ArbitrageRecord {
     return {
       date: Math.max(o.buy.date, o.sell.date),
@@ -86,32 +120,47 @@ export class ArbitragePersistenceService implements OnModuleInit {
       spread: o.spread,
       quantity: o.quantity,
       totalProfit: o.totalProfit,
+      buyFirst: o.buy.date <= o.sell.date,
+      buy: this.toSideDetail(o.buy),
+      sell: this.toSideDetail(o.sell),
     };
   }
 
   private add(record: ArbitrageRecord): void {
     this.records.push(record);
-    const line = JSON.stringify(record) + '\n';
-    this.writeChain = this.writeChain
-      .then(() => fs.promises.appendFile(this.file, line, 'utf-8'))
-      .catch((error) => this.logger.error('Failed to persist arbitrage', error));
+    this.persist(record).catch((error) => this.logger.error('Failed to persist arbitrage to Redis', error));
   }
 
-  private load(): void {
+  private async persist(record: ArbitrageRecord): Promise<void> {
+    const client = this.redis.getClient();
+    const id = ++this.idCounter;
+    const key = `arbitrage:${id}`;
+    await Promise.all([
+      client.setex(key, ARBITRAGE_TTL, JSON.stringify(record)),
+      client.zadd(ARBITRAGE_IDS_KEY, record.date, String(id)),
+    ]);
+  }
+
+  private async load(): Promise<void> {
     try {
-      fs.mkdirSync(path.dirname(this.file), { recursive: true });
-      if (!fs.existsSync(this.file)) return;
-      for (const line of fs.readFileSync(this.file, 'utf-8').split('\n')) {
-        if (!line.trim()) continue;
+      const client = this.redis.getClient();
+      const ids = await client.zrange(ARBITRAGE_IDS_KEY, 0, -1);
+      if (ids.length === 0) return;
+
+      this.idCounter = Math.max(0, ...ids.map(Number));
+      const keys = ids.map((id) => `arbitrage:${id}`);
+      const raw = await client.mget(...keys);
+      for (const json of raw) {
+        if (!json) continue;
         try {
-          this.records.push(JSON.parse(line) as ArbitrageRecord);
+          this.records.push(JSON.parse(json) as ArbitrageRecord);
         } catch {
-          // skip a corrupt line
+          // skip corrupt entry
         }
       }
-      this.logger.log(`Loaded ${this.records.length} stored arbitrages`);
+      this.logger.log(`Loaded ${this.records.length} stored arbitrages from Redis`);
     } catch (error) {
-      this.logger.error('Failed to load stored arbitrages', error);
+      this.logger.error('Failed to load stored arbitrages from Redis', error);
     }
   }
 }

@@ -1,6 +1,8 @@
 import { PriceHistoryService } from './price-history.service';
 import { parsePriceMessage } from './price-message.parser';
 
+import { MITHQALS_PER_KILO } from './price.types';
+
 describe('PriceHistoryService arbitrage', () => {
   let service: PriceHistoryService;
 
@@ -15,6 +17,8 @@ describe('PriceHistoryService arbitrage', () => {
     return parsed;
   };
 
+  const profit = (spread: number, qty: number) => Math.round(spread * MITHQALS_PER_KILO * qty);
+
   it('flags profit when خرید (we sell) exceeds فروش (we buy) in same bucket', () => {
     // فروش 73,500,000 => we BUY at 73.5M
     record('73,500,000 🔴فروش⏳با حواله 1 تا', 1, 1000);
@@ -26,7 +30,7 @@ describe('PriceHistoryService arbitrage', () => {
     expect(opp).toMatchObject({
       spread: 100000,
       quantity: 1,
-      totalProfit: 100000,
+      totalProfit: profit(100000, 1),
       subType: 'normal',
       deliveryType: 'با حواله',
     });
@@ -57,6 +61,12 @@ describe('PriceHistoryService arbitrage', () => {
     const shenaSell = record('74,000,000 🔵خرید⏳با حواله 1 تا شنا', 2, 1010); // shena
     // No فروش in the shena bucket => no opportunity.
     expect(service.detectArbitrage(shenaSell, 1010)).toBeNull();
+  });
+
+  it('ignores shena and makus sub-types entirely', () => {
+    const buy = record('73,500,000 🔴فروش⏳با حواله 1 تا شنا', 1, 1000);
+    const sell = record('73,600,000 🔵خرید⏳با حواله 1 تا شنا', 2, 1010);
+    expect(service.detectArbitrage(sell, 1010)).toBeNull();
   });
 
   it('ignores prices outside the time window', () => {
@@ -92,12 +102,12 @@ describe('PriceHistoryService arbitrage', () => {
   });
 
   it('computes executable quantity and total profit from the smaller side', () => {
-    // we buy 73.5M (qty 3), we sell 73.6M (qty 2) => executable 2, profit 200k
+    // we buy 73.5M (qty 3), we sell 73.6M (qty 2) => executable 2
     record('73,500,000 🔴فروش⏳با حواله 3 تا', 1, 1000);
     const sell = record('73,600,000 🔵خرید⏳با حواله 2 تا', 2, 1010);
     const opp = service.detectArbitrage(sell, 1010)!;
     expect(opp.quantity).toBe(2);
-    expect(opp.totalProfit).toBe(200000);
+    expect(opp.totalProfit).toBe(profit(100000, 2));
   });
 
   it('buckets history by sub-type', () => {

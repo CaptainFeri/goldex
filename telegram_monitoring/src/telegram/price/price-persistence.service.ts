@@ -1,9 +1,8 @@
 import { Injectable, OnModuleInit } from '@nestjs/common';
 import { OnEvent } from '@nestjs/event-emitter';
 import { Observable, Subject } from 'rxjs';
-import * as fs from 'node:fs';
-import * as path from 'node:path';
 import { StructuredLogger } from '../../logger/structured-logger';
+import { RedisService } from '../../redis/redis.service';
 import {
   PricePoint,
   PriceQuery,
@@ -12,29 +11,25 @@ import {
   sideToAction,
 } from './price.types';
 
-/**
- * Durably stores every parsed price as a JSON line and keeps an in-memory copy
- * for fast querying by the chart API. Listens for `telegram.price` events so
- * the telegram layer stays decoupled from storage.
- */
+const PRICE_TTL = Number(process.env.PRICE_TTL) || 86400;
+const PRICE_IDS_KEY = 'price:ids';
+const FILTER_SUBTYPES_KEY = 'price:filters:subTypes';
+const FILTER_DELIVERY_KEY = 'price:filters:deliveryTypes';
+
 @Injectable()
 export class PricePersistenceService implements OnModuleInit {
   private readonly logger = new StructuredLogger(PricePersistenceService.name);
-  private readonly file =
-    process.env.PRICE_DATA_FILE ?? path.resolve('data', 'prices.jsonl');
   private readonly points: PricePoint[] = [];
-  /** Serializes appends so concurrent messages can't interleave a line. */
-  private writeChain: Promise<void> = Promise.resolve();
-  /** Emits every newly stored point for live (SSE) consumers. */
   private readonly added = new Subject<PricePoint>();
 
-  /** Stream of points as they arrive, for real-time chart updates. */
   get stream(): Observable<PricePoint> {
     return this.added.asObservable();
   }
 
-  onModuleInit(): void {
-    this.load();
+  constructor(private readonly redis: RedisService) {}
+
+  async onModuleInit(): Promise<void> {
+    await this.load();
   }
 
   @OnEvent('telegram.price')
@@ -42,7 +37,6 @@ export class PricePersistenceService implements OnModuleInit {
     this.add(this.toPoint(payload.snapshot));
   }
 
-  /** Returns points matching the filters, oldest first. */
   query(filter: PriceQuery = {}): PricePoint[] {
     let result = this.points.filter(
       (p) =>
@@ -59,7 +53,6 @@ export class PricePersistenceService implements OnModuleInit {
     return result;
   }
 
-  /** Distinct filter values present in the data, for the UI dropdowns. */
   filters(): {
     subTypes: { value: string; label: string }[];
     deliveryTypes: string[];
@@ -96,32 +89,41 @@ export class PricePersistenceService implements OnModuleInit {
   private add(point: PricePoint): void {
     this.points.push(point);
     this.added.next(point);
-    const line = JSON.stringify(point) + '\n';
-    this.writeChain = this.writeChain
-      .then(() => fs.promises.appendFile(this.file, line, 'utf-8'))
-      .catch((error) => this.logger.error('Failed to persist price', error));
+    this.persist(point).catch((error) => this.logger.error('Failed to persist price to Redis', error));
   }
 
-  private load(): void {
-    try {
-      fs.mkdirSync(path.dirname(this.file), { recursive: true });
-      if (!fs.existsSync(this.file)) return;
+  private async persist(point: PricePoint): Promise<void> {
+    const client = this.redis.getClient();
+    const key = `price:${point.messageId}`;
+    await Promise.all([
+      client.setex(key, PRICE_TTL, JSON.stringify(point)),
+      client.zadd(PRICE_IDS_KEY, point.date, String(point.messageId)),
+      client.sadd(FILTER_SUBTYPES_KEY, point.subType),
+      client.sadd(FILTER_DELIVERY_KEY, point.deliveryType),
+    ]);
+  }
 
-      const lines = fs.readFileSync(this.file, 'utf-8').split('\n');
-      for (const line of lines) {
-        if (!line.trim()) continue;
+  private async load(): Promise<void> {
+    try {
+      const client = this.redis.getClient();
+      const messageIds = await client.zrange(PRICE_IDS_KEY, 0, -1);
+      if (messageIds.length === 0) return;
+
+      const keys = messageIds.map((id) => `price:${id}`);
+      const raw = await client.mget(...keys);
+      for (const json of raw) {
+        if (!json) continue;
         try {
-          const point = JSON.parse(line) as PricePoint;
-          // Older records predate `ourAction`; derive it from the raw side.
+          const point = JSON.parse(json) as PricePoint;
           if (!point.ourAction) point.ourAction = sideToAction(point.side);
           this.points.push(point);
         } catch {
-          // skip a corrupt line rather than failing startup
+          // skip corrupt entry
         }
       }
-      this.logger.log(`Loaded ${this.points.length} stored price points`);
+      this.logger.log(`Loaded ${this.points.length} stored price points from Redis`);
     } catch (error) {
-      this.logger.error('Failed to load stored prices', error);
+      this.logger.error('Failed to load stored prices from Redis', error);
     }
   }
 }

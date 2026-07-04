@@ -10,6 +10,7 @@ import type {
   PricePoint,
   PriceQuery,
   PriceSubType,
+  WalletState,
 } from './price.types';
 
 /** REST API backing the price chart frontend. */
@@ -62,6 +63,11 @@ export class ArbitrageController {
     @Query('to') to?: string,
   ): ArbitrageRecord[] {
     return this.arbitrages.query(this.toFilter(subType, deliveryType, from, to));
+  }
+
+  @Get('wallet')
+  wallet(): WalletState {
+    return this.arbitrages.wallet();
   }
 
   @Get('summary')
