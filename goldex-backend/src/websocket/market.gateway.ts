@@ -5,12 +5,19 @@ import {
   SubscribeMessage,
   OnGatewayConnection,
   OnGatewayDisconnect,
+  OnGatewayInit,
   ConnectedSocket,
   MessageBody,
 } from "@nestjs/websockets";
 import { Server, Socket } from "socket.io";
 import { Logger } from "@nestjs/common";
+import { JwtService } from "@nestjs/jwt";
+import { ConfigService } from "@nestjs/config";
 import { MarketService } from "./market.service";
+import { RedisService } from "../redis/redis.service";
+
+const ONLINE_SET = "online_users";
+const ONLINE_CONN = "online_conn";
 
 @WebSocketGateway({
   namespace: "market",
@@ -19,7 +26,7 @@ import { MarketService } from "./market.service";
     credentials: true,
   },
 })
-export class MarketGateway implements OnGatewayConnection, OnGatewayDisconnect {
+export class MarketGateway implements OnGatewayInit, OnGatewayConnection, OnGatewayDisconnect {
   @WebSocketServer()
   server: Server;
 
@@ -27,11 +34,26 @@ export class MarketGateway implements OnGatewayConnection, OnGatewayDisconnect {
   private socketPairs: Map<string, Set<string>> = new Map();
   private streamingCallbacks: Map<string, Function> = new Map();
 
-  constructor(private marketService: MarketService) {}
+  constructor(
+    private marketService: MarketService,
+    private readonly jwtService: JwtService,
+    private readonly configService: ConfigService,
+    private readonly redisService: RedisService
+  ) {}
+
+  // Reset stale presence keys on (re)start — sockets from before don't survive.
+  async afterInit() {
+    try {
+      await this.redisService.getClient().del(ONLINE_SET, ONLINE_CONN);
+    } catch (e) {
+      this.logger.warn(`presence reset failed: ${(e as Error).message}`);
+    }
+  }
 
   async handleConnection(client: Socket) {
     this.logger.log(`✅ Client connected: ${client.id}`);
     this.socketPairs.set(client.id, new Set());
+    await this.trackPresence(client, true);
 
     client.emit("connected", {
       message: "Connected to market WebSocket",
@@ -42,6 +64,7 @@ export class MarketGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
   async handleDisconnect(client: Socket) {
     this.logger.log(`❌ Client disconnected: ${client.id}`);
+    await this.trackPresence(client, false);
 
     const subscribedPairs = this.socketPairs.get(client.id);
     if (subscribedPairs) {
@@ -50,6 +73,43 @@ export class MarketGateway implements OnGatewayConnection, OnGatewayDisconnect {
       }
     }
     this.socketPairs.delete(client.id);
+  }
+
+  // Maintain a distinct-online-users SET keyed by a per-user connection counter,
+  // so multiple tabs count once. Best-effort — never breaks the socket.
+  private async trackPresence(client: Socket, connected: boolean) {
+    try {
+      let userId = client.data?.userId as string | undefined;
+      if (connected) {
+        const token = client.handshake?.auth?.token || client.handshake?.headers?.authorization?.split(" ")[1];
+        if (!token) return;
+        const secret = (this.configService.get("user") as any)?.userJwtSecret;
+        const payload: any = this.jwtService.verify(token, { secret });
+        userId = payload?.userId;
+        if (!userId) return;
+        client.data.userId = userId;
+
+        // Load user's market type restrictions
+        try {
+          const mts = await this.marketService.getUserMarketTypes(userId);
+          client.data.marketTypes = mts;
+        } catch {
+          client.data.marketTypes = [];
+        }
+      }
+      if (!userId) return;
+
+      const redis = this.redisService.getClient();
+      const n = await redis.hincrby(ONLINE_CONN, userId, connected ? 1 : -1);
+      if (connected && n >= 1) {
+        await redis.sadd(ONLINE_SET, userId);
+      } else if (!connected && n <= 0) {
+        await redis.srem(ONLINE_SET, userId);
+        await redis.hdel(ONLINE_CONN, userId);
+      }
+    } catch {
+      // ignore — presence is non-critical
+    }
   }
 
   @SubscribeMessage("subscribe-prices")
@@ -129,7 +189,11 @@ export class MarketGateway implements OnGatewayConnection, OnGatewayDisconnect {
     @MessageBody() data: { baseCode?: string; quoteCode?: string; limit?: number }
   ) {
     try {
-      const marketData = await this.marketService.getMarketData(data.baseCode, data.quoteCode, data.limit || 50);
+      let marketData = await this.marketService.getMarketData(data.baseCode, data.quoteCode, data.limit || 50);
+      const userMarketTypes = client.data?.marketTypes as string[] | undefined;
+      if (userMarketTypes && userMarketTypes.length > 0) {
+        marketData = marketData.filter((d: any) => userMarketTypes.includes(d.marketType));
+      }
       client.emit("market-data", marketData);
       return { success: true };
     } catch (error) {
@@ -151,41 +215,41 @@ export class MarketGateway implements OnGatewayConnection, OnGatewayDisconnect {
   }
 
   private broadcastToSubscribers(pair: string, priceData: any) {
-    // FIX: Check if server is initialized
     if (!this.server) {
       this.logger.warn(`Cannot broadcast: server not initialized yet`);
       return;
     }
 
-    // Get all connected sockets
     const sockets = this.server.sockets;
     if (!sockets) {
       this.logger.warn(`Cannot broadcast: sockets not available`);
       return;
     }
 
-    // Find all sockets subscribed to this pair
+    const pairMarketType = priceData?.marketType as string | undefined;
+
     let broadcastCount = 0;
     for (const [socketId, subscriptions] of this.socketPairs.entries()) {
-      // A client may subscribe to specific pairs or to "__all__" (everything).
-      if (subscriptions.has(pair) || subscriptions.has("__all__")) {
+      if (!subscriptions.has(pair) && !subscriptions.has("__all__")) continue;
+
+      const socket = sockets.sockets?.get(socketId);
+      if (!socket || !socket.connected) {
         try {
-          // Method 1: Get socket by ID
-          const socket = sockets.sockets?.get(socketId);
-          if (socket && socket.connected) {
-            const updateData = { [pair]: priceData };
-            socket.emit("price-update", updateData);
-            broadcastCount++;
-            this.logger.debug(`Broadcasted to ${socketId}`);
-          } else {
-            // Method 2: Try to emit to room (alternative)
-            this.server.to(socketId).emit("price-update", { [pair]: priceData });
-            broadcastCount++;
-          }
-        } catch (error) {
-          this.logger.error(`Error broadcasting to ${socketId}: ${(error as any).message}`);
-        }
+          this.server.to(socketId).emit("price-update", { [pair]: priceData });
+          broadcastCount++;
+        } catch { /* ignore */ }
+        continue;
       }
+
+      // Skip if user has explicit market type restrictions and this pair's type is not allowed
+      const userMarketTypes = socket.data?.marketTypes as string[] | undefined;
+      if (userMarketTypes && userMarketTypes.length > 0 && pairMarketType && !userMarketTypes.includes(pairMarketType)) {
+        continue;
+      }
+
+      const updateData = { [pair]: priceData };
+      socket.emit("price-update", updateData);
+      broadcastCount++;
     }
 
     if (broadcastCount > 0) {

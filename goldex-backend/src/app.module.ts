@@ -32,6 +32,7 @@ import { WalletCoreModule } from "./wallet/wallet-core.module";
 import { FinancialModule } from "./financial/financial.module";
 import { AdminMonitoringModule } from "./admin-monitoring/admin-monitoring.module";
 import { ProviderFinanceModule } from "./provider-finance/provider-finance.module";
+import { WarehouseModule } from "./warehouse/warehouse.module";
 
 @Module({
   imports: [
@@ -111,6 +112,7 @@ import { ProviderFinanceModule } from "./provider-finance/provider-finance.modul
     FinancialModule,
     AdminMonitoringModule,
     ProviderFinanceModule,
+    WarehouseModule,
   ],
   providers: [WinstonLoggerService],
   controllers: [],

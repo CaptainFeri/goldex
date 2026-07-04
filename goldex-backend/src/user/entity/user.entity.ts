@@ -7,6 +7,7 @@ import { UserRefreshTokenEntity } from "./user.refresh.token.entity";
 import { UserKycEntity } from "./user.kyc.entity";
 import { UserBankAccountEntity } from "./user.bank.account.entity";
 import { WalletEntity } from "../../wallet/entities/wallet.entity";
+import { UserMarketTypeEntity } from "./user.market.type.entity";
 
 @Entity("user")
 export class UserEntity extends myBaseEntity {
@@ -57,6 +58,16 @@ export class UserEntity extends myBaseEntity {
     name: "blocked_at",
   })
   blockedAt?: Date;
+
+  // Time-limited activation: the account is considered active only while now is
+  // before this timestamp (null = no expiry). Past it, the user is treated as
+  // blocked/expired.
+  @Column({
+    type: "timestamp",
+    nullable: true,
+    name: "active_until",
+  })
+  activeUntil?: Date;
 
   @Column({
     nullable: false,
@@ -116,4 +127,7 @@ export class UserEntity extends myBaseEntity {
 
   @OneToMany(() => WalletEntity, (wallet) => wallet.user)
   wallets: WalletEntity[];
+
+  @OneToMany(() => UserMarketTypeEntity, (umt) => umt.user)
+  marketTypes: UserMarketTypeEntity[];
 }

@@ -1,13 +1,16 @@
 import { Injectable } from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
-import { In, Repository } from "typeorm";
+import { Between, In, Repository } from "typeorm";
 import { SystemLedgerEntity } from "./entity/system-ledger.entity";
 import { ProviderBalanceSnapshotEntity } from "./entity/provider-balance-snapshot.entity";
 import { ProviderDealSnapshotEntity } from "./entity/provider-deal-snapshot.entity";
 import { WalletEntity } from "../wallet/entities/wallet.entity";
 import { TransactionEntity } from "../wallet/entities/transaction.entity";
 import { OrderEntity } from "../order/order.entity";
+import { OrderStatusEnum } from "../order/enum/order.status.enum";
 import { UserEntity } from "../user/entity/user.entity";
+import { UserKycEntity } from "../user/entity/user.kyc.entity";
+import { KycStatusEnum } from "../baseinfo/enum/kycStatus.enum";
 
 const PROFIT_INTERVALS = ["hour", "day", "week", "month"] as const;
 type ProfitInterval = (typeof PROFIT_INTERVALS)[number];
@@ -28,13 +31,75 @@ export class FinancialService {
     @InjectRepository(TransactionEntity)
     private readonly transactionRepo: Repository<TransactionEntity>,
     @InjectRepository(OrderEntity)
-    private readonly orderRepo: Repository<OrderEntity>
+    private readonly orderRepo: Repository<OrderEntity>,
+    @InjectRepository(UserKycEntity)
+    private readonly kycRepo: Repository<UserKycEntity>
   ) {}
+
+  // Period KPIs with a same-length previous-period comparison.
+  async getStats(fromMs: number, toMs: number) {
+    const span = Math.max(1, toMs - fromMs);
+    const current = await this.computePeriod(new Date(fromMs), new Date(toMs));
+    const previous = await this.computePeriod(new Date(fromMs - span), new Date(fromMs));
+    return { range: { from: fromMs, to: toMs }, current, previous };
+  }
+
+  private async computePeriod(from: Date, to: Date) {
+    const inRange = (col: string) => `${col} BETWEEN :from AND :to`;
+    const params = { from, to };
+
+    const totalOrders = await this.orderRepo
+      .createQueryBuilder("o")
+      .where(inRange("o.created_at"), params)
+      .getCount();
+
+    const completedOrders = await this.orderRepo
+      .createQueryBuilder("o")
+      .where("o.status = :s", { s: OrderStatusEnum.COMPLETED })
+      .andWhere(inRange("o.created_at"), params)
+      .getCount();
+
+    const volRow = await this.orderRepo
+      .createQueryBuilder("o")
+      .select("COALESCE(SUM(o.quantity),0)", "vol")
+      .where("o.status = :s", { s: OrderStatusEnum.COMPLETED })
+      .andWhere(inRange("o.created_at"), params)
+      .getRawOne();
+
+    const avgRow = await this.orderRepo
+      .createQueryBuilder("o")
+      .select("AVG(EXTRACT(EPOCH FROM (o.completed_at - o.created_at)))", "avg")
+      .where("o.status = :s", { s: OrderStatusEnum.COMPLETED })
+      .andWhere("o.completed_at IS NOT NULL")
+      .andWhere(inRange("o.completed_at"), params)
+      .getRawOne();
+
+    const pendingKyc = await this.kycRepo.count({
+      where: { status: KycStatusEnum.PENDING, createAt: Between(from, to) },
+    });
+
+    const totalBlocks = await this.userRepo.count({
+      where: { blockedAt: Between(from, to) },
+    });
+
+    return {
+      dealVolume: Number(volRow?.vol) || 0,
+      avgDealSeconds: Number(avgRow?.avg) || 0,
+      totalOrders,
+      completedOrders,
+      successRate: totalOrders ? Number(((completedOrders / totalOrders) * 100).toFixed(2)) : 0,
+      pendingKyc,
+      totalBlocks,
+    };
+  }
 
   // All orders (admin-wide), newest first. Served here (under admin/financial/*)
   // because GET /admin/orders is shadowed by admin-management's :id route.
-  async getOrders(limit: number, offset: number) {
+  async getOrders(limit: number, offset: number, fromMs?: number, toMs?: number) {
+    const where =
+      fromMs != null && toMs != null ? { createAt: Between(new Date(fromMs), new Date(toMs)) } : {};
     const [rows, total] = await this.orderRepo.findAndCount({
+      where,
       relations: { user: true, pricePair: { baseSymbol: true, quoteSymbol: true } },
       order: { createAt: "DESC" },
       take: limit,

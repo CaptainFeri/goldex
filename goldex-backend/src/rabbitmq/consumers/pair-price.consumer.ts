@@ -84,6 +84,7 @@ export class PairPriceConsumer implements OnModuleInit {
             buyGramPrice: data.buyPrice / MESQAL_TO_GRAM,
             sellGramPrice: data.sellPrice / MESQAL_TO_GRAM,
           });
+            await this.trimHistory(pair.id);
         } catch (err) {
           this.logger.error(`History save failed for mapping ${mapping.id}: ${(err as Error).message}`);
         }
@@ -100,6 +101,29 @@ export class PairPriceConsumer implements OnModuleInit {
       }
     } catch (err) {
       this.logger.error(`handlePriceUpdate failed: ${(err as Error).message}`);
+    }
+  }
+
+  private async trimHistory(pairId: string): Promise<void> {
+    try {
+      const count = await this.historyRepo.count({ where: { pairId } });
+      if (count > 100) {
+        const idsToKeep = await this.historyRepo.find({
+          where: { pairId },
+          order: { createdAt: "DESC" },
+          take: 100,
+        });
+        const keepSet = new Set(idsToKeep.map((r) => r.id));
+        await this.historyRepo
+          .createQueryBuilder()
+          .delete()
+          .from(PricePairHistoryEntity)
+          .where("pair_id = :pairId", { pairId })
+          .andWhere("id NOT IN (:...ids)", { ids: [...keepSet] })
+          .execute();
+      }
+    } catch (err) {
+      this.logger.warn(`trimHistory failed for pair ${pairId}: ${(err as Error).message}`);
     }
   }
 

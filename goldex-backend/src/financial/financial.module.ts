@@ -11,6 +11,7 @@ import { WalletEntity } from "../wallet/entities/wallet.entity";
 import { TransactionEntity } from "../wallet/entities/transaction.entity";
 import { OrderEntity } from "../order/order.entity";
 import { UserEntity } from "../user/entity/user.entity";
+import { UserKycEntity } from "../user/entity/user.kyc.entity";
 import { SymbolEntity } from "../admin-symbol/entity/symbol.entity";
 
 @Module({
@@ -23,6 +24,7 @@ import { SymbolEntity } from "../admin-symbol/entity/symbol.entity";
       TransactionEntity,
       OrderEntity,
       UserEntity,
+      UserKycEntity,
       SymbolEntity,
     ]),
   ],

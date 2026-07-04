@@ -3,6 +3,7 @@ import { InjectRepository } from "@nestjs/typeorm";
 import { Repository } from "typeorm";
 import { PricePairEntity } from "../admin-pair/entity/price.pair.entity";
 import { SymbolEntity } from "../admin-symbol/entity/symbol.entity";
+import { UserMarketTypeEntity } from "../user/entity/user.market.type.entity";
 import { Cron, CronExpression } from "@nestjs/schedule";
 import { RabbitMQService } from "../rabbitmq/rabbitmq.service";
 import {
@@ -49,6 +50,8 @@ export class MarketService implements OnModuleInit {
     private readonly pricePairRepo: Repository<PricePairEntity>,
     @InjectRepository(SymbolEntity)
     private readonly symbolRepo: Repository<SymbolEntity>,
+    @InjectRepository(UserMarketTypeEntity)
+    private readonly userMarketTypeRepo: Repository<UserMarketTypeEntity>,
     private readonly rmq: RabbitMQService,
   ) {}
 
@@ -250,6 +253,11 @@ export class MarketService implements OnModuleInit {
         }
       });
     }
+  }
+
+  async getUserMarketTypes(userId: string): Promise<string[]> {
+    const records = await this.userMarketTypeRepo.find({ where: { userId } });
+    return records.map((r) => r.marketType);
   }
 
   async getMarketData(baseCode?: string, quoteCode?: string, limit: number = 50) {

@@ -45,12 +45,33 @@ export class AdminFinancialController {
 
   @Get("orders")
   @AdminRoles(AdminRole.SUPER_ADMIN, AdminRole.ADMIN, AdminRole.FINANCE)
-  @ApiOperation({ summary: "All orders (admin-wide)" })
+  @ApiOperation({ summary: "All orders (admin-wide), optionally within a date range" })
   async orders(
     @Query("limit", new DefaultValuePipe(50), ParseIntPipe) limit: number,
-    @Query("offset", new DefaultValuePipe(0), ParseIntPipe) offset: number
+    @Query("offset", new DefaultValuePipe(0), ParseIntPipe) offset: number,
+    @Query("from") from?: string,
+    @Query("to") to?: string
   ) {
-    return { data: await this.financialService.getOrders(limit, offset) };
+    return { data: await this.financialService.getOrders(limit, offset, this.ts(from), this.ts(to)) };
+  }
+
+  @Get("stats")
+  @AdminRoles(AdminRole.SUPER_ADMIN, AdminRole.ADMIN, AdminRole.FINANCE)
+  @ApiOperation({ summary: "Period KPIs (deal volume, avg time, success rate, pending KYC, blocks) + previous-period compare" })
+  async stats(@Query("from") from?: string, @Query("to") to?: string) {
+    const now = Date.now();
+    const toMs = this.ts(to) ?? now;
+    const fromMs = this.ts(from) ?? toMs - 7 * 24 * 3600_000;
+    return { data: await this.financialService.getStats(fromMs, toMs) };
+  }
+
+  // Parse epoch ms or ISO date → ms (or undefined).
+  private ts(v?: string): number | undefined {
+    if (!v) return undefined;
+    const n = Number(v);
+    if (!Number.isNaN(n) && n > 0) return n;
+    const d = Date.parse(v);
+    return Number.isNaN(d) ? undefined : d;
   }
 
   @Get("transactions")

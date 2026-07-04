@@ -1,0 +1,7 @@
+export enum PacketStatusEnum {
+  PENDING = "PENDING",
+  IN_WAREHOUSE = "IN_WAREHOUSE",
+  RELEASED = "RELEASED",
+  WITHDRAWN = "WITHDRAWN",
+  ORPHAN = "ORPHAN",
+}

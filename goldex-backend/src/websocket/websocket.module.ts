@@ -10,12 +10,15 @@ import { PricePairEntity } from "../admin-pair/entity/price.pair.entity";
 import { AdminPairModule } from "../admin-pair/admin-pair.module";
 import { AdminPairService } from "../admin-pair/admin-pair.service";
 import { SymbolEntity } from "../admin-symbol/entity/symbol.entity";
+import { UserMarketTypeEntity } from "../user/entity/user.market.type.entity";
+import { RedisModule } from "../redis/redis.module";
 
 @Module({
   imports: [
     ScheduleModule.forRoot(),
-    TypeOrmModule.forFeature([PricePairEntity, SymbolEntity]),
+    TypeOrmModule.forFeature([PricePairEntity, SymbolEntity, UserMarketTypeEntity]),
     AdminPairModule,
+    RedisModule,
     JwtModule.registerAsync({
       imports: [ConfigModule],
       useFactory: async (configService: ConfigService) => ({

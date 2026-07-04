@@ -99,7 +99,13 @@ export class UserWalletService {
       id: w.id,
       status: w.status,
       symbol: w.symbol
-        ? { id: w.symbol.id, name: w.symbol.name, slug: w.symbol.slug, picPath: w.symbol.picPath }
+        ? {
+            id: w.symbol.id,
+            name: w.symbol.name,
+            slug: w.symbol.slug,
+            picPath: w.symbol.picPath,
+            type: w.symbol.symbolType,
+          }
         : null,
       freeBalance: free,
       lockedBalance: locked,

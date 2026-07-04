@@ -290,6 +290,19 @@ export class MinioService {
   }
 
   /**
+   * Get file as readable stream for serving through the app
+   */
+  async getFileStream(bucketName: string, objectName: string): Promise<Readable> {
+    await this.checkFileExists(bucketName, objectName);
+    try {
+      return await this.minioClient.getObject(bucketName, objectName);
+    } catch (error) {
+      this.logger.error(`Failed to get file stream: ${error}`);
+      throw new BadRequestException(`Failed to read file: ${error}`);
+    }
+  }
+
+  /**
    * Check if file exists
    */
   private async checkFileExists(bucketName: string, objectName: string): Promise<void> {

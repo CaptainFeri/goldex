@@ -1,12 +1,59 @@
-import { Controller, DefaultValuePipe, Get, Param, ParseIntPipe, Patch, Query, UseGuards } from "@nestjs/common";
-import { ApiBearerAuth, ApiQuery, ApiTags } from "@nestjs/swagger";
+import {
+  Body,
+  Controller,
+  DefaultValuePipe,
+  Get,
+  Param,
+  ParseIntPipe,
+  Patch,
+  Post,
+  Put,
+  Query,
+  UseGuards,
+} from "@nestjs/common";
+import { ApiBearerAuth, ApiOperation, ApiQuery, ApiTags } from "@nestjs/swagger";
 import { AdminUserService } from "./admin-user.service";
 import { AdminAuthGuard } from "../admin/auth/Guard/admin.guard";
+import { CreatePartnerDto } from "./dto/create-partner.dto";
+import { AssignMarketTypesDto } from "./dto/assign-market-types.dto";
 
 @Controller("admin/users")
 @ApiTags("Admin-User")
 export class AdminUserController {
   constructor(private readonly adminUserService: AdminUserService) {}
+
+  @Post("partners")
+  @UseGuards(AdminAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: "Create a partner user (mobile, optional activation expiry)" })
+  async createPartner(@Body() dto: CreatePartnerDto) {
+    const partner = await this.adminUserService.createPartner(dto);
+    const { password, ...safe } = partner as any;
+    return { data: safe };
+  }
+
+  @Get("stats")
+  @UseGuards(AdminAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: "User KPIs (by role, active/inactive, online, blocks, KYC, new)" })
+  async stats(@Query("from") from?: string, @Query("to") to?: string) {
+    const ts = (v?: string) => {
+      if (!v) return undefined;
+      const n = Number(v);
+      if (!Number.isNaN(n) && n > 0) return n;
+      const d = Date.parse(v);
+      return Number.isNaN(d) ? undefined : d;
+    };
+    return { data: await this.adminUserService.getUserStats(ts(from), ts(to)) };
+  }
+
+  @Get("online")
+  @UseGuards(AdminAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: "IDs of currently-online users" })
+  async online() {
+    return { data: await this.adminUserService.onlineUserIds() };
+  }
 
   @Get("users")
   @UseGuards(AdminAuthGuard)
@@ -61,6 +108,26 @@ export class AdminUserController {
   async switchBlockUnBlockUserById(@Param("id") id: string) {
     return {
       data: await this.adminUserService.switchBlockStatusUserById(id),
+    };
+  }
+
+  @ApiBearerAuth()
+  @UseGuards(AdminAuthGuard)
+  @Put("users/:id/market-types")
+  @ApiOperation({ summary: "Assign market types a user can see (replaces existing)" })
+  async assignUserMarketTypes(@Param("id") id: string, @Body() dto: AssignMarketTypesDto) {
+    return {
+      data: await this.adminUserService.assignUserMarketTypes(id, dto.marketTypes),
+    };
+  }
+
+  @ApiBearerAuth()
+  @UseGuards(AdminAuthGuard)
+  @Get("users/:id/market-types")
+  @ApiOperation({ summary: "Get market types a user can see" })
+  async getUserMarketTypes(@Param("id") id: string) {
+    return {
+      data: await this.adminUserService.getUserMarketTypes(id),
     };
   }
 

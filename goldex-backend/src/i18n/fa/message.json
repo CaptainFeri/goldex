@@ -44,5 +44,23 @@
   "UPLOADED": "{property} با موفقیت آپلود شد",
   "OTP_SENT": "کد با موفقیت ارسال شد",
   "MOBILE_VERIFIED": "موبایل تایید شد",
-  "BANK_CARD_VERIFIED": "کارت بانکی تایید شد"
+  "BANK_CARD_VERIFIED": "کارت بانکی تایید شد",
+
+  "REQUEST NOT FOUND": "درخواست یافت نشد",
+  "PENDING WITHDRAW REQUEST NOT FOUND": "درخواست برداشت در انتظار یافت نشد",
+  "ONLY DEPOSIT REQUESTS CAN CONFIRM MATERIAL": "فقط درخواست‌های واریز می‌توانند مواد را تایید کنند",
+  "PACKET ALREADY PROCESSED": "بسته قبلاً پردازش شده است",
+  "NO PACKET ASSOCIATED WITH THIS DEPOSIT REQUEST": "هیچ بسته‌ای به این درخواست واریز متصل نیست",
+  "WITHDRAWAL_NO_PACKET": "نمی‌توان برداشت را بدون بسته تایید کرد. ابتدا از برگه برداشت در انتظار، بسته را اختصاص دهید.",
+  "NO PACKET ASSOCIATED WITH THIS WITHDRAWAL REQUEST": "هیچ بسته‌ای به این درخواست برداشت متصل نیست",
+  "CANNOT CANCEL A NON-PENDING REQUEST": "نمی‌توان درخواستی را که در حالت انتظار نیست لغو کرد",
+  "PACKET NOT FOUND": "بسته یافت نشد",
+  "PACKET MUST BE ORPHAN TO ASSIGN TO A REQUEST": "برای اختصاص به درخواست، بسته باید یتیم باشد",
+  "PACKET IS NOT AN ORPHAN OR ALREADY ASSIGNED": "بسته یتیم نیست یا قبلاً اختصاص داده شده است",
+  "CANNOT DELETE A PACKET THAT IS IN WAREHOUSE. RELEASE IT FIRST.": "نمی‌توان بسته‌ای را که در انبار است حذف کرد. ابتدا آن را آزاد کنید.",
+  "WAREHOUSE NOT FOUND": "انبار یافت نشد",
+  "CANNOT DELETE WAREHOUSE WITH ACTIVE PACKETS": "نمی‌توان انباری را که بسته‌های فعال دارد حذف کرد",
+  "INSUFFICIENT WAREHOUSE CAPACITY": "ظرفیت انبار کافی نیست",
+  "CANNOT_ASSIGN_PACKET_INVALID_STATUS": "نمی‌توان بسته را به این درخواست اختصاص داد. فقط درخواست‌های در انتظار یا تایید شده می‌توانند بسته دریافت کنند.",
+  "REQUEST_ALREADY_HAS_PACKET": "این درخواست قبلاً یک بسته اختصاص داده شده است."
 }

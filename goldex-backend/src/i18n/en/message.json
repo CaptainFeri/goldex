@@ -42,5 +42,23 @@
   "UPLOADED": "{property} uploaded",
   "OTP_SENT": "otp sent successfully",
   "MOBILE_VERIFIED": "Mobile verified",
-  "BANK_CARD_VERIFIED": "Bank card verified"
+  "BANK_CARD_VERIFIED": "Bank card verified",
+
+  "REQUEST NOT FOUND": "Request not found",
+  "PENDING WITHDRAW REQUEST NOT FOUND": "Pending withdraw request not found",
+  "ONLY DEPOSIT REQUESTS CAN CONFIRM MATERIAL": "Only deposit requests can confirm material",
+  "PACKET ALREADY PROCESSED": "Packet already processed",
+  "NO PACKET ASSOCIATED WITH THIS DEPOSIT REQUEST": "No packet associated with this deposit request",
+  "WITHDRAWAL_NO_PACKET": "Cannot approve withdrawal without a packet. Use Assign Packet first.",
+  "NO PACKET ASSOCIATED WITH THIS WITHDRAWAL REQUEST": "No packet associated with this withdrawal request",
+  "CANNOT CANCEL A NON-PENDING REQUEST": "Cannot cancel a non-pending request",
+  "PACKET NOT FOUND": "Packet not found",
+  "PACKET MUST BE ORPHAN TO ASSIGN TO A REQUEST": "Packet must be orphan to assign to a request",
+  "PACKET IS NOT AN ORPHAN OR ALREADY ASSIGNED": "Packet is not an orphan or already assigned",
+  "CANNOT DELETE A PACKET THAT IS IN WAREHOUSE. RELEASE IT FIRST.": "Cannot delete a packet that is in warehouse. Release it first.",
+  "WAREHOUSE NOT FOUND": "Warehouse not found",
+  "CANNOT DELETE WAREHOUSE WITH ACTIVE PACKETS": "Cannot delete warehouse with active packets",
+  "INSUFFICIENT WAREHOUSE CAPACITY": "Insufficient warehouse capacity",
+  "CANNOT_ASSIGN_PACKET_INVALID_STATUS": "Cannot assign packet to this request. Only PENDING or APPROVED requests can receive a packet.",
+  "REQUEST_ALREADY_HAS_PACKET": "This request already has a packet assigned."
 }

@@ -1,23 +1,51 @@
-import { Controller, Get, UseGuards } from "@nestjs/common";
+import { Controller, Get, Req, UseGuards } from "@nestjs/common";
 import { ApiBearerAuth, ApiOperation, ApiTags } from "@nestjs/swagger";
+import { InjectRepository } from "@nestjs/typeorm";
+import { Repository } from "typeorm";
 import { AdminPairService } from "./admin-pair.service";
 import { PricePairEntity } from "./entity/price.pair.entity";
 import { GainTypeEnum } from "../admin-symbol/enum/gain.type.enum";
+import { MarketTypeEnum } from "./enum/market.type.enum";
 import { MESQAL_TO_GRAM } from "../common/constants";
 import { UserAuthGuard } from "../user/auth/Guard/user.guard";
+import { UserRoleEnum } from "../shared/enum/user.role.enum";
+import { UserExpressRequest } from "../user/auth/types/user-express-request";
+import { UserMarketTypeEntity } from "../user/entity/user.market.type.entity";
 
 @ApiTags("Market")
 @ApiBearerAuth()
 @UseGuards(UserAuthGuard)
 @Controller("market")
 export class MarketController {
-  constructor(private readonly pairService: AdminPairService) {}
+  constructor(
+    private readonly pairService: AdminPairService,
+    @InjectRepository(UserMarketTypeEntity)
+    private readonly userMarketTypeRepo: Repository<UserMarketTypeEntity>,
+  ) {}
 
   @Get("pairs")
   @ApiOperation({ summary: "List valid trading pairs with user-facing prices" })
-  async getPairs() {
+  async getPairs(@Req() req: UserExpressRequest) {
     const pairs = await this.pairService.findValidWithSymbols();
-    return { data: pairs.map((p) => this.toMarketView(p)) };
+    const user = req.user;
+    let visible: PricePairEntity[];
+
+    if (user) {
+      const userMts = await this.userMarketTypeRepo.find({ where: { userId: user.id } });
+      if (userMts.length > 0) {
+        const allowed = new Set(userMts.map((r) => r.marketType));
+        visible = pairs.filter((p) => allowed.has(p.marketType));
+      } else {
+        // Fallback: no explicit assignment — use legacy role-based logic
+        visible = user.role === UserRoleEnum.PARTNER
+          ? pairs
+          : pairs.filter((p) => p.marketType === MarketTypeEnum.FORMAL);
+      }
+    } else {
+      visible = pairs;
+    }
+
+    return { data: visible.map((p) => this.toMarketView(p)) };
   }
 
   // Mirrors MarketService/PairPriceConsumer: the price the user trades at is the
