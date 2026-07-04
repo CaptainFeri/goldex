@@ -18,6 +18,17 @@ export function fmtDate(v: string | null | undefined): string {
   });
 }
 
+// Seconds → compact duration, e.g. "12s", "3m 5s", "1h 4m".
+export function fmtDuration(sec: number | null | undefined): string {
+  const s = Math.round(Number(sec) || 0);
+  if (s <= 0) return "—";
+  if (s < 60) return `${s}s`;
+  const m = Math.floor(s / 60);
+  if (m < 60) return `${m}m ${s % 60}s`;
+  const h = Math.floor(m / 60);
+  return `${h}h ${m % 60}m`;
+}
+
 export function fmtTime(v: string): string {
   const d = new Date(v);
   return d.toLocaleTimeString("fa-IR", { hour: "2-digit", minute: "2-digit", second: "2-digit" });

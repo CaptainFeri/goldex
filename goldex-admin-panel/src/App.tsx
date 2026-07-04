@@ -12,6 +12,8 @@ import MappingsPage from "./pages/MappingsPage";
 import AdminsPage from "./pages/AdminsPage";
 import FinancePage from "./pages/FinancePage";
 import ProviderFinancePage from "./pages/ProviderFinancePage";
+import UsersPage from "./pages/UsersPage";
+import WarehousePage from "./pages/WarehousePage";
 
 function RequireAuth({ children }: { children: JSX.Element }) {
   const { token } = useAuth();
@@ -31,6 +33,7 @@ export default function App() {
       >
         <Route index element={<DashboardPage />} />
         <Route path="/compare" element={<ComparePage />} />
+        <Route path="/users" element={<UsersPage />} />
         <Route path="/kyc" element={<KycPage />} />
         <Route path="/wallets" element={<WalletsPage />} />
         <Route path="/symbols" element={<SymbolsPage />} />
@@ -39,6 +42,7 @@ export default function App() {
         <Route path="/finance" element={<FinancePage />} />
         <Route path="/provider-finance" element={<ProviderFinancePage />} />
         <Route path="/admins" element={<AdminsPage />} />
+        <Route path="/warehouse" element={<WarehousePage />} />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>

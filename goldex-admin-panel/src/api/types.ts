@@ -100,6 +100,69 @@ export interface PairMapping {
   [k: string]: any;
 }
 
+// ---- Warehouse ----
+export interface Warehouse {
+  id: string;
+  name: string;
+  description?: string;
+  location?: string;
+  capacityTotal: number;
+  capacityUsed: number;
+  capacityRemaining: number;
+  deliveryDates?: string[];
+  timeLimit?: string;
+  status: string;
+  packets?: Packet[];
+  createAt?: string;
+  [k: string]: any;
+}
+
+export interface Packet {
+  id: string;
+  warehouseId?: string;
+  warehouse?: Warehouse;
+  pureWeight: number;
+  idSecure: string;
+  dateTime?: string;
+  deliveryTime?: string;
+  status: string;
+  warehouseIndexPosition?: string;
+  ang?: number;
+  ayar?: number;
+  picture?: string;
+  user?: any;
+  userId?: string;
+  qrCode?: string;
+  isOrphan: boolean;
+  batchNumber?: string;
+  createAt?: string;
+  [k: string]: any;
+}
+
+export interface WarehouseRequest {
+  id: string;
+  type: "INPUT" | "OUTPUT";
+  status: string;
+  user?: any;
+  userId?: string;
+  packet?: Packet;
+  packetId?: string;
+  warehouse?: Warehouse;
+  warehouseId?: string;
+  admin?: Admin;
+  adminId?: string;
+  weight: number;
+  symbolId?: string;
+  deliveryDate?: string;
+  deliveryTime?: string;
+  deliveryLocation?: string;
+  notes?: string;
+  processedAt?: string;
+  metadata?: any;
+  createAt?: string;
+  [k: string]: any;
+}
+
 // ---- Monitoring / charts ----
 export interface ComparePoint {
   timestamp: string;
