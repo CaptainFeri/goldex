@@ -110,6 +110,7 @@ export interface Warehouse {
   capacityUsed: number;
   capacityRemaining: number;
   deliveryDates?: string[];
+  deliverySchedule?: Record<string, { start: string; end: string }>;
   timeLimit?: string;
   status: string;
   packets?: Packet[];

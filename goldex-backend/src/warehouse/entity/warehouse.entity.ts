@@ -45,6 +45,9 @@ export class WarehouseEntity extends myBaseEntity {
   @Column({ type: "jsonb", name: "delivery_dates", nullable: true })
   deliveryDates: string[];
 
+  @Column({ type: "jsonb", name: "delivery_schedule", nullable: true })
+  deliverySchedule: Record<string, { start: string; end: string }>;
+
   @Column({
     type: "varchar",
     length: 100,

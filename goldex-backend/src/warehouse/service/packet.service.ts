@@ -419,14 +419,11 @@ export class PacketService {
     pendingRequest.packet = packet;
     pendingRequest.warehouseId = packet.warehouseId;
     pendingRequest.status = RequestStatusEnum.APPROVED;
-    pendingRequest.deliveryDate = new Date();
     pendingRequest.deliveryLocation = warehouse.location;
 
-    const deliveryDates = warehouse.deliveryDates;
-    if (deliveryDates && deliveryDates.length > 0) {
-      pendingRequest.deliveryDate = new Date(deliveryDates[0]);
-    }
-    pendingRequest.deliveryTime = warehouse.timeLimit || null;
+    const deliveryInfo = this.getDeliveryInfoFromWarehouse(warehouse);
+    pendingRequest.deliveryDate = deliveryInfo.date;
+    pendingRequest.deliveryTime = deliveryInfo.time || warehouse.timeLimit || null;
 
     await queryRunner.manager.save(pendingRequest);
 
@@ -519,6 +516,36 @@ export class PacketService {
     } catch {
       return url;
     }
+  }
+
+  private getDeliveryInfoFromWarehouse(warehouse: WarehouseEntity): { date: Date; time: string | null } {
+    if (warehouse.deliverySchedule && Object.keys(warehouse.deliverySchedule).length > 0) {
+      const dayNames = Object.keys(warehouse.deliverySchedule);
+      const dayName = dayNames[0].toLowerCase();
+      const schedule = warehouse.deliverySchedule[dayNames[0]];
+
+      const dayMap: Record<string, number> = {
+        sunday: 0, monday: 1, tuesday: 2, wednesday: 3, thursday: 4, friday: 5, saturday: 6,
+      };
+
+      const targetDay = dayMap[dayName];
+      if (targetDay !== undefined) {
+        const now = new Date();
+        const currentDay = now.getDay();
+        let daysUntil = targetDay - currentDay;
+        if (daysUntil <= 0) daysUntil += 7;
+
+        const nextDate = new Date(now);
+        nextDate.setDate(now.getDate() + daysUntil);
+
+        return { date: nextDate, time: schedule?.start || null };
+      }
+    }
+
+    return {
+      date: warehouse.deliveryDates?.length ? new Date(warehouse.deliveryDates[0]) : new Date(),
+      time: warehouse.timeLimit || null,
+    };
   }
 
   private async releaseWarehouseCapacity(packet: PacketEntity): Promise<void> {

@@ -80,10 +80,11 @@ export class WarehouseRequestService {
 
     this.logger.log(`Deposit request created: ${saved.id} by user ${userId}, pending admin approval`);
 
+    const deliveryInfo = this.getDeliveryInfoFromWarehouse(warehouse);
     return {
       ...saved,
-      deliveryDate: warehouse.deliveryDates?.length ? new Date(warehouse.deliveryDates[0]) : new Date(),
-      deliveryTime: warehouse.timeLimit || null,
+      deliveryDate: deliveryInfo.date,
+      deliveryTime: deliveryInfo.time,
       deliveryLocation: warehouse.location || null,
     };
   }
@@ -173,8 +174,7 @@ export class WarehouseRequestService {
       }
 
       const warehouse = assignedPackets[0].warehouse;
-      const deliveryDates = warehouse.deliveryDates;
-      const deliveryDate = deliveryDates && deliveryDates.length > 0 ? new Date(deliveryDates[0]) : new Date();
+      const deliveryInfo = this.getDeliveryInfoFromWarehouse(warehouse);
 
       wallet.freeBalance = freeBalance.minus(decimalAmount).toNumber();
       wallet.lockedBalance = new Decimal(wallet.lockedBalance).plus(decimalAmount).toNumber();
@@ -189,8 +189,8 @@ export class WarehouseRequestService {
         symbolId: dto.symbolId,
         weight: dto.weight,
         notes: dto.notes,
-        deliveryDate,
-        deliveryTime: warehouse.timeLimit || null,
+        deliveryDate: deliveryInfo.date,
+        deliveryTime: deliveryInfo.time || warehouse.timeLimit || null,
         deliveryLocation: warehouse.location || null,
       });
 
@@ -226,7 +226,7 @@ export class WarehouseRequestService {
 
       if (user?.user?.phone) {
         try {
-          const msg = `Your withdrawal request has been approved. Delivery date: ${deliveryDate.toISOString().split("T")[0]}, Location: ${warehouse.location || "Warehouse"}`;
+          const msg = `Your withdrawal request has been approved. Delivery date: ${deliveryInfo.date.toISOString().split("T")[0]}, Location: ${warehouse.location || "Warehouse"}`;
           await this.smsService.sendSMS(user.user.phone, msg);
         } catch (e) {
           this.logger.warn(`Failed to notify user ${userId} about withdrawal approval`);
@@ -235,8 +235,8 @@ export class WarehouseRequestService {
 
       return {
         ...saved,
-        deliveryDate,
-        deliveryTime: warehouse.timeLimit,
+        deliveryDate: deliveryInfo.date,
+        deliveryTime: deliveryInfo.time || warehouse.timeLimit,
         deliveryLocation: warehouse.location,
         assignedPackets: assignedPackets.map((p) => ({ id: p.id, idSecure: p.idSecure, pureWeight: p.pureWeight })),
       };
@@ -557,9 +557,9 @@ export class WarehouseRequestService {
     request.packet = savedPacket;
 
     if (warehouse) {
-      const deliveryDates = warehouse.deliveryDates;
-      request.deliveryDate = deliveryDates && deliveryDates.length > 0 ? new Date(deliveryDates[0]) : new Date();
-      request.deliveryTime = warehouse.timeLimit || null;
+      const deliveryInfo = this.getDeliveryInfoFromWarehouse(warehouse);
+      request.deliveryDate = deliveryInfo.date;
+      request.deliveryTime = deliveryInfo.time || warehouse.timeLimit || null;
       request.deliveryLocation = warehouse.location || null;
     }
 
@@ -815,8 +815,7 @@ export class WarehouseRequestService {
       }
 
       const warehouse = packet.warehouse;
-      const deliveryDates = warehouse.deliveryDates;
-      const deliveryDate = deliveryDates && deliveryDates.length > 0 ? new Date(deliveryDates[0]) : new Date();
+      const deliveryInfo = this.getDeliveryInfoFromWarehouse(warehouse);
 
       packet.userId = request.userId;
       packet.isOrphan = false;
@@ -828,8 +827,8 @@ export class WarehouseRequestService {
       request.warehouseId = packet.warehouseId;
       request.adminId = adminId;
       request.processedAt = new Date();
-      request.deliveryDate = deliveryDate;
-      request.deliveryTime = warehouse.timeLimit || null;
+      request.deliveryDate = deliveryInfo.date;
+      request.deliveryTime = deliveryInfo.time || warehouse.timeLimit || null;
       request.deliveryLocation = warehouse.location || null;
       await queryRunner.manager.save(request);
 
@@ -847,7 +846,7 @@ export class WarehouseRequestService {
 
       if (request.user?.phone) {
         try {
-          const msg = `Your withdrawal request ${request.id} has been approved. Delivery date: ${deliveryDate.toISOString().split("T")[0]}, Location: ${warehouse.location || "Warehouse"}`;
+          const msg = `Your withdrawal request ${request.id} has been approved. Delivery date: ${deliveryInfo.date.toISOString().split("T")[0]}, Location: ${warehouse.location || "Warehouse"}`;
           await this.smsService.sendSMS(request.user.phone, msg);
         } catch (e) {
           this.logger.warn(`Failed to notify user ${request.userId} about packet assignment`);
@@ -1070,6 +1069,36 @@ export class WarehouseRequestService {
       transaction.completedAt = new Date();
     }
     return transaction;
+  }
+
+  private getDeliveryInfoFromWarehouse(warehouse: WarehouseEntity): { date: Date; time: string | null } {
+    if (warehouse.deliverySchedule && Object.keys(warehouse.deliverySchedule).length > 0) {
+      const dayNames = Object.keys(warehouse.deliverySchedule);
+      const dayName = dayNames[0].toLowerCase();
+      const schedule = warehouse.deliverySchedule[dayNames[0]];
+
+      const dayMap: Record<string, number> = {
+        sunday: 0, monday: 1, tuesday: 2, wednesday: 3, thursday: 4, friday: 5, saturday: 6,
+      };
+
+      const targetDay = dayMap[dayName];
+      if (targetDay !== undefined) {
+        const now = new Date();
+        const currentDay = now.getDay();
+        let daysUntil = targetDay - currentDay;
+        if (daysUntil <= 0) daysUntil += 7;
+
+        const nextDate = new Date(now);
+        nextDate.setDate(now.getDate() + daysUntil);
+
+        return { date: nextDate, time: schedule?.start || null };
+      }
+    }
+
+    return {
+      date: warehouse.deliveryDates?.length ? new Date(warehouse.deliveryDates[0]) : new Date(),
+      time: warehouse.timeLimit || null,
+    };
   }
 
   private async addHistory(

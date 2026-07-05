@@ -49,6 +49,7 @@ export class WarehouseService {
       capacityUsed: 0,
       capacityRemaining: dto.capacityTotal,
       deliveryDates: dto.deliveryDates || [],
+      deliverySchedule: dto.deliverySchedule || null,
       timeLimit: dto.timeLimit,
       status: dto.status || WarehouseStatusEnum.ACTIVE,
     });
@@ -108,16 +109,25 @@ export class WarehouseService {
     if (dto.timeLimit !== undefined) warehouse.timeLimit = dto.timeLimit;
     if (dto.status !== undefined) warehouse.status = dto.status;
     if (dto.deliveryDates !== undefined) warehouse.deliveryDates = dto.deliveryDates;
+    if (dto.deliverySchedule !== undefined) warehouse.deliverySchedule = dto.deliverySchedule;
 
     if (dto.capacityTotal !== undefined) {
       const newTotal = new Decimal(dto.capacityTotal);
-      if (newTotal.lessThan(warehouse.capacityUsed)) {
+      const usedDec = new Decimal(warehouse.capacityUsed);
+
+      if (usedDec.lessThan(0)) {
+        throw new BadRequestException(
+          `Warehouse capacityUsed is negative (${warehouse.capacityUsed}). Please contact support to fix data inconsistency.`
+        );
+      }
+
+      if (newTotal.lessThan(usedDec)) {
         throw new BadRequestException(
           `Cannot set total capacity less than used capacity (${warehouse.capacityUsed})`
         );
       }
       warehouse.capacityTotal = dto.capacityTotal;
-      warehouse.capacityRemaining = newTotal.minus(warehouse.capacityUsed).toNumber();
+      warehouse.capacityRemaining = newTotal.minus(usedDec).toNumber();
     }
 
     const saved = await this.warehouseRepository.save(warehouse);
@@ -315,6 +325,12 @@ export class WarehouseService {
 
     const newUsed = capacityUsedDec.plus(weightDec);
     const newRemaining = capacityTotalDec.minus(newUsed);
+
+    if (newUsed.lessThan(0)) {
+      throw new BadRequestException(
+        `Cannot reduce capacity below zero. Current used: ${warehouse.capacityUsed}, change: ${weightChange}`
+      );
+    }
 
     if (newRemaining.lessThan(0)) {
       throw new BadRequestException("Insufficient warehouse capacity");

@@ -1,5 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from "@nestjs/swagger";
-import { IsString, IsNumber, IsEnum, IsArray, IsOptional, Min, IsUUID } from "class-validator";
+import { IsString, IsNumber, IsEnum, IsArray, IsObject, IsOptional, Min, IsUUID } from "class-validator";
 import { WarehouseStatusEnum } from "../../enum/warehouse-status.enum";
 
 export class AdminCreateWarehouseDto {
@@ -29,6 +29,14 @@ export class AdminCreateWarehouseDto {
   @IsArray()
   @IsOptional()
   deliveryDates?: string[];
+
+  @ApiPropertyOptional({
+    description: "Delivery schedule (e.g. { sunday: { start: '09:00', end: '18:00' }, monday: { start: '09:00', end: '18:00' } })",
+    example: { sunday: { start: "09:00", end: "18:00" }, monday: { start: "09:00", end: "18:00" } },
+  })
+  @IsObject()
+  @IsOptional()
+  deliverySchedule?: Record<string, { start: string; end: string }>;
 
   @ApiPropertyOptional({ description: "Daily time limit" })
   @IsString()

@@ -46,6 +46,13 @@ export class ProviderDealConsumer implements OnModuleInit {
       if (!data?.providerKey || !data.doneDeals) return;
       const a = data.doneDeals;
 
+      // The pricing engine computes netVolume = buyVolume - sellVolume using the
+      // provider API's convention (e.g. Talaab returns 'فروش' for a platform buy,
+      // so buyVolume=0, sellVolume=vol, netVolume=-vol).  Negate both net fields
+      // so that a platform buy always yields a positive net position.
+      const netVolume = -(a.netVolume ?? 0);
+      const netValue = -(a.netValue ?? 0);
+
       await this.snapshotRepo.upsert(
         {
           providerKey: data.providerKey,
@@ -56,13 +63,13 @@ export class ProviderDealConsumer implements OnModuleInit {
           sellVolume: a.sellVolume ?? 0,
           buyValue: a.buyValue ?? 0,
           sellValue: a.sellValue ?? 0,
-          netVolume: a.netVolume ?? 0,
-          netValue: a.netValue ?? 0,
+          netVolume,
+          netValue,
           lastDealAt: a.lastDealAt ? new Date(a.lastDealAt) : null,
         },
         ["providerKey"]
       );
-      this.logger.log(`Provider deals updated: ${data.providerKey} count=${a.dealCount} net=${a.netVolume}`);
+      this.logger.log(`Provider deals updated: ${data.providerKey} count=${a.dealCount} net=${netVolume}`);
     } catch (err) {
       this.logger.error(`handleDealsUpdate failed: ${(err as Error).message}`);
     }

@@ -69,6 +69,16 @@ const TABS = [
 
 // ---- Sub-components ----
 
+const DAY_OPTIONS = [
+  { en: "saturday", fa: "شنبه" },
+  { en: "sunday", fa: "یکشنبه" },
+  { en: "monday", fa: "دوشنبه" },
+  { en: "tuesday", fa: "سه‌شنبه" },
+  { en: "wednesday", fa: "چهارشنبه" },
+  { en: "thursday", fa: "پنجشنبه" },
+  { en: "friday", fa: "جمعه" },
+];
+
 function WarehouseForm({
   initial,
   onClose,
@@ -82,6 +92,9 @@ function WarehouseForm({
   const [location, setLocation] = useState(initial?.location ?? "");
   const [capacityTotal, setCapacityTotal] = useState(String(initial?.capacityTotal ?? ""));
   const [timeLimit, setTimeLimit] = useState(initial?.timeLimit ?? "");
+  const [schedule, setSchedule] = useState<Record<string, { start: string; end: string }>>(
+    initial?.deliverySchedule ?? {}
+  );
   const isEdit = !!initial?.id;
 
   const save = useMutation({
@@ -93,14 +106,38 @@ function WarehouseForm({
     },
   });
 
+  const toggleDay = (dayEn: string, checked: boolean) => {
+    setSchedule((prev) => {
+      const next = { ...prev };
+      if (checked) next[dayEn] = { start: "09:00", end: "18:00" };
+      else delete next[dayEn];
+      return next;
+    });
+  };
+
+  const updateDayTime = (dayEn: string, field: "start" | "end", value: string) => {
+    setSchedule((prev) => {
+      const day = prev[dayEn];
+      if (!day) return prev;
+      return { ...prev, [dayEn]: { ...day, [field]: value } };
+    });
+  };
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    save.mutate({ name, description: desc, location, capacityTotal: Number(capacityTotal), timeLimit: timeLimit || undefined });
+    save.mutate({
+      name,
+      description: desc,
+      location,
+      capacityTotal: Number(capacityTotal),
+      timeLimit: timeLimit || undefined,
+      deliverySchedule: Object.keys(schedule).length > 0 ? schedule : undefined,
+    });
   };
 
   return (
     <Modal title={isEdit ? "ویرایش انبار" : "انبار جدید"} onClose={onClose}>
-      <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: 12, minWidth: 360 }}>
+      <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: 12, minWidth: 420 }}>
         {save.isError && <div className="error-text">{apiError(save.error)}</div>}
         <div className="field">
           <label>نام</label>
@@ -123,6 +160,33 @@ function WarehouseForm({
           <label>محدودیت زمانی</label>
           <input className="input" value={timeLimit} onChange={(e) => setTimeLimit(e.target.value)} placeholder="مثال: 48 ساعت" />
         </div>
+
+        <div style={{ borderTop: "1px solid var(--border)", paddingTop: 12 }}>
+          <label style={{ fontWeight: 600, display: "block", marginBottom: 8 }}>زمان‌بندی تحویل</label>
+          {DAY_OPTIONS.map((day) => {
+            const enabled = !!schedule[day.en];
+            return (
+              <div key={day.en} style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
+                <label style={{ display: "flex", alignItems: "center", gap: 4, minWidth: 90 }}>
+                  <input type="checkbox" checked={enabled} onChange={(e) => toggleDay(day.en, e.target.checked)} />
+                  {day.fa}
+                </label>
+                {enabled && (
+                  <>
+                    <input type="time" className="input" style={{ width: 100 }}
+                      value={schedule[day.en].start}
+                      onChange={(e) => updateDayTime(day.en, "start", e.target.value)} />
+                    <span>تا</span>
+                    <input type="time" className="input" style={{ width: 100 }}
+                      value={schedule[day.en].end}
+                      onChange={(e) => updateDayTime(day.en, "end", e.target.value)} />
+                  </>
+                )}
+              </div>
+            );
+          })}
+        </div>
+
         <div className="row" style={{ justifyContent: "flex-end", gap: 8, marginTop: 12 }}>
           <button className="btn ghost" type="button" onClick={onClose}>انصراف</button>
           <button className="btn primary" disabled={save.isPending}>{save.isPending ? "در حال ذخیره…" : "ذخیره"}</button>
