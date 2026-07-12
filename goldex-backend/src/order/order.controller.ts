@@ -20,13 +20,17 @@ import { UpdateOrderDto } from "./dto/update-order.dto";
 import { OrderQueryDto } from "./dto/order-query.dto";
 import { UserAuthGuard } from "../user/auth/Guard/user.guard";
 import { UserExpressRequest } from "../user/auth/types/user-express-request";
+import { OrderBookService } from "../order-book/order-book.service";
 
 @ApiTags("Orders")
 @ApiBearerAuth()
 @UseGuards(UserAuthGuard)
 @Controller("orders")
 export class OrderController {
-  constructor(private readonly orderService: OrderService) {}
+  constructor(
+    private readonly orderService: OrderService,
+    private readonly orderBookService: OrderBookService,
+  ) {}
 
   @Post()
   @ApiOperation({ summary: "Create a new order" })
@@ -72,5 +76,12 @@ export class OrderController {
   async cancelOrder(@Req() req: UserExpressRequest, @Param("id") id: string) {
     const userId = req.user["id"];
     return { data: await this.orderService.cancelOrder(userId, id) };
+  }
+
+  @Get("book/:pairId")
+  @ApiOperation({ summary: "Get order book depth for a pair" })
+  @ApiParam({ name: "pairId", description: "Price pair ID" })
+  async getOrderBookDepth(@Param("pairId") pairId: string) {
+    return { data: this.orderBookService.getDepth(pairId) };
   }
 }

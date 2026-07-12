@@ -20,8 +20,20 @@ function snap(over: Partial<PriceSnapshot>): PriceSnapshot {
 describe('ChartImageService.buildPayload', () => {
   const service = new ChartImageService();
 
-  const buy = snap({ messageId: 1, date: 100, price: 73900000, ourAction: 'WE_BUY', sideLabel: 'فروش' });
-  const sell = snap({ messageId: 2, date: 110, price: 74000000, ourAction: 'WE_SELL', sideLabel: 'خرید' });
+  const buy = snap({
+    messageId: 1,
+    date: 100,
+    price: 73900000,
+    ourAction: 'WE_BUY',
+    sideLabel: 'فروش',
+  });
+  const sell = snap({
+    messageId: 2,
+    date: 110,
+    price: 74000000,
+    ourAction: 'WE_SELL',
+    sideLabel: 'خرید',
+  });
   const opportunity: ArbitrageOpportunity = {
     categoryKey: 'shena',
     subType: 'shena',

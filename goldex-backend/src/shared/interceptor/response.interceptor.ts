@@ -70,11 +70,16 @@ export class ResponseInterceptor extends TranslateHandler implements NestInterce
           this.logger.error(resLog);
         }
       }),
-      map(({ data, message, status }: IResponse) => ({
-        status: status ?? 200,
-        message: this.getMessage(message),
-        data: data ?? null,
-      }))
+      map((responseData: IResponse | undefined) => {
+        const res = context.switchToHttp().getResponse();
+        if (res.statusCode === HttpStatus.NO_CONTENT) return;
+        const { data, message, status } = responseData || {};
+        return {
+          status: status ?? res.statusCode ?? 200,
+          message: this.getMessage(message),
+          data: data ?? null,
+        };
+      })
     );
   }
 }

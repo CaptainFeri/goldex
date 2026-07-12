@@ -12,6 +12,7 @@ import WarehousePage from './pages/WarehousePage'
 import KycPage from './pages/KycPage'
 import SessionsPage from './pages/SessionsPage'
 import SettingsPage from './pages/SettingsPage'
+import EliteTradePage from './pages/EliteTradePage'
 
 export default function App() {
   return (
@@ -30,6 +31,7 @@ export default function App() {
           }
         >
           <Route path="/trade" element={<TradePage />} />
+          <Route path="/elite-trade" element={<EliteTradePage />} />
           <Route path="/wallet" element={<WalletPage />} />
           <Route path="/warehouse" element={<WarehousePage />} />
           <Route path="/profile" element={<ProfilePage />} />

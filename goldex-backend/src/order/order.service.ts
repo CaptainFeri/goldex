@@ -16,6 +16,7 @@ import { RabbitMQService } from "../rabbitmq/rabbitmq.service";
 import { MessagePatterns } from "../rabbitmq/interfaces/rabbitmq.interfaces";
 import { ProviderPairMappingService } from "../provider-pair-mapping/provider-pair-mapping.service";
 import { WalletOrderService } from "../wallet/services/wallet-order.service";
+import { TelegramNotifierService } from "../telegram-notifier/telegram-notifier.service";
 
 @Injectable()
 export class OrderService {
@@ -32,6 +33,7 @@ export class OrderService {
     private readonly rmq: RabbitMQService,
     private readonly mappingService: ProviderPairMappingService,
     private readonly walletOrderService: WalletOrderService,
+    private readonly telegramNotifier: TelegramNotifierService,
   ) {}
 
   async createOrder(userId: string, dto: CreateOrderDto): Promise<OrderEntity> {
@@ -93,6 +95,7 @@ export class OrderService {
       // to the customer (pure + commission + gain) so the deal record carries
       // both. Pair prices are per MESGHAL.
       const isBuy = dto.side === OrderSideEnum.BUY;
+      const isQuote = dto.orderType === OrderTypeEnum.QUOTE;
       const buyComm = Number(pricePair.buyCommission) || 0;
       const sellComm = Number(pricePair.sellCommission) || 0;
       const baseGain = Number(pricePair.baseSymbol?.gain) || 0;
@@ -105,13 +108,32 @@ export class OrderService {
       // Mesghal price for the provider (convert the per-gram price back).
       const providerMesghalPrice = gramPrice * MESQAL_TO_GRAM;
 
-      // Display (customer-shown) price = pure ± commission ± gain.
-      const gainAdj =
-        pricePair.baseSymbol?.gainType === GainTypeEnum.PERCENT ? (realMesghal * baseGain) / 100 : baseGain;
-      const displayMesghal = isBuy
-        ? Math.max(0, bestBuy * (1 + buyComm / 100) + gainAdj)
-        : Math.max(0, bestSell * (1 - sellComm / 100) - gainAdj);
-      const displayGram = displayMesghal / MESQAL_TO_GRAM;
+      let displayGram: number;
+      let displayMesghal: number;
+      let commissionAmt: number;
+
+      if (isQuote) {
+        // QUOTE type: commission is NOT baked into the display price.
+        //   BUY  → commission charged in QUOTE asset (IRR) on top of pure price
+        //   SELL → commission charged in BASE asset (XAU) deducted from qty
+        displayGram = gramPrice;
+        displayMesghal = providerMesghalPrice;
+        const rate = isBuy ? buyComm : sellComm;
+        commissionAmt = isBuy
+          ? Number(((dto.quantity * gramPrice * rate) / 100).toFixed(8))
+          : Number(((dto.quantity * rate) / 100).toFixed(8));
+      } else {
+        // MARKET / LIMIT: commission + gain baked into the display price.
+        const gainAdj =
+          pricePair.baseSymbol?.gainType === GainTypeEnum.PERCENT
+            ? (realMesghal * baseGain) / 100
+            : baseGain;
+        displayMesghal = isBuy
+          ? Math.max(0, bestBuy * (1 + buyComm / 100) + gainAdj)
+          : Math.max(0, bestSell * (1 - sellComm / 100) - gainAdj);
+        displayGram = displayMesghal / MESQAL_TO_GRAM;
+        commissionAmt = dto.commission || 0;
+      }
 
       const order = this.orderRepository.create({
         user: { id: userId },
@@ -129,7 +151,7 @@ export class OrderService {
         mesghalPrice: providerMesghalPrice, // PURE provider price per mesghal (used to settle)
         averagePrice: 0,
         totalValue: 0,
-        commission: dto.commission || 0,
+        commission: commissionAmt,
         notes: dto.notes,
         metadata: {
           ...dto.metadata,
@@ -151,12 +173,16 @@ export class OrderService {
 
         const dealType = savedOrder.side === OrderSideEnum.BUY ? 0 : 1;
 
-        // On a BUY we spend the user's DISPLAY-priced IRR at the provider's pure
-        // price, so we buy more gold than the user ordered; the surplus is our
-        // XAU profit. On a SELL we hand over exactly the user's gold.
+        // For QUOTE BUY: commission is in IRR, so we buy exactly the user's qty
+        // from the provider (no XAU surplus). For MARKET/LIMIT BUY: we spend the
+        // user's DISPLAY-priced IRR at the provider's pure price, buying more gold
+        // than the user ordered — the surplus is our XAU profit.
+        // On SELL we always hand over exactly the user's gold.
         const providerGold =
           savedOrder.side === OrderSideEnum.BUY && gramPrice > 0
-            ? Number(((Number(savedOrder.quantity) * displayGram) / gramPrice).toFixed(8))
+            ? isQuote
+              ? Number(savedOrder.quantity)
+              : Number(((Number(savedOrder.quantity) * displayGram) / gramPrice).toFixed(8))
             : Number(savedOrder.quantity);
 
         // The provider deals in MESGHAL; we also record the gram volume + gram
@@ -186,6 +212,19 @@ export class OrderService {
           ? err
           : new BadRequestException((err as Error).message || "Could not place order");
       }
+
+      // Notify channel about the new order
+      const sideLabel = isBuy ? "خرید" : "فروش";
+      const slug = pricePair?.baseSymbol?.slug || "—";
+      const quoteSlug = pricePair?.quoteSymbol?.slug || "—";
+      this.telegramNotifier.sendOrderWithMatchButton(
+        `🆕 *سفارش جدید* — ${savedOrder.orderCode}` +
+        `\n🔹 ${sideLabel} ${slug}` +
+        `\n🔹 مقدار: ${savedOrder.quantity}` +
+        `\n🔹 قیمت: ${savedOrder.price ?? "—"} ${quoteSlug}` +
+        `\n🔹 وضعیت: ${savedOrder.status}`,
+        savedOrder.id,
+      );
 
       return savedOrder;
     } catch (error) {
@@ -308,7 +347,20 @@ export class OrderService {
 
   private generateOrderCode(side: OrderSideEnum, type: OrderTypeEnum): string {
     const prefix = side === OrderSideEnum.BUY ? "B" : "S";
-    const typePrefix = type === OrderTypeEnum.MARKET ? "M" : "L";
+    let typePrefix: string;
+    switch (type) {
+      case OrderTypeEnum.MARKET:
+        typePrefix = "M";
+        break;
+      case OrderTypeEnum.LIMIT:
+        typePrefix = "L";
+        break;
+      case OrderTypeEnum.QUOTE:
+        typePrefix = "Q";
+        break;
+      default:
+        typePrefix = "X";
+    }
     const timestamp = Date.now().toString(36).toUpperCase();
     const random = crypto.randomUUID().split("-")[0].toUpperCase();
     return `ORD-${prefix}${typePrefix}-${timestamp}-${random}`;

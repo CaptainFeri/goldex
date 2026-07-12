@@ -16,6 +16,9 @@ const NAV = [
   { to: "/symbols", label: "نمادها", icon: "◈" },
   { to: "/pairs", label: "جفت‌ارزها", icon: "⇄" },
   { to: "/mappings", label: "نگاشت تأمین‌کننده", icon: "🔗" },
+  { section: "سفارشات" },
+  { to: "/orders", label: "مدیریت سفارش‌ها", icon: "📋" },
+  { to: "/order-book", label: "دفتر سفارش", icon: "📊" },
   { section: "سیستم" },
   { to: "/admins", label: "مدیران", icon: "👤" },
 ];
@@ -33,6 +36,8 @@ const TITLES: Record<string, string> = {
   "/pairs": "مدیریت جفت‌ارزها",
   "/mappings": "نگاشت تأمین‌کننده به جفت‌ارز",
   "/admins": "مدیریت مدیران",
+  "/orders": "مدیریت سفارش‌ها — جستجو، فیلتر و لغو",
+  "/order-book": "دفتر سفارش — عمق بازار و آربیتراژ",
 };
 
 export default function Layout() {

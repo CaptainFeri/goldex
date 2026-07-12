@@ -3,19 +3,23 @@ import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth, ApiParam } from "@ne
 import { AdminOrderService } from "./admin-order.service";
 import { AdminAuthGuard } from "../../admin/auth/Guard/admin.guard";
 import { AdminUpdateOrderDto } from "./dto/admin-update-order.dto";
+import { OrderBookService } from "../../order-book/order-book.service";
 
 @ApiTags("Admin - Orders")
 @ApiBearerAuth()
 @UseGuards(AdminAuthGuard)
 @Controller("admin/orders")
 export class AdminOrderController {
-  constructor(private readonly adminOrderService: AdminOrderService) {}
+  constructor(
+    private readonly adminOrderService: AdminOrderService,
+    private readonly orderBookService: OrderBookService,
+  ) {}
 
   @Get()
   @ApiOperation({ summary: "Get all orders (Admin)" })
   @ApiResponse({ status: HttpStatus.OK, description: "Returns all orders" })
   async getAllOrders(@Query() query: any) {
-    return this.adminOrderService.getAllOrders(query);
+    return { data: await this.adminOrderService.getAllOrders(query) };
   }
 
   @Get(":id")
@@ -23,7 +27,7 @@ export class AdminOrderController {
   @ApiParam({ name: "id", description: "Order ID" })
   @ApiResponse({ status: HttpStatus.OK, description: "Returns order details" })
   async getOrderById(@Param("id") id: string) {
-    return this.adminOrderService.getAllOrders({ id });
+    return { data: await this.adminOrderService.getAllOrders({ id }) };
   }
 
   @Put(":id")
@@ -31,7 +35,25 @@ export class AdminOrderController {
   @ApiParam({ name: "id", description: "Order ID" })
   @ApiResponse({ status: HttpStatus.OK, description: "Order updated successfully" })
   async updateOrder(@Param("id") id: string, @Body() dto: AdminUpdateOrderDto, @Query("adminId") adminId: string) {
-    return this.adminOrderService.adminUpdateOrder(id, adminId, dto);
+    return { data: await this.adminOrderService.adminUpdateOrder(id, adminId, dto) };
+  }
+
+  @Get("book/:pairId")
+  @ApiOperation({ summary: "Get order book depth for a pair" })
+  @ApiParam({ name: "pairId", description: "Price pair ID" })
+  @ApiResponse({ status: HttpStatus.OK, description: "Returns order book depth" })
+  async getOrderBookDepth(@Param("pairId") pairId: string) {
+    const depth = this.orderBookService.getDepth(pairId);
+    const arbitrage = this.orderBookService.getArbitrageStatus(pairId);
+    return { data: { ...depth, arbitrage } };
+  }
+
+  @Get("arbitrage/:pairId")
+  @ApiOperation({ summary: "Check arbitrage status for a pair" })
+  @ApiParam({ name: "pairId", description: "Price pair ID" })
+  @ApiResponse({ status: HttpStatus.OK, description: "Returns arbitrage status" })
+  async getArbitrage(@Param("pairId") pairId: string) {
+    return { data: this.orderBookService.getArbitrageStatus(pairId) };
   }
 
   @Delete(":id/cancel")
@@ -40,6 +62,6 @@ export class AdminOrderController {
   @ApiParam({ name: "id", description: "Order ID" })
   @ApiResponse({ status: HttpStatus.OK, description: "Order cancelled successfully" })
   async cancelOrder(@Param("id") id: string, @Query("adminId") adminId: string, @Body("reason") reason: string) {
-    return this.adminOrderService.cancelOrderAsAdmin(id, adminId, reason);
+    return { data: await this.adminOrderService.cancelOrderAsAdmin(id, adminId, reason) };
   }
 }

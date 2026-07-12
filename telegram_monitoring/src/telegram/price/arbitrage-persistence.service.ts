@@ -18,7 +18,9 @@ const ARBITRAGE_IDS_KEY = 'arbitrage:ids';
 
 @Injectable()
 export class ArbitragePersistenceService implements OnModuleInit {
-  private readonly logger = new StructuredLogger(ArbitragePersistenceService.name);
+  private readonly logger = new StructuredLogger(
+    ArbitragePersistenceService.name,
+  );
   private readonly records: ArbitrageRecord[] = [];
   private idCounter = 0;
 
@@ -45,7 +47,10 @@ export class ArbitragePersistenceService implements OnModuleInit {
 
   summary(filter: ArbitrageQuery = {}): ArbitrageSummary {
     const matched = this.query(filter);
-    const byCat = new Map<PriceSubType, { count: number; totalProfit: number }>();
+    const byCat = new Map<
+      PriceSubType,
+      { count: number; totalProfit: number }
+    >();
 
     let totalProfit = 0;
     for (const r of matched) {
@@ -94,7 +99,9 @@ export class ArbitragePersistenceService implements OnModuleInit {
     };
   }
 
-  private toSideDetail(snapshot: ArbitrageOpportunity['buy']): ArbitrageSideDetail {
+  private toSideDetail(
+    snapshot: ArbitrageOpportunity['buy'],
+  ): ArbitrageSideDetail {
     return {
       price: snapshot.price,
       messageId: snapshot.messageId,
@@ -128,7 +135,9 @@ export class ArbitragePersistenceService implements OnModuleInit {
 
   private add(record: ArbitrageRecord): void {
     this.records.push(record);
-    this.persist(record).catch((error) => this.logger.error('Failed to persist arbitrage to Redis', error));
+    this.persist(record).catch((error) =>
+      this.logger.error('Failed to persist arbitrage to Redis', error),
+    );
   }
 
   private async persist(record: ArbitrageRecord): Promise<void> {
@@ -158,7 +167,9 @@ export class ArbitragePersistenceService implements OnModuleInit {
           // skip corrupt entry
         }
       }
-      this.logger.log(`Loaded ${this.records.length} stored arbitrages from Redis`);
+      this.logger.log(
+        `Loaded ${this.records.length} stored arbitrages from Redis`,
+      );
     } catch (error) {
       this.logger.error('Failed to load stored arbitrages from Redis', error);
     }

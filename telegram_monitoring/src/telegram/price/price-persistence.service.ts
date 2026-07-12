@@ -89,7 +89,9 @@ export class PricePersistenceService implements OnModuleInit {
   private add(point: PricePoint): void {
     this.points.push(point);
     this.added.next(point);
-    this.persist(point).catch((error) => this.logger.error('Failed to persist price to Redis', error));
+    this.persist(point).catch((error) =>
+      this.logger.error('Failed to persist price to Redis', error),
+    );
   }
 
   private async persist(point: PricePoint): Promise<void> {
@@ -121,7 +123,9 @@ export class PricePersistenceService implements OnModuleInit {
           // skip corrupt entry
         }
       }
-      this.logger.log(`Loaded ${this.points.length} stored price points from Redis`);
+      this.logger.log(
+        `Loaded ${this.points.length} stored price points from Redis`,
+      );
     } catch (error) {
       this.logger.error('Failed to load stored prices from Redis', error);
     }

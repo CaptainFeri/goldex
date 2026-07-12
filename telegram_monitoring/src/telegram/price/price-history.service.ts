@@ -100,7 +100,10 @@ export class PriceHistoryService {
    * Profit exists when the highest خرید (our sell) exceeds the lowest فروش
    * (our buy) for the same product.
    */
-  detectArbitrage(parsed: ParsedPrice, asOf: number): ArbitrageOpportunity | null {
+  detectArbitrage(
+    parsed: ParsedPrice,
+    asOf: number,
+  ): ArbitrageOpportunity | null {
     // Only detect arbitrage on normal (عادی) opportunities — exclude معکوس and شنا.
     if (parsed.subType !== 'normal') return null;
 

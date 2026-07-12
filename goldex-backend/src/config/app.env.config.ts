@@ -59,4 +59,8 @@ export default () => ({
       defaultUrl: process.env.MAILGUN_API_DEFAULT_URL || "https://api.mailgun.net",
     },
   },
+  telegram: {
+    botToken: process.env.TELEGRAM_BOT_TOKEN,
+    channelId: process.env.TELEGRAM_CHANNEL_ID,
+  },
 });

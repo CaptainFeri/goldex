@@ -1,4 +1,6 @@
-function parseMonitoredChannels(raw: string | undefined): { id?: string; username?: string }[] {
+function parseMonitoredChannels(
+  raw: string | undefined,
+): { id?: string; username?: string }[] {
   if (!raw) return [];
   return raw
     .split(',')
@@ -23,7 +25,9 @@ export default () => ({
     password: process.env.TELEGRAM_PASSWORD,
     sessionString: process.env.TELEGRAM_SESSION_STRING,
     sessionFolder: process.env.TELEGRAM_SESSION_FOLDER || 'sessions',
-    monitoredChannels: parseMonitoredChannels(process.env.TELEGRAM_MONITORED_CHANNELS),
+    monitoredChannels: parseMonitoredChannels(
+      process.env.TELEGRAM_MONITORED_CHANNELS,
+    ),
     targetChannel: process.env.TELEGRAM_TARGET_CHANNEL || '',
   },
 });

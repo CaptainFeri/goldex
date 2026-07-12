@@ -62,7 +62,9 @@ export class ArbitrageController {
     @Query('from') from?: string,
     @Query('to') to?: string,
   ): ArbitrageRecord[] {
-    return this.arbitrages.query(this.toFilter(subType, deliveryType, from, to));
+    return this.arbitrages.query(
+      this.toFilter(subType, deliveryType, from, to),
+    );
   }
 
   @Get('wallet')

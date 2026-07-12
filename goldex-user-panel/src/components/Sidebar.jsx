@@ -12,8 +12,18 @@ function WarehouseIcon() {
   )
 }
 
+function EliteTradeIcon() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="nav-icon">
+      <rect x="2" y="3" width="20" height="14" rx="2" /><line x1="8" y1="21" x2="16" y2="21" /><line x1="12" y1="17" x2="12" y2="21" />
+      <polyline points="7 10 10 13 17 6" />
+    </svg>
+  )
+}
+
 const navItems = [
   { label: 'Trade', path: '/trade', icon: TradeIcon },
+  { label: 'Elite Trade', path: '/elite-trade', icon: EliteTradeIcon },
   { label: 'Wallet', path: '/wallet', icon: WalletIcon },
   { label: 'Profile', path: '/profile', icon: UserIcon },
   { label: 'Verification', path: '/kyc', icon: ShieldIcon },

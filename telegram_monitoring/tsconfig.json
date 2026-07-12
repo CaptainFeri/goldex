@@ -13,6 +13,12 @@
     "skipLibCheck": true,
     "strict": true,
     "strictNullChecks": false,
-    "noImplicitAny": false
-  }
+    "noImplicitAny": false,
+    "outDir": "./dist",
+    "baseUrl": "./",
+    "paths": {
+      "@/*": ["src/*"]
+    }
+  },
+  "include": ["src/**/*"]
 }

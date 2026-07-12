@@ -109,6 +109,12 @@ export const marketApi = {
     unwrap(await http.get('/market/pairs'))
 }
 
+export const orderBookApi = {
+  // Order book depth for a pair: { bids, asks }
+  getDepth: async (pairId) =>
+    unwrap(await http.get(`/orders/book/${pairId}`))
+}
+
 export const orderApi = {
   // payload: { pricePairId, side, orderType, quantity, price?, commission?, notes? }
   create: async (payload) =>

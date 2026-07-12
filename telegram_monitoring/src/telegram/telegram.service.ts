@@ -13,7 +13,6 @@ import {
   CallbackQueryEvent,
 } from 'telegram/events/CallbackQuery';
 import type { Dialog } from 'telegram/tl/custom/dialog';
-import * as readline from 'node:readline';
 import { TELEGRAM_OPTIONS } from './telegram.constants';
 import type { TelegramOptions } from './interfaces';
 import { StructuredLogger } from '../logger/structured-logger';
@@ -28,9 +27,11 @@ import type { ArbitrageOpportunity, OrderButton } from './price/price.types';
 export class TelegramService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new StructuredLogger(TelegramService.name);
   private client: TelegramClient;
-  private rl: readline.Interface;
   private monitoredPeerIds: (string | number)[] = [];
   private targetPeerId: string | null = null;
+
+  private authCodeResolver: ((code: string) => void) | null = null;
+  private authPasswordResolver: ((password: string) => void) | null = null;
 
   constructor(
     @Inject(TELEGRAM_OPTIONS)
@@ -41,14 +42,6 @@ export class TelegramService implements OnModuleInit, OnModuleDestroy {
   ) {}
 
   async onModuleInit(): Promise<void> {
-    await this.initializeClient();
-  }
-
-  async onModuleDestroy(): Promise<void> {
-    await this.disconnect();
-  }
-
-  async initializeClient(): Promise<void> {
     const session = this.createSession();
 
     this.client = new TelegramClient(
@@ -60,13 +53,58 @@ export class TelegramService implements OnModuleInit, OnModuleDestroy {
       },
     );
 
-    await this.startClient();
-    this.logger.log('Telegram client initialized');
+    await this.client.connect();
 
+    const isAuthorized = await this.client.isUserAuthorized();
+
+    if (isAuthorized) {
+      this.logger.log('User already authorized');
+      await this.finalizeInitialization();
+      return;
+    }
+
+    this.logger.log(
+      'Authentication required. Waiting for code via POST /api/auth/code...',
+    );
+    this.startDeferredAuth();
+  }
+
+  async onModuleDestroy(): Promise<void> {
+    await this.disconnect();
+  }
+
+  private async finalizeInitialization(): Promise<void> {
+    this.logger.log('Telegram client initialized');
     await this.resolveMonitoredChannels();
     await this.resolveTargetChannel();
     this.registerEventHandlers();
     // await this.fetchRecentHistory();
+  }
+
+  private startDeferredAuth(): void {
+    this.client
+      .start({
+        phoneNumber: () => Promise.resolve(this.options.phoneNumber),
+        password: () =>
+          new Promise<string>((resolve) => {
+            if (this.options.password) {
+              resolve(this.options.password);
+            } else {
+              this.authPasswordResolver = resolve;
+            }
+          }),
+        phoneCode: () =>
+          new Promise<string>((resolve) => {
+            this.authCodeResolver = resolve;
+          }),
+        onError: (err) => this.logger.error('Auth error', err),
+      })
+      .then(async () => {
+        const savedSession = this.client.session.save() as unknown as string;
+        this.logger.warn(`Session string: ${savedSession}`);
+        await this.finalizeInitialization();
+      })
+      .catch((err) => this.logger.error('Auth failed', err));
   }
 
   private createSession() {
@@ -75,45 +113,6 @@ export class TelegramService implements OnModuleInit, OnModuleDestroy {
     }
 
     return new StoreSession(this.options.sessionFolder ?? 'sessions');
-  }
-
-  private async startClient(): Promise<void> {
-    const isAuthorized = await this.client.isUserAuthorized();
-
-    if (!isAuthorized) {
-      this.logger.log('Starting authentication...');
-      this.rl = readline.createInterface({
-        input: process.stdin,
-        output: process.stdout,
-      });
-    } else {
-      this.logger.log('User already authorized, connecting...');
-    }
-
-    await this.client.start({
-      phoneNumber: () => this.askQuestion('Phone number: '),
-      password: () =>
-        this.options.password
-          ? Promise.resolve(this.options.password)
-          : this.askQuestion('2FA password (if enabled): '),
-      phoneCode: () => this.askQuestion('Code from Telegram: '),
-      onError: (err) => this.logger.error('Auth error', err),
-    });
-
-    const me = await this.client.getMe();
-    this.logger.log(
-      `Authenticated as: ${me.username || me.firstName || 'unknown'}`,
-    );
-
-    if (!isAuthorized) {
-      if (this.options.sessionString) {
-        const savedSession = this.client.session.save();
-        this.logger.warn(`Session string: ${savedSession}`);
-      } else {
-        this.logger.log('Session saved to disk via StoreSession');
-      }
-      this.rl.close();
-    }
   }
 
   private async resolveMonitoredChannels(): Promise<void> {
@@ -311,7 +310,11 @@ export class TelegramService implements OnModuleInit, OnModuleDestroy {
     const opportunity = this.priceHistory.detectArbitrage(parsed, message.date);
     if (opportunity && this.priceHistory.markReportedIfNew(opportunity)) {
       this.eventEmitter.emit('telegram.arbitrage', opportunity);
-      await this.sendArbitrageAlert(opportunity, parsed.subType, parsed.deliveryType);
+      await this.sendArbitrageAlert(
+        opportunity,
+        parsed.subType,
+        parsed.deliveryType,
+      );
     }
   }
 
@@ -342,7 +345,10 @@ export class TelegramService implements OnModuleInit, OnModuleDestroy {
   }
 
   /** Sends a PNG (with caption) to the target channel. */
-  private async sendPhotoToTarget(image: Buffer, caption: string): Promise<void> {
+  private async sendPhotoToTarget(
+    image: Buffer,
+    caption: string,
+  ): Promise<void> {
     if (!this.targetPeerId) return;
     const entity = await this.client.getInputEntity(this.targetPeerId);
     const file = new CustomFile('chart.png', image.length, 'chart.png', image);
@@ -498,7 +504,27 @@ export class TelegramService implements OnModuleInit, OnModuleDestroy {
     return this.client;
   }
 
-  private askQuestion(query: string): Promise<string> {
-    return new Promise((resolve) => this.rl.question(query, resolve));
+  getAuthState(): { ready: boolean; waitingFor: string | null } {
+    if (!this.client) return { ready: false, waitingFor: null };
+    if (this.authCodeResolver) return { ready: false, waitingFor: 'code' };
+    if (this.authPasswordResolver)
+      return { ready: false, waitingFor: 'password' };
+    return { ready: true, waitingFor: null };
+  }
+
+  submitCode(code: string): void {
+    if (!this.authCodeResolver) {
+      throw new Error('No pending auth code request');
+    }
+    this.authCodeResolver(code);
+    this.authCodeResolver = null;
+  }
+
+  submitPassword(password: string): void {
+    if (!this.authPasswordResolver) {
+      throw new Error('No pending auth password request');
+    }
+    this.authPasswordResolver(password);
+    this.authPasswordResolver = null;
   }
 }

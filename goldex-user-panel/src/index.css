@@ -1235,6 +1235,110 @@ select.form-input option {
 .txt-buy { color: #a5d6a7; }
 .txt-sell { color: #ef9a9a; }
 
+/* ─── Elite Trade / Order Book ──────────────────────────── */
+.elite-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1.5rem;
+}
+
+@media (max-width: 900px) {
+  .elite-grid { grid-template-columns: 1fr; }
+}
+
+.elite-pair-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.2rem;
+  padding: 0.6rem 1rem;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border);
+  background: var(--obsidian-800);
+  color: var(--text-secondary);
+  cursor: pointer;
+  font-family: var(--font-body);
+  font-size: 0.8rem;
+  transition: var(--transition);
+  min-width: 120px;
+}
+
+.elite-pair-btn.active {
+  border-color: var(--gold-400);
+  background: var(--accent-glow);
+}
+
+.elite-pair-name { font-weight: 600; color: var(--text-primary); }
+.elite-pair-price { font-size: 0.72rem; color: var(--text-muted); }
+
+.ob-container {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+
+.ob-side { display: flex; flex-direction: column; }
+
+.ob-header {
+  display: flex;
+  justify-content: space-between;
+  padding: 0.35rem 0;
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
+  border-bottom: 1px solid var(--border);
+}
+
+.ob-h-price, .ob-h-size { font-weight: 500; }
+
+.ob-rows { display: flex; flex-direction: column; gap: 1px; }
+
+.ob-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  position: relative;
+  padding: 0.2rem 0;
+  font-size: 0.78rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.ob-bar {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  border-radius: 2px;
+  opacity: 0.15;
+  pointer-events: none;
+}
+
+.ob-bar-ask { right: 0; background: #e57373; }
+.ob-bar-bid { left: 0; background: #81c784; }
+
+.ob-price { position: relative; z-index: 1; font-weight: 500; min-width: 80px; }
+.ob-ask-price { color: #ef9a9a; text-align: right; }
+.ob-bid-price { color: #a5d6a7; }
+
+.ob-size { position: relative; z-index: 1; color: var(--text-muted); min-width: 60px; text-align: right; }
+
+.ob-spread {
+  text-align: center;
+  padding: 0.5rem 0;
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  border-top: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+  margin: 0.15rem 0;
+}
+
+.ob-empty {
+  padding: 1.5rem 0;
+  text-align: center;
+  color: var(--text-muted);
+  font-size: 0.78rem;
+}
+
 /* ─── Wallet ─────────────────────────────────────────────── */
 .wallet-grid {
   display: grid;

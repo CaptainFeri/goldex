@@ -7,6 +7,7 @@ import { MESQAL_TO_GRAM } from '../../common/constants';
 import { PricePairEntity } from '../../admin-pair/entity/price.pair.entity';
 import { OrderEntity } from '../../order/order.entity';
 import { OrderSideEnum } from '../../order/enum/order.side.enum';
+import { OrderTypeEnum } from '../../order/enum/order.type.enum';
 import { OrderStatusEnum } from '../../order/enum/order.status.enum';
 import { TransactionTypeEnum } from '../enum/transaction.type.enum';
 import { TransactionStatusEnum } from '../enum/transaction.status.enum';
@@ -38,13 +39,17 @@ export class WalletOrderService {
         const quoteWallet = await this.getWallet(queryRunner, order.userId, pricePair.quoteSymbol.id);
         // Lock the DISPLAY-priced cost (what the user is charged), not the pure price.
         const unitPrice = Number(order.customerPrice) || Number(order.price) || 0;
-        const lockAmount = Number(order.quantity) * unitPrice;
+        let lockAmount = Number(order.quantity) * unitPrice;
+
+        // QUOTE BUY: commission is charged in the QUOTE asset (IRR) on top.
+        if (order.orderType === OrderTypeEnum.QUOTE) {
+          lockAmount += Number(order.commission) || 0;
+        }
 
         if (quoteWallet.freeBalance < lockAmount) {
           this.logger.warn(
             `Insufficient ${pricePair.quoteSymbol.slug} balance for order ${order.orderCode}: required ${lockAmount}, available ${quoteWallet.freeBalance}`,
           );
-          // Plain i18n key — the response interceptor translates message.<KEY>.
           throw new BadRequestException("INSUFFICIENT_BALANCE");
         }
 
@@ -108,73 +113,110 @@ export class WalletOrderService {
       const baseWallet = await this.getWallet(queryRunner, order.userId, pricePair.baseSymbol.id);
       const quoteWallet = await this.getWallet(queryRunner, order.userId, pricePair.quoteSymbol.id);
 
-      // Settlement model (profit always realised in the BASE asset, XAU):
-      //   BUY  → user pays the DISPLAY price; that IRR buys more gold at the
-      //          provider's (pure) price than the user receives (qty*(1-rate)),
-      //          so the platform keeps the difference as XAU profit per provider.
-      //   SELL → user gives full gold, receives netQty*price IRR; commission qty*rate XAU.
+      // Settlement model:
+      //   MARKET / LIMIT (BUY)  → profit always realised in BASE asset (XAU).
+      //      User pays the DISPLAY price; that IRR buys more gold at the
+      //      provider's (pure) price than the user receives (qty*(1-rate)),
+      //      so the platform keeps the difference as XAU profit per provider.
+      //   QUOTE (BUY)  → commission charged in QUOTE asset (IRR) on top of
+      //      the pure price. User pays extra IRR, receives full qty XAU.
+      //   SELL (all types) → user gives full gold, receives netQty*price IRR;
+      //      commission qty*rate in XAU.
+      const isQuote = order.orderType === OrderTypeEnum.QUOTE;
       const qty = Number(order.quantity); // grams
-      // order.price is the customer-shown price; the pure provider price comes
-      // from the per-mesghal price (which is stored pure).
       const displayPrice = Number(order.price) || 0; // customer price (charged on a BUY)
       const price =
         Number(order.mesghalPrice) > 0 ? Number(order.mesghalPrice) / MESQAL_TO_GRAM : displayPrice; // pure gram price
 
       if (order.side === OrderSideEnum.BUY) {
-        const rate = Number(pricePair.buyCommission) || 0;
-        const totalCost = Number((qty * displayPrice).toFixed(8)); // IRR the user pays (display)
-        const netQty = Number((qty * (1 - rate / 100)).toFixed(8)); // gold the user receives
-        // Gold that the user's IRR buys at the provider's pure price.
-        const goldFromProvider = price > 0 ? Number((totalCost / price).toFixed(8)) : netQty;
-        // Profit (spread + commission) realised in XAU, held against the provider.
-        const profitXau = Number((goldFromProvider - netQty).toFixed(8));
+        if (isQuote) {
+          // QUOTE BUY: commission in IRR (quote), user gets full qty XAU.
+          const rate = Number(pricePair.buyCommission) || 0;
+          const totalCost = Number((qty * displayPrice).toFixed(8));
+          const commissionInQuote = Number(order.commission) || Number((totalCost * rate / 100).toFixed(8));
 
-        quoteWallet.lockedBalance = Number((quoteWallet.lockedBalance - totalCost).toFixed(8));
-        baseWallet.freeBalance = Number((baseWallet.freeBalance + netQty).toFixed(8));
+          quoteWallet.lockedBalance = Number((quoteWallet.lockedBalance - totalCost - commissionInQuote).toFixed(8));
+          baseWallet.freeBalance = Number((baseWallet.freeBalance + qty).toFixed(8));
 
-        await queryRunner.manager.save(quoteWallet);
-        await queryRunner.manager.save(baseWallet);
+          await queryRunner.manager.save(quoteWallet);
+          await queryRunner.manager.save(baseWallet);
 
-        await this.createTransaction(queryRunner, baseWallet, order, {
-          transactionType: TransactionTypeEnum.BUY,
-          amount: netQty,
-          price: displayPrice,
-          fee: profitXau,
-          description: `Buy order ${order.orderCode} executed: received ${netQty} ${pricePair.baseSymbol.slug}`,
-          metadata: {
-            profitXau,
-            commissionRate: rate,
-            displayPrice,
-            providerPrice: price,
-            goldFromProvider,
-            unit: pricePair.baseSymbol.slug,
-          },
-        });
-
-        await this.createTransaction(queryRunner, quoteWallet, order, {
-          transactionType: TransactionTypeEnum.ORDER,
-          amount: -totalCost,
-          price: displayPrice,
-          description: `Buy order ${order.orderCode} executed: spent ${totalCost} ${pricePair.quoteSymbol.slug}`,
-        });
-
-        if (profitXau > 0) {
-          await this.recordSystemProfit(queryRunner, {
-            symbolId: pricePair.baseSymbol.id,
-            type: SystemLedgerType.COMMISSION_BUY,
-            amount: profitXau,
-            order,
-            description: `Buy profit (spread+commission) for ${order.orderCode} via ${order.metadata?.providerKey ?? "?"}`,
+          await this.createTransaction(queryRunner, baseWallet, order, {
+            transactionType: TransactionTypeEnum.BUY,
+            amount: qty,
+            price: displayPrice,
+            fee: 0,
+            description: `Quote buy order ${order.orderCode} executed: received ${qty} ${pricePair.baseSymbol.slug}`,
+            metadata: { unit: pricePair.baseSymbol.slug, orderType: 'QUOTE' },
           });
+
+          await this.createTransaction(queryRunner, quoteWallet, order, {
+            transactionType: TransactionTypeEnum.ORDER,
+            amount: -(totalCost + commissionInQuote),
+            price: displayPrice,
+            fee: commissionInQuote,
+            description: `Quote buy order ${order.orderCode} executed: spent ${totalCost} + commission ${commissionInQuote} ${pricePair.quoteSymbol.slug}`,
+            metadata: { commission: commissionInQuote, commissionRate: rate, unit: pricePair.quoteSymbol.slug },
+          });
+
+          if (commissionInQuote > 0) {
+            await this.recordSystemProfit(queryRunner, {
+              symbolId: pricePair.baseSymbol.id,
+              type: SystemLedgerType.COMMISSION_BUY,
+              amount: commissionInQuote,
+              order,
+              description: `Quote buy commission for ${order.orderCode} (${rate}%) in ${pricePair.quoteSymbol.slug}`,
+            });
+          }
+        } else {
+          // MARKET / LIMIT BUY: profit in XAU (base).
+          const rate = Number(pricePair.buyCommission) || 0;
+          const totalCost = Number((qty * displayPrice).toFixed(8));
+          const netQty = Number((qty * (1 - rate / 100)).toFixed(8));
+          const goldFromProvider = price > 0 ? Number((totalCost / price).toFixed(8)) : netQty;
+          const profitXau = Number((goldFromProvider - netQty).toFixed(8));
+
+          quoteWallet.lockedBalance = Number((quoteWallet.lockedBalance - totalCost).toFixed(8));
+          baseWallet.freeBalance = Number((baseWallet.freeBalance + netQty).toFixed(8));
+
+          await queryRunner.manager.save(quoteWallet);
+          await queryRunner.manager.save(baseWallet);
+
+          await this.createTransaction(queryRunner, baseWallet, order, {
+            transactionType: TransactionTypeEnum.BUY,
+            amount: netQty,
+            price: displayPrice,
+            fee: profitXau,
+            description: `Buy order ${order.orderCode} executed: received ${netQty} ${pricePair.baseSymbol.slug}`,
+            metadata: {
+              profitXau, commissionRate: rate, displayPrice, providerPrice: price,
+              goldFromProvider, unit: pricePair.baseSymbol.slug,
+            },
+          });
+
+          await this.createTransaction(queryRunner, quoteWallet, order, {
+            transactionType: TransactionTypeEnum.ORDER,
+            amount: -totalCost,
+            price: displayPrice,
+            description: `Buy order ${order.orderCode} executed: spent ${totalCost} ${pricePair.quoteSymbol.slug}`,
+          });
+
+          if (profitXau > 0) {
+            await this.recordSystemProfit(queryRunner, {
+              symbolId: pricePair.baseSymbol.id,
+              type: SystemLedgerType.COMMISSION_BUY,
+              amount: profitXau,
+              order,
+              description: `Buy profit (spread+commission) for ${order.orderCode} via ${order.metadata?.providerKey ?? "?"}`,
+            });
+          }
         }
       } else {
+        // SELL — same for all types: commission taken in XAU (base).
         const rate = Number(pricePair.sellCommission) || 0;
-        // Commission is taken in XAU: the user surrenders the full `qty` gold, but
-        // we only pay revenue for the net (after-commission) gold and keep the rest
-        // (qty*rate) as profit in the BASE asset.
-        const netQty = Number((qty * (1 - rate / 100)).toFixed(8)); // gold sold to market
-        const commission = Number((qty - netQty).toFixed(8)); // commission in XAU (base)
-        const netRevenue = Number((netQty * price).toFixed(8)); // IRR the user receives
+        const netQty = Number((qty * (1 - rate / 100)).toFixed(8));
+        const commission = Number((qty - netQty).toFixed(8));
+        const netRevenue = Number((netQty * price).toFixed(8));
 
         baseWallet.lockedBalance = Number((baseWallet.lockedBalance - qty).toFixed(8));
         quoteWallet.freeBalance = Number((quoteWallet.freeBalance + netRevenue).toFixed(8));
@@ -256,7 +298,12 @@ export class WalletOrderService {
     try {
       if (order.side === OrderSideEnum.BUY) {
         const quoteWallet = await this.getWallet(queryRunner, order.userId, pricePair.quoteSymbol.id);
-        const lockedAmount = Number(order.quantity) * (Number(order.price) || 0);
+        let lockedAmount = Number(order.quantity) * (Number(order.price) || 0);
+
+        // QUOTE BUY: commission was also frozen in the quote wallet.
+        if (order.orderType === OrderTypeEnum.QUOTE) {
+          lockedAmount += Number(order.commission) || 0;
+        }
 
         quoteWallet.lockedBalance = Number((quoteWallet.lockedBalance - lockedAmount).toFixed(8));
         quoteWallet.freeBalance = Number((quoteWallet.freeBalance + lockedAmount).toFixed(8));

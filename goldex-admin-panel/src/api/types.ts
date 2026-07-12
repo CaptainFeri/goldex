@@ -164,6 +164,26 @@ export interface WarehouseRequest {
   [k: string]: any;
 }
 
+// ---- Order Book ----
+export interface OrderBookDepthLevel {
+  price: number;
+  size: number;
+  orderCount: number;
+  source: "PROVIDER" | "CUSTOMER";
+}
+
+export interface OrderBookDepth {
+  bids: OrderBookDepthLevel[];
+  asks: OrderBookDepthLevel[];
+  arbitrage?: ArbitrageStatus;
+}
+
+export interface ArbitrageStatus {
+  arbitrage: boolean;
+  bestBid: number;
+  bestAsk: number;
+}
+
 // ---- Monitoring / charts ----
 export interface ComparePoint {
   timestamp: string;

@@ -8,6 +8,7 @@ import { PricePersistenceService } from './price/price-persistence.service';
 import { ArbitragePersistenceService } from './price/arbitrage-persistence.service';
 import { ChartImageService } from './price/chart-image.service';
 import { PriceController, ArbitrageController } from './price/price.controller';
+import { AuthController } from './auth/auth.controller';
 
 @Global()
 @Module({})
@@ -15,7 +16,7 @@ export class TelegramModule {
   static forRoot(options: TelegramOptions): DynamicModule {
     return {
       module: TelegramModule,
-      controllers: [PriceController, ArbitrageController],
+      controllers: [PriceController, ArbitrageController, AuthController],
       providers: [
         {
           provide: TELEGRAM_OPTIONS,
@@ -35,7 +36,7 @@ export class TelegramModule {
     return {
       module: TelegramModule,
       imports: [ConfigModule],
-      controllers: [PriceController, ArbitrageController],
+      controllers: [PriceController, ArbitrageController, AuthController],
       providers: [
         {
           provide: TELEGRAM_OPTIONS,
@@ -46,7 +47,10 @@ export class TelegramModule {
             phoneNumber: config.get<string>('telegram.phoneNumber', ''),
             password: config.get<string>('telegram.password'),
             sessionString: config.get<string>('telegram.sessionString'),
-            sessionFolder: config.get<string>('telegram.sessionFolder', 'sessions'),
+            sessionFolder: config.get<string>(
+              'telegram.sessionFolder',
+              'sessions',
+            ),
             monitoredChannels: config.get('telegram.monitoredChannels'),
             targetChannel: config.get<string>('telegram.targetChannel', ''),
           }),

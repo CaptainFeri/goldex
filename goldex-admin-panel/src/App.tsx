@@ -14,6 +14,8 @@ import FinancePage from "./pages/FinancePage";
 import ProviderFinancePage from "./pages/ProviderFinancePage";
 import UsersPage from "./pages/UsersPage";
 import WarehousePage from "./pages/WarehousePage";
+import OrdersPage from "./pages/OrdersPage";
+import OrderBookPage from "./pages/OrderBookPage";
 
 function RequireAuth({ children }: { children: JSX.Element }) {
   const { token } = useAuth();
@@ -43,6 +45,8 @@ export default function App() {
         <Route path="/provider-finance" element={<ProviderFinancePage />} />
         <Route path="/admins" element={<AdminsPage />} />
         <Route path="/warehouse" element={<WarehousePage />} />
+        <Route path="/orders" element={<OrdersPage />} />
+        <Route path="/order-book" element={<OrderBookPage />} />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>

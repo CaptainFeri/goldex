@@ -16,14 +16,14 @@ function userStatus(u: any) {
 
 function CreatePartner({ onDone }: { onDone: () => void }) {
   const qc = useQueryClient();
-  const [form, setForm] = useState({ phone: "", firstName: "", lastName: "", activeUntil: "" });
+  const [form, setForm] = useState({ phone: "", firstName: "", lastName: "", password: "", activeUntil: "" });
   const set = (k: string, v: any) => setForm((f) => ({ ...f, [k]: v }));
   const create = useMutation({
     mutationFn: (p: any) => api.post("/admin/users/partners", p),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["users"] });
       qc.invalidateQueries({ queryKey: ["user-stats"] });
-      setForm({ phone: "", firstName: "", lastName: "", activeUntil: "" });
+      setForm({ phone: "", firstName: "", lastName: "", password: "", activeUntil: "" });
       onDone();
     },
   });
@@ -32,6 +32,7 @@ function CreatePartner({ onDone }: { onDone: () => void }) {
     if (!/^09[0-9]{9}$/.test(form.phone)) return;
     create.mutate({
       phone: form.phone,
+      password: form.password,
       firstName: form.firstName || undefined,
       lastName: form.lastName || undefined,
       activeUntil: form.activeUntil ? new Date(form.activeUntil).toISOString() : undefined,
@@ -51,6 +52,10 @@ function CreatePartner({ onDone }: { onDone: () => void }) {
         <div className="field" style={{ margin: 0, minWidth: 130 }}>
           <label>نام خانوادگی</label>
           <input className="input" value={form.lastName} onChange={(e) => set("lastName", e.target.value)} />
+        </div>
+        <div className="field" style={{ margin: 0, minWidth: 170 }}>
+          <label>رمز عبور</label>
+          <input className="input mono" dir="ltr" type="password" placeholder="حداقل ۶ کاراکتر" value={form.password} onChange={(e) => set("password", e.target.value)} />
         </div>
         <div className="field" style={{ margin: 0, minWidth: 160 }}>
           <label>فعال تا (اختیاری)</label>

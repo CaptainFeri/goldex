@@ -28,7 +28,9 @@ const SUBTYPE_BY_KEYWORD: Record<string, PriceSubType> = {
  * Parses a raw channel message into a {@link ParsedPrice}, or `null` if the
  * text is not a recognizable price post.
  */
-export function parsePriceMessage(text: string | undefined): ParsedPrice | null {
+export function parsePriceMessage(
+  text: string | undefined,
+): ParsedPrice | null {
   if (!text) return null;
 
   const lines = text.split('\n');
@@ -69,7 +71,9 @@ function extractDescription(lines: string[]): string | undefined {
     const idx = line.indexOf('توضیحات');
     if (idx === -1) continue;
     const colon = line.indexOf(':', idx);
-    const value = (colon === -1 ? line.slice(idx + 'توضیحات'.length) : line.slice(colon + 1))
+    const value = (
+      colon === -1 ? line.slice(idx + 'توضیحات'.length) : line.slice(colon + 1)
+    )
       .replace(/[\p{Extended_Pictographic}️]/gu, '')
       .trim();
     if (value) return value;

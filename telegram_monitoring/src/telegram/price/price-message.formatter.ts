@@ -51,7 +51,9 @@ function formatOrder(title: string, snapshot: PriceSnapshot): string[] {
  * Semantics reminder: خرید = a price we can SELL at, فروش = a price we can BUY
  * at. We buy the lowest فروش and sell the highest خرید in the same bucket.
  */
-export function formatArbitrageMessage(opportunity: ArbitrageOpportunity): string {
+export function formatArbitrageMessage(
+  opportunity: ArbitrageOpportunity,
+): string {
   const lines = [
     '⚡️ فرصت آربیتراژ',
     `🏷 دسته: ${SUBTYPE_LABELS[opportunity.subType]}`,

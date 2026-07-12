@@ -9,6 +9,7 @@ import { PricePairEntity } from "../../admin-pair/entity/price.pair.entity";
 import { SymbolEntity } from "../../admin-symbol/entity/symbol.entity";
 import { AdminWalletLogEntity } from "../../admin-wallet/entity/admin-wallet-log.entity";
 import { AdminOrderController } from "./admin-ordeer.controller";
+import { OrderBookService } from "../../order-book/order-book.service";
 
 @Module({
   imports: [
@@ -22,7 +23,7 @@ import { AdminOrderController } from "./admin-ordeer.controller";
     ]),
   ],
   controllers: [AdminOrderController],
-  providers: [AdminOrderService],
+  providers: [AdminOrderService, OrderBookService],
   exports: [AdminOrderService],
 })
 export class AdminOrderModule {}

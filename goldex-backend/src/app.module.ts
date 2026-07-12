@@ -33,6 +33,9 @@ import { FinancialModule } from "./financial/financial.module";
 import { AdminMonitoringModule } from "./admin-monitoring/admin-monitoring.module";
 import { ProviderFinanceModule } from "./provider-finance/provider-finance.module";
 import { WarehouseModule } from "./warehouse/warehouse.module";
+import { TelegramNotifierModule } from "./telegram-notifier/telegram-notifier.module";
+import { UserTelegramModule } from "./user-telegram/user-telegram.module";
+import { QuoteRequestModule } from "./quote-request/quote-request.module";
 
 @Module({
   imports: [
@@ -98,7 +101,6 @@ import { WarehouseModule } from "./warehouse/warehouse.module";
     WebSocketModule,
     AdminKycModule,
     AdminUserModule,
-    AdminManagementModule,
     AdminPairModule,
     AdminSymbolModule,
     AdminUserModule,
@@ -113,6 +115,10 @@ import { WarehouseModule } from "./warehouse/warehouse.module";
     AdminMonitoringModule,
     ProviderFinanceModule,
     WarehouseModule,
+    AdminManagementModule,
+    TelegramNotifierModule,
+    UserTelegramModule,
+    QuoteRequestModule,
   ],
   providers: [WinstonLoggerService],
   controllers: [],

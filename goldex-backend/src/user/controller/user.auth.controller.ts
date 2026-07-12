@@ -13,6 +13,7 @@ import { UserRoleEnum } from "../../shared/enum/user.role.enum";
 import { UpdateRefreshTokenDto } from "../dto/update.refresh.dto";
 import { UserExpressRequest } from "../auth/types/user-express-request";
 import { VerifyOtpPhoneDto } from "../dto/verify-otp-phone.dto";
+import { LoginWithOtpDto } from "../dto/login-with-otp.dto";
 
 @ApiTags("User-Auth")
 @Controller({ path: "auth", version: "1" })
@@ -63,6 +64,12 @@ export class AuthUserController {
     return {
       data: login,
     };
+  }
+
+  @Post("login-with-otp")
+  async loginWithOtp(@Req() request, @Body() data: LoginWithOtpDto) {
+    const result = await this.userService.loginWithOtp(data, request);
+    return { data: result };
   }
 
   @Post("2fa-login")

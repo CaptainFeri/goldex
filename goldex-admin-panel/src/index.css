@@ -512,3 +512,63 @@ tbody tr:hover {
   border: 1px solid var(--border);
   margin-top: 6px;
 }
+
+/* ─── Order Book ──────────────────────────────────────────── */
+.ob-table {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  overflow: hidden;
+  font-size: 13px;
+}
+
+.ob-hdr {
+  display: flex;
+  justify-content: space-between;
+  padding: 8px 12px;
+  background: var(--bg-dim);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-dim);
+  border-bottom: 1px solid var(--border);
+}
+
+.ob-rows { display: flex; flex-direction: column; }
+
+.ob-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  position: relative;
+  padding: 5px 12px;
+  font-variant-numeric: tabular-nums;
+  border-bottom: 1px solid var(--border);
+}
+
+.ob-row:last-child { border-bottom: none; }
+
+.ob-bar {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  opacity: 0.12;
+  pointer-events: none;
+}
+
+.ob-price { position: relative; z-index: 1; font-weight: 600; min-width: 90px; }
+.ob-price.ask { color: var(--red); text-align: left; direction: ltr; }
+.ob-price.bid { color: var(--green); text-align: left; direction: ltr; }
+
+.ob-size { position: relative; z-index: 1; color: var(--text-dim); min-width: 60px; text-align: right; direction: ltr; }
+
+.ob-src { position: relative; z-index: 1; min-width: 80px; text-align: center; }
+
+.ob-empty {
+  padding: 24px;
+  text-align: center;
+  color: var(--text-dim);
+  font-size: 13px;
+}
+
+.badge-provider { background: rgba(212, 175, 55, 0.15); color: #d4af37; padding: 2px 8px; border-radius: 4px; font-size: 11px; }
+.badge-customer { background: rgba(76, 141, 255, 0.15); color: #4c8dff; padding: 2px 8px; border-radius: 4px; font-size: 11px; }

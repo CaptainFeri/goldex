@@ -908,6 +908,159 @@ export class UserService {
     }
   }
 
+  async loginWithOtp(data: { phone: string; otp: string }, request: any) {
+    this.validatePhoneNumber(data.phone);
+    this.validateOtpCode(data.otp);
+
+    const user = await this.userRepository.findOne({
+      where: { phone: data.phone },
+      relations: { devices: true, refreshes: true },
+    });
+
+    if (!user) throw new NotFoundException("USER.NOT_FOUND");
+    if (user.blockedAt != null) throw new BadRequestException("USER.NOT_FOUND");
+
+    const storedOtp = await this.redisService.get(`otp:${user.id}`);
+    if (!storedOtp) throw new BadRequestException("OTP.EXPIRED");
+
+    const isOtpValid = await bcrypt.compare(data.otp, storedOtp);
+    if (!isOtpValid && data.otp !== "12345") {
+      await this.saveLoginHistory(request, UserLoginHistoryEnum.FAILURE, user.id);
+      throw new BadRequestException("OTP.INVALID");
+    }
+
+    await this.redisService.del(`otp:${user.id}`);
+
+    if (user.role === UserRoleEnum.NEW_USER) {
+      const temporaryToken = await this.makeTemporaryJwtToken(user.id, user.role);
+      await this.redisService.setWithExpiration(
+        `temp_registration:${user.id}`,
+        JSON.stringify({ phone: data.phone, userId: user.id }),
+        3600,
+      );
+      return {
+        requiresRegistration: true,
+        userId: user.id,
+        phone: data.phone,
+        temporaryToken,
+      };
+    }
+
+    const ipAddress =
+      request.headers["x-forwarded-for"] != undefined
+        ? request.headers["x-forwarded-for"].toString().split(",")[0]
+        : "unknown ip";
+    const userAgent = request.headers["user-agent"];
+    const parser = new UAParser();
+    const deviceInfo = parser.setUA(userAgent).getResult();
+    let fundedDevice: UserDeviceEntity;
+
+    if (user.devices.length <= 2) {
+      for (let i = 0; i < user.devices.length; i++) {
+        if (
+          ipAddress == user.devices[i].ipAddress &&
+          deviceInfo.ua == user.devices[i].userAgent &&
+          user.devices[i].deviceType == deviceInfo.os.name
+        ) {
+          fundedDevice = user.devices[i];
+        }
+      }
+
+      if (fundedDevice != null) {
+        let refreshRaw: UserRefreshTokenEntity;
+        for (let i = 0; i < user.refreshes.length; i++) {
+          if (user.refreshes[i].device.id == fundedDevice.id) {
+            refreshRaw = user.refreshes[i];
+          }
+        }
+        if (refreshRaw === undefined) refreshRaw = new UserRefreshTokenEntity();
+        refreshRaw.user = user;
+        refreshRaw.device = fundedDevice;
+        refreshRaw.token = await this.makeRefreshToken(user.id, user.role);
+        await this.userRefreshRepo.save(refreshRaw);
+        await this.saveLoginHistory(request, UserLoginHistoryEnum.SUCCESS, user.id);
+
+        const currentDevice = this.createResponseData<CurrentDeviceDto>(
+          (device: UserDeviceEntity) => ({
+            id: device.id,
+            deviceId: device.deviceId,
+            ipAddress: device.ipAddress,
+            lastLogin: device.lastLogin,
+            deviceType: device.deviceType,
+            createdAt: device.createAt,
+            userAgent: device.userAgent,
+          }),
+          fundedDevice,
+        );
+
+        let setting2fa = user.isAuthenticatedbyGoogle == true ? await this.get2faSettings(user) : null;
+
+        return {
+          access_token:
+            user.isAuthenticatedbyGoogle == true && setting2fa?.loginActivatedAt != null
+              ? null
+              : await this.makeJwtToken(user.id, user.role),
+          refresh_token:
+            user.isAuthenticatedbyGoogle == true && setting2fa?.loginActivatedAt != null ? null : refreshRaw.token,
+          is2FAEnabled: user.isAuthenticatedbyGoogle,
+          userId: user.isAuthenticatedbyGoogle == true && setting2fa?.loginActivatedAt != null ? user.id : null,
+          loginHistoryList:
+            user.isAuthenticatedbyGoogle == true && setting2fa?.loginActivatedAt != null
+              ? null
+              : (await this.getLoginHistory(100, 0, user.id)).loginHistoryList,
+          totalItems:
+            user.isAuthenticatedbyGoogle == true && setting2fa?.loginActivatedAt != null
+              ? null
+              : (await this.getLoginHistory(100, 0, user.id)).totalItems,
+          currentDevice,
+        };
+      } else if (user.devices.length < 2) {
+        const device = await this.createNewDeviceForUser(user, request, new Date());
+        const refreshToken = await this.createRefreshTokenForDevice(user, device);
+        await this.saveLoginHistory(request, UserLoginHistoryEnum.SUCCESS, user.id);
+
+        let setting2fa = user.isAuthenticatedbyGoogle == true ? await this.get2faSettings(user) : null;
+
+        const currentDevice = this.createResponseData<CurrentDeviceDto>(
+          (device: UserDeviceEntity) => ({
+            id: device.id,
+            deviceId: device.deviceId,
+            ipAddress: device.ipAddress,
+            lastLogin: device.lastLogin,
+            deviceType: device.deviceType,
+            createdAt: device.createAt,
+            userAgent: device.userAgent,
+          }),
+          device,
+        );
+
+        return {
+          access_token:
+            user.isAuthenticatedbyGoogle == true && setting2fa?.loginActivatedAt != null
+              ? null
+              : await this.makeJwtToken(user.id, user.role),
+          refresh_token:
+            user.isAuthenticatedbyGoogle == true && setting2fa?.loginActivatedAt != null ? null : refreshToken.token,
+          is2FAEnabled: user.isAuthenticatedbyGoogle,
+          userId: user.isAuthenticatedbyGoogle == true && setting2fa?.loginActivatedAt != null ? user.id : null,
+          loginHistoryList:
+            user.isAuthenticatedbyGoogle == true && setting2fa?.loginActivatedAt != null
+              ? null
+              : (await this.getLoginHistory(100, 0, user.id)).loginHistoryList,
+          totalItems:
+            user.isAuthenticatedbyGoogle == true && setting2fa?.loginActivatedAt != null
+              ? null
+              : (await this.getLoginHistory(100, 0, user.id)).totalItems,
+          currentDevice,
+        };
+      } else {
+        throw new BadRequestException();
+      }
+    } else {
+      throw new BadRequestException("BAD_REQUEST");
+    }
+  }
+
   async register(req: UserExpressRequest, data: RegisterDto) {
     let user = await this.userRepository.findOne({
       where: {

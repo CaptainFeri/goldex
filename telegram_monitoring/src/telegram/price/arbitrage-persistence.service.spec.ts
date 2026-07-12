@@ -1,16 +1,25 @@
 import { ArbitragePersistenceService } from './arbitrage-persistence.service';
-import { ArbitrageOpportunity, MITHQALS_PER_KILO, PriceSnapshot } from './price.types';
+import {
+  ArbitrageOpportunity,
+  MITHQALS_PER_KILO,
+  PriceSnapshot,
+} from './price.types';
 import { RedisService } from '../../redis/redis.service';
 
 function mockRedis(): RedisService {
   const store = new Map<string, string>();
   const sorted = new Map<string, Map<string, number>>();
   const client = {
-    setex: jest.fn(async (key: string, _ttl: number, val: string) => { store.set(key, val); return 'OK'; }),
-    mget: jest.fn(async (...keys: string[]) => keys.map((k) => store.get(k) ?? null)),
+    setex: jest.fn(async (key: string, _ttl: number, val: string) => {
+      store.set(key, val);
+      return 'OK';
+    }),
+    mget: jest.fn(async (...keys: string[]) =>
+      keys.map((k) => store.get(k) ?? null),
+    ),
     zadd: jest.fn(async (key: string, score: number, member: string) => {
       if (!sorted.has(key)) sorted.set(key, new Map());
-      sorted.get(key)!.set(member, score);
+      sorted.get(key).set(member, score);
       return 1;
     }),
     zrange: jest.fn(async (key: string, _min: number, _max: number) => {
@@ -59,7 +68,13 @@ function opp(
     subType,
     deliveryType: 'با حواله',
     buy: snap(73_500_000, { date: buyDate, subType, quantity }),
-    sell: snap(73_500_000 + spread, { date: sellDate, subType, quantity, sideLabel: 'خرید', ourAction: 'WE_SELL' }),
+    sell: snap(73_500_000 + spread, {
+      date: sellDate,
+      subType,
+      quantity,
+      sideLabel: 'خرید',
+      ourAction: 'WE_SELL',
+    }),
     spread,
     quantity,
     totalProfit: Math.round(spread * MITHQALS_PER_KILO * quantity),
@@ -78,9 +93,33 @@ describe('ArbitragePersistenceService', () => {
   }
 
   it('sums total cash profit and breaks it down by category', () => {
-    service.handleArbitrage(opp({ subType: 'shena', buyDate: 100, sellDate: 200, spread: 100000, quantity: 2 }));
-    service.handleArbitrage(opp({ subType: 'shena', buyDate: 200, sellDate: 300, spread: 90000, quantity: 1 }));
-    service.handleArbitrage(opp({ subType: 'normal', buyDate: 300, sellDate: 400, spread: 120000, quantity: 1 }));
+    service.handleArbitrage(
+      opp({
+        subType: 'shena',
+        buyDate: 100,
+        sellDate: 200,
+        spread: 100000,
+        quantity: 2,
+      }),
+    );
+    service.handleArbitrage(
+      opp({
+        subType: 'shena',
+        buyDate: 200,
+        sellDate: 300,
+        spread: 90000,
+        quantity: 1,
+      }),
+    );
+    service.handleArbitrage(
+      opp({
+        subType: 'normal',
+        buyDate: 300,
+        sellDate: 400,
+        spread: 120000,
+        quantity: 1,
+      }),
+    );
 
     const all = service.summary();
     expect(all.count).toBe(3);
@@ -94,9 +133,15 @@ describe('ArbitragePersistenceService', () => {
   });
 
   it('filters the profit total by date range', () => {
-    service.handleArbitrage(opp({ buyDate: 100, sellDate: 101, spread: 100000 }));
-    service.handleArbitrage(opp({ buyDate: 500, sellDate: 501, spread: 100000 }));
-    service.handleArbitrage(opp({ buyDate: 900, sellDate: 901, spread: 100000 }));
+    service.handleArbitrage(
+      opp({ buyDate: 100, sellDate: 101, spread: 100000 }),
+    );
+    service.handleArbitrage(
+      opp({ buyDate: 500, sellDate: 501, spread: 100000 }),
+    );
+    service.handleArbitrage(
+      opp({ buyDate: 900, sellDate: 901, spread: 100000 }),
+    );
 
     const mid = service.summary({ from: 200, to: 800 });
     expect(mid.count).toBe(1);
@@ -115,7 +160,9 @@ describe('ArbitragePersistenceService', () => {
   });
 
   it('stores verbose buy/sell details', () => {
-    service.handleArbitrage(opp({ buyDate: 100, sellDate: 200, spread: 150000, quantity: 3 }));
+    service.handleArbitrage(
+      opp({ buyDate: 100, sellDate: 200, spread: 150000, quantity: 3 }),
+    );
     const r = service.query()[0];
     expect(r.buy.price).toBe(73500000);
     expect(r.buy.date).toBe(100);
@@ -131,35 +178,64 @@ describe('ArbitragePersistenceService', () => {
     const buyPrice = 73_500_000;
     const sellPrice = 73_600_000;
     const qty = 2;
-    service.handleArbitrage(opp({
-      buyDate: 100, sellDate: 200, spread: sellPrice - buyPrice, quantity: qty,
-    }));
+    service.handleArbitrage(
+      opp({
+        buyDate: 100,
+        sellDate: 200,
+        spread: sellPrice - buyPrice,
+        quantity: qty,
+      }),
+    );
     const w = service.wallet();
     expect(w.totalGoldBought).toBe(qty * 1000);
     expect(w.totalGoldSold).toBe(qty * 1000);
     expect(w.netGold).toBe(0);
-    expect(w.totalCashSpent).toBeCloseTo(Math.round(buyPrice * MITHQALS_PER_KILO * qty), -1);
-    expect(w.totalCashReceived).toBeCloseTo(Math.round(sellPrice * MITHQALS_PER_KILO * qty), -1);
+    expect(w.totalCashSpent).toBeCloseTo(
+      Math.round(buyPrice * MITHQALS_PER_KILO * qty),
+      -1,
+    );
+    expect(w.totalCashReceived).toBeCloseTo(
+      Math.round(sellPrice * MITHQALS_PER_KILO * qty),
+      -1,
+    );
     expect(w.netCash).toBeCloseTo(service.summary().totalProfit, -1);
   });
 
   it('loads persisted data from Redis on init', async () => {
     const redis = mockRedis();
     const client = redis.getClient();
-    await client.setex!('arbitrage:1', 3600, JSON.stringify({
-      date: 200,
-      subType: 'normal',
-      deliveryType: 'با حواله',
-      buyAt: 73500000,
-      sellAt: 73600000,
-      spread: 100000,
-      quantity: 1,
-      totalProfit: 100000,
-      buyFirst: true,
-      buy: { price: 73500000, messageId: 1, date: 100, quantity: 1, sideLabel: 'فروش', ourAction: 'WE_BUY' },
-      sell: { price: 73600000, messageId: 2, date: 200, quantity: 1, sideLabel: 'خرید', ourAction: 'WE_SELL' },
-    }));
-    await client.zadd!('arbitrage:ids', 200, '1');
+    await client.setex(
+      'arbitrage:1',
+      3600,
+      JSON.stringify({
+        date: 200,
+        subType: 'normal',
+        deliveryType: 'با حواله',
+        buyAt: 73500000,
+        sellAt: 73600000,
+        spread: 100000,
+        quantity: 1,
+        totalProfit: 100000,
+        buyFirst: true,
+        buy: {
+          price: 73500000,
+          messageId: 1,
+          date: 100,
+          quantity: 1,
+          sideLabel: 'فروش',
+          ourAction: 'WE_BUY',
+        },
+        sell: {
+          price: 73600000,
+          messageId: 2,
+          date: 200,
+          quantity: 1,
+          sideLabel: 'خرید',
+          ourAction: 'WE_SELL',
+        },
+      }),
+    );
+    await client.zadd('arbitrage:ids', 200, '1');
 
     const reloaded = new ArbitragePersistenceService(redis);
     await reloaded.onModuleInit();
