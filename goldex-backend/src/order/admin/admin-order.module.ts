@@ -10,6 +10,7 @@ import { SymbolEntity } from "../../admin-symbol/entity/symbol.entity";
 import { AdminWalletLogEntity } from "../../admin-wallet/entity/admin-wallet-log.entity";
 import { AdminOrderController } from "./admin-ordeer.controller";
 import { OrderBookService } from "../../order-book/order-book.service";
+import { QuoteRequestEntity } from "../../quote-request/quote-request.entity";
 
 @Module({
   imports: [
@@ -20,6 +21,7 @@ import { OrderBookService } from "../../order-book/order-book.service";
       AdminWalletLogEntity,
       PricePairEntity,
       SymbolEntity,
+      QuoteRequestEntity,
     ]),
   ],
   controllers: [AdminOrderController],

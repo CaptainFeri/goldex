@@ -1,6 +1,6 @@
 import { Injectable, NotFoundException, BadRequestException, Logger } from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
-import { Repository, DataSource } from "typeorm";
+import { Repository, DataSource, ILike, MoreThanOrEqual, LessThanOrEqual, And } from "typeorm";
 import { OrderEntity } from "../order.entity";
 import { WalletEntity } from "../../wallet/entities/wallet.entity";
 import { TransactionEntity } from "../../wallet/entities/transaction.entity";
@@ -11,6 +11,7 @@ import { AdminWalletLogEntity } from "../../admin-wallet/entity/admin-wallet-log
 import { AdminUpdateOrderDto } from "./dto/admin-update-order.dto";
 import { OrderStatusEnum } from "../enum/order.status.enum";
 import { OrderSideEnum } from "../enum/order.side.enum";
+import { QuoteRequestEntity, QuoteRequestStatus } from "../../quote-request/quote-request.entity";
 
 @Injectable()
 export class AdminOrderService {
@@ -27,55 +28,152 @@ export class AdminOrderService {
     private readonly adminWalletLogRepository: Repository<AdminWalletLogEntity>,
     @InjectRepository(PricePairEntity)
     private readonly pricePairRepository: Repository<PricePairEntity>,
+    @InjectRepository(QuoteRequestEntity)
+    private readonly quoteRequestRepository: Repository<QuoteRequestEntity>,
     private readonly dataSource: DataSource
   ) {}
 
-  async getAllOrders(query: any): Promise<{ orders: OrderEntity[]; total: number }> {
+  async getAllOrders(query: any): Promise<{ orders: any[]; total: number }> {
     const { userId, pricePairId, side, orderType, status, search, limit = 10, offset = 0, startDate, endDate } = query;
+    const take = Number(limit) || 10;
+    const skip = Number(offset) || 0;
 
-    const queryBuilder = this.orderRepository
-      .createQueryBuilder("order")
-      .leftJoinAndSelect("order.user", "user")
-      .leftJoinAndSelect("order.pricePair", "pricePair")
-      .leftJoinAndSelect("order.transactions", "transactions");
+    const orderWhere = this.buildOrderWhere({ userId, pricePairId, side, orderType, status, search, startDate, endDate });
 
-    if (userId) {
-      queryBuilder.andWhere("order.user_id = :userId", { userId });
+    const [orderRows, ordersTotal] = await this.orderRepository.findAndCount({
+      where: orderWhere,
+      relations: { user: true, pricePair: { baseSymbol: true, quoteSymbol: true }, transactions: true },
+      order: { createAt: "DESC" },
+    });
+
+    const skipQuotes = orderType && orderType !== "QUOTE";
+    let quoteRows: QuoteRequestEntity[] = [];
+    let quotesTotal = 0;
+
+    if (!skipQuotes) {
+      const quoteWhere = this.buildQuoteWhere({ userId, pricePairId, side, orderType, status, search, startDate, endDate });
+      if (quoteWhere) {
+        const result = await this.quoteRequestRepository.findAndCount({
+          where: quoteWhere,
+          relations: { user: true, pricePair: { baseSymbol: true, quoteSymbol: true } },
+          order: { createAt: "DESC" },
+        });
+        quoteRows = result[0];
+        quotesTotal = result[1];
+      }
     }
 
-    if (pricePairId) {
-      queryBuilder.andWhere("order.price_pair_id = :pricePairId", { pricePairId });
+    const mappedQuotes = quoteRows.map((qr) => this.mapQuoteToOrder(qr));
+
+    const allItems = [...orderRows, ...mappedQuotes];
+    allItems.sort((a, b) => new Date(b.createAt).getTime() - new Date(a.createAt).getTime());
+
+    const total = ordersTotal + quotesTotal;
+    const paged = allItems.slice(skip, skip + take);
+
+    return { orders: paged, total };
+  }
+
+  private buildOrderWhere(filters: {
+    userId?: string; pricePairId?: string; side?: string; orderType?: string;
+    status?: string; search?: string; startDate?: string; endDate?: string;
+  }): any {
+    const base: any = {};
+    if (filters.userId) base.userId = filters.userId;
+    if (filters.pricePairId) base.pricePairId = filters.pricePairId;
+    if (filters.side) base.side = filters.side;
+    if (filters.orderType && filters.orderType !== "QUOTE") base.orderType = filters.orderType;
+    if (filters.status) base.status = filters.status;
+    if (filters.startDate && filters.endDate) {
+      base.createAt = And(MoreThanOrEqual(new Date(filters.startDate)), LessThanOrEqual(new Date(filters.endDate)));
+    } else if (filters.startDate) {
+      base.createAt = MoreThanOrEqual(new Date(filters.startDate));
+    } else if (filters.endDate) {
+      base.createAt = LessThanOrEqual(new Date(filters.endDate));
     }
 
-    if (side) {
-      queryBuilder.andWhere("order.side = :side", { side });
+    if (filters.search) {
+      return [
+        { ...base, orderCode: ILike(`%${filters.search}%`) },
+        { ...base, user: { email: ILike(`%${filters.search}%`) } },
+      ];
+    }
+    return base;
+  }
+
+  private buildQuoteWhere(filters: {
+    userId?: string; pricePairId?: string; side?: string; orderType?: string;
+    status?: string; search?: string; startDate?: string; endDate?: string;
+  }): any {
+    const base: any = {};
+    if (filters.userId) base.userId = filters.userId;
+    if (filters.pricePairId) base.pricePairId = filters.pricePairId;
+    if (filters.side) base.side = filters.side;
+    if (filters.startDate && filters.endDate) {
+      base.createAt = And(MoreThanOrEqual(new Date(filters.startDate)), LessThanOrEqual(new Date(filters.endDate)));
+    } else if (filters.startDate) {
+      base.createAt = MoreThanOrEqual(new Date(filters.startDate));
+    } else if (filters.endDate) {
+      base.createAt = LessThanOrEqual(new Date(filters.endDate));
     }
 
-    if (orderType) {
-      queryBuilder.andWhere("order.order_type = :orderType", { orderType });
+    if (filters.status) {
+      const mapped = this.mapOrderStatusToQuoteStatus(filters.status);
+      if (!mapped) return null;
+      base.status = mapped;
     }
 
-    if (status) {
-      queryBuilder.andWhere("order.status = :status", { status });
+    if (filters.search) {
+      return [
+        { ...base, user: { email: ILike(`%${filters.search}%`) } },
+      ];
     }
+    return base;
+  }
 
-    if (search) {
-      queryBuilder.andWhere("(order.order_code ILIKE :search OR user.email ILIKE :search)", { search: `%${search}%` });
+  private mapOrderStatusToQuoteStatus(orderStatus: string): QuoteRequestStatus | null {
+    switch (orderStatus) {
+      case "PENDING": return QuoteRequestStatus.PENDING;
+      case "COMPLETED": return QuoteRequestStatus.MATCHED;
+      case "CANCELLED": return QuoteRequestStatus.CANCELLED;
+      default: return null;
     }
+  }
 
-    if (startDate) {
-      queryBuilder.andWhere("order.created_at >= :startDate", { startDate });
-    }
-
-    if (endDate) {
-      queryBuilder.andWhere("order.created_at <= :endDate", { endDate });
-    }
-
-    queryBuilder.orderBy("order.created_at", "DESC").skip(offset).take(limit);
-
-    const [orders, total] = await queryBuilder.getManyAndCount();
-
-    return { orders, total };
+  private mapQuoteToOrder(qr: QuoteRequestEntity): any {
+    const statusMap: Record<string, string> = {
+      [QuoteRequestStatus.PENDING]: "PENDING",
+      [QuoteRequestStatus.MATCHED]: "COMPLETED",
+      [QuoteRequestStatus.CANCELLED]: "CANCELLED",
+    };
+    return {
+      id: qr.id,
+      orderCode: qr.id,
+      user: qr.user,
+      userId: qr.userId,
+      pricePair: qr.pricePair,
+      pricePairId: qr.pricePairId,
+      side: qr.side,
+      orderType: "QUOTE",
+      quantity: qr.quantity,
+      price: qr.price,
+      executedQuantity: qr.status === QuoteRequestStatus.MATCHED ? qr.quantity : 0,
+      totalValue: null,
+      commission: null,
+      status: statusMap[qr.status] ?? qr.status,
+      createAt: qr.createAt,
+      updateAt: qr.updateAt,
+      completedAt: qr.matchedAt ?? null,
+      cancelledAt: null,
+      notes: qr.notes ?? null,
+      averagePrice: null,
+      customerPrice: null,
+      mesghalPrice: null,
+      providerOrderId: null,
+      metadata: null,
+      transactions: [],
+      version: null,
+    };
   }
 
   async adminUpdateOrder(orderId: string, adminId: string, dto: AdminUpdateOrderDto): Promise<OrderEntity> {
