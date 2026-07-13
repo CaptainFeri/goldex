@@ -3,10 +3,11 @@ import { Logger } from '@nestjs/common';
 import { NestExpressApplication } from '@nestjs/platform-express';
 import { join } from 'node:path';
 import { AppModule } from './app.module';
+import { ColoredConsoleLogger } from './logger/colored-console-logger';
 
 async function bootstrap() {
   const app = await NestFactory.create<NestExpressApplication>(AppModule, {
-    logger: ['log', 'error', 'warn', 'debug', 'verbose'],
+    logger: new ColoredConsoleLogger(),
   });
 
   // Serve the chart frontend from /public at the web root.

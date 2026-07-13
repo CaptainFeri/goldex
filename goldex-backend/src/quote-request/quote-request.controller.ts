@@ -68,8 +68,8 @@ export class QuoteRequestController {
   @ApiBearerAuth()
   @HttpCode(HttpStatus.OK)
   async match(@Param("id") id: string, @Req() req: UserExpressRequest) {
-    const request = await this.service.match(id, req.user.id);
-    return { data: request };
+    const result = await this.service.match(id, req.user.id);
+    return { data: { request: result.request, matchedBuyOrderId: result.matchedBuyOrderId } };
   }
 
   @Delete(":id")

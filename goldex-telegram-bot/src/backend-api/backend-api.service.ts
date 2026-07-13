@@ -140,6 +140,32 @@ export class BackendApiService {
     );
   }
 
+  /**
+   * Accept a matching order. Backend handles wallet lock, transaction creation,
+   * commission calculation (seller in XAU, buyer in IRR), and Telegram
+   * notification to both parties.
+   */
+  async acceptMatch(accessToken: string, orderId: string): Promise<QuoteRequestResult> {
+    const res = await firstValueFrom(
+      this.httpService.post<BackendApiResponse<QuoteRequestResult>>(
+        this.url(`/quote-requests/${orderId}/match`),
+        {},
+        { headers: this.authHeaders(accessToken) },
+      ),
+    );
+    return res.data.data;
+  }
+
+  async getPendingQuoteRequests(accessToken: string): Promise<QuoteRequestItem[]> {
+    const res = await firstValueFrom(
+      this.httpService.get<BackendApiResponse<QuoteRequestItem[]>>(
+        this.url('/quote-requests/pending'),
+        { headers: this.authHeaders(accessToken) },
+      ),
+    );
+    return res.data.data;
+  }
+
   async linkTelegram(accessToken: string, telegramId: number): Promise<void> {
     await firstValueFrom(
       this.httpService.post(

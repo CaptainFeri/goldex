@@ -70,6 +70,7 @@ export interface QuoteRequestResult {
     status: string;
   };
   matchAlert: boolean;
+  matchedBuyOrderId?: string | null;
 }
 
 export interface QuoteRequestItem {
@@ -80,6 +81,7 @@ export interface QuoteRequestItem {
   notes?: string;
   status: string;
   createAt: string;
+  totalPrice?: number;
   pricePair: {
     baseSymbol?: { id: string; name: string; slug: string };
     quoteSymbol?: { id: string; name: string; slug: string };

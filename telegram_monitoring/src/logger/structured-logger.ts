@@ -15,15 +15,8 @@ export function formatLog(
   type: string,
   fields: Record<string, unknown>,
 ): string {
-  const lines = ['{'];
-  lines.push(`      - TYPE: '${type}',`);
-  for (const [key, value] of Object.entries(fields)) {
-    const formatted =
-      typeof value === 'string' ? `'${value}'` : safeStringify(value);
-    lines.push(`      - ${key}: ${formatted},`);
-  }
-  lines.push('      }');
-  return `\n${lines.join('\n')}`;
+  const obj: Record<string, unknown> = { TYPE: type, ...fields };
+  return safeStringify(obj);
 }
 
 export class StructuredLogger extends Logger {

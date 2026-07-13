@@ -11,7 +11,7 @@ services:
       postgres:
         condition: service_healthy
     ports:
-      - 3000:${TELEGRAM_BOT_PORT}
+      - 3001:${TELEGRAM_BOT_PORT}
     networks:
       - goldex-bot-network
 

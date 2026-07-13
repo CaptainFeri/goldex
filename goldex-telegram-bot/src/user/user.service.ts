@@ -88,4 +88,10 @@ export class UserService {
       await this.userRepo.save(user);
     }
   }
+
+  async findAllAuthenticated(): Promise<TelegramUserEntity[]> {
+    return this.userRepo.find({
+      where: { state: UserState.AUTHENTICATED },
+    });
+  }
 }

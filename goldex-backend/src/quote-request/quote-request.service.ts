@@ -6,7 +6,13 @@ import { OrderSideEnum } from "../order/enum/order.side.enum";
 import { UserTelegramService } from "../user-telegram/user-telegram.service";
 import { TelegramNotifierService } from "../telegram-notifier/telegram-notifier.service";
 import { WalletEntity } from "../wallet/entities/wallet.entity";
+import { TransactionEntity } from "../wallet/entities/transaction.entity";
+import { TransactionTypeEnum } from "../wallet/enum/transaction.type.enum";
+import { TransactionStatusEnum } from "../wallet/enum/transaction.status.enum";
+import { SystemLedgerEntity } from "../financial/entity/system-ledger.entity";
+import { SystemLedgerType } from "../financial/enum/system-ledger-type.enum";
 import { PricePairEntity } from "../admin-pair/entity/price.pair.entity";
+import * as crypto from "crypto";
 
 interface CreateQuoteRequestResult {
   request: QuoteRequestEntity;
@@ -22,6 +28,8 @@ export class QuoteRequestService {
     private readonly repo: Repository<QuoteRequestEntity>,
     @InjectRepository(WalletEntity)
     private readonly walletRepo: Repository<WalletEntity>,
+    @InjectRepository(TransactionEntity)
+    private readonly transactionRepo: Repository<TransactionEntity>,
     @InjectRepository(PricePairEntity)
     private readonly pairRepo: Repository<PricePairEntity>,
     private readonly dataSource: DataSource,
@@ -50,13 +58,8 @@ export class QuoteRequestService {
     const entity = this.repo.create({ userId, side, pricePairId, quantity, price, notes, status: QuoteRequestStatus.PENDING });
     const saved = await this.repo.save(entity);
 
-    // Broadcast to channel with match button
-    const msgInfo = await this.broadcastToChannel(saved, pair);
-    if (msgInfo) {
-      saved.channelChatId = String(msgInfo.chatId);
-      saved.channelMessageId = String(msgInfo.messageId);
-      await this.repo.save(saved);
-    }
+    // Channel publishing is handled by the goldex-telegram-bot.
+    // Skip backend broadcast to avoid duplicate channel messages.
 
     // Check for potential match — only alert, never auto-match
     const oppositeSide = side === OrderSideEnum.BUY ? OrderSideEnum.SELL : OrderSideEnum.BUY;
@@ -74,7 +77,7 @@ export class QuoteRequestService {
     return { request: saved };
   }
 
-  async match(requestId: string, matcherUserId: string): Promise<QuoteRequestEntity> {
+  async match(requestId: string, matcherUserId: string): Promise<{ request: QuoteRequestEntity; matchedBuyOrderId: string | null }> {
     const request = await this.repo.findOne({
       where: { id: requestId },
       relations: { pricePair: { baseSymbol: true, quoteSymbol: true } },
@@ -84,32 +87,160 @@ export class QuoteRequestService {
     if (request.userId === matcherUserId) throw new Error("نمی‌توانید درخواست خود را تطبیق دهید");
 
     const pair = request.pricePair;
-    const matcherSide = request.side === OrderSideEnum.BUY ? OrderSideEnum.SELL : OrderSideEnum.BUY;
+    const SELLER_ID = request.userId;
+    const BUYER_ID = matcherUserId;
+    const quantity = Number(request.quantity);
+    const price = Number(request.price);
+    const totalValue = quantity * price;
 
-    // Validate compatibility
-    if (!this.isCompatible(matcherSide, Number(request.quantity), Number(request.price), request.side, Number(request.quantity), Number(request.price))) {
-      throw new Error("قیمت یا مقدار سفارش‌ها با یکدیگر سازگار نیست");
+    if (!price || totalValue <= 0) {
+      throw new Error("قیمت سفارش نامعتبر است");
     }
 
-    // Lock matcher's balance, unlock creator's
-    await this.lockBalance(matcherUserId, matcherSide, pair, Number(request.quantity), Number(request.price));
-    await this.unlockBalance(request.userId, request.side, pair, Number(request.quantity), Number(request.price));
+    let buyerOrder: QuoteRequestEntity | null = null;
 
-    // Mark as matched
-    request.status = QuoteRequestStatus.MATCHED;
-    request.matchedUserId = matcherUserId;
-    request.matchedAt = new Date();
-    await this.repo.save(request);
+    const queryRunner = this.dataSource.createQueryRunner();
+    await queryRunner.connect();
+    await queryRunner.startTransaction();
 
-    // Update channel message — remove button, show matched
-    if (request.channelChatId && request.channelMessageId) {
-      await this.updateChannelMessageMatched(request, pair);
+    try {
+      // Get wallets with pessimistic lock (prevents race conditions)
+      const sellerXauWallet = await this.getWallet(queryRunner, SELLER_ID, pair.baseSymbol.id);
+      const buyerXauWallet = await this.getWallet(queryRunner, BUYER_ID, pair.baseSymbol.id);
+      const sellerIrWallet = await this.getWallet(queryRunner, SELLER_ID, pair.quoteSymbol.id);
+      const buyerIrWallet = await this.getWallet(queryRunner, BUYER_ID, pair.quoteSymbol.id);
+
+      // Validate seller has enough locked XAU
+      if (sellerXauWallet.lockedBalance < quantity) {
+        throw new Error(`موجودی مسدود شده ${pair.baseSymbol.slug} فروشنده کافی نیست`);
+      }
+
+      // Buyer's IRR: either already locked (from a BUY order) or taken from free balance
+      const buyerIrrAlreadyLocked = buyerIrWallet.lockedBalance >= totalValue;
+      if (!buyerIrrAlreadyLocked && buyerIrWallet.freeBalance < totalValue) {
+        throw new Error(`موجودی ${pair.quoteSymbol.slug} خریدار کافی نیست (نیاز: ${totalValue.toLocaleString()})`);
+      }
+
+      // ── Commission calculation ──
+      const sellCommRate = Number(pair.sellCommission) || 0;
+      const buyCommRate = Number(pair.buyCommission) || 0;
+      // Seller pays commission in XAU (base asset)
+      const sellCommission = Number((quantity * sellCommRate / 100).toFixed(8));
+      // Buyer pays commission in IRR (quote asset)
+      const buyCommission = Number((totalValue * buyCommRate / 100).toFixed(8));
+      const netXau = Number((quantity - sellCommission).toFixed(8));
+      const netIrr = Number((totalValue - buyCommission).toFixed(8));
+
+      // ── XAU transfer: seller → buyer (minus sell commission) ──
+      sellerXauWallet.lockedBalance = Number((sellerXauWallet.lockedBalance - quantity).toFixed(8));
+      buyerXauWallet.freeBalance = Number((buyerXauWallet.freeBalance + netXau).toFixed(8));
+
+      // ── IRR transfer: buyer → seller (minus buy commission) ──
+      if (buyerIrrAlreadyLocked) {
+        buyerIrWallet.lockedBalance = Number((buyerIrWallet.lockedBalance - totalValue).toFixed(8));
+      } else {
+        buyerIrWallet.freeBalance = Number((buyerIrWallet.freeBalance - totalValue).toFixed(8));
+      }
+      sellerIrWallet.freeBalance = Number((sellerIrWallet.freeBalance + netIrr).toFixed(8));
+
+      // Save wallet changes
+      await queryRunner.manager.save(sellerXauWallet);
+      await queryRunner.manager.save(buyerXauWallet);
+      await queryRunner.manager.save(buyerIrWallet);
+      await queryRunner.manager.save(sellerIrWallet);
+
+      // ── Record transactions ──
+      // Seller: XAU debited
+      await this.createTransaction(queryRunner, sellerXauWallet, {
+        transactionType: TransactionTypeEnum.SELL,
+        amount: -quantity,
+        price,
+        fee: sellCommission,
+        description: `P2P match: sold ${quantity} ${pair.baseSymbol.slug} (commission ${sellCommission})`,
+        metadata: { commission: sellCommission, commissionRate: sellCommRate, unit: pair.baseSymbol.slug },
+      });
+      // Seller: IRR credited (net of buyer's commission)
+      await this.createTransaction(queryRunner, sellerIrWallet, {
+        transactionType: TransactionTypeEnum.ORDER,
+        amount: netIrr,
+        price,
+        description: `P2P match: received ${netIrr} ${pair.quoteSymbol.slug} from buyer`,
+      });
+      // Buyer: XAU credited (net of seller's commission)
+      await this.createTransaction(queryRunner, buyerXauWallet, {
+        transactionType: TransactionTypeEnum.BUY,
+        amount: netXau,
+        price,
+        description: `P2P match: received ${netXau} ${pair.baseSymbol.slug} from seller`,
+      });
+      // Buyer: IRR debited
+      await this.createTransaction(queryRunner, buyerIrWallet, {
+        transactionType: TransactionTypeEnum.ORDER,
+        amount: -totalValue,
+        price,
+        fee: buyCommission,
+        description: `P2P match: spent ${totalValue} ${pair.quoteSymbol.slug} (commission ${buyCommission})`,
+        metadata: { commission: buyCommission, commissionRate: buyCommRate, unit: pair.quoteSymbol.slug },
+      });
+
+      // ── Record system profit (commissions) ──
+      if (sellCommission > 0) {
+        await this.recordSystemProfit(queryRunner, {
+          symbolId: pair.baseSymbol.id,
+          type: SystemLedgerType.COMMISSION_SELL,
+          amount: sellCommission,
+          requestId: request.id,
+          userId: SELLER_ID,
+          description: `P2P sell commission (${sellCommRate}%) in ${pair.baseSymbol.slug}`,
+        });
+      }
+      if (buyCommission > 0) {
+        await this.recordSystemProfit(queryRunner, {
+          symbolId: pair.quoteSymbol.id,
+          type: SystemLedgerType.COMMISSION_BUY,
+          amount: buyCommission,
+          requestId: request.id,
+          userId: BUYER_ID,
+          description: `P2P buy commission (${buyCommRate}%) in ${pair.quoteSymbol.slug}`,
+        });
+      }
+
+      // Mark SELL order as matched
+      request.status = QuoteRequestStatus.MATCHED;
+      request.matchedUserId = matcherUserId;
+      request.matchedAt = new Date();
+      await queryRunner.manager.save(request);
+
+      // Also mark buyer's matching BUY order as matched (if exists)
+      buyerOrder = await queryRunner.manager.findOne(QuoteRequestEntity, {
+        where: {
+          userId: BUYER_ID,
+          side: OrderSideEnum.BUY,
+          pricePairId: request.pricePairId,
+          status: QuoteRequestStatus.PENDING,
+        },
+      });
+      if (buyerOrder) {
+        buyerOrder.status = QuoteRequestStatus.MATCHED;
+        buyerOrder.matchedUserId = SELLER_ID;
+        buyerOrder.matchedAt = new Date();
+        await queryRunner.manager.save(buyerOrder);
+      }
+
+      await queryRunner.commitTransaction();
+      this.logger.log(`P2P match complete: ${quantity} ${pair.baseSymbol.slug} @ ${price}`);
+    } catch (err) {
+      await queryRunner.rollbackTransaction();
+      this.logger.error(`P2P match failed: ${(err as Error).message}`);
+      throw err;
+    } finally {
+      await queryRunner.release();
     }
 
-    // Notify both users
+    // Channel message update is handled by goldex-telegram-bot.
     await this.notifyMatchedUsers(request, matcherUserId);
 
-    return request;
+    return { request, matchedBuyOrderId: buyerOrder?.id || null };
   }
 
   async findMyRequests(userId: string): Promise<QuoteRequestEntity[]> {
@@ -252,6 +383,84 @@ export class QuoteRequestService {
 
     if (ownerLink) await this.notifier.sendDirectMessage(ownerLink.telegramId, msg);
     if (matcherLink) await this.notifier.sendDirectMessage(matcherLink.telegramId, msg);
+  }
+
+  private async getWallet(
+    queryRunner: any,
+    userId: string,
+    symbolId: string,
+  ): Promise<WalletEntity> {
+    let wallet = await queryRunner.manager.findOne(WalletEntity, {
+      where: { userId, symbolId },
+      lock: { mode: "pessimistic_write" },
+    });
+    if (!wallet) {
+      wallet = queryRunner.manager.create(WalletEntity, {
+        userId,
+        symbolId,
+        freeBalance: 0,
+        lockedBalance: 0,
+        status: "ACTIVE",
+      });
+      wallet = await queryRunner.manager.save(wallet);
+    }
+    wallet.freeBalance = Number(wallet.freeBalance) || 0;
+    wallet.lockedBalance = Number(wallet.lockedBalance) || 0;
+    wallet.frozenFreeBalance = Number(wallet.frozenFreeBalance) || 0;
+    wallet.frozenLockedBalance = Number(wallet.frozenLockedBalance) || 0;
+    return wallet;
+  }
+
+  private async createTransaction(
+    queryRunner: any,
+    wallet: WalletEntity,
+    params: {
+      transactionType: TransactionTypeEnum;
+      amount: number;
+      price?: number;
+      fee?: number;
+      description: string;
+      metadata?: any;
+    },
+  ): Promise<TransactionEntity> {
+    const tx = this.transactionRepo.create({
+      walletId: wallet.id,
+      wallet,
+      transactionId: `TXN-${crypto.randomUUID().split("-")[0].toUpperCase()}`,
+      transactionType: params.transactionType,
+      status: TransactionStatusEnum.COMPLETED,
+      amount: params.amount,
+      fee: params.fee || 0,
+      price: params.price || 0,
+      description: params.description,
+      metadata: {
+        ...params.metadata,
+        timestamp: new Date().toISOString(),
+      },
+      completedAt: new Date(),
+    });
+    return queryRunner.manager.save(tx);
+  }
+
+  private async recordSystemProfit(
+    queryRunner: any,
+    params: {
+      symbolId: string;
+      type: SystemLedgerType;
+      amount: number;
+      requestId: string;
+      userId: string;
+      description: string;
+    },
+  ): Promise<void> {
+    await queryRunner.manager.save(SystemLedgerEntity, {
+      symbolId: params.symbolId,
+      type: params.type,
+      amount: params.amount,
+      orderId: params.requestId,
+      userId: params.userId,
+      description: params.description,
+    });
   }
 
   private async updateChannelMessageMatched(request: QuoteRequestEntity, pair: PricePairEntity): Promise<void> {
