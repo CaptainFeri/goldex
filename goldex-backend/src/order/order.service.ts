@@ -11,12 +11,17 @@ import { OrderTypeEnum } from "./enum/order.type.enum";
 import { OrderStatusEnum } from "./enum/order.status.enum";
 import { OrderSideEnum } from "./enum/order.side.enum";
 import { GainTypeEnum } from "../admin-symbol/enum/gain.type.enum";
+import { MarketTypeEnum } from "../admin-pair/enum/market.type.enum";
 import { MESQAL_TO_GRAM } from "../common/constants";
 import { RabbitMQService } from "../rabbitmq/rabbitmq.service";
 import { MessagePatterns } from "../rabbitmq/interfaces/rabbitmq.interfaces";
 import { ProviderPairMappingService } from "../provider-pair-mapping/provider-pair-mapping.service";
 import { WalletOrderService } from "../wallet/services/wallet-order.service";
 import { TelegramNotifierService } from "../telegram-notifier/telegram-notifier.service";
+import { UserMarketTypeEntity } from "../user/entity/user.market.type.entity";
+import { OrderBookService } from "../order-book/order-book.service";
+import { Side } from "nodejs-order-book";
+import { OrderSource } from "../order-book/interfaces/order-book.types";
 
 @Injectable()
 export class OrderService {
@@ -34,6 +39,9 @@ export class OrderService {
     private readonly mappingService: ProviderPairMappingService,
     private readonly walletOrderService: WalletOrderService,
     private readonly telegramNotifier: TelegramNotifierService,
+    @InjectRepository(UserMarketTypeEntity)
+    private readonly userMarketTypeRepo: Repository<UserMarketTypeEntity>,
+    private readonly orderBookService: OrderBookService,
   ) {}
 
   async createOrder(userId: string, dto: CreateOrderDto): Promise<OrderEntity> {
@@ -63,30 +71,42 @@ export class OrderService {
         throw new BadRequestException("Price pair is not active");
       }
 
+      const userMarketTypes = await this.userMarketTypeRepo.find({ where: { userId: user.id } });
+      const allowedMarketTypes = new Set(userMarketTypes.map((r) => r.marketType));
+      const pairMarketType = pricePair.baseSymbol?.marketType;
+      if (pairMarketType && allowedMarketTypes.size > 0 && !allowedMarketTypes.has(pairMarketType)) {
+        throw new BadRequestException(
+          `You do not have access to trade on ${pairMarketType} market pairs.`
+        );
+      }
+
       if (dto.orderType === OrderTypeEnum.LIMIT && !dto.price) {
         throw new BadRequestException("Price is required for limit orders");
       }
 
       const orderCode = this.generateOrderCode(dto.side, dto.orderType);
 
-      const providerKey = dto.side === OrderSideEnum.BUY
-        ? pricePair.bestBuyProvider
-        : pricePair.bestSellProvider;
-
+      // Only MARKET and QUOTE orders need a provider mapping — LIMIT orders
+      // are matched in the order book.
+      let providerKey: string | undefined;
       let providerItemId: number | undefined;
-      if (providerKey) {
-        const pairMappings = await this.mappingService.findByPair(dto.pricePairId);
-        const match = pairMappings.find((m) => m.providerKey === providerKey);
-        providerItemId = match?.providerItemId;
-      }
 
-      // Without a provider + item mapping the order can never be dispatched or
-      // resolved (it would sit PENDING forever). Fail fast with a clear message
-      // instead of creating a dead order.
-      if (!providerKey || !providerItemId) {
-        throw new BadRequestException(
-          "No liquidity provider is currently available for this pair. Please try again shortly."
-        );
+      if (dto.orderType !== OrderTypeEnum.LIMIT) {
+        providerKey = dto.side === OrderSideEnum.BUY
+          ? pricePair.bestBuyProvider
+          : pricePair.bestSellProvider;
+
+        if (providerKey) {
+          const pairMappings = await this.mappingService.findByPair(dto.pricePairId);
+          const match = pairMappings.find((m) => m.providerKey === providerKey);
+          providerItemId = match?.providerItemId;
+        }
+
+        if (!providerKey || !providerItemId) {
+          throw new BadRequestException(
+            "No liquidity provider is currently available for this pair. Please try again shortly."
+          );
+        }
       }
 
       // Prices: pair prices are per MESGHAL, but the customer trades in GRAMS.
@@ -122,8 +142,14 @@ export class OrderService {
         commissionAmt = isBuy
           ? Number(((dto.quantity * gramPrice * rate) / 100).toFixed(8))
           : Number(((dto.quantity * rate) / 100).toFixed(8));
+      } else if (dto.orderType === OrderTypeEnum.LIMIT) {
+        // LIMIT: the user's limit price IS the display price. Commission is
+        // taken as a quantity deduction at settlement, not baked into the price.
+        displayGram = gramPrice;
+        displayMesghal = providerMesghalPrice;
+        commissionAmt = dto.commission || 0;
       } else {
-        // MARKET / LIMIT: commission + gain baked into the display price.
+        // MARKET: commission + gain baked into the display price.
         const gainAdj =
           pricePair.baseSymbol?.gainType === GainTypeEnum.PERCENT
             ? (realMesghal * baseGain) / 100
@@ -155,8 +181,7 @@ export class OrderService {
         notes: dto.notes,
         metadata: {
           ...dto.metadata,
-          providerKey,
-          providerItemId,
+          ...(dto.orderType !== OrderTypeEnum.LIMIT ? { providerKey, providerItemId } : {}),
         },
       });
 
@@ -165,66 +190,69 @@ export class OrderService {
 
       this.logger.log(`Order created: ${orderCode} for user ${userId}`);
 
-      // Reserve the balance and dispatch to the provider. This runs after the
-      // order transaction is committed, so on failure (e.g. insufficient funds)
-      // we reject the order and surface the error instead of leaving it PENDING.
+      // Reserve the balance. This runs after the order transaction is
+      // committed, so on failure we reject the order instead of leaving it
+      // PENDING.
       try {
         await this.walletOrderService.freezeForOrder(savedOrder, pricePair);
 
-        const dealType = savedOrder.side === OrderSideEnum.BUY ? 0 : 1;
+        if (dto.orderType === OrderTypeEnum.LIMIT) {
+          // ── LIMIT: match in the order book ─────────────────────────
+          await this.processLimitOrder(savedOrder, pricePair, gramPrice);
+        } else {
+          // ── MARKET / QUOTE: dispatch to the provider ───────────────
+          const dealType = savedOrder.side === OrderSideEnum.BUY ? 0 : 1;
 
-        // For QUOTE BUY: commission is in IRR, so we buy exactly the user's qty
-        // from the provider (no XAU surplus). For MARKET/LIMIT BUY: we spend the
-        // user's DISPLAY-priced IRR at the provider's pure price, buying more gold
-        // than the user ordered — the surplus is our XAU profit.
-        // On SELL we always hand over exactly the user's gold.
-        const providerGold =
-          savedOrder.side === OrderSideEnum.BUY && gramPrice > 0
-            ? isQuote
-              ? Number(savedOrder.quantity)
-              : Number(((Number(savedOrder.quantity) * displayGram) / gramPrice).toFixed(8))
-            : Number(savedOrder.quantity);
+          const providerGold =
+            savedOrder.side === OrderSideEnum.BUY && gramPrice > 0
+              ? isQuote
+                ? Number(savedOrder.quantity)
+                : Number(((Number(savedOrder.quantity) * displayGram) / gramPrice).toFixed(8))
+              : Number(savedOrder.quantity);
 
-        // The provider deals in MESGHAL; we also record the gram volume + gram
-        // price on the deal so it's clear what the customer traded.
-        this.rmq.publish(MessagePatterns.ORDER_PLACE_REQUEST, {
-          pattern: MessagePatterns.ORDER_PLACE_REQUEST,
-          data: {
+          this.rmq.publish(MessagePatterns.ORDER_PLACE_REQUEST, {
+            pattern: MessagePatterns.ORDER_PLACE_REQUEST,
+            data: {
+              providerKey,
+              itemId: providerItemId,
+              dealType,
+              count: providerGold,
+              price: providerMesghalPrice || undefined,
+              gramVolume: providerGold,
+              gramPrice,
+              customerPrice: displayMesghal,
+              customerGramPrice: displayGram,
+              clientOrderId: savedOrder.id,
+            },
+            timestamp: new Date().toISOString(),
             providerKey,
-            itemId: providerItemId,
-            dealType,
-            count: providerGold,
-            price: providerMesghalPrice || undefined, // pure mesghal price for the provider
-            gramVolume: providerGold, // gold actually bought from the provider
-            gramPrice, // pure per-gram price
-            customerPrice: displayMesghal, // customer-shown price per mesghal (with commission + gain)
-            customerGramPrice: displayGram, // customer-shown price per gram
-            clientOrderId: savedOrder.id,
-          },
-          timestamp: new Date().toISOString(),
-          providerKey,
-        });
+          });
+        }
       } catch (err) {
         savedOrder.status = OrderStatusEnum.REJECTED;
         await this.orderRepository.save(savedOrder);
-        this.logger.error(`Failed to process order ${orderCode}: ${(err as Error).message}`);
+        const errMsg = err instanceof Error ? err.message : String(err);
+        this.logger.error(`Failed to process order ${orderCode}: ${errMsg}`);
         throw err instanceof BadRequestException
           ? err
-          : new BadRequestException((err as Error).message || "Could not place order");
+          : new BadRequestException(errMsg || "Could not place order");
       }
 
-      // Notify channel about the new order
-      const sideLabel = isBuy ? "خرید" : "فروش";
-      const slug = pricePair?.baseSymbol?.slug || "—";
-      const quoteSlug = pricePair?.quoteSymbol?.slug || "—";
-      this.telegramNotifier.sendOrderWithMatchButton(
-        `🆕 *سفارش جدید* — ${savedOrder.orderCode}` +
-        `\n🔹 ${sideLabel} ${slug}` +
-        `\n🔹 مقدار: ${savedOrder.quantity}` +
-        `\n🔹 قیمت: ${savedOrder.price ?? "—"} ${quoteSlug}` +
-        `\n🔹 وضعیت: ${savedOrder.status}`,
-        savedOrder.id,
-      );
+      // Only QUOTE-type orders interact with Telegram (separate market from
+      // LIMIT/MARKET).  Skip Telegram notification for non-QUOTE orders.
+      if (dto.orderType === OrderTypeEnum.QUOTE) {
+        const sideLabel = isBuy ? "خرید" : "فروش";
+        const slug = pricePair?.baseSymbol?.slug || "—";
+        const quoteSlug = pricePair?.quoteSymbol?.slug || "—";
+        this.telegramNotifier.sendOrderWithMatchButton(
+          `🆕 *سفارش جدید* — ${savedOrder.orderCode}` +
+          `\n🔹 ${sideLabel} ${slug}` +
+          `\n🔹 مقدار: ${savedOrder.quantity}` +
+          `\n🔹 قیمت: ${savedOrder.price ?? "—"} ${quoteSlug}` +
+          `\n🔹 وضعیت: ${savedOrder.status}`,
+          savedOrder.id,
+        );
+      }
 
       return savedOrder;
     } catch (error) {
@@ -304,11 +332,12 @@ export class OrderService {
       throw new BadRequestException(`Cannot cancel order with status: ${order.status}`);
     }
 
-    // A balance freeze only happened if the order was dispatched to a provider.
-    const wasFrozen = !!(order.metadata?.providerKey && order.metadata?.providerItemId);
+    // Remove the order from the customer order book (LIMIT orders only).
+    // This is safe to call for MARKET/QUOTE orders as cancel returns false.
+    this.orderBookService.cancelCustomerOrder(order.pricePairId, order.id);
 
-    if (wasFrozen && order.pricePair) {
-      // Unlocks the frozen balance and marks the order CANCELLED atomically.
+    // All orders go through freezeForOrder, so always unlock via rejectOrder.
+    if (order.pricePair) {
       await this.walletOrderService.rejectOrder(order, order.pricePair, OrderStatusEnum.CANCELLED);
     } else {
       order.status = OrderStatusEnum.CANCELLED;
@@ -343,6 +372,66 @@ export class OrderService {
     }
 
     return this.orderRepository.save(order);
+  }
+
+  /**
+   * Process a LIMIT order through the order book: match against existing
+   * customer orders (P2P), then against the synthetic provider book, and
+   * rest any remaining quantity in the customer book.
+   */
+  private async processLimitOrder(
+    order: OrderEntity,
+    pricePair: PricePairEntity,
+    gramPrice: number,
+  ): Promise<void> {
+    const side = order.side === OrderSideEnum.BUY ? Side.BUY : Side.SELL;
+
+    const result = this.orderBookService.processLimitOrder(
+      order.pricePairId,
+      side,
+      Number(order.quantity),
+      gramPrice,
+      order.id,
+    );
+
+    let totalExecuted = 0;
+
+    for (const match of result.matchedOrders) {
+      const s = match.size;
+      const isProvider = match.makerSource === OrderSource.PROVIDER;
+
+      await this.walletOrderService.settleLimitMatch(
+        order,
+        s,
+        match.takerPrice,
+        match.makerPrice,
+        match.makerSource,
+        isProvider ? null : match.makerOrderId,
+        pricePair,
+      );
+
+      totalExecuted += s;
+    }
+
+    if (totalExecuted > 0) {
+      const qty = Number(order.quantity);
+      const avgPrice = gramPrice;
+      order.executedQuantity = Number((totalExecuted).toFixed(8));
+      order.averagePrice = avgPrice;
+      order.totalValue = Number((totalExecuted * avgPrice).toFixed(8));
+
+      if (totalExecuted >= qty) {
+        order.status = OrderStatusEnum.COMPLETED;
+        order.completedAt = new Date();
+      } else if (totalExecuted > 0) {
+        order.status = OrderStatusEnum.PARTIALLY_COMPLETED;
+      }
+
+      await this.orderRepository.save(order);
+      this.logger.log(
+        `Limit order ${order.orderCode}: ${totalExecuted}/${qty} matched (${result.restingSize} resting)`,
+      );
+    }
   }
 
   private generateOrderCode(side: OrderSideEnum, type: OrderTypeEnum): string {

@@ -12,6 +12,8 @@ import { AdminUpdateOrderDto } from "./dto/admin-update-order.dto";
 import { OrderStatusEnum } from "../enum/order.status.enum";
 import { OrderSideEnum } from "../enum/order.side.enum";
 import { QuoteRequestEntity, QuoteRequestStatus } from "../../quote-request/quote-request.entity";
+import { WalletOrderService } from "../../wallet/services/wallet-order.service";
+import { OrderBookService } from "../../order-book/order-book.service";
 
 @Injectable()
 export class AdminOrderService {
@@ -30,7 +32,9 @@ export class AdminOrderService {
     private readonly pricePairRepository: Repository<PricePairEntity>,
     @InjectRepository(QuoteRequestEntity)
     private readonly quoteRequestRepository: Repository<QuoteRequestEntity>,
-    private readonly dataSource: DataSource
+    private readonly dataSource: DataSource,
+    private readonly walletOrderService: WalletOrderService,
+    private readonly orderBookService: OrderBookService,
   ) {}
 
   async getAllOrders(query: any): Promise<{ orders: any[]; total: number }> {
@@ -191,6 +195,8 @@ export class AdminOrderService {
         throw new NotFoundException("Order not found");
       }
 
+      const statusExplicitlySet = !!dto.status;
+
       if (dto.executedQuantity && dto.executedQuantity > 0) {
         await this.processAdminPassedOrder(queryRunner, order, dto, adminId);
       }
@@ -232,7 +238,7 @@ export class AdminOrderService {
         };
       }
 
-      if (order.executedQuantity >= order.quantity) {
+      if (!statusExplicitlySet && order.executedQuantity >= order.quantity) {
         order.status = OrderStatusEnum.COMPLETED;
         order.completedAt = new Date();
       }
@@ -340,13 +346,17 @@ export class AdminOrderService {
     const totalCost = quantity * price;
     const totalWithCommission = totalCost + commission;
 
-    if (quoteWallet.freeBalance < totalWithCommission) {
+    // LIMIT orders have funds in lockedBalance (frozen by freezeForOrder).
+    // MARKET orders also freeze, but are normally settled immediately.
+    // Always prefer lockedBalance for admin execution — if the order was
+    // frozen, freeBalance won't have the funds.
+    if (quoteWallet.lockedBalance < totalWithCommission) {
       throw new BadRequestException(
-        `Insufficient ${pricePair.quoteSymbol.slug} balance. Required: ${totalWithCommission}, Available: ${quoteWallet.freeBalance}`
+        `Insufficient locked ${pricePair.quoteSymbol.slug} balance. Required: ${totalWithCommission}, Locked: ${quoteWallet.lockedBalance}`
       );
     }
 
-    quoteWallet.freeBalance = Number((quoteWallet.freeBalance - totalWithCommission).toFixed(8));
+    quoteWallet.lockedBalance = Number((quoteWallet.lockedBalance - totalWithCommission).toFixed(8));
 
     baseWallet.freeBalance = Number((baseWallet.freeBalance + quantity).toFixed(8));
 
@@ -430,13 +440,13 @@ export class AdminOrderService {
     const totalRevenue = quantity * price;
     const totalAfterCommission = totalRevenue - commission;
 
-    if (baseWallet.freeBalance < quantity) {
+    if (baseWallet.lockedBalance < quantity) {
       throw new BadRequestException(
-        `Insufficient ${pricePair.baseSymbol.slug} balance. Required: ${quantity}, Available: ${baseWallet.freeBalance}`
+        `Insufficient locked ${pricePair.baseSymbol.slug} balance. Required: ${quantity}, Locked: ${baseWallet.lockedBalance}`
       );
     }
 
-    baseWallet.freeBalance = Number((baseWallet.freeBalance - quantity).toFixed(8));
+    baseWallet.lockedBalance = Number((baseWallet.lockedBalance - quantity).toFixed(8));
 
     quoteWallet.freeBalance = Number((quoteWallet.freeBalance + totalAfterCommission).toFixed(8));
 
@@ -508,6 +518,7 @@ export class AdminOrderService {
   private async getOrCreateWallet(queryRunner: any, userId: string, symbolId: string): Promise<WalletEntity> {
     let wallet = await queryRunner.manager.findOne(WalletEntity, {
       where: { userId, symbolId },
+      lock: { mode: "pessimistic_write" },
     });
 
     if (!wallet) {
@@ -522,6 +533,9 @@ export class AdminOrderService {
       });
       wallet = await queryRunner.manager.save(wallet);
     }
+
+    wallet.freeBalance = Number(wallet.freeBalance) || 0;
+    wallet.lockedBalance = Number(wallet.lockedBalance) || 0;
 
     return wallet;
   }
@@ -550,6 +564,7 @@ export class AdminOrderService {
   async cancelOrderAsAdmin(orderId: string, adminId: string, reason: string): Promise<OrderEntity> {
     const order = await this.orderRepository.findOne({
       where: { id: orderId },
+      relations: { pricePair: { baseSymbol: true, quoteSymbol: true } },
     });
 
     if (!order) {
@@ -560,18 +575,34 @@ export class AdminOrderService {
       throw new BadRequestException(`Cannot cancel order with status: ${order.status}`);
     }
 
-    order.status = OrderStatusEnum.CANCELLED;
-    order.cancelledAt = new Date();
+    // Remove from customer order book (LIMIT orders only — no-op otherwise)
+    this.orderBookService.cancelCustomerOrder(order.pricePairId, order.id);
+
+    // Attach admin metadata BEFORE rejectOrder saves the order, so the
+    // version column increment in rejectOrder's save covers both changes
+    // and we avoid an OptimisticLockException from a second save.
     order.metadata = {
-      ...order.metadata,
+      ...(order.metadata || {}),
       cancelledBy: "admin",
       adminId,
       reason,
       cancelledAt: new Date(),
     };
 
+    // Unlock frozen funds and mark as cancelled (handles status + cancelledAt)
+    await this.walletOrderService.rejectOrder(order, order.pricePair, OrderStatusEnum.CANCELLED);
+
     this.logger.log(`Order ${order.orderCode} cancelled by admin ${adminId}. Reason: ${reason}`);
 
-    return this.orderRepository.save(order);
+    return this.getOrderById(orderId);
+  }
+
+  private async getOrderById(orderId: string): Promise<OrderEntity> {
+    const order = await this.orderRepository.findOne({
+      where: { id: orderId },
+      relations: { user: true, pricePair: { baseSymbol: true, quoteSymbol: true } },
+    });
+    if (!order) throw new NotFoundException("Order not found");
+    return order;
   }
 }

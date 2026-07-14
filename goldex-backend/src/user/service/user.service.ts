@@ -46,6 +46,8 @@ import { ForgetPasswordDto } from "../dto/forget.password.dto";
 import { NewPasswordDto } from "../dto/new.password.dto";
 import { SmsService } from "../../sms/sms.service";
 import { UserWalletService } from "../../user-wallet/user-wallet.service";
+import { UserMarketTypeEntity } from "../entity/user.market.type.entity";
+import { MarketTypeEnum } from "../../admin-pair/enum/market.type.enum";
 
 @Injectable()
 export class UserService {
@@ -71,7 +73,9 @@ export class UserService {
     private readonly configService: ConfigService<ConfigType<typeof appEnvConfig>>,
     private readonly mailStrategyService: MailStrategyService,
     private readonly smsService: SmsService,
-    private readonly walletService: UserWalletService
+    private readonly walletService: UserWalletService,
+    @InjectRepository(UserMarketTypeEntity)
+    private readonly userMarketTypeRepo: Repository<UserMarketTypeEntity>
   ) {
     this.templatesDir = path.join(process.cwd(), "dist/templates");
   }
@@ -272,7 +276,13 @@ export class UserService {
     userSetting.userId = user.id;
     userSetting.isEmailNotificationEnabled = false;
     userSetting.defaultLanguageId = LanguageEnum.English;
-    user.wallets = await this.walletService.registerGenerateWallets(user);
+
+    user.wallets = await this.walletService.registerGenerateWallets(user, [MarketTypeEnum.FORMAL]);
+
+    const userMarketType = new UserMarketTypeEntity();
+    userMarketType.userId = user.id;
+    userMarketType.marketType = MarketTypeEnum.FORMAL;
+    await this.userMarketTypeRepo.save(userMarketType);
 
     await this.userSettingRepo.save(userSetting);
 
@@ -936,7 +946,7 @@ export class UserService {
       await this.redisService.setWithExpiration(
         `temp_registration:${user.id}`,
         JSON.stringify({ phone: data.phone, userId: user.id }),
-        3600,
+        3600
       );
       return {
         requiresRegistration: true,
@@ -955,7 +965,7 @@ export class UserService {
     const deviceInfo = parser.setUA(userAgent).getResult();
     let fundedDevice: UserDeviceEntity;
 
-    if (user.devices.length <= 2) {
+    if (user.devices.length <= 5) {
       for (let i = 0; i < user.devices.length; i++) {
         if (
           ipAddress == user.devices[i].ipAddress &&
@@ -990,7 +1000,7 @@ export class UserService {
             createdAt: device.createAt,
             userAgent: device.userAgent,
           }),
-          fundedDevice,
+          fundedDevice
         );
 
         let setting2fa = user.isAuthenticatedbyGoogle == true ? await this.get2faSettings(user) : null;
@@ -1014,7 +1024,7 @@ export class UserService {
               : (await this.getLoginHistory(100, 0, user.id)).totalItems,
           currentDevice,
         };
-      } else if (user.devices.length < 2) {
+      } else if (user.devices.length <= 5) {
         const device = await this.createNewDeviceForUser(user, request, new Date());
         const refreshToken = await this.createRefreshTokenForDevice(user, device);
         await this.saveLoginHistory(request, UserLoginHistoryEnum.SUCCESS, user.id);
@@ -1031,7 +1041,7 @@ export class UserService {
             createdAt: device.createAt,
             userAgent: device.userAgent,
           }),
-          device,
+          device
         );
 
         return {

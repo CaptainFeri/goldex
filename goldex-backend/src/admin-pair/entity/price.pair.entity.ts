@@ -1,23 +1,22 @@
 import { SymbolEntity } from "../../admin-symbol/entity/symbol.entity";
 import { myBaseEntity } from "../../shared/entity/base.entity";
 import { Entity, Column, ManyToOne, JoinColumn, Index } from "typeorm";
-import { MarketTypeEnum } from "../enum/market.type.enum";
 
 @Entity("price_pairs")
 @Index(["baseId", "quoteId"], { unique: true })
 export class PricePairEntity extends myBaseEntity {
-  @Column({ name: "base_id", type: "uuid" }) // Changed from base_code
+  @Column({ name: "base_id", type: "uuid" })
   baseId: string;
 
-  @Column({ name: "quote_id", type: "uuid" }) // Changed from quote_code
+  @Column({ name: "quote_id", type: "uuid" })
   quoteId: string;
 
   @ManyToOne(() => SymbolEntity, (symbol) => symbol.basePairs, { onDelete: "CASCADE" })
-  @JoinColumn({ name: "base_id" }) // Join on UUID column
+  @JoinColumn({ name: "base_id" })
   baseSymbol: SymbolEntity;
 
   @ManyToOne(() => SymbolEntity, (symbol) => symbol.quotePairs, { onDelete: "CASCADE" })
-  @JoinColumn({ name: "quote_id" }) // Join on UUID column
+  @JoinColumn({ name: "quote_id" })
   quoteSymbol: SymbolEntity;
 
   @Column({ type: "decimal", precision: 20, scale: 8, nullable: true })
@@ -70,12 +69,4 @@ export class PricePairEntity extends myBaseEntity {
 
   @Column({ type: "int", default: 2, name: "decimals" })
   decimals: number;
-
-  @Column({
-    type: "enum",
-    enum: MarketTypeEnum,
-    default: MarketTypeEnum.FORMAL,
-    name: "market_type",
-  })
-  marketType: MarketTypeEnum;
 }

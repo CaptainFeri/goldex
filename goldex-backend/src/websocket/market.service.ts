@@ -121,7 +121,7 @@ export class MarketService implements OnModuleInit {
         maxSell: parseFloat(pair.maxSell as any) || 0,
         decimals: pair.decimals || 2,
         lastUpdated: (pair.lastUpdated || new Date()).toISOString(),
-        marketType: pair.marketType,
+        marketType: pair.baseSymbol?.marketType,
       };
 
       const existing = this.priceCache.get(pairKey);
@@ -284,7 +284,7 @@ export class MarketService implements OnModuleInit {
       bestSellPrice: parseFloat(pair.bestSellPrice as any) || 0,
       buyCommission: parseFloat(pair.buyCommission as any) || 0,
       sellCommission: parseFloat(pair.sellCommission as any) || 0,
-      marketType: pair.marketType,
+      marketType: pair.baseSymbol?.marketType,
     }));
   }
 }

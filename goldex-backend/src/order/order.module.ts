@@ -14,10 +14,19 @@ import { TelegramNotifierModule } from "../telegram-notifier/telegram-notifier.m
 import { UserTelegramModule } from "../user-telegram/user-telegram.module";
 import { QuoteRequestModule } from "../quote-request/quote-request.module";
 import { OrderBookService } from "../order-book/order-book.service";
+import { UserMarketTypeEntity } from "../user/entity/user.market.type.entity";
+import { TransactionEntity } from "../wallet/entities/transaction.entity";
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([OrderEntity, UserEntity, PricePairEntity, WalletEntity]),
+    TypeOrmModule.forFeature([
+      OrderEntity,
+      UserEntity,
+      PricePairEntity,
+      WalletEntity,
+      UserMarketTypeEntity,
+      TransactionEntity,
+    ]),
     WalletCoreModule,
     ProviderPairMappingModule,
     TelegramNotifierModule,

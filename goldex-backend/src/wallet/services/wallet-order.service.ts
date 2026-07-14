@@ -13,6 +13,7 @@ import { TransactionTypeEnum } from '../enum/transaction.type.enum';
 import { TransactionStatusEnum } from '../enum/transaction.status.enum';
 import { SystemLedgerEntity } from '../../financial/entity/system-ledger.entity';
 import { SystemLedgerType } from '../../financial/enum/system-ledger-type.enum';
+import { OrderSource } from '../../order-book/interfaces/order-book.types';
 
 @Injectable()
 export class WalletOrderService {
@@ -212,14 +213,15 @@ export class WalletOrderService {
           }
         }
       } else {
-        // SELL — same for all types: commission taken in XAU (base).
+        // SELL — commission always in XAU (base asset).
+        // User locks qty XAU, receives full qty * price IRR.
+        // Platform keeps (qty * rate/100) XAU as commission profit.
         const rate = Number(pricePair.sellCommission) || 0;
-        const netQty = Number((qty * (1 - rate / 100)).toFixed(8));
-        const commission = Number((qty - netQty).toFixed(8));
-        const netRevenue = Number((netQty * price).toFixed(8));
+        const commission = Number((qty * rate / 100).toFixed(8));
+        const totalRevenue = Number((qty * price).toFixed(8));
 
         baseWallet.lockedBalance = Number((baseWallet.lockedBalance - qty).toFixed(8));
-        quoteWallet.freeBalance = Number((quoteWallet.freeBalance + netRevenue).toFixed(8));
+        quoteWallet.freeBalance = Number((quoteWallet.freeBalance + totalRevenue).toFixed(8));
 
         await queryRunner.manager.save(baseWallet);
         await queryRunner.manager.save(quoteWallet);
@@ -235,9 +237,9 @@ export class WalletOrderService {
 
         await this.createTransaction(queryRunner, quoteWallet, order, {
           transactionType: TransactionTypeEnum.ORDER,
-          amount: netRevenue,
+          amount: totalRevenue,
           price,
-          description: `Sell order ${order.orderCode} executed: received ${netRevenue} ${pricePair.quoteSymbol.slug}`,
+          description: `Sell order ${order.orderCode} executed: received ${totalRevenue} ${pricePair.quoteSymbol.slug}`,
         });
 
         if (commission > 0) {
@@ -296,9 +298,13 @@ export class WalletOrderService {
     const verb = isCancel ? 'cancelled' : 'rejected';
 
     try {
+      // Only unlock the REMAINING quantity — the already-executed portion
+      // was already settled and its lock released.
+      const remainingQty = Number(order.quantity) - Number(order.executedQuantity);
+
       if (order.side === OrderSideEnum.BUY) {
         const quoteWallet = await this.getWallet(queryRunner, order.userId, pricePair.quoteSymbol.id);
-        let lockedAmount = Number(order.quantity) * (Number(order.price) || 0);
+        let lockedAmount = Math.max(0, remainingQty) * (Number(order.price) || 0);
 
         // QUOTE BUY: commission was also frozen in the quote wallet.
         if (order.orderType === OrderTypeEnum.QUOTE) {
@@ -316,7 +322,7 @@ export class WalletOrderService {
         });
       } else {
         const baseWallet = await this.getWallet(queryRunner, order.userId, pricePair.baseSymbol.id);
-        const lockedAmount = Number(order.quantity);
+        const lockedAmount = Math.max(0, remainingQty);
 
         baseWallet.lockedBalance = Number((baseWallet.lockedBalance - lockedAmount).toFixed(8));
         baseWallet.freeBalance = Number((baseWallet.freeBalance + lockedAmount).toFixed(8));
@@ -335,6 +341,191 @@ export class WalletOrderService {
 
       await queryRunner.commitTransaction();
       this.logger.log(`Order ${order.orderCode} ${finalStatus.toLowerCase()}, balance unlocked`);
+    } catch (err) {
+      await queryRunner.rollbackTransaction();
+      throw err;
+    } finally {
+      await queryRunner.release();
+    }
+  }
+
+  /**
+   * Settle one matched leg from the order book for a LIMIT order.
+   * Handles both CUSTOMER (P2P) and PROVIDER matches.
+   */
+  async settleLimitMatch(
+    takerOrder: OrderEntity,
+    matchSize: number,
+    takerPrice: number,
+    makerPrice: number,
+    makerSource: string,
+    makerOrderId: string | null,
+    pricePair: PricePairEntity,
+  ): Promise<void> {
+    const isBuy = takerOrder.side === OrderSideEnum.BUY;
+    const buyComm = Number(pricePair.buyCommission) || 0;
+    const sellComm = Number(pricePair.sellCommission) || 0;
+
+    const queryRunner = this.dataSource.createQueryRunner();
+    await queryRunner.connect();
+    await queryRunner.startTransaction();
+
+    try {
+      // ── Taker side ────────────────────────────────────────────────
+      const takerQuoteWallet = await this.getWallet(queryRunner, takerOrder.userId, pricePair.quoteSymbol.id);
+      const takerBaseWallet = await this.getWallet(queryRunner, takerOrder.userId, pricePair.baseSymbol.id);
+
+      const cost = Number((matchSize * takerPrice).toFixed(8));
+      const netBase = isBuy
+        ? Number((matchSize * (1 - buyComm / 100)).toFixed(8))
+        : matchSize;
+      // totalRevenue is the full IRR amount a SELL taker receives (commission in XAU)
+      const totalRevenue = Number((matchSize * takerPrice).toFixed(8));
+
+      if (isBuy) {
+        // BUY taker: locked quote → consumed, free base ← net gold
+        if (takerQuoteWallet.lockedBalance < cost) {
+          throw new BadRequestException('INSUFFICIENT_LOCKED_BALANCE');
+        }
+        takerQuoteWallet.lockedBalance = Number((takerQuoteWallet.lockedBalance - cost).toFixed(8));
+        takerBaseWallet.freeBalance = Number((takerBaseWallet.freeBalance + netBase).toFixed(8));
+      } else {
+        // SELL taker: locked base → consumed, free quote ← full revenue
+        // Commission is in XAU (base) – recorded as system profit below.
+        if (takerBaseWallet.lockedBalance < matchSize) {
+          throw new BadRequestException('INSUFFICIENT_LOCKED_BALANCE');
+        }
+        takerBaseWallet.lockedBalance = Number((takerBaseWallet.lockedBalance - matchSize).toFixed(8));
+        takerQuoteWallet.freeBalance = Number((takerQuoteWallet.freeBalance + totalRevenue).toFixed(8));
+      }
+
+      await queryRunner.manager.save(takerQuoteWallet);
+      await queryRunner.manager.save(takerBaseWallet);
+
+      await this.createTransaction(queryRunner, isBuy ? takerQuoteWallet : takerBaseWallet, takerOrder, {
+        transactionType: isBuy ? TransactionTypeEnum.ORDER : TransactionTypeEnum.SELL,
+        amount: isBuy ? -cost : -matchSize,
+        price: takerPrice,
+        fee: 0,
+        description: `Limit ${isBuy ? 'buy' : 'sell'} matched: ${isBuy ? cost : matchSize} consumed`,
+      });
+
+      const takerReceived = isBuy ? netBase : totalRevenue;
+      await this.createTransaction(queryRunner, isBuy ? takerBaseWallet : takerQuoteWallet, takerOrder, {
+        transactionType: isBuy ? TransactionTypeEnum.BUY : TransactionTypeEnum.ORDER,
+        amount: takerReceived,
+        price: takerPrice,
+        fee: isBuy ? Number((matchSize * buyComm / 100).toFixed(8)) : Number((matchSize * sellComm / 100).toFixed(8)),
+        description: `Limit ${isBuy ? 'buy' : 'sell'} matched: received ${takerReceived} ${isBuy ? pricePair.baseSymbol.slug : pricePair.quoteSymbol.slug}`,
+      });
+
+      // ── Maker side (P2P only) ─────────────────────────────────────
+      if (makerSource === OrderSource.CUSTOMER && makerOrderId) {
+        const makerOrder = await queryRunner.manager.findOne(OrderEntity, {
+          where: { id: makerOrderId },
+        });
+        if (!makerOrder) {
+          throw new Error(`Maker order ${makerOrderId} not found`);
+        }
+
+        const isMakerBuy = makerOrder.side === OrderSideEnum.BUY;
+        const makerQuoteWallet = await this.getWallet(queryRunner, makerOrder.userId, pricePair.quoteSymbol.id);
+        const makerBaseWallet = await this.getWallet(queryRunner, makerOrder.userId, pricePair.baseSymbol.id);
+
+        if (isMakerBuy) {
+          // Maker BUY (taker was SELL): maker locked quote → consumed
+          // Commission taken in XAU: maker receives less gold
+          const makerCost = Number((matchSize * makerPrice).toFixed(8));
+          const makerNetBase = Number((matchSize * (1 - buyComm / 100)).toFixed(8));
+          if (makerQuoteWallet.lockedBalance < makerCost) throw new BadRequestException('INSUFFICIENT_LOCKED_BALANCE');
+          makerQuoteWallet.lockedBalance = Number((makerQuoteWallet.lockedBalance - makerCost).toFixed(8));
+          makerBaseWallet.freeBalance = Number((makerBaseWallet.freeBalance + makerNetBase).toFixed(8));
+          await queryRunner.manager.save(makerQuoteWallet);
+          await queryRunner.manager.save(makerBaseWallet);
+
+          await this.createTransaction(queryRunner, makerQuoteWallet, makerOrder, {
+            transactionType: TransactionTypeEnum.ORDER,
+            amount: -makerCost,
+            price: makerPrice,
+            fee: 0,
+            description: `P2P match buy: spent ${makerCost} ${pricePair.quoteSymbol.slug}`,
+          });
+          await this.createTransaction(queryRunner, makerBaseWallet, makerOrder, {
+            transactionType: TransactionTypeEnum.BUY,
+            amount: makerNetBase,
+            price: makerPrice,
+            fee: Number((matchSize * buyComm / 100).toFixed(8)),
+            description: `P2P match buy: received ${makerNetBase} ${pricePair.baseSymbol.slug}`,
+          });
+        } else {
+          // Maker SELL (taker was BUY): maker locked base → consumed
+          // Commission is in XAU (base) — deducted from quantity, not revenue.
+          if (makerBaseWallet.lockedBalance < matchSize) throw new BadRequestException('INSUFFICIENT_LOCKED_BALANCE');
+          const makerTotalRevenue = Number((matchSize * makerPrice).toFixed(8));
+          makerBaseWallet.lockedBalance = Number((makerBaseWallet.lockedBalance - matchSize).toFixed(8));
+          makerQuoteWallet.freeBalance = Number((makerQuoteWallet.freeBalance + makerTotalRevenue).toFixed(8));
+          await queryRunner.manager.save(makerBaseWallet);
+          await queryRunner.manager.save(makerQuoteWallet);
+
+          await this.createTransaction(queryRunner, makerBaseWallet, makerOrder, {
+            transactionType: TransactionTypeEnum.SELL,
+            amount: -matchSize,
+            price: makerPrice,
+            fee: Number((matchSize * sellComm / 100).toFixed(8)),
+            description: `P2P match sell: spent ${matchSize} ${pricePair.baseSymbol.slug}`,
+          });
+          await this.createTransaction(queryRunner, makerQuoteWallet, makerOrder, {
+            transactionType: TransactionTypeEnum.ORDER,
+            amount: makerTotalRevenue,
+            price: makerPrice,
+            fee: 0,
+            description: `P2P match sell: received ${makerTotalRevenue} ${pricePair.quoteSymbol.slug}`,
+          });
+        }
+
+        // Update maker order execution
+        const newExecuted = Number(makerOrder.executedQuantity) + matchSize;
+        makerOrder.executedQuantity = newExecuted;
+        makerOrder.averagePrice = makerPrice;
+        makerOrder.totalValue = Number((newExecuted * makerPrice).toFixed(8));
+        if (newExecuted >= Number(makerOrder.quantity)) {
+          makerOrder.status = OrderStatusEnum.COMPLETED;
+          makerOrder.completedAt = new Date();
+        } else if (newExecuted > 0) {
+          makerOrder.status = OrderStatusEnum.PARTIALLY_COMPLETED;
+        }
+        await queryRunner.manager.save(makerOrder);
+      }
+
+      // ── System profit ─────────────────────────────────────────────
+      // Spread profit = difference between taker and maker price
+      const spreadProfit = Number((matchSize * (isBuy ? takerPrice - makerPrice : makerPrice - takerPrice)).toFixed(4));
+      if (spreadProfit > 0) {
+        await this.recordSystemProfit(queryRunner, {
+          symbolId: pricePair.quoteSymbol.id,
+          type: SystemLedgerType.COMMISSION_BUY,
+          amount: spreadProfit,
+          order: takerOrder,
+          description: `Limit match spread for ${takerOrder.orderCode}: ${spreadProfit} ${pricePair.quoteSymbol.slug}`,
+        });
+      }
+
+      // Taker commission in XAU
+      const takerCommission = isBuy
+        ? Number((matchSize * buyComm / 100).toFixed(8))
+        : Number((matchSize * sellComm / 100).toFixed(8));
+      if (takerCommission > 0) {
+        await this.recordSystemProfit(queryRunner, {
+          symbolId: pricePair.baseSymbol.id,
+          type: isBuy ? SystemLedgerType.COMMISSION_BUY : SystemLedgerType.COMMISSION_SELL,
+          amount: takerCommission,
+          order: takerOrder,
+          description: `Taker commission for ${takerOrder.orderCode}: ${takerCommission} ${pricePair.baseSymbol.slug}`,
+        });
+      }
+
+      await queryRunner.commitTransaction();
+      this.logger.log(`Limit match settled: ${matchSize}g @ ${takerPrice} for ${takerOrder.orderCode}`);
     } catch (err) {
       await queryRunner.rollbackTransaction();
       throw err;

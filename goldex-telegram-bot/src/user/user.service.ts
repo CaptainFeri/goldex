@@ -54,6 +54,7 @@ export class UserService {
     goldexUserId: string,
     accessToken: string,
     refreshToken: string,
+    role?: number,
   ): Promise<void> {
     await this.userRepo.update(
       { telegramChatId: chatId },
@@ -61,10 +62,15 @@ export class UserService {
         goldexUserId,
         accessToken,
         refreshToken,
+        role,
         state: UserState.AUTHENTICATED,
         lastActivityAt: new Date(),
       },
     );
+  }
+
+  async setRole(chatId: number, role: number): Promise<void> {
+    await this.userRepo.update({ telegramChatId: chatId }, { role });
   }
 
   async logout(chatId: number): Promise<void> {

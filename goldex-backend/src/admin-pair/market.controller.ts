@@ -34,12 +34,11 @@ export class MarketController {
       const userMts = await this.userMarketTypeRepo.find({ where: { userId: user.id } });
       if (userMts.length > 0) {
         const allowed = new Set(userMts.map((r) => r.marketType));
-        visible = pairs.filter((p) => allowed.has(p.marketType));
+        visible = pairs.filter((p) => p.baseSymbol && allowed.has(p.baseSymbol.marketType));
       } else {
-        // Fallback: no explicit assignment — use legacy role-based logic
         visible = user.role === UserRoleEnum.PARTNER
           ? pairs
-          : pairs.filter((p) => p.marketType === MarketTypeEnum.FORMAL);
+          : pairs.filter((p) => p.baseSymbol?.marketType === MarketTypeEnum.FORMAL);
       }
     } else {
       visible = pairs;
@@ -74,13 +73,10 @@ export class MarketController {
       quoteSymbol: p.quoteSymbol
         ? { id: p.quoteSymbol.id, name: p.quoteSymbol.name, slug: p.quoteSymbol.slug }
         : null,
-      // raw best prices (reference)
       bestBuyPrice,
       bestSellPrice,
-      // user-facing prices (what the socket also streams)
       displayBuyPrice,
       displaySellPrice,
-      // per-gram equivalents (mesghal → gram)
       bestBuyGramPrice: bestBuyPrice / MESQAL_TO_GRAM,
       bestSellGramPrice: bestSellPrice / MESQAL_TO_GRAM,
       displayBuyGramPrice: displayBuyPrice / MESQAL_TO_GRAM,
@@ -92,7 +88,7 @@ export class MarketController {
       minSell: parseFloat(p.minSell as any) || 0,
       maxSell: parseFloat(p.maxSell as any) || 0,
       decimals: p.decimals ?? 2,
-      marketType: p.marketType,
+      marketType: p.baseSymbol?.marketType,
       lastUpdated: p.lastUpdated,
     };
   }

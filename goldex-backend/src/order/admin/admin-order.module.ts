@@ -11,6 +11,7 @@ import { AdminWalletLogEntity } from "../../admin-wallet/entity/admin-wallet-log
 import { AdminOrderController } from "./admin-ordeer.controller";
 import { OrderBookService } from "../../order-book/order-book.service";
 import { QuoteRequestEntity } from "../../quote-request/quote-request.entity";
+import { WalletCoreModule } from "../../wallet/wallet-core.module";
 
 @Module({
   imports: [
@@ -23,6 +24,7 @@ import { QuoteRequestEntity } from "../../quote-request/quote-request.entity";
       SymbolEntity,
       QuoteRequestEntity,
     ]),
+    WalletCoreModule,
   ],
   controllers: [AdminOrderController],
   providers: [AdminOrderService, OrderBookService],

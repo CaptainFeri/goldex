@@ -235,49 +235,56 @@ export class OrderBookService implements OnModuleInit {
     let remaining = size;
     const isBuy = side === Side.BUY;
 
-    // ── Phase 1: match against customer book ───────────────────────────────
-    const custResult = customerBook.limit({ side, size: remaining, price, id: orderId });
+    // ── Phase 1: P2P match against customer book (exact prices only) ───────
+    const [cAsks, cBids] = customerBook.depth();
 
-    for (const done of custResult.done) {
-      // The library may push a taker summary order into `done` when the
-      // taker is fully matched — skip it to avoid settling against self.
-      if (done.id === orderId) continue;
-      const s = done.size;
-      const makerP = (done as any).price ?? 0;
-      const profit = Number((s * (isBuy ? price - makerP : makerP - price)).toFixed(4));
-      matched.push({
-        makerOrderId: done.id,
-        makerSide: done.side,
-        makerPrice: makerP,
-        makerSource: OrderSource.CUSTOMER,
-        size: s,
-        takerPrice: price,
-        profit: Math.max(0, profit),
-      });
+    let exactMatchAvailable = 0;
+    if (side === Side.BUY && cAsks.length > 0 && cAsks[0][0] === price) {
+      exactMatchAvailable = cAsks[0][1];
+    } else if (side === Side.SELL && cBids.length > 0 && cBids[0][0] === price) {
+      exactMatchAvailable = cBids[0][1];
     }
 
-    // `partial` may be a *maker* residual (taker fully matched and the last
-    // maker was partially filled) — correct — **or** the taker's own resting
-    // order (taker partially matched, library overwrote `partial` with the
-    // remaining taker size).  Only process it when it refers to a maker.
-    if (custResult.partial && custResult.partial.id !== orderId) {
-      const partialSize = custResult.partialQuantityProcessed;
-      if (partialSize > 0) {
-        const makerP = custResult.partial.price;
-        const profit = Number((partialSize * (isBuy ? price - makerP : makerP - price)).toFixed(4));
+    if (exactMatchAvailable > 0) {
+      const matchSize = Math.min(remaining, exactMatchAvailable);
+      const custResult = customerBook.market({ side, size: matchSize });
+
+      for (const done of custResult.done) {
+        if (done.id === orderId) continue;
+        const makerP = (done as any).price ?? 0;
+        const s = done.size;
+        const profit = Number((s * (isBuy ? price - makerP : makerP - price)).toFixed(4));
         matched.push({
-          makerOrderId: custResult.partial.id,
-          makerSide: custResult.partial.side,
+          makerOrderId: done.id,
+          makerSide: done.side,
           makerPrice: makerP,
           makerSource: OrderSource.CUSTOMER,
-          size: partialSize,
+          size: s,
           takerPrice: price,
           profit: Math.max(0, profit),
         });
       }
-    }
 
-    remaining = custResult.quantityLeft;
+      if (custResult.partial && custResult.partial.id !== orderId) {
+        const partialSize = custResult.partialQuantityProcessed;
+        if (partialSize > 0) {
+          const makerP = custResult.partial.price;
+          const profit = Number((partialSize * (isBuy ? price - makerP : makerP - price)).toFixed(4));
+          matched.push({
+            makerOrderId: custResult.partial.id,
+            makerSide: custResult.partial.side,
+            makerPrice: makerP,
+            makerSource: OrderSource.CUSTOMER,
+            size: partialSize,
+            takerPrice: price,
+            profit: Math.max(0, profit),
+          });
+        }
+      }
+
+      const filledFromExact = matchSize - custResult.quantityLeft;
+      remaining -= filledFromExact;
+    }
 
     // ── Phase 2: match against provider book ───────────────────────────────
     if (remaining > 0) {

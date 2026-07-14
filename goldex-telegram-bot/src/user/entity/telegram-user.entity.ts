@@ -55,6 +55,9 @@ export class TelegramUserEntity extends myBaseEntity {
   @Column({ name: 'is_channel_admin', type: 'boolean', default: false })
   isChannelAdmin: boolean;
 
+  @Column({ name: 'role', type: 'integer', nullable: true })
+  role?: number;
+
   @Column({ name: 'metadata', type: 'jsonb', nullable: true })
   metadata?: Record<string, any>;
 }

@@ -1,5 +1,4 @@
 import { Expose } from "class-transformer";
-import { MarketTypeEnum } from "../enum/market.type.enum";
 
 export class PricePairResponseDto {
   @Expose()
@@ -43,9 +42,6 @@ export class PricePairResponseDto {
 
   @Expose()
   decimals: number;
-
-  @Expose()
-  marketType: MarketTypeEnum;
 
   @Expose()
   createdAt: Date;

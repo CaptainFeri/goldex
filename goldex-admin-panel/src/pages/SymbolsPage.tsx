@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, unwrap, apiError } from "../api/client";
 import { Card, Loading, ErrorState, Empty, Badge, Modal } from "../components/ui";
-import { GAIN_TYPES, SYMBOL_TYPES, UNIT_TYPES, PAYMENT_GATEWAYS } from "../lib/enums";
+import { GAIN_TYPES, SYMBOL_TYPES, UNIT_TYPES, PAYMENT_GATEWAYS, MARKET_TYPES_ENUM } from "../lib/enums";
 
 function toArray(x: any): any[] {
   if (Array.isArray(x)) return x;
@@ -19,6 +19,7 @@ const EMPTY = {
   gainType: "number",
   symbolType: "material",
   unitType: "number",
+  marketType: "formal",
   paymentGateWayType: "up",
   hasPaymentGateway: false,
   isActive: true,
@@ -41,7 +42,7 @@ function SymbolForm({ initial, onClose }: { initial?: any; onClose: () => void }
 
   function submit(e: React.FormEvent) {
     e.preventDefault();
-    save.mutate({
+    const payload: any = {
       name: form.name,
       slug: form.slug,
       picPath: form.picPath || "/icons/default.png",
@@ -49,10 +50,15 @@ function SymbolForm({ initial, onClose }: { initial?: any; onClose: () => void }
       gainType: form.gainType,
       symbolType: form.symbolType,
       unitType: form.unitType,
-      paymentGateWayType: form.paymentGateWayType,
+      marketType: form.marketType,
       hasPaymentGateway: !!form.hasPaymentGateway,
       isActive: !!form.isActive,
-    });
+    };
+    if (form.symbolType === "rial") {
+      payload.paymentGateWayType = form.paymentGateWayType;
+      payload.hasPaymentGateway = true;
+    }
+    save.mutate(payload);
   }
 
   return (
@@ -74,6 +80,12 @@ function SymbolForm({ initial, onClose }: { initial?: any; onClose: () => void }
             </select>
           </div>
           <div className="field">
+            <label>نوع بازار</label>
+            <select className="select" value={form.marketType} onChange={(e) => set("marketType", e.target.value)}>
+              {MARKET_TYPES_ENUM.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+            </select>
+          </div>
+          <div className="field">
             <label>واحد</label>
             <select className="select" value={form.unitType} onChange={(e) => set("unitType", e.target.value)}>
               {UNIT_TYPES.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
@@ -89,22 +101,26 @@ function SymbolForm({ initial, onClose }: { initial?: any; onClose: () => void }
               {GAIN_TYPES.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
             </select>
           </div>
-          <div className="field">
-            <label>درگاه پرداخت</label>
-            <select className="select" value={form.paymentGateWayType} onChange={(e) => set("paymentGateWayType", e.target.value)}>
-              {PAYMENT_GATEWAYS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
-            </select>
-          </div>
+          {form.symbolType === "rial" && (
+            <div className="field">
+              <label>درگاه پرداخت (الزامی برای ریال)</label>
+              <select className="select" value={form.paymentGateWayType} onChange={(e) => set("paymentGateWayType", e.target.value)} required>
+                {PAYMENT_GATEWAYS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+              </select>
+            </div>
+          )}
           <div className="field">
             <label>مسیر آیکون</label>
             <input className="input mono" dir="ltr" value={form.picPath} onChange={(e) => set("picPath", e.target.value)} placeholder="/icons/xau.png" />
           </div>
         </div>
         <div className="row" style={{ gap: 20, margin: "4px 0 16px" }}>
-          <label className="row" style={{ gap: 6 }}>
-            <input type="checkbox" checked={form.hasPaymentGateway} onChange={(e) => set("hasPaymentGateway", e.target.checked)} />
-            دارای درگاه پرداخت
-          </label>
+          {form.symbolType !== "rial" && (
+            <label className="row" style={{ gap: 6 }}>
+              <input type="checkbox" checked={form.hasPaymentGateway} onChange={(e) => set("hasPaymentGateway", e.target.checked)} />
+              دارای درگاه پرداخت
+            </label>
+          )}
           <label className="row" style={{ gap: 6 }}>
             <input type="checkbox" checked={form.isActive} onChange={(e) => set("isActive", e.target.checked)} />
             فعال
@@ -159,6 +175,7 @@ export default function SymbolsPage() {
                 <th>نام</th>
                 <th>اسلاگ</th>
                 <th>نوع</th>
+                <th>بازار</th>
                 <th>واحد</th>
                 <th>وضعیت</th>
                 <th>عملیات</th>
@@ -170,6 +187,7 @@ export default function SymbolsPage() {
                   <td>{s.name ?? "—"}</td>
                   <td className="mono">{s.slug ?? "—"}</td>
                   <td>{s.symbolType ?? "—"}</td>
+                  <td>{s.marketType === "informal" ? <Badge kind="gold">غیررسمی</Badge> : <Badge kind="green">رسمی</Badge>}</td>
                   <td>{s.unitType ?? "—"}</td>
                   <td>{s.isActive ? <Badge kind="green">فعال</Badge> : <Badge kind="gray">غیرفعال</Badge>}</td>
                   <td>

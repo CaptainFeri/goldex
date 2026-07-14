@@ -1,4 +1,9 @@
-import { Injectable, NotFoundException, ConflictException } from "@nestjs/common";
+import {
+  Injectable,
+  NotFoundException,
+  ConflictException,
+  BadRequestException,
+} from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
 import { PricePairEntity } from "./entity/price.pair.entity";
 import { SymbolEntity } from "../admin-symbol/entity/symbol.entity";
@@ -41,10 +46,16 @@ export class AdminPairService {
       throw new NotFoundException("Base or Quote symbol not found");
     }
 
+    if (baseSymbol.marketType !== quoteSymbol.marketType) {
+      throw new BadRequestException(
+        `Cannot create pair: base symbol (${baseSymbol.slug}) is ${baseSymbol.marketType} but quote symbol (${quoteSymbol.slug}) is ${quoteSymbol.marketType}. Both must have the same market type.`
+      );
+    }
+
     const pricePair = this.pricePairRepository.create({
       ...createPricePairDto,
-      baseSymbol: { name: baseSymbol.name },
-      quoteSymbol: { name: quoteSymbol.name },
+      baseSymbol: baseSymbol,
+      quoteSymbol: quoteSymbol,
       lastUpdated: new Date(),
     });
 

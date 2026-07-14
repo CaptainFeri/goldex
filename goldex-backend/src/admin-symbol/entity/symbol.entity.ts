@@ -1,6 +1,7 @@
 import { Column, Entity, OneToMany } from "typeorm";
 import { myBaseEntity } from "../../shared/entity/base.entity";
 import { GainTypeEnum } from "../enum/gain.type.enum";
+import { MarketTypeEnum } from "../../admin-pair/enum/market.type.enum";
 import { SymbolTypeEnum } from "../enum/symbol.type.enum";
 import { UnitTypeEnum } from "../enum/unit.type.enum";
 import { PaymentGatewayEnum } from "../enum/payment.gateway.enum";
@@ -19,6 +20,14 @@ export class SymbolEntity extends myBaseEntity {
     nullable: false,
   })
   slug: string;
+
+  @Column({
+    type: "enum",
+    enum: MarketTypeEnum,
+    default: MarketTypeEnum.FORMAL,
+    name: "market_type",
+  })
+  marketType: MarketTypeEnum;
 
   @Column({
     nullable: true,

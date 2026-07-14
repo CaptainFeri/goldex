@@ -3,7 +3,6 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, unwrap, apiError } from "../api/client";
 import { Card, Loading, ErrorState, Empty, Badge, Modal } from "../components/ui";
 import { fmtNum, pairLabel } from "../lib/format";
-import { MARKET_TYPES } from "../lib/enums";
 import type { PricePair } from "../api/types";
 
 function toArray(x: any): any[] {
@@ -25,7 +24,6 @@ const EMPTY = {
   minSell: 0.001,
   maxSell: 100,
   decimals: 2,
-  marketType: "formal",
 };
 
 function PairForm({ initial, symbols, onClose }: { initial?: any; symbols: any[]; onClose: () => void }) {
@@ -47,7 +45,6 @@ function PairForm({ initial, symbols, onClose }: { initial?: any; symbols: any[]
           minSell: Number(initial.minSell ?? 0.001),
           maxSell: Number(initial.maxSell ?? 100),
           decimals: Number(initial.decimals ?? 2),
-          marketType: initial.marketType ?? "formal",
         }
       : {}),
   });
@@ -64,6 +61,12 @@ function PairForm({ initial, symbols, onClose }: { initial?: any; symbols: any[]
   function submit(e: React.FormEvent) {
     e.preventDefault();
     const n = (v: any) => Number(v) || 0;
+    const baseSym = symbols.find((s: any) => s.slug === form.baseCode);
+    const quoteSym = symbols.find((s: any) => s.slug === form.quoteCode);
+    if (baseSym && quoteSym && baseSym.marketType !== quoteSym.marketType) {
+      alert(`امکان جفت‌سازی نماد ${baseSym.marketType === "informal" ? "غیررسمی" : "رسمی"} با نماد ${quoteSym.marketType === "informal" ? "غیررسمی" : "رسمی"} وجود ندارد.`);
+      return;
+    }
     save.mutate({
       baseCode: form.baseCode,
       quoteCode: form.quoteCode,
@@ -77,11 +80,10 @@ function PairForm({ initial, symbols, onClose }: { initial?: any; symbols: any[]
       minSell: n(form.minSell),
       maxSell: n(form.maxSell),
       decimals: n(form.decimals),
-      marketType: form.marketType,
     });
   }
 
-  const slugs = symbols.map((s) => s.slug).filter(Boolean);
+  const slugs = symbols.map((s: any) => ({ slug: s.slug, marketType: s.marketType }));
   const numField = (k: string, label: string) => (
     <div className="field">
       <label>{label}</label>
@@ -97,14 +99,14 @@ function PairForm({ initial, symbols, onClose }: { initial?: any; symbols: any[]
             <label>پایه</label>
             <select className="select" value={form.baseCode} onChange={(e) => set("baseCode", e.target.value)} required>
               <option value="">—</option>
-              {slugs.map((s) => <option key={s} value={s}>{s}</option>)}
+              {slugs.map((s: any) => <option key={s.slug} value={s.slug}>{s.slug} ({s.marketType === "informal" ? "غیررسمی" : "رسمی"})</option>)}
             </select>
           </div>
           <div className="field">
             <label>مظنه</label>
             <select className="select" value={form.quoteCode} onChange={(e) => set("quoteCode", e.target.value)} required>
               <option value="">—</option>
-              {slugs.map((s) => <option key={s} value={s}>{s}</option>)}
+              {slugs.map((s: any) => <option key={s.slug} value={s.slug}>{s.slug} ({s.marketType === "informal" ? "غیررسمی" : "رسمی"})</option>)}
             </select>
           </div>
           {numField("price", "قیمت")}
@@ -118,12 +120,6 @@ function PairForm({ initial, symbols, onClose }: { initial?: any; symbols: any[]
           <div className="field">
             <label>نماد تریدینگ‌ویو</label>
             <input className="input mono" dir="ltr" value={form.tradingViewSymbol} onChange={(e) => set("tradingViewSymbol", e.target.value)} placeholder="XAUUSD" />
-          </div>
-          <div className="field">
-            <label>نوع بازار</label>
-            <select className="select" value={form.marketType} onChange={(e) => set("marketType", e.target.value)}>
-              {MARKET_TYPES.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
-            </select>
           </div>
         </div>
         <label className="row" style={{ gap: 6, margin: "4px 0 16px" }}>

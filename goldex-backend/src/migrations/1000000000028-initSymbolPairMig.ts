@@ -127,7 +127,6 @@ export class initSymbolPairMig1000000000028 implements MigrationInterface {
         minSell: 0.001,
         maxSell: 10,
         decimals: 2,
-        marketType: "formal",
         bestBuyPrice: 74626865.67,
         bestSellPrice: 74626865.67,
       },
@@ -144,7 +143,6 @@ export class initSymbolPairMig1000000000028 implements MigrationInterface {
         minSell: 0.001,
         maxSell: 10,
         decimals: 2,
-        marketType: "formal",
         bestBuyPrice: 1885.5,
         bestSellPrice: 1885.5,
       },
@@ -161,7 +159,6 @@ export class initSymbolPairMig1000000000028 implements MigrationInterface {
         minSell: 0.001,
         maxSell: 10,
         decimals: 2,
-        marketType: "formal",
         bestBuyPrice: 1950.75,
         bestSellPrice: 1950.75,
       },
@@ -178,7 +175,6 @@ export class initSymbolPairMig1000000000028 implements MigrationInterface {
         minSell: 0.001,
         maxSell: 10,
         decimals: 2,
-        marketType: "formal",
         bestBuyPrice: 7168.5,
         bestSellPrice: 7168.5,
       },
@@ -200,9 +196,9 @@ export class initSymbolPairMig1000000000028 implements MigrationInterface {
       const result = await queryRunner.query(
         `INSERT INTO "price_pairs"
          ("base_id", "quote_id", "price", "last_updated", "is_valid", "buy_commission", "sell_commission",
-          "trading_view_symbol", "min_buy", "max_buy", "min_sell", "max_sell", "decimals", "market_type",
+          "trading_view_symbol", "min_buy", "max_buy", "min_sell", "max_sell", "decimals",
           "best_buy_price", "best_sell_price", "created_at", "updated_at")
-         VALUES ($1, $2, $3, NOW(), $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, NOW(), NOW())
+         VALUES ($1, $2, $3, NOW(), $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, NOW(), NOW())
          RETURNING "id"`,
         [
           pd.baseId,
@@ -217,7 +213,6 @@ export class initSymbolPairMig1000000000028 implements MigrationInterface {
           pd.minSell,
           pd.maxSell,
           pd.decimals,
-          pd.marketType,
           pd.bestBuyPrice,
           pd.bestSellPrice,
         ]

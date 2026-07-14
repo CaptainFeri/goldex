@@ -1,10 +1,10 @@
 import { Injectable, NotFoundException } from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
+import { In, Repository } from "typeorm";
 import { SymbolEntity } from "../admin-symbol/entity/symbol.entity";
 import { UserEntity } from "../user/entity/user.entity";
 import { WalletEntity } from "../wallet/entities/wallet.entity";
 import { TransactionEntity } from "../wallet/entities/transaction.entity";
-import { Repository } from "typeorm";
 
 @Injectable()
 export class UserWalletService {
@@ -17,8 +17,12 @@ export class UserWalletService {
     private readonly symbolRepo: Repository<SymbolEntity>
   ) {}
 
-  async registerGenerateWallets(user: UserEntity) {
-    const availableSymbols = await this.symbolRepo.find({ where: { isActive: true } });
+  async registerGenerateWallets(user: UserEntity, marketTypes?: string[]) {
+    const where: any = { isActive: true };
+    if (marketTypes && marketTypes.length > 0) {
+      where.marketType = In(marketTypes);
+    }
+    const availableSymbols = await this.symbolRepo.find({ where });
     const wallets: WalletEntity[] = [];
     for (let i = 0; i < availableSymbols.length; i++) {
       const newWallet = new WalletEntity();

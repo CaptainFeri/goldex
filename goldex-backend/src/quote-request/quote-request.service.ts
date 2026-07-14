@@ -51,30 +51,40 @@ export class QuoteRequestService {
     });
     if (!pair) throw new Error("جفت‌ارز یافت نشد");
 
-    // Lock balance first
-    await this.lockBalance(userId, side, pair, quantity, price);
+    const queryRunner = this.dataSource.createQueryRunner();
+    await queryRunner.connect();
+    await queryRunner.startTransaction();
 
-    // Save as PENDING
-    const entity = this.repo.create({ userId, side, pricePairId, quantity, price, notes, status: QuoteRequestStatus.PENDING });
-    const saved = await this.repo.save(entity);
+    try {
+      // Lock balance with pessimistic lock inside the transaction
+      await this.lockBalance(queryRunner, userId, side, pair, quantity, price);
 
-    // Channel publishing is handled by the goldex-telegram-bot.
-    // Skip backend broadcast to avoid duplicate channel messages.
+      // Save as PENDING
+      const entity = this.repo.create({ userId, side, pricePairId, quantity, price, notes, status: QuoteRequestStatus.PENDING });
+      const saved = await queryRunner.manager.save(entity);
 
-    // Check for potential match — only alert, never auto-match
-    const oppositeSide = side === OrderSideEnum.BUY ? OrderSideEnum.SELL : OrderSideEnum.BUY;
-    const candidate = await this.repo.findOne({
-      where: { side: oppositeSide, pricePairId, status: QuoteRequestStatus.PENDING, userId: Not(userId) },
-      relations: { pricePair: { baseSymbol: true, quoteSymbol: true } },
-      order: { createAt: "ASC" },
-    });
+      await queryRunner.commitTransaction();
 
-    if (candidate && this.isCompatible(side, quantity, price, candidate.side, Number(candidate.quantity), Number(candidate.price))) {
-      await this.alertMatchOpportunity(saved, candidate);
-      return { request: saved, matchAlert: true };
+      // Check for potential match outside the txn (no critical state)
+      const oppositeSide = side === OrderSideEnum.BUY ? OrderSideEnum.SELL : OrderSideEnum.BUY;
+      const candidate = await this.repo.findOne({
+        where: { side: oppositeSide, pricePairId, status: QuoteRequestStatus.PENDING, userId: Not(userId) },
+        relations: { pricePair: { baseSymbol: true, quoteSymbol: true } },
+        order: { createAt: "ASC" },
+      });
+
+      if (candidate && this.isCompatible(side, quantity, price, candidate.side, Number(candidate.quantity), Number(candidate.price))) {
+        await this.alertMatchOpportunity(saved, candidate);
+        return { request: saved, matchAlert: true };
+      }
+
+      return { request: saved };
+    } catch (err) {
+      await queryRunner.rollbackTransaction();
+      throw err;
+    } finally {
+      await queryRunner.release();
     }
-
-    return { request: saved };
   }
 
   async match(requestId: string, matcherUserId: string): Promise<{ request: QuoteRequestEntity; matchedBuyOrderId: string | null }> {
@@ -280,41 +290,52 @@ export class QuoteRequestService {
 
   // ── Balance ──────────────────────────────────────────────
 
-  private async lockBalance(userId: string, side: OrderSideEnum, pair: PricePairEntity, quantity: number, price?: number): Promise<void> {
+  private async lockBalance(queryRunner: any, userId: string, side: OrderSideEnum, pair: PricePairEntity, quantity: number, price?: number): Promise<void> {
     if (side === OrderSideEnum.BUY) {
-      const wallet = await this.walletRepo.findOne({ where: { userId, symbolId: pair.quoteSymbol?.id } });
+      const wallet = await this.getWallet(queryRunner, userId, pair.quoteSymbol?.id);
       const required = quantity * (price || 0);
-      if (!wallet || Number(wallet.freeBalance) < required) {
+      if (wallet.freeBalance < required) {
         throw new Error(`موجودی ${pair.quoteSymbol?.slug || "IRR"} کافی نیست (نیاز: ${required})`);
       }
-      wallet.freeBalance = Number((Number(wallet.freeBalance) - required).toFixed(8));
-      wallet.lockedBalance = Number((Number(wallet.lockedBalance) + required).toFixed(8));
-      await this.walletRepo.save(wallet);
+      wallet.freeBalance = Number((wallet.freeBalance - required).toFixed(8));
+      wallet.lockedBalance = Number((wallet.lockedBalance + required).toFixed(8));
+      await queryRunner.manager.save(wallet);
     } else {
-      const wallet = await this.walletRepo.findOne({ where: { userId, symbolId: pair.baseSymbol?.id } });
-      if (!wallet || Number(wallet.freeBalance) < quantity) {
+      const wallet = await this.getWallet(queryRunner, userId, pair.baseSymbol?.id);
+      if (wallet.freeBalance < quantity) {
         throw new Error(`موجودی ${pair.baseSymbol?.slug || "XAU"} کافی نیست (نیاز: ${quantity})`);
       }
-      wallet.freeBalance = Number((Number(wallet.freeBalance) - quantity).toFixed(8));
-      wallet.lockedBalance = Number((Number(wallet.lockedBalance) + quantity).toFixed(8));
-      await this.walletRepo.save(wallet);
+      wallet.freeBalance = Number((wallet.freeBalance - quantity).toFixed(8));
+      wallet.lockedBalance = Number((wallet.lockedBalance + quantity).toFixed(8));
+      await queryRunner.manager.save(wallet);
     }
   }
 
   private async unlockBalance(userId: string, side: OrderSideEnum, pair: PricePairEntity, quantity: number, price?: number): Promise<void> {
-    if (side === OrderSideEnum.BUY) {
-      const wallet = await this.walletRepo.findOne({ where: { userId, symbolId: pair.quoteSymbol?.id } });
-      if (!wallet) return;
-      const amount = quantity * (price || 0);
-      wallet.lockedBalance = Math.max(0, Number((Number(wallet.lockedBalance) - amount).toFixed(8)));
-      wallet.freeBalance = Number((Number(wallet.freeBalance) + amount).toFixed(8));
-      await this.walletRepo.save(wallet);
-    } else {
-      const wallet = await this.walletRepo.findOne({ where: { userId, symbolId: pair.baseSymbol?.id } });
-      if (!wallet) return;
-      wallet.lockedBalance = Math.max(0, Number((Number(wallet.lockedBalance) - quantity).toFixed(8)));
-      wallet.freeBalance = Number((Number(wallet.freeBalance) + quantity).toFixed(8));
-      await this.walletRepo.save(wallet);
+    const queryRunner = this.dataSource.createQueryRunner();
+    await queryRunner.connect();
+    await queryRunner.startTransaction();
+
+    try {
+      if (side === OrderSideEnum.BUY) {
+        const wallet = await this.getWallet(queryRunner, userId, pair.quoteSymbol?.id);
+        const amount = quantity * (price || 0);
+        wallet.lockedBalance = Math.max(0, Number((Number(wallet.lockedBalance) - amount).toFixed(8)));
+        wallet.freeBalance = Number((Number(wallet.freeBalance) + amount).toFixed(8));
+        await queryRunner.manager.save(wallet);
+      } else {
+        const wallet = await this.getWallet(queryRunner, userId, pair.baseSymbol?.id);
+        wallet.lockedBalance = Math.max(0, Number((Number(wallet.lockedBalance) - quantity).toFixed(8)));
+        wallet.freeBalance = Number((Number(wallet.freeBalance) + quantity).toFixed(8));
+        await queryRunner.manager.save(wallet);
+      }
+
+      await queryRunner.commitTransaction();
+    } catch (err) {
+      await queryRunner.rollbackTransaction();
+      throw err;
+    } finally {
+      await queryRunner.release();
     }
   }
 

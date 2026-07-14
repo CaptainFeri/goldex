@@ -9,7 +9,7 @@ import TelegramBot from 'node-telegram-bot-api';
 import appEnvConfig from '../config/app.env.config';
 import { UserService } from '../user/user.service';
 import { BackendApiService } from '../backend-api/backend-api.service';
-import { UserState } from '../user/entity/telegram-user.entity';
+import { TelegramUserEntity, UserState } from '../user/entity/telegram-user.entity';
 import { ChannelService } from '../channel/channel.service';
 
 const MAIN_MENU: TelegramBot.KeyboardButton[][] = [
@@ -268,11 +268,25 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
         return;
       }
 
+      // Decode JWT to extract the user's role
+      const decoded = this.decodeToken(result.access_token);
+      const role = decoded?.role;
+
+      if (role !== 3) {
+        await this.sendMessage(
+          chatId,
+          '⚠️ فقط کاربران ویژه (پارتنر) می‌توانند از ربات استفاده کنند.\nبرای دریافت حساب پارتنر با پشتیبانی تماس بگیرید.',
+        );
+        await this.userService.updateState(chatId, UserState.IDLE);
+        return;
+      }
+
       await this.userService.authenticate(
         chatId,
         result.userId,
         result.access_token,
         result.refresh_token,
+        role,
       );
 
       // Link Telegram user to Goldex user for match notifications
@@ -315,6 +329,15 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
       await this.sendMessage(
         chatId,
         '🔒 ابتدا باید وارد شوید.\nبا /start وارد شوید.',
+      );
+      return;
+    }
+
+    if (!(await this.ensurePartner(user))) {
+      await this.sendMessage(
+        chatId,
+        '⚠️ فقط کاربران ویژه (پارتنر) می‌توانند از این بخش استفاده کنند.',
+        this.mainMenuReply(),
       );
       return;
     }
@@ -366,6 +389,15 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
       await this.sendMessage(
         chatId,
         '🔒 ابتدا باید وارد شوید.\nبا /start وارد شوید.',
+      );
+      return;
+    }
+
+    if (!(await this.ensurePartner(user))) {
+      await this.sendMessage(
+        chatId,
+        '⚠️ فقط کاربران ویژه (پارتنر) می‌توانند از این بخش استفاده کنند.',
+        this.mainMenuReply(),
       );
       return;
     }
@@ -427,6 +459,15 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
   private async handleQuoteRequest(chatId: number) {
     const user = await this.userService.findByChatId(chatId);
     if (!user) return;
+
+    if (!(await this.ensurePartner(user))) {
+      await this.sendMessage(
+        chatId,
+        '⚠️ فقط کاربران ویژه (پارتنر) می‌توانند از این بخش استفاده کنند.',
+        this.mainMenuReply(),
+      );
+      return;
+    }
 
     try {
       const pairs = await this.backendApi.getPricePairs(user.accessToken);
@@ -634,6 +675,16 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
       await this.sendMessage(
         chatId,
         '❌ اطلاعات ناقص است. لطفاً دوباره تلاش کنید.',
+        this.mainMenuReply(),
+      );
+      await this.userService.updateState(chatId, UserState.AUTHENTICATED);
+      return;
+    }
+
+    if (!(await this.ensurePartner(user))) {
+      await this.sendMessage(
+        chatId,
+        '⚠️ فقط کاربران ویژه (پارتنر) می‌توانند سفارش ثبت کنند.',
         this.mainMenuReply(),
       );
       await this.userService.updateState(chatId, UserState.AUTHENTICATED);
@@ -899,6 +950,11 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
         return;
       }
 
+      if (!(await this.ensurePartner(user))) {
+        await this.sendMessage(chatId, '⚠️ فقط کاربران ویژه (پارتنر) می‌توانند سفارش تطبیق دهند.', this.mainMenuReply());
+        return;
+      }
+
       const sellOrder = this.activeOrders.get(orderId);
 
       // Prevent seller from matching their own order
@@ -1011,6 +1067,15 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
       return;
     }
 
+    if (!(await this.ensurePartner(user))) {
+      await this.sendMessage(
+        chatId,
+        '⚠️ فقط کاربران ویژه (پارتنر) می‌توانند سفارشات خود را مشاهده کنند.',
+        this.mainMenuReply(),
+      );
+      return;
+    }
+
     try {
       const orders = await this.backendApi.getMyQuoteRequests(user.accessToken);
       if (!orders || orders.length === 0) {
@@ -1089,6 +1154,15 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
     if (text === '❌ لغو') {
       await this.userService.updateState(chatId, UserState.AUTHENTICATED);
       await this.sendMessage(chatId, '❌ عملیات لغو شد.', this.mainMenuReply());
+      return;
+    }
+
+    if (!(await this.ensurePartner(user))) {
+      await this.sendMessage(
+        chatId,
+        '⚠️ فقط کاربران ویژه (پارتنر) می‌توانند سفارش لغو کنند.',
+        this.mainMenuReply(),
+      );
       return;
     }
 
@@ -1232,6 +1306,7 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
         const allUsers = await this.userService.findAllAuthenticated();
         for (const user of allUsers) {
           if (user.state !== UserState.AUTHENTICATED || !user.accessToken) continue;
+          if (!(await this.ensurePartner(user))) continue;
           try {
             const orders = await this.backendApi.getMyQuoteRequests(
               user.accessToken,
@@ -1263,6 +1338,34 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
         this.logger.error(`Order monitor error: ${err.message}`);
       }
     }, 30000);
+  }
+
+  private decodeToken(token: string): { userId: string; role: number } | null {
+    try {
+      const payload = token.split('.')[1];
+      const decoded = JSON.parse(
+        Buffer.from(payload, 'base64').toString('utf-8'),
+      );
+      return decoded;
+    } catch {
+      return null;
+    }
+  }
+
+  private async ensurePartner(user: TelegramUserEntity): Promise<boolean> {
+    let role = user.role;
+
+    if (role === null || role === undefined) {
+      if (user.accessToken) {
+        const decoded = this.decodeToken(user.accessToken);
+        if (decoded && typeof decoded.role === 'number') {
+          role = decoded.role;
+          await this.userService.setRole(user.telegramChatId, role);
+        }
+      }
+    }
+
+    return role === 3;
   }
 
   async sendMessage(

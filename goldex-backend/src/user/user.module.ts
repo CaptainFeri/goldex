@@ -31,6 +31,7 @@ import { WalletEntity } from "../wallet/entities/wallet.entity";
 import { TransactionEntity } from "../wallet/entities/transaction.entity";
 import { UserWalletService } from "../user-wallet/user-wallet.service";
 import { SymbolEntity } from "../admin-symbol/entity/symbol.entity";
+import { UserMarketTypeEntity } from "./entity/user.market.type.entity";
 
 @Module({
   imports: [
@@ -55,6 +56,7 @@ import { SymbolEntity } from "../admin-symbol/entity/symbol.entity";
       WalletEntity,
       TransactionEntity,
       SymbolEntity,
+      UserMarketTypeEntity,
     ]),
     JwtModule.registerAsync({
       inject: [ConfigService],

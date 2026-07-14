@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, unwrap, apiError } from "../api/client";
 import { Card, Stat, Loading, ErrorState, Empty, Badge } from "../components/ui";
 import { fmtNum, fmtDate } from "../lib/format";
+import { MARKET_TYPES_ENUM } from "../lib/enums";
 
 const ROLE_LABEL: Record<number, string> = { 0: "مشتری", 1: "ادمین", 2: "کاربر جدید", 3: "شریک" };
 function roleBadge(r: number) {
@@ -17,13 +18,18 @@ function userStatus(u: any) {
 function CreatePartner({ onDone }: { onDone: () => void }) {
   const qc = useQueryClient();
   const [form, setForm] = useState({ phone: "", firstName: "", lastName: "", password: "", activeUntil: "" });
+  const [marketTypes, setMarketTypes] = useState<string[]>(["formal", "informal"]);
   const set = (k: string, v: any) => setForm((f) => ({ ...f, [k]: v }));
+  const toggleMarketType = (v: string) => {
+    setMarketTypes((prev) => prev.includes(v) ? prev.filter((x) => x !== v) : [...prev, v]);
+  };
   const create = useMutation({
     mutationFn: (p: any) => api.post("/admin/users/partners", p),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["users"] });
       qc.invalidateQueries({ queryKey: ["user-stats"] });
       setForm({ phone: "", firstName: "", lastName: "", password: "", activeUntil: "" });
+      setMarketTypes(["formal", "informal"]);
       onDone();
     },
   });
@@ -36,6 +42,7 @@ function CreatePartner({ onDone }: { onDone: () => void }) {
       firstName: form.firstName || undefined,
       lastName: form.lastName || undefined,
       activeUntil: form.activeUntil ? new Date(form.activeUntil).toISOString() : undefined,
+      marketTypes: marketTypes.length > 0 ? marketTypes : undefined,
     });
   }
   return (
@@ -61,13 +68,24 @@ function CreatePartner({ onDone }: { onDone: () => void }) {
           <label>فعال تا (اختیاری)</label>
           <input className="input" type="date" value={form.activeUntil} onChange={(e) => set("activeUntil", e.target.value)} />
         </div>
+        <div className="field" style={{ margin: 0, minWidth: 200 }}>
+          <label>دسترسی به بازار</label>
+          <div className="row" style={{ gap: 12, paddingTop: 4 }}>
+            {MARKET_TYPES_ENUM.map((mt) => (
+              <label key={mt.value} className="row" style={{ gap: 4, cursor: "pointer" }}>
+                <input type="checkbox" checked={marketTypes.includes(mt.value)} onChange={() => toggleMarketType(mt.value)} />
+                {mt.label}
+              </label>
+            ))}
+          </div>
+        </div>
         <button className="btn primary" disabled={create.isPending}>
           {create.isPending ? <span className="spin" /> : "ایجاد شریک"}
         </button>
       </form>
       {create.isError && <div className="error-text">{apiError(create.error)}</div>}
       <div className="muted" style={{ fontSize: 12, marginTop: 8 }}>
-        شرکا با کد یک‌بارمصرف وارد می‌شوند و به هر دو بازار (رسمی و غیررسمی) دسترسی دارند.
+        شرکا به بازارهای انتخاب‌شده دسترسی دارند (پیش‌فرض: رسمی و غیررسمی).
       </div>
     </Card>
   );

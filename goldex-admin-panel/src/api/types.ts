@@ -76,6 +76,7 @@ export interface SymbolItem {
   name?: string;
   slug?: string;
   type?: string;
+  marketType?: string;
   isActive?: boolean;
   [k: string]: any;
 }

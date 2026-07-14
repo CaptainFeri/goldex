@@ -1,5 +1,6 @@
 import { IsString, IsNumber, IsEnum, IsBoolean, IsOptional } from "class-validator";
 import { GainTypeEnum } from "../enum/gain.type.enum";
+import { MarketTypeEnum } from "../../admin-pair/enum/market.type.enum";
 import { SymbolTypeEnum } from "../enum/symbol.type.enum";
 import { UnitTypeEnum } from "../enum/unit.type.enum";
 import { PaymentGatewayEnum } from "../enum/payment.gateway.enum";
@@ -34,9 +35,14 @@ export class CreateSymbolDto {
   @ApiProperty()
   unitType: UnitTypeEnum;
 
+  @IsEnum(MarketTypeEnum)
+  @ApiProperty({ enum: MarketTypeEnum })
+  marketType: MarketTypeEnum;
+
+  @IsOptional()
   @IsEnum(PaymentGatewayEnum)
-  @ApiProperty()
-  paymentGateWayType: PaymentGatewayEnum;
+  @ApiProperty({ enum: PaymentGatewayEnum, required: false })
+  paymentGateWayType?: PaymentGatewayEnum;
 
   @IsBoolean()
   @ApiProperty()

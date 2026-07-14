@@ -1,8 +1,8 @@
-import { BadRequestException, Injectable, NotFoundException } from "@nestjs/common";
+import { BadRequestException, Injectable, NotFoundException, Logger } from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
 import * as crypto from "crypto";
 import * as bcrypt from "bcryptjs";
-import { Between, ILike, IsNull, MoreThan, Repository } from "typeorm";
+import { Between, ILike, In, IsNull, MoreThan, Repository } from "typeorm";
 import { AdminUserDto } from "./dto/admin.user.dto";
 import { GenderEnum } from "../shared/enum/gender.enum";
 import { UserEntity } from "../user/entity/user.entity";
@@ -26,6 +26,8 @@ const ONLINE_SET = "online_users";
 
 @Injectable()
 export class AdminUserService {
+  private readonly logger = new Logger(AdminUserService.name);
+
   constructor(
     @InjectRepository(UserEntity)
     private readonly userRepo: Repository<UserEntity>,
@@ -97,14 +99,13 @@ export class AdminUserService {
     setting.isEmailNotificationEnabled = false;
     await this.userSettingRepo.save(setting);
 
-    // Save market type assignments if provided
-    if (dto.marketTypes && dto.marketTypes.length > 0) {
-      for (const mt of dto.marketTypes) {
-        const umt = new UserMarketTypeEntity();
-        umt.userId = saved.id;
-        umt.marketType = mt;
-        await this.userMarketTypeRepo.save(umt);
-      }
+    // Save market type assignments (default: formal + informal for partners)
+    const marketTypes = dto.marketTypes?.length > 0 ? dto.marketTypes : [MarketTypeEnum.FORMAL, MarketTypeEnum.INFORMAL];
+    for (const mt of marketTypes) {
+      const umt = new UserMarketTypeEntity();
+      umt.userId = saved.id;
+      umt.marketType = mt;
+      await this.userMarketTypeRepo.save(umt);
     }
 
     return saved;
@@ -283,6 +284,30 @@ export class AdminUserService {
       umt.userId = userId;
       umt.marketType = mt;
       await this.userMarketTypeRepo.save(umt);
+    }
+
+    // Sync wallets: create zero-balance wallets for any active symbols matching the
+    // assigned market types that the user does not already have.
+    try {
+      const symbols = await this.symbolRepo.find({
+        where: { isActive: true, marketType: In(marketTypes) },
+      });
+      for (const s of symbols) {
+        const existing = await this.walletRepo.findOne({
+          where: { userId, symbolId: s.id },
+        });
+        if (!existing) {
+          const w = new WalletEntity();
+          w.symbol = s;
+          w.user = user;
+          w.freeBalance = 0;
+          w.lockedBalance = 0;
+          await this.walletRepo.save(w);
+        }
+      }
+      this.logger.log(`Wallets synced for user ${userId} after market type change`);
+    } catch (err) {
+      this.logger.error(`Failed to sync wallets for user ${userId}: ${(err as Error).message}`);
     }
 
     return marketTypes;

@@ -1,6 +1,4 @@
-// create-price-pair.dto.ts
-import { IsString, IsNumber, IsBoolean, IsOptional, IsEnum, IsDecimal, Min, Max } from "class-validator";
-import { MarketTypeEnum } from "../enum/market.type.enum";
+import { IsString, IsNumber, IsBoolean, IsOptional, IsDecimal, Min, Max } from "class-validator";
 import { Type } from "class-transformer";
 import { ApiProperty } from "@nestjs/swagger";
 
@@ -59,8 +57,4 @@ export class CreatePricePairDto {
   @IsNumber()
   @ApiProperty()
   decimals: number;
-
-  @IsEnum(MarketTypeEnum)
-  @ApiProperty()
-  marketType?: MarketTypeEnum;
 }

@@ -252,7 +252,7 @@ export class PairPriceConsumer implements OnModuleInit {
         minSell: parseFloat(pair.minSell as any) || 0,
         maxSell: parseFloat(pair.maxSell as any) || 0,
         decimals: pair.decimals || 2,
-        marketType: pair.marketType,
+        marketType: pair.baseSymbol?.marketType,
         lastUpdated: new Date().toISOString(),
       };
 

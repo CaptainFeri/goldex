@@ -1,6 +1,7 @@
 import { Controller, Post, Body, Logger } from "@nestjs/common";
 import { TelegramNotifierService } from "./telegram-notifier.service";
 import { UserTelegramService } from "../user-telegram/user-telegram.service";
+import { UserRoleEnum } from "../shared/enum/user.role.enum";
 import { MatchService } from "../order/match.service";
 import { QuoteRequestService } from "../quote-request/quote-request.service";
 
@@ -62,6 +63,15 @@ export class TelegramWebhookController {
         return;
       }
 
+      if (link.user?.role !== UserRoleEnum.PARTNER) {
+        await this.notifier.answerCallbackQuery(
+          callbackQueryId,
+          "❌ این قابلیت فقط برای کاربران ویژه می‌باشد. لطفاً با پشتیبانی تماس بگیرید.",
+          true,
+        );
+        return;
+      }
+
       const result = await this.matchService.requestMatch(orderId, link.userId);
       await this.notifier.answerCallbackQuery(
         callbackQueryId,
@@ -85,6 +95,15 @@ export class TelegramWebhookController {
         await this.notifier.answerCallbackQuery(
           callbackQueryId,
           "❌ ابتدا حساب خود را به ربات متصل کنید.\nبا /start شروع کنید.",
+          true,
+        );
+        return;
+      }
+
+      if (link.user?.role !== UserRoleEnum.PARTNER) {
+        await this.notifier.answerCallbackQuery(
+          callbackQueryId,
+          "❌ این قابلیت فقط برای کاربران ویژه می‌باشد. لطفاً با پشتیبانی تماس بگیرید.",
           true,
         );
         return;
