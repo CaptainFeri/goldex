@@ -1,0 +1,17 @@
+services:
+  user-panel:
+    container_name: goldex-user-panel
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: always
+    environment:
+      - BACKEND_HOST=${BACKEND_HOST:-goldex-service}
+    ports:
+      - "${USER_PANEL_PORT:-5173}:80"
+    networks:
+      - goldex-network
+
+networks:
+  goldex-network:
+    external: true

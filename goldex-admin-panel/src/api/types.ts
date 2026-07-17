@@ -70,6 +70,14 @@ export interface Wallet {
   [k: string]: any;
 }
 
+export interface WalletHistoryPoint {
+  timestamp: string | number;
+  free?: number;
+  locked?: number;
+  total?: number;
+  [k: string]: any;
+}
+
 // ---- Symbol / Pair / Mapping ----
 export interface SymbolItem {
   id: string;
@@ -98,6 +106,17 @@ export interface PairMapping {
   providerItemId: number;
   useBuyPrice: boolean;
   useSellPrice: boolean;
+  [k: string]: any;
+}
+
+// ---- Provider snapshot (for the available-items dropdown) ----
+export interface ProviderSnapshotItem {
+  itemId: number;
+  name?: string;
+  slug?: string;
+  buyPrice?: number;
+  sellPrice?: number;
+  unit?: string;
   [k: string]: any;
 }
 
@@ -202,4 +221,112 @@ export interface CompareSeries {
 export interface CompareResponse {
   pairId: string;
   series: CompareSeries[];
+}
+
+export interface HistoryPoint {
+  timestamp: string;
+  buyPrice: number;
+  sellPrice: number;
+  spread: number;
+}
+export interface HistoryResponse {
+  provider: string;
+  itemId: number;
+  points: HistoryPoint[];
+}
+
+export interface CurrentSnapshot {
+  [k: string]: any;
+}
+export interface CurrentProviderResponse {
+  provider: string;
+  items: ProviderSnapshotItem[];
+}
+
+// ---- Discounts / Coupons ----
+export interface DiscountCoupon {
+  id: number;
+  code: string;
+  couponType: string;
+  discountAmount: number;
+  discountPercentage: number;
+  maxDiscount: number;
+  usageCount: number;
+  usageLimit: number;
+  isActive: boolean;
+  expiredAt: string;
+  adminInfo?: { id: string; phone?: string; email?: string; role?: string };
+  createdAt?: string;
+  updatedAt?: string;
+  [k: string]: any;
+}
+
+export interface DiscountOverview {
+  id: number;
+  code: string;
+  couponType: string;
+  usageCount: number;
+  usageLimit: number;
+  isActive: boolean;
+  expiresAt: string;
+  createdAt: string;
+  [k: string]: any;
+}
+
+export interface DiscountList {
+  discountCouponOverviewList: DiscountOverview[];
+  totalItems: number;
+}
+
+// ---- Provider finance ----
+export interface SettlementRecord {
+  id: string;
+  providerKey: string;
+  symbol: string;
+  direction: "RECEIVE" | "PAY";
+  amount: number;
+  note?: string;
+  createdAt: string;
+  [k: string]: any;
+}
+
+// ---- Customer with balances (financial/customers) ----
+export interface CustomerWithBalance {
+  id: string;
+  userId?: string;
+  firstName?: string;
+  lastName?: string;
+  phone?: string;
+  email?: string;
+  balances?: { symbol: string; free: number; locked: number }[];
+  [k: string]: any;
+}
+
+// ---- Order detail ----
+export interface AdminOrder {
+  id: string;
+  orderCode?: string;
+  userId?: string;
+  user?: any;
+  pricePair?: PricePair;
+  base?: string;
+  quote?: string;
+  side: "BUY" | "SELL" | string;
+  orderType: "MARKET" | "LIMIT" | "QUOTE" | string;
+  quantity: number;
+  price?: number;
+  averagePrice?: number;
+  executedQuantity?: number;
+  totalValue?: number;
+  commission?: number;
+  status: string;
+  notes?: string;
+  providerOrderId?: string;
+  metadata?: any;
+  createdAt?: string;
+  createAt?: string;
+  updatedAt?: string;
+  completedAt?: string;
+  cancelledAt?: string;
+  [k: string]: any;
 }

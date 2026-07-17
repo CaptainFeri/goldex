@@ -67,6 +67,228 @@ const TABS = [
   { key: "settlement", label: "مواد تسویه" },
 ];
 
+function PacketPictureUpload({ packetId, onClose }: { packetId: string; onClose: () => void }) {
+  const qc = useQueryClient();
+  const [file, setFile] = useState<File | null>(null);
+
+  const upload = useMutation({
+    mutationFn: (formData: FormData) =>
+      api.post(`/admin/warehouse/packets/${packetId}/picture`, formData, {
+        headers: { "Content-Type": "multipart/form-data" },
+      }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["admin-packets"] });
+      onClose();
+    },
+  });
+
+  function submit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!file) return;
+    const fd = new FormData();
+    fd.append("picture", file);
+    upload.mutate(fd);
+  }
+
+  return (
+    <Modal title="آپلود تصویر بسته" onClose={onClose}>
+      <form onSubmit={submit}>
+        <div className="field">
+          <label>انتخاب تصویر</label>
+          <input className="input" type="file" accept="image/*" onChange={(e) => setFile(e.target.files?.[0] ?? null)} required />
+        </div>
+        {upload.isError && <div className="error-text">{apiError(upload.error)}</div>}
+        <div className="row" style={{ justifyContent: "flex-end", gap: 10, marginTop: 16 }}>
+          <button type="button" className="btn ghost" onClick={onClose}>انصراف</button>
+          <button className="btn primary" disabled={!file || upload.isPending}>
+            {upload.isPending ? <span className="spin" /> : "آپلود"}
+          </button>
+        </div>
+      </form>
+    </Modal>
+  );
+}
+
+function PacketDetailsModal({ packetId, onClose }: { packetId: string; onClose: () => void }) {
+  const qc = useQueryClient();
+  const q = useQuery({
+    queryKey: ["admin-packet-detail", packetId],
+    queryFn: async () => unwrap<Packet>((await api.get(`/admin/warehouse/packets/${packetId}`)).data),
+  });
+  const [showPicUpload, setShowPicUpload] = useState(false);
+
+  const removePacket = useMutation({
+    mutationFn: () => api.delete(`/admin/warehouse/packets/${packetId}`),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["admin-packets"] });
+      qc.invalidateQueries({ queryKey: ["admin-orphan-packets"] });
+      onClose();
+    },
+  });
+
+  const p = q.data;
+  return (
+    <Modal title={`جزئیات بسته ${p?.idSecure ?? packetId?.slice(0, 8)}`} onClose={onClose} wide>
+      {q.isLoading ? (
+        <Loading />
+      ) : q.isError ? (
+        <ErrorState message={apiError(q.error)} />
+      ) : p ? (
+        <>
+          {p.picture && (
+            <div style={{ marginBottom: 16, textAlign: "center" }}>
+              <img src={p.picture} alt="تصویر بسته" style={{ maxWidth: 200, maxHeight: 200, borderRadius: 8, border: "1px solid var(--border)" }} />
+            </div>
+          )}
+          <div className="kv">
+            <span className="k">شناسه</span>
+            <span className="mono" style={{ fontSize: 12 }}>{p.id}</span>
+            <span className="k">شناسه امن</span>
+            <span className="mono">{p.idSecure}</span>
+            <span className="k">وزن خالص</span>
+            <span className="mono">{fmtNum(p.pureWeight, 6)}g</span>
+            <span className="k">وضعیت</span>
+            <span><Badge kind={badgeKind(p.status)}>{tStatus(p.status)}</Badge></span>
+            <span className="k">انبار</span>
+            <span>{p.warehouse?.name ?? "—"}</span>
+            <span className="k">ANG</span>
+            <span>{p.ang ?? "—"}</span>
+            <span className="k">عیار</span>
+            <span>{p.ayar ?? "—"}</span>
+            <span className="k">موقعیت</span>
+            <span>{p.warehouseIndexPosition ?? "—"}</span>
+            <span className="k">سریال</span>
+            <span className="mono">{p.batchNumber || "—"}</span>
+            <span className="k">یتیم</span>
+            <span>{p.isOrphan ? <Badge kind="gold">بله</Badge> : <Badge kind="gray">خیر</Badge>}</span>
+            <span className="k">QR</span>
+            <span className="mono" style={{ fontSize: 11 }}>{p.qrCode || "—"}</span>
+            <span className="k">ایجاد</span>
+            <span>{fmtDate(p.createAt)}</span>
+          </div>
+          <div className="row" style={{ justifyContent: "flex-end", gap: 8, marginTop: 16 }}>
+            <button className="btn sm" onClick={() => setShowPicUpload(true)}>آپلود تصویر</button>
+            <button className="btn sm danger" disabled={removePacket.isPending}
+              onClick={() => { if (confirm("این بسته حذف شود؟")) removePacket.mutate(); }}>
+              حذف بسته
+            </button>
+          </div>
+          {showPicUpload && <PacketPictureUpload packetId={packetId} onClose={() => setShowPicUpload(false)} />}
+        </>
+      ) : null}
+    </Modal>
+  );
+}
+
+function RequestDetailsModal({ requestId, onClose }: { requestId: string; onClose: () => void }) {
+  const q = useQuery({
+    queryKey: ["admin-request-detail", requestId],
+    queryFn: async () => unwrap<WarehouseRequest>((await api.get(`/admin/warehouse/requests/${requestId}`)).data),
+  });
+  const r = q.data;
+  return (
+    <Modal title={`جزئیات درخواست ${requestId?.slice(0, 8)}`} onClose={onClose} wide>
+      {q.isLoading ? (
+        <Loading />
+      ) : q.isError ? (
+        <ErrorState message={apiError(q.error)} />
+      ) : r ? (
+        <div className="kv">
+          <span className="k">شناسه</span>
+          <span className="mono" style={{ fontSize: 12 }}>{r.id}</span>
+          <span className="k">نوع</span>
+          <span><Badge kind={r.type === "INPUT" ? "green" : "gold"}>{r.type === "INPUT" ? "واریز" : "برداشت"}</Badge></span>
+          <span className="k">کاربر</span>
+          <span>{r.user ? `${r.user.firstName ?? ""} ${r.user.lastName ?? ""}`.trim() || r.userId?.slice(0, 8) : r.userId?.slice(0, 8) ?? "—"}</span>
+          <span className="k">وزن</span>
+          <span className="mono">{fmtNum(r.weight, 6)}g</span>
+          <span className="k">وضعیت</span>
+          <span><Badge kind={badgeKind(r.status)}>{tStatus(r.status)}</Badge></span>
+          <span className="k">انبار</span>
+          <span>{r.warehouse?.name || "—"}</span>
+          <span className="k">بسته</span>
+          <span className="mono" style={{ fontSize: 12 }}>{r.packet?.idSecure ?? r.packetId?.slice(0, 8) ?? "—"}</span>
+          <span className="k">ادمین</span>
+          <span>{r.admin?.phone ?? r.admin?.email ?? r.adminId?.slice(0, 8) ?? "—"}</span>
+          <span className="k">تاریخ تحویل</span>
+          <span>{r.deliveryDate ? fmtDate(r.deliveryDate) : "—"}</span>
+          <span className="k">زمان تحویل</span>
+          <span>{r.deliveryTime || "—"}</span>
+          <span className="k">مکان تحویل</span>
+          <span>{r.deliveryLocation || "—"}</span>
+          <span className="k">یادداشت</span>
+          <span>{r.notes || "—"}</span>
+          <span className="k">متادیتا</span>
+          <span className="mono" style={{ fontSize: 11, whiteSpace: "pre-wrap" }}>{r.metadata ? JSON.stringify(r.metadata, null, 2) : "—"}</span>
+          <span className="k">پردازش شده</span>
+          <span>{fmtDate(r.processedAt)}</span>
+          <span className="k">ایجاد</span>
+          <span>{fmtDate(r.createAt)}</span>
+        </div>
+      ) : null}
+    </Modal>
+  );
+}
+
+function AssignPacketModal({ request, onClose }: { request: WarehouseRequest; onClose: () => void }) {
+  const qc = useQueryClient();
+  const [packetId, setPacketId] = useState("");
+
+  const orphanPacketsQ = useQuery({
+    queryKey: ["admin-orphan-packets-for-assign"],
+    queryFn: async () => {
+      const res = unwrap<{ packets: Packet[] }>((await api.get("/admin/warehouse/packets?limit=100")).data);
+      return (res.packets || []).filter((p: Packet) => p.isOrphan && p.status === "ORPHAN");
+    },
+  });
+  const orphanPackets: Packet[] = orphanPacketsQ.data ?? [];
+
+  const assign = useMutation({
+    mutationFn: () => api.post(`/admin/warehouse/requests/${request.id}/assign-packet/${packetId}`),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["admin-requests"] });
+      qc.invalidateQueries({ queryKey: ["admin-pending-withdraw"] });
+      qc.invalidateQueries({ queryKey: ["admin-packets"] });
+      onClose();
+    },
+  });
+
+  return (
+    <Modal title="اختصاص بسته یتیم به درخواست برداشت" onClose={onClose}>
+      <div className="kv" style={{ marginBottom: 12 }}>
+        <span className="k">درخواست</span>
+        <span className="mono" style={{ fontSize: 12 }}>{request.id?.slice(0, 8)}…</span>
+        <span className="k">وزن درخواست</span>
+        <span>{fmtNum(request.weight, 6)}g</span>
+      </div>
+      <div className="field">
+        <label>بسته یتیم</label>
+        {orphanPacketsQ.isLoading ? (
+          <Loading />
+        ) : orphanPackets.length === 0 ? (
+          <div className="error-text">بسته یتیمی برای تخصیص موجود نیست</div>
+        ) : (
+          <select className="select" value={packetId} onChange={(e) => setPacketId(e.target.value)} required>
+            <option value="">انتخاب بسته…</option>
+            {orphanPackets.map((p) => (
+              <option key={p.id} value={p.id}>
+                {p.idSecure} — {fmtNum(p.pureWeight, 6)}g @ {p.warehouse?.name || "—"}
+              </option>
+            ))}
+          </select>
+        )}
+      </div>
+      {assign.isError && <div className="error-text">{apiError(assign.error)}</div>}
+      <div className="row" style={{ justifyContent: "flex-end", gap: 8, marginTop: 16 }}>
+        <button className="btn ghost" type="button" onClick={onClose}>انصراف</button>
+        <button className="btn primary" disabled={!packetId || assign.isPending} onClick={() => assign.mutate()}>
+          {assign.isPending ? <span className="spin" /> : "اختصاص"}
+        </button>
+      </div>
+    </Modal>
+  );
+}
+
 // ---- Sub-components ----
 
 const DAY_OPTIONS = [
@@ -615,6 +837,64 @@ function SettlementReleaseForm({ onClose }: { onClose: () => void }) {
   );
 }
 
+function WarehouseDetailsModal({ warehouseId, onClose }: { warehouseId: string; onClose: () => void }) {
+  const q = useQuery({
+    queryKey: ["admin-warehouse-detail", warehouseId],
+    queryFn: async () => unwrap<Warehouse>((await api.get(`/admin/warehouse/${warehouseId}`)).data),
+  });
+  const w = q.data;
+  return (
+    <Modal title={`جزئیات انبار — ${w?.name ?? warehouseId?.slice(0, 8)}`} onClose={onClose} wide>
+      {q.isLoading ? (
+        <Loading />
+      ) : q.isError ? (
+        <ErrorState message={apiError(q.error)} />
+      ) : w ? (
+        <div className="kv">
+          <span className="k">شناسه</span>
+          <span className="mono" style={{ fontSize: 12 }}>{w.id}</span>
+          <span className="k">نام</span>
+          <span>{w.name}</span>
+          <span className="k">توضیحات</span>
+          <span>{w.description || "—"}</span>
+          <span className="k">موقعیت</span>
+          <span>{w.location || "—"}</span>
+          <span className="k">ظرفیت کل</span>
+          <span className="mono">{fmtNum(w.capacityTotal, 4)}g</span>
+          <span className="k">مصرف شده</span>
+          <span className="mono" style={{ color: "var(--red)" }}>{fmtNum(w.capacityUsed, 4)}g</span>
+          <span className="k">باقی‌مانده</span>
+          <span className="mono" style={{ color: "var(--green)" }}>{fmtNum(w.capacityRemaining, 4)}g</span>
+          <span className="k">وضعیت</span>
+          <span><Badge kind={badgeKind(w.status)}>{tStatus(w.status)}</Badge></span>
+          <span className="k">محدودیت زمانی</span>
+          <span>{w.timeLimit || "—"}</span>
+          {w.deliveryDates && w.deliveryDates.length > 0 && (
+            <>
+              <span className="k">تاریخ‌های تحویل</span>
+              <span>{w.deliveryDates.join(", ")}</span>
+            </>
+          )}
+          {w.deliverySchedule && Object.keys(w.deliverySchedule).length > 0 && (
+            <>
+              <span className="k">زمان‌بندی تحویل</span>
+              <span>
+                {Object.entries(w.deliverySchedule).map(([day, times]: [string, any]) => (
+                  <div key={day}>{day}: {times.start} - {times.end}</div>
+                ))}
+              </span>
+            </>
+          )}
+          <span className="k">بسته‌ها</span>
+          <span className="mono">{fmtNum(w.packets?.length ?? 0)}</span>
+          <span className="k">ایجاد</span>
+          <span>{fmtDate(w.createAt)}</span>
+        </div>
+      ) : null}
+    </Modal>
+  );
+}
+
 // ---- Main Page ----
 export default function WarehousePage() {
   const qc = useQueryClient();
@@ -628,6 +908,10 @@ export default function WarehousePage() {
   const [confirmMaterialReq, setConfirmMaterialReq] = useState<WarehouseRequest | null>(null);
   const [showSettlementForm, setShowSettlementForm] = useState(false);
   const [approveWithdrawReq, setApproveWithdrawReq] = useState<WarehouseRequest | null>(null);
+  const [packetDetailId, setPacketDetailId] = useState<string | null>(null);
+  const [requestDetailId, setRequestDetailId] = useState<string | null>(null);
+  const [warehouseDetailId, setWarehouseDetailId] = useState<string | null>(null);
+  const [assignPacketReq, setAssignPacketReq] = useState<WarehouseRequest | null>(null);
 
   // Queries
   const overview = useQuery({
@@ -846,6 +1130,7 @@ export default function WarehousePage() {
                       <td><Badge kind={badgeKind(w.status)}>{tStatus(w.status)}</Badge></td>
                       <td>
                         <div className="row" style={{ gap: 4 }}>
+                          <button className="btn sm" onClick={() => setWarehouseDetailId(w.id)}>جزئیات</button>
                           <button className="btn sm" onClick={() => { setEditWarehouse(w); setShowWarehouseForm(true); }}>ویرایش</button>
                           <button className="btn sm danger" disabled={deleteWarehouse.isPending}
                             onClick={() => { if (confirm("این انبار حذف شود؟")) deleteWarehouse.mutate(w.id); }}>حذف</button>
@@ -884,6 +1169,8 @@ export default function WarehousePage() {
                       <td>{p.ayar ?? "—"}</td>
                       <td className="mono" style={{ fontSize: 12 }}>{p.batchNumber || "—"}</td>
                       <td>
+                        <div className="row" style={{ gap: 4 }}>
+                        <button className="btn sm" onClick={() => setPacketDetailId(p.id)}>جزئیات</button>
                         <select
                           className="input"
                           style={{ fontSize: 11, padding: "4px 6px", width: 110 }}
@@ -899,6 +1186,7 @@ export default function WarehousePage() {
                           <option value="WITHDRAWN">برداشت شده</option>
                           <option value="ORPHAN">یتیم</option>
                         </select>
+                        </div>
                       </td>
                     </tr>
                   ))}
@@ -933,6 +1221,7 @@ export default function WarehousePage() {
                       <td style={{ fontSize: 12 }}>{r.deliveryDate ? fmtDate(r.deliveryDate) : r.deliveryTime || "—"}</td>
                       <td>
                         <div className="row" style={{ gap: 4 }}>
+                          <button className="btn sm" onClick={() => setRequestDetailId(r.id)}>جزئیات</button>
                           {r.status === "PENDING" && (
                             <button className="btn sm" onClick={() => setProcessReq(r)}>پردازش</button>
                           )}
@@ -991,9 +1280,14 @@ export default function WarehousePage() {
                             <td style={{ fontSize: 12, maxWidth: 200, whiteSpace: "normal" }}>{r.notes || "—"}</td>
                             <td style={{ fontSize: 12 }}>{r.createAt ? fmtDate(r.createAt) : "—"}</td>
                             <td>
-                              <button className="btn sm primary" onClick={() => setApproveWithdrawReq(r)}>
-                                تایید و تفکیک
-                              </button>
+                              <div className="row" style={{ gap: 4 }}>
+                                <button className="btn sm primary" onClick={() => setApproveWithdrawReq(r)}>
+                                  تایید و تفکیک
+                                </button>
+                                <button className="btn sm" onClick={() => setAssignPacketReq(r)}>
+                                  اختصاص بسته یتیم
+                                </button>
+                              </div>
                             </td>
                           </tr>
                         ))}
@@ -1049,6 +1343,11 @@ export default function WarehousePage() {
           )}
 
           {showSettlementForm && <SettlementReleaseForm onClose={() => setShowSettlementForm(false)} />}
+
+      {packetDetailId && <PacketDetailsModal packetId={packetDetailId} onClose={() => setPacketDetailId(null)} />}
+      {requestDetailId && <RequestDetailsModal requestId={requestDetailId} onClose={() => setRequestDetailId(null)} />}
+      {warehouseDetailId && <WarehouseDetailsModal warehouseId={warehouseDetailId} onClose={() => setWarehouseDetailId(null)} />}
+      {assignPacketReq && <AssignPacketModal request={assignPacketReq} onClose={() => setAssignPacketReq(null)} />}
         </div>
       )}
     </Card>

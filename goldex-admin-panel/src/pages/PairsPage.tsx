@@ -136,9 +136,107 @@ function PairForm({ initial, symbols, onClose }: { initial?: any; symbols: any[]
   );
 }
 
+function DetailsModal({ id, onClose }: { id: string; onClose: () => void }) {
+  const q = useQuery({
+    queryKey: ["pair-detail", id],
+    queryFn: async () => unwrap<PricePair>((await api.get(`/admin/pair/${id}`)).data),
+  });
+  const p = q.data;
+  return (
+    <Modal title="جزئیات جفت‌ارز" onClose={onClose}>
+      {q.isLoading ? (
+        <Loading />
+      ) : q.isError ? (
+        <ErrorState message={apiError(q.error)} />
+      ) : p ? (
+        <div className="kv">
+          <span className="k">شناسه</span>
+          <span className="mono" style={{ fontSize: 12 }}>{p.id}</span>
+          <span className="k">پایه</span>
+          <span><Badge kind="gold">{baseSlug(p)}</Badge></span>
+          <span className="k">مظنه</span>
+          <span>{quoteSlug(p)}</span>
+          <span className="k">قیمت خرید</span>
+          <span className="mono">{fmtNum(p.bestBuyPrice ?? p.price, 2)}</span>
+          <span className="k">قیمت فروش</span>
+          <span className="mono">{fmtNum(p.bestSellPrice ?? p.price, 2)}</span>
+          <span className="k">کارمزد خرید</span>
+          <span className="mono">{fmtNum(p.buyCommission, 4)}</span>
+          <span className="k">کارمزد فروش</span>
+          <span className="mono">{fmtNum(p.sellCommission, 4)}</span>
+          <span className="k">اعتبار</span>
+          <span>{p.isValid ? <Badge kind="green">معتبر</Badge> : <Badge kind="gray">نامعتبر</Badge>}</span>
+          <span className="k">اعشار</span>
+          <span className="mono">{fmtNum(p.decimals)}</span>
+          <span className="k">حداقل خرید</span>
+          <span className="mono">{fmtNum(p.minBuy, 4)}</span>
+          <span className="k">حداکثر خرید</span>
+          <span className="mono">{fmtNum(p.maxBuy, 4)}</span>
+          <span className="k">حداقل فروش</span>
+          <span className="mono">{fmtNum(p.minSell, 4)}</span>
+          <span className="k">حداکثر فروش</span>
+          <span className="mono">{fmtNum(p.maxSell, 4)}</span>
+          <span className="k">نماد تریدینگ‌ویو</span>
+          <span className="mono">{p.tradingViewSymbol || "—"}</span>
+        </div>
+      ) : null}
+    </Modal>
+  );
+}
+
+function PriceOverrideModal({ pair, onClose }: { pair: any; onClose: () => void }) {
+  const qc = useQueryClient();
+  const [buyPrice, setBuyPrice] = useState(String(pair.bestBuyPrice ?? pair.price ?? ""));
+  const [sellPrice, setSellPrice] = useState(String(pair.bestSellPrice ?? pair.price ?? ""));
+
+  const save = useMutation({
+    mutationFn: (body: any) => api.patch(`/admin/pair/${pair.id}/price`, body),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["pairs"] });
+      onClose();
+    },
+  });
+
+  function submit(e: React.FormEvent) {
+    e.preventDefault();
+    save.mutate({
+      buyPrice: Number(buyPrice) || 0,
+      sellPrice: Number(sellPrice) || 0,
+    });
+  }
+
+  return (
+    <Modal title={`ویرایش دستی قیمت — ${pairLabel(pair)}`} onClose={onClose}>
+      <form onSubmit={submit}>
+        <div className="kv" style={{ marginBottom: 12 }}>
+          <span className="k">جفت‌ارز</span>
+          <span>{pairLabel(pair)}</span>
+        </div>
+        <div className="field">
+          <label>قیمت خرید</label>
+          <input className="input mono" dir="ltr" type="number" step="0.0001" value={buyPrice} onChange={(e) => setBuyPrice(e.target.value)} required />
+        </div>
+        <div className="field">
+          <label>قیمت فروش</label>
+          <input className="input mono" dir="ltr" type="number" step="0.0001" value={sellPrice} onChange={(e) => setSellPrice(e.target.value)} required />
+        </div>
+        {save.isError && <div className="error-text">{apiError(save.error)}</div>}
+        <div className="row" style={{ justifyContent: "flex-end", gap: 10, marginTop: 16 }}>
+          <button type="button" className="btn ghost" onClick={onClose}>انصراف</button>
+          <button className="btn primary" disabled={save.isPending}>{save.isPending ? <span className="spin" /> : "ذخیره"}</button>
+        </div>
+      </form>
+    </Modal>
+  );
+}
+
 export default function PairsPage() {
   const qc = useQueryClient();
   const [form, setForm] = useState<{ open: boolean; initial?: any }>({ open: false });
+  const [detailId, setDetailId] = useState<string | null>(null);
+  const [priceOverride, setPriceOverride] = useState<any | null>(null);
+  const [filterBase, setFilterBase] = useState("");
+  const [filterQuote, setFilterQuote] = useState("");
 
   const list = useQuery({
     queryKey: ["pairs"],
@@ -158,12 +256,28 @@ export default function PairsPage() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ["pairs"] }),
   });
 
-  const pairs = list.data ?? [];
+  let pairs = list.data ?? [];
+  if (filterBase) pairs = pairs.filter((p) => baseSlug(p) === filterBase);
+  if (filterQuote) pairs = pairs.filter((p) => quoteSlug(p) === filterQuote);
+
+  const allSlugs = Array.from(new Set(pairs.map((p) => baseSlug(p))));
 
   return (
     <Card
       title="جفت‌ارزها"
-      action={<button className="btn primary sm" onClick={() => setForm({ open: true })}>+ افزودن جفت‌ارز</button>}
+      action={
+        <div className="row" style={{ gap: 8 }}>
+          <select className="select" value={filterBase} onChange={(e) => setFilterBase(e.target.value)} style={{ minWidth: 120 }}>
+            <option value="">همه پایه‌ها</option>
+            {allSlugs.map((s) => <option key={s} value={s}>{s}</option>)}
+          </select>
+          <select className="select" value={filterQuote} onChange={(e) => setFilterQuote(e.target.value)} style={{ minWidth: 120 }}>
+            <option value="">همه مظنه‌ها</option>
+            {allSlugs.map((s) => <option key={s} value={s}>{s}</option>)}
+          </select>
+          <button className="btn primary sm" onClick={() => setForm({ open: true })}>+ افزودن جفت‌ارز</button>
+        </div>
+      }
     >
       {(toggle.isError || remove.isError) && <div className="error-text">{apiError(toggle.error || remove.error)}</div>}
       {list.isLoading ? (
@@ -195,7 +309,9 @@ export default function PairsPage() {
                   <td>{p.isValid ? <Badge kind="green">معتبر</Badge> : <Badge kind="gray">نامعتبر</Badge>}</td>
                   <td>
                     <div className="row">
+                      <button className="btn sm" onClick={() => setDetailId(p.id)}>جزئیات</button>
                       <button className="btn sm" onClick={() => setForm({ open: true, initial: p })}>ویرایش</button>
+                      <button className="btn sm" onClick={() => setPriceOverride(p)}>قیمت</button>
                       <button className="btn sm" disabled={toggle.isPending} onClick={() => toggle.mutate(p.id)}>
                         {p.isValid ? "غیرفعال" : "فعال"}
                       </button>
@@ -211,6 +327,8 @@ export default function PairsPage() {
         </div>
       )}
 
+      {detailId && <DetailsModal id={detailId} onClose={() => setDetailId(null)} />}
+      {priceOverride && <PriceOverrideModal pair={priceOverride} onClose={() => setPriceOverride(null)} />}
       {form.open && <PairForm initial={form.initial} symbols={symbols.data ?? []} onClose={() => setForm({ open: false })} />}
     </Card>
   );

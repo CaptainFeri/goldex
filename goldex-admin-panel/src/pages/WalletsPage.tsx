@@ -1,8 +1,10 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { Line } from "react-chartjs-2";
 import { api, unwrap, apiError } from "../api/client";
 import { Card, Loading, ErrorState, Empty, Badge, Modal } from "../components/ui";
 import { fmtNum, fmtDate, symbolLabel } from "../lib/format";
+import { gridColor } from "../lib/chart";
 
 function toArray(x: any): any[] {
   if (Array.isArray(x)) return x;
@@ -17,16 +19,157 @@ const num = (...v: any[]) => {
 };
 const short = (id: string) => (id ? id.slice(0, 8) + "…" : "—");
 
+const ADJUST_TYPES = [
+  { value: "INCREASE_FREE", label: "افزایش موجودی آزاد" },
+  { value: "DECREASE_FREE", label: "کاهش موجودی آزاد" },
+  { value: "INCREASE_LOCKED", label: "افزایش موجودی قفل‌شده" },
+  { value: "DECREASE_LOCKED", label: "کاهش موجودی قفل‌شده" },
+];
+
+const FREEZE_TYPES = [
+  { value: "FREEZE_ENTIRE", label: "فریز کامل کیف‌پول" },
+  { value: "UNFREEZE_ENTIRE", label: "رفع فریز کامل" },
+  { value: "FREEZE_FREE", label: "فریز فقط آزاد" },
+  { value: "UNFREEZE_FREE", label: "رفع فریز فقط آزاد" },
+  { value: "FREEZE_LOCKED", label: "فریز فقط قفل‌شده" },
+  { value: "UNFREEZE_LOCKED", label: "رفع فریز فقط قفل‌شده" },
+];
+
+function AdjustModal({ wallet, onClose }: { wallet: any; onClose: () => void }) {
+  const qc = useQueryClient();
+  const [adjustType, setAdjustType] = useState("INCREASE_FREE");
+  const [amount, setAmount] = useState("");
+  const [reason, setReason] = useState("");
+
+  const adjust = useMutation({
+    mutationFn: (p: any) => api.post("/admin/wallets/adjust-balance", p),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["wallets"] });
+      onClose();
+    },
+  });
+
+  function submit(e: React.FormEvent) {
+    e.preventDefault();
+    const n = Number(amount);
+    if (Number.isNaN(n) || n <= 0) return;
+    adjust.mutate({
+      walletId: wallet.id,
+      adjustType,
+      amount: n,
+      reason: reason || undefined,
+    });
+  }
+
+  return (
+    <Modal title="تعدیل دقیق موجودی" onClose={onClose}>
+      <form onSubmit={submit}>
+        <div className="kv" style={{ marginBottom: 12 }}>
+          <span className="k">کیف‌پول</span>
+          <span className="mono" style={{ fontSize: 12 }}>{wallet.id}</span>
+          <span className="k">دارایی</span>
+          <span>{symbolLabel(wallet.symbol)}</span>
+          <span className="k">موجودی فعلی</span>
+          <span className="mono">{fmtNum(num(wallet.freeBalance, wallet.free), 6)} / {fmtNum(num(wallet.lockedBalance, wallet.locked), 6)}</span>
+        </div>
+        <div className="field">
+          <label>نوع تعدیل</label>
+          <select className="select" value={adjustType} onChange={(e) => setAdjustType(e.target.value)}>
+            {ADJUST_TYPES.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+          </select>
+        </div>
+        <div className="field">
+          <label>مقدار</label>
+          <input className="input mono" dir="ltr" type="number" step="0.00000001" value={amount} onChange={(e) => setAmount(e.target.value)} required />
+        </div>
+        <div className="field">
+          <label>دلیل</label>
+          <textarea className="input" rows={2} value={reason} onChange={(e) => setReason(e.target.value)} />
+        </div>
+        {adjust.isError && <div className="error-text">{apiError(adjust.error)}</div>}
+        <div className="row" style={{ justifyContent: "flex-end", gap: 10, marginTop: 12 }}>
+          <button type="button" className="btn ghost" onClick={onClose}>انصراف</button>
+          <button className="btn primary" disabled={adjust.isPending}>{adjust.isPending ? <span className="spin" /> : "ثبت"}</button>
+        </div>
+      </form>
+    </Modal>
+  );
+}
+
+function FreezeModal({ wallet, onClose }: { wallet: any; onClose: () => void }) {
+  const qc = useQueryClient();
+  const [action, setAction] = useState("FREEZE_ENTIRE");
+  const [amount, setAmount] = useState("");
+  const [reason, setReason] = useState("");
+
+  const freeze = useMutation({
+    mutationFn: (p: any) => api.post("/admin/wallets/freeze", p),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["wallets"] });
+      onClose();
+    },
+  });
+
+  function submit(e: React.FormEvent) {
+    e.preventDefault();
+    const payload: any = { walletId: wallet.id, action };
+    if (amount) payload.amount = Number(amount);
+    if (reason) payload.reason = reason;
+    freeze.mutate(payload);
+  }
+
+  return (
+    <Modal title="فریز / رفع فریز کیف‌پول" onClose={onClose}>
+      <form onSubmit={submit}>
+        <div className="kv" style={{ marginBottom: 12 }}>
+          <span className="k">کیف‌پول</span>
+          <span className="mono" style={{ fontSize: 12 }}>{wallet.id}</span>
+          <span className="k">دارایی</span>
+          <span>{symbolLabel(wallet.symbol)}</span>
+        </div>
+        <div className="field">
+          <label>اقدام</label>
+          <select className="select" value={action} onChange={(e) => setAction(e.target.value)}>
+            {FREEZE_TYPES.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+          </select>
+        </div>
+        <div className="field">
+          <label>مقدار (اختیاری — برای فریز جزئی)</label>
+          <input className="input mono" dir="ltr" type="number" step="0.00000001" value={amount} onChange={(e) => setAmount(e.target.value)} />
+        </div>
+        <div className="field">
+          <label>دلیل</label>
+          <textarea className="input" rows={2} value={reason} onChange={(e) => setReason(e.target.value)} />
+        </div>
+        {freeze.isError && <div className="error-text">{apiError(freeze.error)}</div>}
+        <div className="row" style={{ justifyContent: "flex-end", gap: 10, marginTop: 12 }}>
+          <button type="button" className="btn ghost" onClick={onClose}>انصراف</button>
+          <button className="btn primary" disabled={freeze.isPending}>{freeze.isPending ? <span className="spin" /> : "ثبت"}</button>
+        </div>
+      </form>
+    </Modal>
+  );
+}
+
 function TxModal({ walletId, onClose }: { walletId: string; onClose: () => void }) {
+  const [showHistory, setShowHistory] = useState(false);
+
   const details = useQuery({
     queryKey: ["wallet-detail", walletId],
     queryFn: async () => unwrap<any>((await api.get(`/admin/wallets/${walletId}`)).data),
   });
+  const history = useQuery({
+    queryKey: ["wallet-history", walletId],
+    enabled: showHistory,
+    queryFn: async () => unwrap<any>((await api.get(`/admin/wallets/${walletId}/history`)).data),
+  });
+
   const txns: any[] = details.data?.recentTransactions ?? [];
   const stats = details.data?.stats ?? {};
+  const histPoints: any[] = Array.isArray(history.data) ? history.data : history.data?.points ?? history.data?.history ?? [];
 
   return (
-    <Modal wide title="تراکنش‌های کیف‌پول" onClose={onClose}>
+    <Modal wide title="جزئیات کیف‌پول" onClose={onClose}>
       {details.isLoading ? (
         <Loading />
       ) : details.isError ? (
@@ -38,7 +181,47 @@ function TxModal({ walletId, onClose }: { walletId: string; onClose: () => void 
             <span className="mono">{fmtNum(stats.totalBalance, 6)}</span>
             <span className="k">قابل برداشت</span>
             <span className="mono">{fmtNum(stats.availableBalance, 6)}</span>
+            <span className="k">قفل‌شده</span>
+            <span className="mono">{fmtNum(stats.lockedBalance, 6)}</span>
           </div>
+
+          <div className="row spread" style={{ marginBottom: 8 }}>
+            <div className="card-title" style={{ padding: 0, border: 0 }}>تراکنش‌های اخیر</div>
+            <button className="btn sm ghost" onClick={() => setShowHistory((v) => !v)}>
+              {showHistory ? "پنهان کردن نمودار" : "نمودار تاریخچه"}
+            </button>
+          </div>
+
+          {showHistory && (
+            <div className="card" style={{ padding: 12, marginBottom: 12 }}>
+              {history.isLoading ? (
+                <Loading />
+              ) : history.isError ? (
+                <ErrorState message={apiError(history.error)} />
+              ) : histPoints.length === 0 ? (
+                <Empty label="تاریخچه‌ای موجود نیست" />
+              ) : (
+                <div className="chart-box" style={{ height: 200 }}>
+                  <Line
+                    data={{
+                      labels: histPoints.map((p) => new Date(p.timestamp ?? p.date)),
+                      datasets: [
+                        { label: "آزاد", data: histPoints.map((p) => num(p.free)), borderColor: "#2ea861", backgroundColor: "transparent", tension: 0.3, pointRadius: 0 },
+                        { label: "قفل‌شده", data: histPoints.map((p) => num(p.locked)), borderColor: "#d4af37", backgroundColor: "transparent", tension: 0.3, pointRadius: 0 },
+                      ],
+                    }}
+                    options={{
+                      responsive: true,
+                      maintainAspectRatio: false,
+                      scales: { x: { type: "time", grid: { color: gridColor } }, y: { grid: { color: gridColor } } },
+                      plugins: { legend: { position: "bottom" } },
+                    }}
+                  />
+                </div>
+              )}
+            </div>
+          )}
+
           {txns.length === 0 ? (
             <Empty label="تراکنشی ثبت نشده" />
           ) : (
@@ -79,6 +262,8 @@ export default function WalletsPage() {
   const qc = useQueryClient();
   const [q, setQ] = useState("");
   const [txWallet, setTxWallet] = useState<string | null>(null);
+  const [adjustWallet, setAdjustWallet] = useState<any | null>(null);
+  const [freezeWallet, setFreezeWallet] = useState<any | null>(null);
 
   const list = useQuery({
     queryKey: ["wallets"],
@@ -87,7 +272,7 @@ export default function WalletsPage() {
 
   const invalidate = () => qc.invalidateQueries({ queryKey: ["wallets"] });
   // Increase/decrease via update-balance: CREDIT pairs with DEPOSIT, DEBIT with WITHDRAWAL.
-  const adjust = useMutation({
+  const adjustLegacy = useMutation({
     mutationFn: (p: { walletId: string; actionType: "CREDIT" | "DEBIT"; amount: number; description?: string }) =>
       api.post("/admin/wallets/update-balance", {
         walletId: p.walletId,
@@ -111,13 +296,13 @@ export default function WalletsPage() {
     wallets = wallets.filter((w) => JSON.stringify(w).toLowerCase().includes(s));
   }
 
-  function onAdjust(walletId: string, increase: boolean) {
+  function onAdjustLegacy(walletId: string, increase: boolean) {
     const raw = window.prompt(`${increase ? "افزایش" : "کاهش"} موجودی — مقدار:`);
     if (raw === null) return;
     const amount = Number(raw);
     if (Number.isNaN(amount) || amount <= 0) return;
     const description = window.prompt("توضیحات:") || undefined;
-    adjust.mutate({ walletId, actionType: increase ? "CREDIT" : "DEBIT", amount, description });
+    adjustLegacy.mutate({ walletId, actionType: increase ? "CREDIT" : "DEBIT", amount, description });
   }
 
   function isFrozen(w: any) {
@@ -131,7 +316,7 @@ export default function WalletsPage() {
         <input className="input" style={{ width: 220 }} placeholder="جستجو…" value={q} onChange={(e) => setQ(e.target.value)} />
       }
     >
-      {(adjust.isError || setStatus.isError) && <div className="error-text">{apiError(adjust.error || setStatus.error)}</div>}
+      {(adjustLegacy.isError || setStatus.isError) && <div className="error-text">{apiError(adjustLegacy.error || setStatus.error)}</div>}
       {list.isLoading ? (
         <Loading />
       ) : list.isError ? (
@@ -170,11 +355,21 @@ export default function WalletsPage() {
                         <button className="btn sm" onClick={() => setTxWallet(w.id)}>
                           تراکنش‌ها
                         </button>
-                        <button className="btn sm" disabled={adjust.isPending} onClick={() => onAdjust(w.id, true)}>
-                          افزایش
+                        <button className="btn sm" onClick={() => setAdjustWallet(w)}>
+                          تعدیل دقیق
                         </button>
-                        <button className="btn sm" disabled={adjust.isPending} onClick={() => onAdjust(w.id, false)}>
-                          کاهش
+                        <button className="btn sm" disabled={adjustLegacy.isPending} onClick={() => onAdjustLegacy(w.id, true)}>
+                          + افزایش سریع
+                        </button>
+                        <button className="btn sm" disabled={adjustLegacy.isPending} onClick={() => onAdjustLegacy(w.id, false)}>
+                          − کاهش سریع
+                        </button>
+                        <button
+                          className="btn sm"
+                          onClick={() => setFreezeWallet(w)}
+                          title="فریز / رفع فریز"
+                        >
+                          فریز
                         </button>
                         <button
                           className={"btn sm " + (frozen ? "" : "danger")}
@@ -183,7 +378,7 @@ export default function WalletsPage() {
                             setStatus.mutate({ walletId: w.id, status: frozen ? "ACTIVE" : "FROZEN" })
                           }
                         >
-                          {frozen ? "رفع فریز" : "فریز"}
+                          {frozen ? "رفع فریز" : "فریز کل"}
                         </button>
                       </div>
                     </td>
@@ -196,6 +391,8 @@ export default function WalletsPage() {
       )}
 
       {txWallet && <TxModal walletId={txWallet} onClose={() => setTxWallet(null)} />}
+      {adjustWallet && <AdjustModal wallet={adjustWallet} onClose={() => setAdjustWallet(null)} />}
+      {freezeWallet && <FreezeModal wallet={freezeWallet} onClose={() => setFreezeWallet(null)} />}
     </Card>
   );
 }

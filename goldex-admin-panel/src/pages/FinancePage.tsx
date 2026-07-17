@@ -3,10 +3,10 @@ import { useQuery } from "@tanstack/react-query";
 import { Line } from "react-chartjs-2";
 import { api, unwrap, apiError } from "../api/client";
 import { Card, Loading, ErrorState, Empty, Badge } from "../components/ui";
-import { fmtNum, fmtDate, fmtDuration, pairLabel } from "../lib/format";
+import { fmtNum, fmtDate, fmtDuration, pairLabel, symbolLabel } from "../lib/format";
 import { gridColor } from "../lib/chart";
 
-type Tab = "overview" | "orders" | "transactions" | "ledger";
+type Tab = "overview" | "orders" | "transactions" | "ledger" | "providers" | "customers";
 
 const DAY = 24 * 3600_000;
 const PRESETS = [
@@ -243,6 +243,117 @@ function LedgerTab() {
   );
 }
 
+function ProvidersTab() {
+  const q = useQuery({
+    queryKey: ["fin-providers"],
+    queryFn: async () => unwrap<any[]>((await api.get("/admin/financial/providers")).data),
+  });
+  const items: any[] = q.data ?? [];
+  if (q.isLoading) return <Loading />;
+  if (q.isError) return <ErrorState message={apiError(q.error)} />;
+  if (items.length === 0) return <Empty label="داده‌ای برای تأمین‌کنندگان موجود نیست" />;
+  return (
+    <div className="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>تأمین‌کننده</th>
+            <th>نماد</th>
+            <th>موجودی کل</th>
+            <th>آزاد</th>
+            <th>قفل‌شده</th>
+            <th>آخرین بروزرسانی</th>
+          </tr>
+        </thead>
+        <tbody>
+          {items.map((p, i) => {
+            const symbols = p.symbols ?? [];
+            if (symbols.length === 0) {
+              return (
+                <tr key={i}>
+                  <td>{p.providerKey ?? p.name ?? "—"}</td>
+                  <td colSpan={5} className="muted">—</td>
+                </tr>
+              );
+            }
+            return symbols.map((s: any, j: number) => (
+              <tr key={`${i}-${j}`}>
+                {j === 0 && (
+                  <td rowSpan={symbols.length} style={{ fontWeight: 600 }}>{p.providerKey ?? p.name ?? "—"}</td>
+                )}
+                <td><Badge kind="gold">{s.symbol ?? s.asset ?? "—"}</Badge></td>
+                <td className="mono">{fmtNum(s.total ?? s.balance, 4)}</td>
+                <td className="mono" style={{ color: "var(--green)" }}>{fmtNum(s.free ?? s.available, 4)}</td>
+                <td className="mono" style={{ color: "var(--red)" }}>{fmtNum(s.locked, 4)}</td>
+                <td style={{ fontSize: 12 }}>{fmtDate(s.updatedAt ?? p.updatedAt)}</td>
+              </tr>
+            ));
+          })}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function CustomersTab() {
+  const [offset, setOffset] = useState(0);
+  const limit = 50;
+  const q = useQuery({
+    queryKey: ["fin-customers", offset],
+    queryFn: async () => unwrap<any>((await api.get("/admin/financial/customers", { params: { limit, offset } })).data),
+  });
+  const items: any[] = q.data?.items ?? [];
+  const total = q.data?.total ?? 0;
+  const totalPages = Math.max(1, Math.ceil(total / limit));
+  const page = Math.floor(offset / limit) + 1;
+  if (q.isLoading) return <Loading />;
+  if (q.isError) return <ErrorState message={apiError(q.error)} />;
+  if (items.length === 0) return <Empty label="مشتری‌ای یافت نشد" />;
+  return (
+    <>
+      <div className="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>نام</th>
+              <th>موبایل</th>
+              <th>موجودی به تفکیک نماد</th>
+            </tr>
+          </thead>
+          <tbody>
+            {items.map((c: any) => (
+              <tr key={c.id ?? c.userId}>
+                <td>{c.firstName ?? ""} {c.lastName ?? ""}</td>
+                <td className="mono" dir="ltr">{c.phone ?? "—"}</td>
+                <td>
+                  <div className="row" style={{ gap: 14, flexWrap: "wrap" }}>
+                    {(c.balances ?? []).map((b: any) => (
+                      <span key={b.symbol} className="row" style={{ gap: 6 }}>
+                        <Badge kind="gold">{b.symbol}</Badge>
+                        <span className="mono" style={{ fontSize: 12 }}>
+                          {fmtNum(b.free, 4)} / {fmtNum(b.locked, 4)}
+                        </span>
+                      </span>
+                    ))}
+                    {(!c.balances || c.balances.length === 0) && <span className="muted">—</span>}
+                  </div>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      {totalPages > 1 && (
+        <div className="row" style={{ justifyContent: "center", gap: 8, marginTop: 16 }}>
+          <button className="btn ghost sm" disabled={offset === 0} onClick={() => setOffset(offset - limit)}>قبلی</button>
+          <span style={{ fontSize: 13, padding: "4px 8px" }}>{page} / {totalPages}</span>
+          <button className="btn ghost sm" disabled={offset + limit >= total} onClick={() => setOffset(offset + limit)}>بعدی</button>
+        </div>
+      )}
+    </>
+  );
+}
+
 export default function FinancePage() {
   const [tab, setTab] = useState<Tab>("overview");
   const [range, setRange] = useState<Range>({ from: Date.now() - 7 * DAY, to: Date.now() });
@@ -252,6 +363,8 @@ export default function FinancePage() {
     { key: "orders", label: "سفارش‌ها" },
     { key: "transactions", label: "تراکنش‌ها" },
     { key: "ledger", label: "دفتر سیستم" },
+    { key: "providers", label: "تأمین‌کنندگان" },
+    { key: "customers", label: "مشتریان" },
   ];
   const showRange = tab === "overview" || tab === "orders";
 
@@ -302,6 +415,8 @@ export default function FinancePage() {
         {tab === "orders" && <OrdersTab range={range} />}
         {tab === "transactions" && <TransactionsTab />}
         {tab === "ledger" && <LedgerTab />}
+        {tab === "providers" && <ProvidersTab />}
+        {tab === "customers" && <CustomersTab />}
       </Card>
     </>
   );

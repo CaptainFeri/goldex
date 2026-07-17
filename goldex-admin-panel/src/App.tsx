@@ -1,3 +1,4 @@
+import { useState, useEffect } from "react";
 import { Navigate, Route, Routes } from "react-router-dom";
 import { useAuth } from "./auth/auth";
 import Layout from "./components/Layout";
@@ -16,10 +17,20 @@ import UsersPage from "./pages/UsersPage";
 import WarehousePage from "./pages/WarehousePage";
 import OrdersPage from "./pages/OrdersPage";
 import OrderBookPage from "./pages/OrderBookPage";
+import DiscountsPage from "./pages/DiscountsPage";
 
 function RequireAuth({ children }: { children: JSX.Element }) {
-  const { token } = useAuth();
-  return token ? children : <Navigate to="/login" replace />;
+  const { token, checkSession } = useAuth();
+  const [valid, setValid] = useState<boolean | null>(null);
+  useEffect(() => {
+    if (token) {
+      checkSession().then(setValid);
+    }
+  }, [token]);
+  if (!token) return <Navigate to="/login" replace />;
+  if (valid === null) return null;
+  if (!valid) return <Navigate to="/login" replace />;
+  return children;
 }
 
 export default function App() {
@@ -47,6 +58,7 @@ export default function App() {
         <Route path="/warehouse" element={<WarehousePage />} />
         <Route path="/orders" element={<OrdersPage />} />
         <Route path="/order-book" element={<OrderBookPage />} />
+        <Route path="/discounts" element={<DiscountsPage />} />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>

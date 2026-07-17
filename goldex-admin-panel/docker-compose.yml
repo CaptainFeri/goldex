@@ -1,0 +1,17 @@
+services:
+  admin-panel:
+    container_name: goldex-admin-panel
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: always
+    environment:
+      - BACKEND_HOST=${BACKEND_HOST:-goldex-service}
+    ports:
+      - "${ADMIN_PANEL_PORT:-5190}:80"
+    networks:
+      - goldex-network
+
+networks:
+  goldex-network:
+    external: true

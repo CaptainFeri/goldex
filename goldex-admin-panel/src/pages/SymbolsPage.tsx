@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, unwrap, apiError } from "../api/client";
 import { Card, Loading, ErrorState, Empty, Badge, Modal } from "../components/ui";
+import { fmtNum } from "../lib/format";
 import { GAIN_TYPES, SYMBOL_TYPES, UNIT_TYPES, PAYMENT_GATEWAYS, MARKET_TYPES_ENUM } from "../lib/enums";
 
 function toArray(x: any): any[] {
@@ -136,9 +137,58 @@ function SymbolForm({ initial, onClose }: { initial?: any; onClose: () => void }
   );
 }
 
+const SYMBOL_TYPE_OPTIONS = [
+  { value: "", label: "همه انواع" },
+  ...SYMBOL_TYPES,
+];
+
+function DetailsModal({ id, onClose }: { id: string; onClose: () => void }) {
+  const q = useQuery({
+    queryKey: ["symbol-detail", id],
+    queryFn: async () => unwrap<any>((await api.get(`/admin/symbols/${id}`)).data),
+  });
+  const s = q.data;
+  return (
+    <Modal title="جزئیات نماد" onClose={onClose}>
+      {q.isLoading ? (
+        <Loading />
+      ) : q.isError ? (
+        <ErrorState message={apiError(q.error)} />
+      ) : s ? (
+        <div className="kv">
+          <span className="k">شناسه</span>
+          <span className="mono" style={{ fontSize: 12 }}>{s.id}</span>
+          <span className="k">نام</span>
+          <span>{s.name ?? "—"}</span>
+          <span className="k">اسلاگ</span>
+          <span className="mono">{s.slug ?? "—"}</span>
+          <span className="k">نوع</span>
+          <span>{s.symbolType ?? "—"}</span>
+          <span className="k">بازار</span>
+          <span>{s.marketType === "informal" ? "غیررسمی" : "رسمی"}</span>
+          <span className="k">واحد</span>
+          <span>{s.unitType ?? "—"}</span>
+          <span className="k">وضعیت</span>
+          <span>{s.isActive ? <Badge kind="green">فعال</Badge> : <Badge kind="gray">غیرفعال</Badge>}</span>
+          <span className="k">سود (gain)</span>
+          <span className="mono">{fmtNum(s.gain, 4)}</span>
+          <span className="k">نوع سود</span>
+          <span>{s.gainType ?? "—"}</span>
+          <span className="k">مسیر آیکون</span>
+          <span className="mono">{s.picPath || "—"}</span>
+          <span className="k">درگاه پرداخت</span>
+          <span>{s.paymentGateWayType ?? "—"}</span>
+        </div>
+      ) : null}
+    </Modal>
+  );
+}
+
 export default function SymbolsPage() {
   const qc = useQueryClient();
   const [form, setForm] = useState<{ open: boolean; initial?: any }>({ open: false });
+  const [detailId, setDetailId] = useState<string | null>(null);
+  const [filterType, setFilterType] = useState("");
 
   const list = useQuery({
     queryKey: ["symbols"],
@@ -153,12 +203,20 @@ export default function SymbolsPage() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ["symbols"] }),
   });
 
-  const symbols = toArray(list.data);
+  let symbols = toArray(list.data);
+  if (filterType) symbols = symbols.filter((s) => s.symbolType === filterType);
 
   return (
     <Card
       title="نمادها"
-      action={<button className="btn primary sm" onClick={() => setForm({ open: true })}>+ افزودن نماد</button>}
+      action={
+        <div className="row" style={{ gap: 8 }}>
+          <select className="select" value={filterType} onChange={(e) => setFilterType(e.target.value)} style={{ minWidth: 130 }}>
+            {SYMBOL_TYPE_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+          </select>
+          <button className="btn primary sm" onClick={() => setForm({ open: true })}>+ افزودن نماد</button>
+        </div>
+      }
     >
       {(toggle.isError || remove.isError) && <div className="error-text">{apiError(toggle.error || remove.error)}</div>}
       {list.isLoading ? (
@@ -192,6 +250,7 @@ export default function SymbolsPage() {
                   <td>{s.isActive ? <Badge kind="green">فعال</Badge> : <Badge kind="gray">غیرفعال</Badge>}</td>
                   <td>
                     <div className="row">
+                      <button className="btn sm" onClick={() => setDetailId(s.id)}>جزئیات</button>
                       <button className="btn sm" onClick={() => setForm({ open: true, initial: s })}>ویرایش</button>
                       <button className="btn sm" disabled={toggle.isPending} onClick={() => toggle.mutate({ id: s.id, isActive: !s.isActive })}>
                         {s.isActive ? "غیرفعال" : "فعال"}
@@ -208,6 +267,7 @@ export default function SymbolsPage() {
         </div>
       )}
 
+      {detailId && <DetailsModal id={detailId} onClose={() => setDetailId(null)} />}
       {form.open && <SymbolForm initial={form.initial} onClose={() => setForm({ open: false })} />}
     </Card>
   );

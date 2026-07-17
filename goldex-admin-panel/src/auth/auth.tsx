@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, ReactNode } from "react";
+import { createContext, useContext, useState, useEffect, ReactNode } from "react";
 import { api, getToken, setToken, clearToken, unwrap } from "../api/client";
 import type { VerifyOtpResult } from "../api/types";
 
@@ -11,6 +11,7 @@ interface AuthCtx extends AuthState {
   sendOtp: (phone: string) => Promise<void>;
   verifyOtp: (phone: string, otp: string) => Promise<void>;
   logout: () => void;
+  checkSession: () => Promise<boolean>;
 }
 
 const Ctx = createContext<AuthCtx>(null as any);
@@ -32,6 +33,24 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     admin: loadAdmin(),
   });
 
+  async function checkSession(): Promise<boolean> {
+    try {
+      await api.head("/admin/auth/auth");
+      return true;
+    } catch {
+      clearToken();
+      localStorage.removeItem(ADMIN_KEY);
+      setState({ token: null, admin: null });
+      return false;
+    }
+  }
+
+  useEffect(() => {
+    if (state.token) {
+      checkSession();
+    }
+  }, []);
+
   async function sendOtp(phone: string) {
     await api.post("/admin/auth/send-otp", { phone });
   }
@@ -50,7 +69,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setState({ token: null, admin: null });
   }
 
-  return <Ctx.Provider value={{ ...state, sendOtp, verifyOtp, logout }}>{children}</Ctx.Provider>;
+  return <Ctx.Provider value={{ ...state, sendOtp, verifyOtp, logout, checkSession }}>{children}</Ctx.Provider>;
 }
 
 export function useAuth() {

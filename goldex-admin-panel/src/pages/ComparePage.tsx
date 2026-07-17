@@ -1,11 +1,11 @@
 import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Line } from "react-chartjs-2";
-import { api, unwrap } from "../api/client";
+import { api, unwrap, apiError } from "../api/client";
 import { Card, Loading, ErrorState, Empty, Badge } from "../components/ui";
 import { colorFor, fmtNum, pairLabel } from "../lib/format";
 import { gridColor } from "../lib/chart";
-import type { CompareResponse, PricePair } from "../api/types";
+import type { CompareResponse, PricePair, HistoryResponse, CurrentProviderResponse, ProviderSnapshotItem } from "../api/types";
 
 const MIN = 60_000;
 const HOUR = 60 * MIN;
@@ -25,7 +25,38 @@ const METRIC_LABEL: Record<Metric, string> = {
   spread: "اسپرد",
 };
 
+const TABS = [
+  { key: "compare", label: "مقایسه تأمین‌کنندگان" },
+  { key: "history", label: "تاریخچه یک آیتم" },
+  { key: "current", label: "اسنپ‌شات فعلی" },
+];
+
 export default function ComparePage() {
+  const [tab, setTab] = useState<"compare" | "history" | "current">("compare");
+  return (
+    <Card
+      title={
+        <div className="toolbar">
+          {TABS.map((t) => (
+            <button
+              key={t.key}
+              className={"btn sm " + (tab === t.key ? "primary" : "ghost")}
+              onClick={() => setTab(t.key as any)}
+            >
+              {t.label}
+            </button>
+          ))}
+        </div>
+      }
+    >
+      {tab === "compare" && <CompareTab />}
+      {tab === "history" && <HistoryTab />}
+      {tab === "current" && <CurrentTab />}
+    </Card>
+  );
+}
+
+function CompareTab() {
   const [pairId, setPairId] = useState<string>("");
   const [metric, setMetric] = useState<Metric>("buyPrice");
   const [range, setRange] = useState("1h");
@@ -42,7 +73,6 @@ export default function ComparePage() {
     enabled: !!effectivePairId,
     refetchInterval: 15_000,
     queryFn: async () => {
-      // Compute the window at fetch time so "to" stays live across refetches.
       const ms = RANGES.find((r) => r.key === range)?.ms;
       const params: Record<string, any> = { limit: 5000 };
       if (ms) {
@@ -57,7 +87,6 @@ export default function ComparePage() {
 
   const chart = useMemo(() => {
     const series = compare.data?.series ?? [];
-    // Union of all timestamps as the shared x-axis (sorted).
     const allTs = Array.from(
       new Set(series.flatMap((s) => s.points.map((p) => p.timestamp)))
     ).sort();
@@ -82,48 +111,46 @@ export default function ComparePage() {
 
   return (
     <>
-      <Card title="مقایسه قیمت تأمین‌کنندگان بر اساس نگاشت جفت‌ارز">
-        <div className="toolbar" style={{ marginBottom: 4 }}>
-          <div className="field" style={{ margin: 0, minWidth: 220 }}>
-            <label>جفت‌ارز</label>
-            <select
-              className="select"
-              value={effectivePairId}
-              onChange={(e) => setPairId(e.target.value)}
-              disabled={pairs.isLoading}
-            >
-              {pairs.data?.map((p) => (
-                <option key={p.id} value={p.id}>
-                  {pairLabel(p)}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div className="field" style={{ margin: 0, minWidth: 150 }}>
-            <label>شاخص</label>
-            <select className="select" value={metric} onChange={(e) => setMetric(e.target.value as Metric)}>
-              <option value="buyPrice">قیمت خرید</option>
-              <option value="sellPrice">قیمت فروش</option>
-              <option value="spread">اسپرد</option>
-            </select>
-          </div>
-          <div className="field" style={{ margin: 0, minWidth: 140 }}>
-            <label>بازه زمانی</label>
-            <select className="select" value={range} onChange={(e) => setRange(e.target.value)}>
-              {RANGES.map((r) => (
-                <option key={r.key} value={r.key}>
-                  {r.label}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div style={{ marginInlineStart: "auto", alignSelf: "flex-end" }}>
-            {compare.isFetching ? <Badge kind="gray">به‌روزرسانی…</Badge> : <Badge kind="green">زنده</Badge>}
-          </div>
+      <div className="toolbar" style={{ marginBottom: 4 }}>
+        <div className="field" style={{ margin: 0, minWidth: 220 }}>
+          <label>جفت‌ارز</label>
+          <select
+            className="select"
+            value={effectivePairId}
+            onChange={(e) => setPairId(e.target.value)}
+            disabled={pairs.isLoading}
+          >
+            {pairs.data?.map((p) => (
+              <option key={p.id} value={p.id}>
+                {pairLabel(p)}
+              </option>
+            ))}
+          </select>
         </div>
-      </Card>
+        <div className="field" style={{ margin: 0, minWidth: 150 }}>
+          <label>شاخص</label>
+          <select className="select" value={metric} onChange={(e) => setMetric(e.target.value as Metric)}>
+            <option value="buyPrice">قیمت خرید</option>
+            <option value="sellPrice">قیمت فروش</option>
+            <option value="spread">اسپرد</option>
+          </select>
+        </div>
+        <div className="field" style={{ margin: 0, minWidth: 140 }}>
+          <label>بازه زمانی</label>
+          <select className="select" value={range} onChange={(e) => setRange(e.target.value)}>
+            {RANGES.map((r) => (
+              <option key={r.key} value={r.key}>
+                {r.label}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div style={{ marginInlineStart: "auto", alignSelf: "flex-end" }}>
+          {compare.isFetching ? <Badge kind="gray">به‌روزرسانی…</Badge> : <Badge kind="green">زنده</Badge>}
+        </div>
+      </div>
 
-      <Card title={`${METRIC_LABEL[metric]} — ${series.length} تأمین‌کننده`}>
+      <div style={{ marginTop: 16 }}>
         {pairs.isLoading || compare.isLoading ? (
           <Loading />
         ) : compare.isError ? (
@@ -141,7 +168,6 @@ export default function ComparePage() {
                 scales: {
                   x: {
                     type: "time",
-                    // Let Chart.js pick the unit; show date for multi-day ranges.
                     time: {
                       tooltipFormat: range === "7d" || range === "all" ? "MM/dd HH:mm" : "HH:mm:ss",
                     },
@@ -155,10 +181,10 @@ export default function ComparePage() {
             />
           </div>
         )}
-      </Card>
+      </div>
 
       {series.length > 0 && (
-        <Card title="آخرین مقادیر">
+        <div style={{ marginTop: 16 }}>
           <div className="table-wrap">
             <table>
               <thead>
@@ -191,7 +217,175 @@ export default function ComparePage() {
               </tbody>
             </table>
           </div>
-        </Card>
+        </div>
+      )}
+    </>
+  );
+}
+
+function HistoryTab() {
+  const providers = useQuery({
+    queryKey: ["mon-providers"],
+    queryFn: async () => unwrap<string[]>((await api.get("/admin/monitoring/providers")).data),
+  });
+  const [provider, setProvider] = useState<string>("");
+  const [itemId, setItemId] = useState<string>("");
+  const [limit, setLimit] = useState<number>(500);
+
+  const effectiveProvider = provider || providers.data?.[0] || "";
+  const effectiveItemId = itemId || (providers.data?.[0] ? "" : ""); // no default — user picks
+
+  const history = useQuery({
+    queryKey: ["mon-history", effectiveProvider, effectiveItemId, limit],
+    enabled: !!effectiveProvider && !!effectiveItemId,
+    refetchInterval: 15_000,
+    queryFn: async () =>
+      unwrap<HistoryResponse>(
+        (await api.get("/admin/monitoring/history", { params: { provider: effectiveProvider, itemId: effectiveItemId, limit } })).data
+      ),
+  });
+
+  const chart = useMemo(() => {
+    const points = history.data?.points ?? [];
+    const labels = points.map((p) => new Date(p.timestamp));
+    const datasets = [
+      { label: "خرید", data: points.map((p) => p.buyPrice), borderColor: "#2ea861", backgroundColor: "transparent", tension: 0.25, pointRadius: 0 },
+      { label: "فروش", data: points.map((p) => p.sellPrice), borderColor: "#e5544b", backgroundColor: "transparent", tension: 0.25, pointRadius: 0 },
+    ];
+    return { labels, datasets, n: points.length };
+  }, [history.data]);
+
+  return (
+    <>
+      <div className="toolbar" style={{ marginBottom: 16 }}>
+        <div className="field" style={{ margin: 0, minWidth: 200 }}>
+          <label>تأمین‌کننده</label>
+          <select className="select" value={effectiveProvider} onChange={(e) => setProvider(e.target.value)}>
+            <option value="">انتخاب…</option>
+            {providers.data?.map((p) => <option key={p} value={p}>{p}</option>)}
+          </select>
+        </div>
+        <div className="field" style={{ margin: 0, minWidth: 150 }}>
+          <label>شناسه آیتم</label>
+          <input className="input mono" dir="ltr" value={effectiveItemId} onChange={(e) => setItemId(e.target.value)} placeholder="101" />
+        </div>
+        <div className="field" style={{ margin: 0, minWidth: 130 }}>
+          <label>سقف نقاط</label>
+          <input className="input mono" dir="ltr" type="number" value={limit} onChange={(e) => setLimit(Number(e.target.value) || 500)} />
+        </div>
+      </div>
+
+      {history.isLoading ? (
+        <Loading />
+      ) : history.isError ? (
+        <ErrorState message={apiError(history.error)} />
+      ) : chart.n === 0 ? (
+        <Empty label="برای این آیتم داده‌ای موجود نیست" />
+      ) : (
+        <div className="chart-box" style={{ height: 420 }}>
+          <Line
+            data={chart as any}
+            options={{
+              responsive: true,
+              maintainAspectRatio: false,
+              interaction: { mode: "index", intersect: false },
+              scales: {
+                x: { type: "time", grid: { color: gridColor } },
+                y: { grid: { color: gridColor }, ticks: { callback: (v) => fmtNum(v as number) } },
+              },
+              plugins: { legend: { position: "bottom" } },
+            }}
+          />
+        </div>
+      )}
+    </>
+  );
+}
+
+function CurrentTab() {
+  const providers = useQuery({
+    queryKey: ["mon-providers"],
+    queryFn: async () => unwrap<string[]>((await api.get("/admin/monitoring/providers")).data),
+  });
+  const [provider, setProvider] = useState<string>("");
+  const effective = provider || providers.data?.[0] || "";
+
+  const current = useQuery({
+    queryKey: ["mon-current", effective],
+    enabled: !!effective,
+    refetchInterval: 10_000,
+    queryFn: async () =>
+      unwrap<CurrentProviderResponse>((await api.get(`/admin/monitoring/current/${effective}`)).data),
+  });
+
+  const items: ProviderSnapshotItem[] = useMemo(() => {
+    const d: any = current.data;
+    if (!d) return [];
+    if (Array.isArray(d)) return d;
+    if (Array.isArray(d.items)) return d.items;
+    if (d.snapshot && typeof d.snapshot === "object") {
+      return Object.entries(d.snapshot).map(([k, v]: [string, any]) => ({ itemId: Number(k), ...v }));
+    }
+    if (typeof d === "object") {
+      return Object.entries(d).map(([k, v]: [string, any]) => ({
+        itemId: Number(k),
+        name: v?.name ?? v?.slug,
+        buyPrice: v?.buyPrice ?? v?.buy,
+        sellPrice: v?.sellPrice ?? v?.sell,
+        unit: v?.unit,
+      }));
+    }
+    return [];
+  }, [current.data]);
+
+  return (
+    <>
+      <div className="toolbar" style={{ marginBottom: 16 }}>
+        <div className="field" style={{ margin: 0, minWidth: 220 }}>
+          <label>تأمین‌کننده</label>
+          <select className="select" value={effective} onChange={(e) => setProvider(e.target.value)}>
+            <option value="">انتخاب…</option>
+            {providers.data?.map((p) => <option key={p} value={p}>{p}</option>)}
+          </select>
+        </div>
+        <div style={{ marginInlineStart: "auto", alignSelf: "flex-end" }}>
+          {current.isFetching ? <Badge kind="gray">به‌روزرسانی…</Badge> : <Badge kind="green">زنده</Badge>}
+        </div>
+      </div>
+
+      {current.isLoading ? (
+        <Loading />
+      ) : current.isError ? (
+        <ErrorState message={apiError(current.error)} />
+      ) : items.length === 0 ? (
+        <Empty label="آیتمی برای این تأمین‌کننده موجود نیست" />
+      ) : (
+        <div className="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>شناسه</th>
+                <th>نام</th>
+                <th>نماد</th>
+                <th>خرید</th>
+                <th>فروش</th>
+                <th>واحد</th>
+              </tr>
+            </thead>
+            <tbody>
+              {items.map((it) => (
+                <tr key={String(it.itemId)}>
+                  <td className="mono">{it.itemId}</td>
+                  <td>{it.name ?? "—"}</td>
+                  <td>{it.slug ? <Badge kind="gold">{it.slug}</Badge> : "—"}</td>
+                  <td className="mono">{fmtNum(it.buyPrice, 2)}</td>
+                  <td className="mono">{fmtNum(it.sellPrice, 2)}</td>
+                  <td>{it.unit ?? "—"}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       )}
     </>
   );

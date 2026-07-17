@@ -42,6 +42,26 @@ export function BrandHeader() {
 
 import { useTheme } from '../context/ThemeContext'
 
+import { useTranslation } from 'react-i18next'
+
+export function LangToggle({ className = '' }) {
+  const { i18n } = useTranslation()
+  const isFa = i18n.language === 'fa'
+  return (
+    <button
+      type="button"
+      className={`theme-toggle ${className}`}
+      onClick={() => i18n.changeLanguage(isFa ? 'en' : 'fa')}
+      aria-label="Toggle language"
+      title={isFa ? 'English' : 'فارسی'}
+    >
+      <span className={`theme-toggle-track ${!isFa ? 'is-light' : ''}`}>
+        <span className="theme-toggle-thumb">{isFa ? 'Fa' : 'En'}</span>
+      </span>
+    </button>
+  )
+}
+
 export function ThemeToggle({ className = '' }) {
   const { theme, toggleTheme } = useTheme()
   const isLight = theme === 'light'

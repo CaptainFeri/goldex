@@ -1,5 +1,6 @@
 import { NavLink, Outlet, useLocation } from "react-router-dom";
 import { useAuth } from "../auth/auth";
+import MobileNav from "./MobileNav";
 
 const NAV = [
   { section: "نمای کلی" },
@@ -19,6 +20,7 @@ const NAV = [
   { section: "سفارشات" },
   { to: "/orders", label: "مدیریت سفارش‌ها", icon: "📋" },
   { to: "/order-book", label: "دفتر سفارش", icon: "📊" },
+  { to: "/discounts", label: "تخفیف‌ها", icon: "🏷️" },
   { section: "سیستم" },
   { to: "/admins", label: "مدیران", icon: "👤" },
 ];
@@ -38,6 +40,7 @@ const TITLES: Record<string, string> = {
   "/admins": "مدیریت مدیران",
   "/orders": "مدیریت سفارش‌ها — جستجو، فیلتر و لغو",
   "/order-book": "دفتر سفارش — عمق بازار و آربیتراژ",
+  "/discounts": "مدیریت کوپن‌های تخفیف",
 };
 
 export default function Layout() {
@@ -98,6 +101,7 @@ export default function Layout() {
           <Outlet />
         </div>
       </div>
+      <MobileNav />
     </div>
   );
 }

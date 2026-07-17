@@ -39,9 +39,8 @@ export default function TradePage() {
 
   const [selectedId, setSelectedId] = useState(null)
   const [side, setSide] = useState('BUY')
-  const [orderType, setOrderType] = useState('MARKET')
+  const orderType = 'MARKET'
   const [quantity, setQuantity] = useState('')
-  const [price, setPrice] = useState('')
   const [placing, setPlacing] = useState(false)
   const [cancelling, setCancelling] = useState(null)
   const [statusFilter, setStatusFilter] = useState('')
@@ -115,7 +114,7 @@ export default function TradePage() {
   // Orders are placed and settled PER GRAM, so the trading price is the gram price.
   const marketPrice = side === 'BUY' ? pr.buyGram : pr.sellGram
   const mesghalPrice = side === 'BUY' ? pr.buy : pr.sell
-  const effectivePrice = orderType === 'LIMIT' ? Number(price) : Number(marketPrice)
+  const effectivePrice = Number(marketPrice)
   const qty = Number(quantity) || 0 // grams
   const estTotal = qty * (effectivePrice || 0)
   const decimals = selected?.decimals ?? 2
@@ -142,8 +141,7 @@ export default function TradePage() {
   const belowMin = minQ > 0 && qty > 0 && qty < minQ
   const aboveMax = maxQ > 0 && qty > maxQ
 
-  const blocked = !selected || qty <= 0 || insufficient || belowMin || aboveMax ||
-    (orderType === 'LIMIT' && (!Number(price) || Number(price) <= 0))
+  const blocked = !selected || qty <= 0 || insufficient || belowMin || aboveMax
 
   const setMax = () => {
     if (!selected) return
@@ -159,9 +157,6 @@ export default function TradePage() {
     e.preventDefault()
     if (!selected) return
     if (qty <= 0) { toast.error('Enter a valid quantity.'); return }
-    if (orderType === 'LIMIT' && (!Number(price) || Number(price) <= 0)) {
-      toast.error('Enter a limit price.'); return
-    }
     if (insufficient) { toast.error(`Insufficient ${availSymbol} balance.`); return }
     if (belowMin) { toast.error(`Minimum is ${fmt(minQ, decimals)}.`); return }
     if (aboveMax) { toast.error(`Maximum is ${fmt(maxQ, decimals)}.`); return }
@@ -171,12 +166,10 @@ export default function TradePage() {
         pricePairId: selected.id,
         side,
         orderType,
-        quantity: qty,
-        ...(orderType === 'LIMIT' ? { price: Number(price) } : {})
+        quantity: qty
       })
       toast.success(`${side === 'BUY' ? 'Buy' : 'Sell'} order placed.`)
       setQuantity('')
-      setPrice('')
       await Promise.all([loadOrders(), loadWallets()])
     } catch (err) {
       toast.error(err.response?.data?.message || 'Order could not be placed.')
@@ -264,8 +257,7 @@ export default function TradePage() {
               </div>
 
               <div className="type-toggle">
-                <button type="button" className={`type-btn ${orderType === 'MARKET' ? 'active' : ''}`} onClick={() => setOrderType('MARKET')}>Market</button>
-                <button type="button" className={`type-btn ${orderType === 'LIMIT' ? 'active' : ''}`} onClick={() => setOrderType('LIMIT')}>Limit</button>
+                <button type="button" className={`type-btn active`}>Market</button>
               </div>
 
               {/* Available balance */}
@@ -285,18 +277,10 @@ export default function TradePage() {
                   onChange={(e) => setQuantity(e.target.value)} placeholder="0.00" />
               </Field>
 
-              {orderType === 'LIMIT' ? (
-                <Field label="Limit Price (per gram)">
-                  <input className="form-input" type="number" step="any" min="0" value={price}
-                    onChange={(e) => setPrice(e.target.value)}
-                    placeholder={fmt(marketPrice, decimals)} />
-                </Field>
-              ) : (
-                <div className="ticket-summary">
-                  <span className="label">Price / gram {connected && <span className="live-pip inline" />}</span>
-                  <span className="val">{fmt(marketPrice, decimals)}</span>
-                </div>
-              )}
+              <div className="ticket-summary">
+                <span className="label">Price / gram {connected && <span className="live-pip inline" />}</span>
+                <span className="val">{fmt(marketPrice, decimals)}</span>
+              </div>
 
               {mesghalPrice > 0 && (
                 <div className="ticket-summary">

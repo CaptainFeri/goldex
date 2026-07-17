@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, unwrap, apiError } from "../api/client";
 import { Card, Loading, ErrorState, Empty, Badge, Modal } from "../components/ui";
 import { fmtNum, fmtDate, pairLabel } from "../lib/format";
+import type { AdminOrder } from "../api/types";
 
 function sideBadge(side: string) {
   const v = String(side ?? "").toUpperCase();
@@ -21,12 +22,174 @@ function statusBadge(s: string) {
   return <Badge kind="gray">{s ?? "—"}</Badge>;
 }
 
+function AdminEditModal({ orderId, order, onClose }: { orderId: string; order: any; onClose: () => void }) {
+  const qc = useQueryClient();
+  const [status, setStatus] = useState(order?.status ?? "");
+  const [price, setPrice] = useState(String(order?.price ?? ""));
+  const [notes, setNotes] = useState(order?.notes ?? "");
+
+  const save = useMutation({
+    mutationFn: (body: any) => api.put(`/admin/orders/${orderId}`, body),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["admin-orders"] });
+      onClose();
+    },
+  });
+
+  function submit(e: React.FormEvent) {
+    e.preventDefault();
+    const payload: any = {};
+    if (status) payload.status = status;
+    if (price) payload.price = Number(price);
+    if (notes) payload.notes = notes;
+    save.mutate(payload);
+  }
+
+  return (
+    <Modal title="ویرایش سفارش توسط ادمین" onClose={onClose}>
+      <form onSubmit={submit}>
+        <div className="kv" style={{ marginBottom: 12 }}>
+          <span className="k">کد سفارش</span>
+          <span className="mono">{order?.orderCode ?? orderId?.slice(0, 8)}</span>
+        </div>
+        <div className="field">
+          <label>وضعیت جدید</label>
+          <select className="select" value={status} onChange={(e) => setStatus(e.target.value)}>
+            <option value="">بدون تغییر</option>
+            <option value="PENDING">در انتظار</option>
+            <option value="COMPLETED">انجام شد</option>
+            <option value="CANCELLED">لغو شد</option>
+            <option value="REJECTED">رد شد</option>
+          </select>
+        </div>
+        <div className="field">
+          <label>قیمت جدید (اختیاری)</label>
+          <input className="input mono" dir="ltr" type="number" step="0.0001" value={price} onChange={(e) => setPrice(e.target.value)} />
+        </div>
+        <div className="field">
+          <label>یادداشت ادمین</label>
+          <textarea className="input" rows={3} value={notes} onChange={(e) => setNotes(e.target.value)} />
+        </div>
+        {save.isError && <div className="error-text">{apiError(save.error)}</div>}
+        <div className="row" style={{ justifyContent: "flex-end", gap: 10, marginTop: 16 }}>
+          <button type="button" className="btn ghost" onClick={onClose}>انصراف</button>
+          <button className="btn primary" disabled={save.isPending}>{save.isPending ? <span className="spin" /> : "ذخیره"}</button>
+        </div>
+      </form>
+    </Modal>
+  );
+}
+
 const ORDER_TYPES = ["MARKET", "LIMIT", "QUOTE"];
 const STATUSES = ["PENDING", "PARTIALLY_COMPLETED", "COMPLETED", "CANCELLED", "REJECTED"];
 
 function typeLabel(t: string) {
   const map: Record<string, string> = { MARKET: "بازار", LIMIT: "محدود", QUOTE: "استعلام" };
   return map[t] ?? t;
+}
+
+function OrderDetailsModal({ orderId, onClose }: { orderId: string; onClose: () => void }) {
+  const q = useQuery({
+    queryKey: ["admin-order-detail", orderId],
+    queryFn: async () => unwrap<AdminOrder>((await api.get(`/admin/orders/${orderId}`)).data),
+  });
+  const order = q.data;
+  return (
+    <Modal title={`جزئیات سفارش ${order?.orderCode ?? orderId?.slice(0, 8)}`} onClose={onClose} wide>
+      {q.isLoading ? (
+        <Loading />
+      ) : q.isError ? (
+        <ErrorState message={apiError(q.error)} />
+      ) : order ? (
+        <>
+          <div className="grid grid-3" style={{ marginBottom: 16 }}>
+            <div className="field">
+              <label>کد سفارش</label>
+              <div className="mono">{order.orderCode ?? "—"}</div>
+            </div>
+            <div className="field">
+              <label>کاربر</label>
+              <div>{order.user?.firstName ?? ""} {order.user?.lastName ?? ""} ({order.user?.phone ?? order.user?.email ?? "—"})</div>
+            </div>
+            <div className="field">
+              <label>شناسه کاربر</label>
+              <div className="mono" style={{ fontSize: 12 }}>{order.userId}</div>
+            </div>
+            <div className="field">
+              <label>جفت‌ارز</label>
+              <div>{order.pricePair ? pairLabel(order.pricePair) : `${order.base ?? ""}/${order.quote ?? ""}`}</div>
+            </div>
+            <div className="field">
+              <label>سمت</label>
+              <div>{sideBadge(order.side)}</div>
+            </div>
+            <div className="field">
+              <label>نوع</label>
+              <div>{typeLabel(order.orderType)}</div>
+            </div>
+            <div className="field">
+              <label>مقدار</label>
+              <div className="mono">{fmtNum(order.quantity, 4)}</div>
+            </div>
+            <div className="field">
+              <label>قیمت</label>
+              <div className="mono">{fmtNum(order.price ?? order.averagePrice, 2)}</div>
+            </div>
+            <div className="field">
+              <label>اجرا شده</label>
+              <div className="mono">{fmtNum(order.executedQuantity, 4)}</div>
+            </div>
+            <div className="field">
+              <label>ارزش کل</label>
+              <div className="mono">{fmtNum(order.totalValue, 0)}</div>
+            </div>
+            <div className="field">
+              <label>کارمزد</label>
+              <div className="mono">{fmtNum(order.commission, 2)}</div>
+            </div>
+            <div className="field">
+              <label>وضعیت</label>
+              <div>{statusBadge(order.status)}</div>
+            </div>
+          </div>
+          <div className="grid grid-2">
+            <div className="field">
+              <label>ایجاد</label>
+              <div>{fmtDate(order.createdAt ?? order.createAt)}</div>
+            </div>
+            <div className="field">
+              <label>آخرین بروزرسانی</label>
+              <div>{fmtDate(order.updatedAt)}</div>
+            </div>
+            {order.completedAt && (
+              <div className="field">
+                <label>تکمیل شده</label>
+                <div>{fmtDate(order.completedAt)}</div>
+              </div>
+            )}
+            {order.cancelledAt && (
+              <div className="field">
+                <label>لغو شده</label>
+                <div>{fmtDate(order.cancelledAt)}</div>
+              </div>
+            )}
+            {order.providerOrderId && (
+              <div className="field">
+                <label>شناسه تأمین‌کننده</label>
+                <div className="mono" style={{ fontSize: 12 }}>{order.providerOrderId}</div>
+              </div>
+            )}
+          </div>
+          {order.notes && (
+            <div className="field" style={{ marginTop: 12 }}>
+              <label>یادداشت</label>
+              <div>{order.notes}</div>
+            </div>
+          )}
+        </>
+      ) : null}
+    </Modal>
+  );
 }
 
 export default function OrdersPage() {
@@ -36,7 +199,8 @@ export default function OrdersPage() {
   const [side, setSide] = useState("");
   const [orderType, setOrderType] = useState("");
   const [page, setPage] = useState(0);
-  const [selected, setSelected] = useState<any | null>(null);
+  const [detailId, setDetailId] = useState<string | null>(null);
+  const [editOrderId, setEditOrderId] = useState<string | null>(null);
 
   const params: any = { limit: 20, offset: page * 20 };
   if (search) params.search = search;
@@ -138,20 +302,21 @@ export default function OrdersPage() {
                     <td className="mono">{fmtNum(o.totalValue, 0)}</td>
                     <td>{statusBadge(o.status)}</td>
                     <td style={{ fontSize: 12, whiteSpace: "nowrap" }}>{fmtDate(o.createdAt ?? o.createAt)}</td>
-                    <td>
-                      <div className="row" style={{ gap: 4 }}>
-                        <button className="btn ghost sm" onClick={() => setSelected(o)}>جزئیات</button>
-                        {(o.status === "PENDING" || o.status === "PARTIALLY_COMPLETED") && (
-                          <button
-                            className="btn sm danger"
-                            disabled={cancel.isPending}
-                            onClick={() => window.confirm("لغو سفارش " + (o.orderCode ?? o.id) + "؟") && cancel.mutate(o.id)}
-                          >
-                            لغو
-                          </button>
-                        )}
-                      </div>
-                    </td>
+                      <td>
+                        <div className="row" style={{ gap: 4 }}>
+                          <button className="btn ghost sm" onClick={() => setDetailId(o.id)}>جزئیات</button>
+                          <button className="btn ghost sm" onClick={() => setEditOrderId(o.id)}>ویرایش</button>
+                          {(o.status === "PENDING" || o.status === "PARTIALLY_COMPLETED") && (
+                            <button
+                              className="btn sm danger"
+                              disabled={cancel.isPending}
+                              onClick={() => window.confirm("لغو سفارش " + (o.orderCode ?? o.id) + "؟") && cancel.mutate(o.id)}
+                            >
+                              لغو
+                            </button>
+                          )}
+                        </div>
+                      </td>
                   </tr>
                 ))}
               </tbody>
@@ -168,103 +333,8 @@ export default function OrdersPage() {
         </>
       )}
 
-      {selected && (
-        <Modal title={`جزئیات سفارش ${selected.orderCode ?? selected.id?.slice(0, 8)}`} onClose={() => setSelected(null)} wide>
-          <div className="grid grid-3" style={{ marginBottom: 16 }}>
-            <div className="field">
-              <label>کد سفارش</label>
-              <div className="mono">{selected.orderCode ?? "—"}</div>
-            </div>
-            <div className="field">
-              <label>کاربر</label>
-              <div>{selected.user?.firstName ?? ""} {selected.user?.lastName ?? ""} ({selected.user?.phone ?? selected.user?.email ?? "—"})</div>
-            </div>
-            <div className="field">
-              <label>شناسه کاربر</label>
-              <div className="mono" style={{ fontSize: 12 }}>{selected.userId}</div>
-            </div>
-            <div className="field">
-              <label>جفت‌ارز</label>
-              <div>{selected.pricePair ? pairLabel(selected.pricePair) : "—"}</div>
-            </div>
-            <div className="field">
-              <label>سمت</label>
-              <div>{sideBadge(selected.side)}</div>
-            </div>
-            <div className="field">
-              <label>نوع</label>
-              <div>{typeLabel(selected.orderType)}</div>
-            </div>
-            <div className="field">
-              <label>مقدار (گرم)</label>
-              <div className="mono">{fmtNum(selected.quantity, 4)}</div>
-            </div>
-            <div className="field">
-              <label>قیمت</label>
-              <div className="mono">{fmtNum(selected.price ?? selected.averagePrice, 2)}</div>
-            </div>
-            <div className="field">
-              <label>اجرا شده</label>
-              <div className="mono">{fmtNum(selected.executedQuantity, 4)}</div>
-            </div>
-            <div className="field">
-              <label>ارزش کل</label>
-              <div className="mono">{fmtNum(selected.totalValue, 0)}</div>
-            </div>
-            <div className="field">
-              <label>کارمزد</label>
-              <div className="mono">{fmtNum(selected.commission, 2)}</div>
-            </div>
-            <div className="field">
-              <label>وضعیت</label>
-              <div>{statusBadge(selected.status)}</div>
-            </div>
-          </div>
-          <div className="grid grid-2">
-            <div className="field">
-              <label>ایجاد</label>
-              <div>{fmtDate(selected.createdAt ?? selected.createAt)}</div>
-            </div>
-            <div className="field">
-              <label>آخرین بروزرسانی</label>
-              <div>{fmtDate(selected.updatedAt)}</div>
-            </div>
-            {selected.completedAt && (
-              <div className="field">
-                <label>تکمیل شده</label>
-                <div>{fmtDate(selected.completedAt)}</div>
-              </div>
-            )}
-            {selected.cancelledAt && (
-              <div className="field">
-                <label>لغو شده</label>
-                <div>{fmtDate(selected.cancelledAt)}</div>
-              </div>
-            )}
-            {selected.providerOrderId && (
-              <div className="field">
-                <label>شناسه تأمین‌کننده</label>
-                <div className="mono" style={{ fontSize: 12 }}>{selected.providerOrderId}</div>
-              </div>
-            )}
-          </div>
-          {selected.notes && (
-            <div className="field" style={{ marginTop: 12 }}>
-              <label>یادداشت</label>
-              <div>{selected.notes}</div>
-            </div>
-          )}
-          {selected.metadata?.adminNote && (
-            <div className="field" style={{ marginTop: 8 }}>
-              <label>یادداشت ادمین</label>
-              <div>{selected.metadata.adminNote}</div>
-            </div>
-          )}
-          <div className="row" style={{ justifyContent: "flex-end", marginTop: 16 }}>
-            <button className="btn ghost" onClick={() => setSelected(null)}>بستن</button>
-          </div>
-        </Modal>
-      )}
+      {detailId && <OrderDetailsModal orderId={detailId} onClose={() => setDetailId(null)} />}
+      {editOrderId && <AdminEditModal orderId={editOrderId} order={orders.find((o) => o.id === editOrderId)} onClose={() => setEditOrderId(null)} />}
     </Card>
   );
 }

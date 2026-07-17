@@ -20,6 +20,12 @@ function docStatusBadge(s: any) {
   return <Badge kind="gold">در انتظار</Badge>;
 }
 
+const TABS = [
+  { key: "users", label: "کاربران" },
+  { key: "pending", label: "صف مدارک در انتظار" },
+  { key: "all", label: "همه مدارک" },
+];
+
 interface KycUser {
   id: string;
   firstName?: string;
@@ -30,6 +36,33 @@ interface KycUser {
   kycLevel: number;
   kycStatus: number;
   createdAt?: string;
+}
+
+interface KycDocument {
+  id: string;
+  userId?: string;
+  user?: { firstName?: string; lastName?: string; phone?: string; email?: string };
+  documentType?: string;
+  type?: string;
+  kind?: string;
+  status?: any;
+  documentStatus?: any;
+  imageUrl?: string;
+  fileUrl?: string;
+  picture?: string;
+  createAt?: string;
+  createdAt?: string;
+  [k: string]: any;
+}
+
+function DocPreview({ doc }: { doc: KycDocument }) {
+  const url = doc.imageUrl ?? doc.fileUrl ?? doc.picture;
+  if (!url) return <span className="muted">—</span>;
+  return (
+    <a href={url} target="_blank" rel="noreferrer" className="btn sm ghost">
+      مشاهده تصویر
+    </a>
+  );
 }
 
 function DetailsModal({ user, onClose }: { user: KycUser; onClose: () => void }) {
@@ -58,7 +91,7 @@ function DetailsModal({ user, onClose }: { user: KycUser; onClose: () => void })
     },
   });
 
-  const docList: any[] = Array.isArray(docs.data) ? docs.data : docs.data?.items ?? [];
+  const docList: KycDocument[] = Array.isArray(docs.data) ? docs.data : docs.data?.items ?? [];
   const p = profile.data ?? {};
 
   return (
@@ -107,6 +140,89 @@ function DetailsModal({ user, onClose }: { user: KycUser; onClose: () => void })
                   <td>{fmtDate(d.createAt ?? d.createdAt)}</td>
                   <td>
                     <div className="row">
+                      <DocPreview doc={d} />
+                      <button className="btn sm primary" disabled={approve.isPending} onClick={() => approve.mutate(d.id)}>
+                        تأیید
+                      </button>
+                      <button
+                        className="btn sm danger"
+                        disabled={reject.isPending}
+                        onClick={() => {
+                          const reason = window.prompt("دلیل رد:");
+                          if (reason) reject.mutate({ documentId: d.id, reason });
+                        }}
+                      >
+                        رد
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </Modal>
+  );
+}
+
+function DocQueue({ mode, onClose }: { mode: "pending" | "all"; onClose: () => void }) {
+  const qc = useQueryClient();
+  const docs = useQuery({
+    queryKey: ["kyc-docs-queue", mode],
+    queryFn: async () => {
+      const url = mode === "pending" ? "/admin/kyc/admin/pending" : "/admin/kyc/admin/all";
+      return unwrap<any>((await api.get(url)).data);
+    },
+  });
+  const list: KycDocument[] = Array.isArray(docs.data) ? docs.data : docs.data?.items ?? [];
+
+  const approve = useMutation({
+    mutationFn: (documentId: string) => api.post("/admin/kyc/admin/approve", { documentIds: [documentId] }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["kyc-docs-queue", mode] }),
+  });
+  const reject = useMutation({
+    mutationFn: (p: { documentId: string; reason: string }) => api.post("/admin/kyc/admin/reject", p),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["kyc-docs-queue", mode] }),
+  });
+
+  const title = mode === "pending" ? "صف مدارک در انتظار بررسی" : "همه مدارک";
+
+  return (
+    <Modal wide title={title} onClose={onClose}>
+      {docs.isLoading ? (
+        <Loading />
+      ) : docs.isError ? (
+        <ErrorState message={apiError(docs.error)} />
+      ) : list.length === 0 ? (
+        <Empty label="مدرکی موجود نیست" />
+      ) : (
+        <div className="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>کاربر</th>
+                <th>نوع مدرک</th>
+                <th>وضعیت</th>
+                <th>تاریخ</th>
+                <th>عملیات</th>
+              </tr>
+            </thead>
+            <tbody>
+              {list.map((d) => (
+                <tr key={d.id}>
+                  <td>
+                    {d.user
+                      ? `${d.user.firstName ?? ""} ${d.user.lastName ?? ""}`.trim() || d.userId?.slice(0, 8)
+                      : d.userId?.slice(0, 8) ?? "—"}
+                    {d.user?.phone && <div className="muted mono" style={{ fontSize: 11 }} dir="ltr">{d.user.phone}</div>}
+                  </td>
+                  <td>{d.documentType ?? d.type ?? d.kind ?? "—"}</td>
+                  <td>{docStatusBadge(d.status ?? d.documentStatus)}</td>
+                  <td>{fmtDate(d.createAt ?? d.createdAt)}</td>
+                  <td>
+                    <div className="row">
+                      <DocPreview doc={d} />
                       <button className="btn sm primary" disabled={approve.isPending} onClick={() => approve.mutate(d.id)}>
                         تأیید
                       </button>
@@ -134,73 +250,131 @@ function DetailsModal({ user, onClose }: { user: KycUser; onClose: () => void })
 
 export default function KycPage() {
   const [search, setSearch] = useState("");
+  const [statusFilter, setStatusFilter] = useState("");
   const [selected, setSelected] = useState<KycUser | null>(null);
+  const [tab, setTab] = useState<"users" | "pending" | "all">("users");
+  const [queueMode, setQueueMode] = useState<"pending" | "all" | null>(null);
 
   const list = useQuery({
-    queryKey: ["kyc-users", search],
-    queryFn: async () =>
-      unwrap<{ items: KycUser[]; total: number }>(
-        (await api.get("/admin/kyc/admin/users", { params: { pageSize: 100, searchKey: search || undefined } })).data
-      ),
+    queryKey: ["kyc-users", search, statusFilter],
+    queryFn: async () => {
+      const params: any = { pageSize: 100 };
+      if (search) params.searchKey = search;
+      return unwrap<{ items: KycUser[]; total: number }>(
+        (await api.get("/admin/kyc/admin/users", { params })).data
+      );
+    },
   });
 
-  const users = list.data?.items ?? [];
+  const users = (list.data?.items ?? []).filter((u) =>
+    statusFilter === "" ? true : String(u.kycStatus) === statusFilter
+  );
+  const total = statusFilter === "" ? list.data?.total ?? 0 : users.length;
 
   return (
     <Card
-      title={`کاربران و سطح احراز هویت${list.data ? ` (${list.data.total})` : ""}`}
+      title={
+        <div className="toolbar">
+          {TABS.map((t) => (
+            <button
+              key={t.key}
+              className={"btn sm " + (tab === t.key ? "primary" : "ghost")}
+              onClick={() => {
+                setTab(t.key as any);
+                if (t.key !== "users") setQueueMode(t.key as any);
+              }}
+            >
+              {t.label}
+            </button>
+          ))}
+        </div>
+      }
       action={
-        <input
-          className="input"
-          style={{ width: 220 }}
-          placeholder="جستجو (نام/موبایل)…"
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-        />
+        tab === "users" ? (
+          <div className="row" style={{ gap: 8 }}>
+            <select className="select" value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
+              <option value="">همه وضعیت‌ها</option>
+              <option value="0">در انتظار</option>
+              <option value="1">تأیید شده</option>
+              <option value="2">رد شده</option>
+            </select>
+            <input
+              className="input"
+              style={{ width: 220 }}
+              placeholder="جستجو (نام/موبایل)…"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+            />
+          </div>
+        ) : null
       }
     >
-      {list.isLoading ? (
-        <Loading />
-      ) : list.isError ? (
-        <ErrorState message={apiError(list.error)} />
-      ) : users.length === 0 ? (
-        <Empty label="کاربری یافت نشد" />
-      ) : (
-        <div className="table-wrap">
-          <table>
-            <thead>
-              <tr>
-                <th>نام</th>
-                <th>موبایل</th>
-                <th>کد ملی</th>
-                <th>سطح احراز</th>
-                <th>وضعیت</th>
-                <th>تاریخ عضویت</th>
-                <th>عملیات</th>
-              </tr>
-            </thead>
-            <tbody>
-              {users.map((u) => (
-                <tr key={u.id}>
-                  <td>{`${u.firstName ?? ""} ${u.lastName ?? ""}`.trim() || "—"}</td>
-                  <td className="mono" dir="ltr" style={{ textAlign: "right" }}>{u.phone ?? "—"}</td>
-                  <td className="mono">{u.nationalId ?? "—"}</td>
-                  <td>{levelBadge(u.kycLevel)}</td>
-                  <td>{statusBadge(u.kycStatus)}</td>
-                  <td>{fmtDate(u.createdAt)}</td>
-                  <td>
-                    <button className="btn sm" onClick={() => setSelected(u)}>
-                      جزئیات
-                    </button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+      {tab === "users" && (
+        <>
+          {list.isLoading ? (
+            <Loading />
+          ) : list.isError ? (
+            <ErrorState message={apiError(list.error)} />
+          ) : users.length === 0 ? (
+            <Empty label="کاربری یافت نشد" />
+          ) : (
+            <div className="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>نام</th>
+                    <th>موبایل</th>
+                    <th>کد ملی</th>
+                    <th>سطح احراز</th>
+                    <th>وضعیت</th>
+                    <th>تاریخ عضویت</th>
+                    <th>عملیات</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {users.map((u) => (
+                    <tr key={u.id}>
+                      <td>{`${u.firstName ?? ""} ${u.lastName ?? ""}`.trim() || "—"}</td>
+                      <td className="mono" dir="ltr" style={{ textAlign: "right" }}>{u.phone ?? "—"}</td>
+                      <td className="mono">{u.nationalId ?? "—"}</td>
+                      <td>{levelBadge(u.kycLevel)}</td>
+                      <td>{statusBadge(u.kycStatus)}</td>
+                      <td>{fmtDate(u.createdAt)}</td>
+                      <td>
+                        <button className="btn sm" onClick={() => setSelected(u)}>
+                          جزئیات
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              <div className="muted" style={{ fontSize: 12, marginTop: 8 }}>{total} کاربر</div>
+            </div>
+          )}
+        </>
+      )}
+
+      {tab === "pending" && (
+        <div style={{ padding: 16, textAlign: "center" }}>
+          <p>با کلیک روی دکمه زیر صف مدارک در انتظار بررسی را باز کنید.</p>
+          <button className="btn primary" onClick={() => setQueueMode("pending")}>
+            باز کردن صف مدارک
+          </button>
+        </div>
+      )}
+
+      {tab === "all" && (
+        <div style={{ padding: 16, textAlign: "center" }}>
+          <p>با کلیک روی دکمه زیر همه مدارک ثبت‌شده را ببینید.</p>
+          <button className="btn primary" onClick={() => setQueueMode("all")}>
+            مشاهده همه مدارک
+          </button>
         </div>
       )}
 
       {selected && <DetailsModal user={selected} onClose={() => setSelected(null)} />}
+      {queueMode && <DocQueue mode={queueMode} onClose={() => setQueueMode(null)} />}
     </Card>
   );
 }

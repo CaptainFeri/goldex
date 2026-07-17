@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, unwrap, apiError } from "../api/client";
-import { Card, Loading, ErrorState, Empty, Badge } from "../components/ui";
+import { Card, Loading, ErrorState, Empty, Badge, Modal } from "../components/ui";
 import { fmtDate } from "../lib/format";
 import { useAuth } from "../auth/auth";
 import type { Admin, AdminRole } from "../api/types";
@@ -14,10 +14,129 @@ const ROLES: { value: AdminRole; label: string }[] = [
 ];
 const roleLabel = (r: string) => ROLES.find((x) => x.value === r)?.label ?? r;
 
+function EditForm({
+  initial,
+  onClose,
+}: {
+  initial: Admin;
+  onClose: () => void;
+}) {
+  const qc = useQueryClient();
+  const [email, setEmail] = useState(initial.email ?? "");
+  const [password, setPassword] = useState("");
+  const [role, setRole] = useState<AdminRole>(initial.role);
+
+  const save = useMutation({
+    mutationFn: (body: any) => api.patch(`/admin/${initial.id}`, body),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["admins"] });
+      onClose();
+    },
+  });
+
+  function submit(e: React.FormEvent) {
+    e.preventDefault();
+    const payload: any = { role };
+    if (email) payload.email = email;
+    if (password) payload.password = password;
+    save.mutate(payload);
+  }
+
+  return (
+    <Modal title="ویرایش مدیر" onClose={onClose}>
+      <form onSubmit={submit}>
+        <div className="field">
+          <label>موبایل (غیرقابل تغییر)</label>
+          <input className="input mono" dir="ltr" value={initial.phone ?? ""} disabled />
+        </div>
+        <div className="field">
+          <label>ایمیل</label>
+          <input
+            className="input mono"
+            dir="ltr"
+            type="email"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            placeholder="example@domain.com"
+          />
+        </div>
+        <div className="field">
+          <label>رمز عبور جدید (در صورت نیاز)</label>
+          <input
+            className="input mono"
+            dir="ltr"
+            type="password"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            placeholder="حداقل ۶ کاراکتر — خالی = بدون تغییر"
+          />
+        </div>
+        <div className="field">
+          <label>نقش</label>
+          <select className="select" value={role} onChange={(e) => setRole(e.target.value as AdminRole)}>
+            {ROLES.map((r) => (
+              <option key={r.value} value={r.value}>
+                {r.label}
+              </option>
+            ))}
+          </select>
+        </div>
+        {save.isError && <div className="error-text">{apiError(save.error)}</div>}
+        <div className="row" style={{ justifyContent: "flex-end", gap: 10, marginTop: 16 }}>
+          <button type="button" className="btn ghost" onClick={onClose}>
+            انصراف
+          </button>
+          <button className="btn primary" disabled={save.isPending}>
+            {save.isPending ? <span className="spin" /> : "ذخیره"}
+          </button>
+        </div>
+      </form>
+    </Modal>
+  );
+}
+
+function DetailsModal({ id, onClose }: { id: string; onClose: () => void }) {
+  const q = useQuery({
+    queryKey: ["admin-detail", id],
+    queryFn: async () => unwrap<Admin>((await api.get(`/admin/${id}`)).data),
+  });
+  const a = q.data;
+  return (
+    <Modal title="جزئیات مدیر" onClose={onClose}>
+      {q.isLoading ? (
+        <Loading />
+      ) : q.isError ? (
+        <ErrorState message={apiError(q.error)} />
+      ) : a ? (
+        <div className="kv">
+          <span className="k">شناسه</span>
+          <span className="mono" style={{ fontSize: 12 }}>{a.id}</span>
+          <span className="k">موبایل</span>
+          <span className="mono" dir="ltr">{a.phone ?? "—"}</span>
+          <span className="k">ایمیل</span>
+          <span className="mono">{a.email ?? "—"}</span>
+          <span className="k">نقش</span>
+          <span>
+            <Badge kind={a.role === "superAdmin" ? "gold" : "gray"}>{roleLabel(a.role)}</Badge>
+          </span>
+          <span className="k">وضعیت</span>
+          <span>{a.isSuspended ? <Badge kind="red">معلق</Badge> : <Badge kind="green">فعال</Badge>}</span>
+          <span className="k">ایجاد</span>
+          <span>{fmtDate(a.createAt)}</span>
+          <span className="k">آخرین ورود</span>
+          <span>{fmtDate(a.lastLoginAt)}</span>
+        </div>
+      ) : null}
+    </Modal>
+  );
+}
+
 export default function AdminsPage() {
   const qc = useQueryClient();
   const { admin: me } = useAuth();
   const [form, setForm] = useState<{ phone: string; role: AdminRole }>({ phone: "", role: "admin" });
+  const [editing, setEditing] = useState<Admin | null>(null);
+  const [detailId, setDetailId] = useState<string | null>(null);
 
   const list = useQuery({
     queryKey: ["admins"],
@@ -128,6 +247,16 @@ export default function AdminsPage() {
                       <td>{fmtDate(a.lastLoginAt)}</td>
                       <td>
                         <div className="row">
+                          <button className="btn sm" onClick={() => setDetailId(a.id)}>
+                            جزئیات
+                          </button>
+                          <button
+                            className="btn sm"
+                            disabled={isMe}
+                            onClick={() => setEditing(a)}
+                          >
+                            ویرایش
+                          </button>
                           <button
                             className="btn sm"
                             disabled={isMe || suspend.isPending}
@@ -152,6 +281,9 @@ export default function AdminsPage() {
           </div>
         )}
       </Card>
+
+      {editing && <EditForm initial={editing} onClose={() => setEditing(null)} />}
+      {detailId && <DetailsModal id={detailId} onClose={() => setDetailId(null)} />}
     </>
   );
 }
