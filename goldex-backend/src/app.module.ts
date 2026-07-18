@@ -36,6 +36,9 @@ import { WarehouseModule } from "./warehouse/warehouse.module";
 import { TelegramNotifierModule } from "./telegram-notifier/telegram-notifier.module";
 import { UserTelegramModule } from "./user-telegram/user-telegram.module";
 import { QuoteRequestModule } from "./quote-request/quote-request.module";
+import { CreditModule } from "./credit/credit.module";
+import { FinanceLogModule } from "./finance-log/finance-log.module";
+import { AdminScheduleModule } from "./admin-schedule/admin-schedule.module";
 
 @Module({
   imports: [
@@ -115,6 +118,9 @@ import { QuoteRequestModule } from "./quote-request/quote-request.module";
     AdminMonitoringModule,
     ProviderFinanceModule,
     WarehouseModule,
+    CreditModule,
+    FinanceLogModule,
+    AdminScheduleModule,
     AdminManagementModule,
     TelegramNotifierModule,
     UserTelegramModule,

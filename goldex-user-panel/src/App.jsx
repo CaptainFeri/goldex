@@ -13,6 +13,7 @@ import KycPage from './pages/KycPage'
 import SessionsPage from './pages/SessionsPage'
 import SettingsPage from './pages/SettingsPage'
 import EliteTradePage from './pages/EliteTradePage'
+import CreditPage from './pages/CreditPage'
 
 export default function App() {
   return (
@@ -38,6 +39,7 @@ export default function App() {
           <Route path="/kyc" element={<KycPage />} />
           <Route path="/sessions" element={<SessionsPage />} />
           <Route path="/settings" element={<SettingsPage />} />
+          <Route path="/credit" element={<CreditPage />} />
         </Route>
 
         <Route path="*" element={<Navigate to="/login" replace />} />

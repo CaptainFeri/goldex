@@ -99,6 +99,7 @@ export class UserWalletService {
     const free = Number(w.freeBalance);
     const locked = Number(w.lockedBalance);
     const frozenFree = Number(w.frozenFreeBalance);
+    const frozenLocked = Number(w.frozenLockedBalance);
     return {
       id: w.id,
       status: w.status,
@@ -113,8 +114,10 @@ export class UserWalletService {
         : null,
       freeBalance: free,
       lockedBalance: locked,
-      totalBalance: free + locked,
-      availableBalance: free - frozenFree,
+      frozenFreeBalance: frozenFree,
+      frozenLockedBalance: frozenLocked,
+      totalBalance: free + locked + frozenFree + frozenLocked,
+      availableBalance: free,
       updatedAt: w.updateAt,
     };
   }

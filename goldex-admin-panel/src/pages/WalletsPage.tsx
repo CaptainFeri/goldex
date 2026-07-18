@@ -330,7 +330,8 @@ export default function WalletsPage() {
               <tr>
                 <th>کاربر</th>
                 <th>دارایی</th>
-                <th>موجودی آزاد</th>
+                <th>قابل برداشت</th>
+                <th>مسدود شده</th>
                 <th>قفل‌شده</th>
                 <th>وضعیت</th>
                 <th>عملیات</th>
@@ -347,7 +348,8 @@ export default function WalletsPage() {
                     <td>
                       <Badge kind="gold">{symbolLabel(w.symbol)}</Badge>
                     </td>
-                    <td className="mono">{fmtNum(num(w.freeBalance, w.free), 6)}</td>
+                    <td className="mono">{fmtNum(num(w.calculatedStats?.availableBalance, w.freeBalance - w.frozenFreeBalance, w.freeBalance, w.free), 6)}</td>
+                    <td className="mono" style={{ color: "var(--danger)" }}>{fmtNum(num(w.frozenFreeBalance, 0), 6)}</td>
                     <td className="mono">{fmtNum(num(w.lockedBalance, w.locked), 6)}</td>
                     <td>{frozen ? <Badge kind="red">{w.status}</Badge> : <Badge kind="green">فعال</Badge>}</td>
                     <td>

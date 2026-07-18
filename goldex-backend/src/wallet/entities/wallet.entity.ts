@@ -84,11 +84,15 @@ export class WalletEntity extends myBaseEntity {
 
   // Helper methods
   getTotalBalance(): number {
-    return this.freeBalance + this.lockedBalance;
+    return this.freeBalance + this.lockedBalance + this.frozenFreeBalance + this.frozenLockedBalance;
   }
 
   getAvailableBalance(): number {
-    return this.freeBalance - this.frozenFreeBalance;
+    return this.freeBalance;
+  }
+
+  getFrozenBalance(): number {
+    return this.frozenFreeBalance + this.frozenLockedBalance;
   }
 
   isFrozen(): boolean {

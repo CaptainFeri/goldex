@@ -11,7 +11,7 @@ const TX_BADGE = {
   refunded: 'badge-warning'
 }
 
-const CREDIT_TYPES = ['DEPOSIT', 'BUY', 'REFERRAL', 'REFUND', 'MATERIAL_DEPOSIT']
+const CREDIT_TYPES = ['DEPOSIT', 'BUY', 'REFERRAL', 'REFUND', 'MATERIAL_DEPOSIT', 'CREDIT_DEPOSIT', 'CREDIT_WITHDRAWAL', 'CREDIT_LIQUIDATION', 'CREDIT_SETTLEMENT']
 
 const fmt = (n, d = 8) => {
   const num = Number(n)
@@ -246,6 +246,9 @@ export default function WalletPage() {
                   <div className="wallet-total">{fmt(w.totalBalance)}</div>
                   <div className="wallet-bal-row"><span className="k">Available</span><span className="v">{fmt(w.availableBalance)}</span></div>
                   <div className="wallet-bal-row"><span className="k">Locked</span><span className="v">{fmt(w.lockedBalance)}</span></div>
+                  {Number(w.frozenFreeBalance) > 0 && (
+                    <div className="wallet-bal-row"><span className="k">Frozen (Credit)</span><span className="v" style={{ color: 'var(--danger)' }}>{fmt(Number(w.frozenFreeBalance) + Number(w.frozenLockedBalance || 0))}</span></div>
+                  )}
                   {w.status && w.status !== 'ACTIVE' && (
                     <div style={{ marginTop: '0.6rem' }}>
                       <span className="badge badge-danger">{w.status}</span>

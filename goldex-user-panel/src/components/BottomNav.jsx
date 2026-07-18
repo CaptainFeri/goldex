@@ -11,7 +11,18 @@ const PRIMARY_NAV_KEYS = [
   { key: 'profile', path: '/profile', icon: UserIcon },
 ]
 
+function CreditIcon() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="bn-icon">
+      <rect x="1" y="4" width="22" height="16" rx="2" />
+      <line x1="1" y1="10" x2="23" y2="10" />
+      <circle cx="12" cy="15" r="2" />
+    </svg>
+  )
+}
+
 const SECONDARY_NAV_KEYS = [
+  { key: 'credit', path: '/credit', icon: CreditIcon },
   { key: 'verification', path: '/kyc', icon: ShieldIcon },
   { key: 'sessions', path: '/sessions', icon: DeviceIcon },
   { key: 'settings', path: '/settings', icon: SettingsIcon },

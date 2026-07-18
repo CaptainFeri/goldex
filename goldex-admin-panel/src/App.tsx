@@ -18,6 +18,8 @@ import WarehousePage from "./pages/WarehousePage";
 import OrdersPage from "./pages/OrdersPage";
 import OrderBookPage from "./pages/OrderBookPage";
 import DiscountsPage from "./pages/DiscountsPage";
+import CreditsPage from "./pages/CreditsPage";
+import FinanceLogsPage from "./pages/FinanceLogsPage";
 
 function RequireAuth({ children }: { children: JSX.Element }) {
   const { token, checkSession } = useAuth();
@@ -59,6 +61,8 @@ export default function App() {
         <Route path="/orders" element={<OrdersPage />} />
         <Route path="/order-book" element={<OrderBookPage />} />
         <Route path="/discounts" element={<DiscountsPage />} />
+        <Route path="/credits" element={<CreditsPage />} />
+        <Route path="/finance-logs" element={<FinanceLogsPage />} />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>

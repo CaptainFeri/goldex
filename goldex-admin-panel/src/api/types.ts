@@ -1,5 +1,14 @@
 export type AdminRole = "superAdmin" | "admin" | "finance" | "warehouse";
 
+export interface ScheduleEntry {
+  id?: string;
+  adminId?: string;
+  dayOfWeek: number;
+  dayLabel: string;
+  startTime: string;
+  endTime: string;
+}
+
 export interface Admin {
   id: string;
   phone: string | null;
@@ -8,6 +17,7 @@ export interface Admin {
   isSuspended: boolean;
   lastLoginAt: string | null;
   createAt: string;
+  schedules?: ScheduleEntry[];
 }
 
 export interface VerifyOtpResult {
@@ -276,6 +286,54 @@ export interface DiscountOverview {
 export interface DiscountList {
   discountCouponOverviewList: DiscountOverview[];
   totalItems: number;
+}
+
+// ---- Credit ----
+export type CreditStatus = "PENDING" | "ACTIVE" | "SETTLED" | "EXPIRED" | "CANCELLED";
+
+export interface Credit {
+  id: string;
+  userId: string;
+  adminId: string;
+  creditCode: string;
+  amount: number;
+  status: CreditStatus;
+  hasCallMargin: boolean;
+  callMarginPercent: number | null;
+  reminderTimerHours: number;
+  reminderLastSentAt: string | null;
+  expireAt: string;
+  activatedAt: string | null;
+  settledAt: string | null;
+  notes: string | null;
+  settleImagePath: string | null;
+  metadata: any;
+  user?: { id: string; firstName?: string; lastName?: string; phone?: string; email?: string };
+  creditOrders?: any[];
+  createAt: string;
+  [k: string]: any;
+}
+
+export type FinanceAction =
+  | "CREDIT_CREATED" | "CREDIT_ACTIVATED" | "CREDIT_SETTLED" | "CREDIT_EXPIRED" | "CREDIT_CANCELLED"
+  | "WALLET_FROZEN" | "WALLET_UNFROZEN" | "BALANCE_INCREASED" | "BALANCE_FROZEN_FOR_CREDIT"
+  | "BALANCE_UNFROZEN_FOR_CREDIT" | "MATERIAL_FREEZE" | "LIQUIDATION" | "ORDER_CANCELLED_MARGIN"
+  | "EXPIRY_FREEZE_ALL" | "USER_STATUS_CHANGED" | "ALL_WALLETS_FROZEN" | "REMINDER_SENT";
+
+export interface FinanceLog {
+  id: string;
+  adminId: string | null;
+  userId: string | null;
+  creditId: string | null;
+  walletId: string | null;
+  orderId: string | null;
+  actionType: FinanceAction;
+  description: string | null;
+  metadata: any;
+  actionTime: string;
+  admin?: { id: string; phone?: string; email?: string; role?: string };
+  createAt: string;
+  [k: string]: any;
 }
 
 // ---- Provider finance ----

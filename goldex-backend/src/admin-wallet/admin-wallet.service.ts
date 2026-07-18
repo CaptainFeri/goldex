@@ -266,6 +266,7 @@ export class AdminWalletService {
 
           const newFrozenFreeBalance = new Decimal(wallet.frozenFreeBalance).plus(decimalAmount);
           wallet.frozenFreeBalance = newFrozenFreeBalance.toNumber();
+          wallet.freeBalance = new Decimal(wallet.freeBalance).minus(decimalAmount).toNumber();
           break;
 
         case FreezeActionEnum.UNFREEZE_FREE:
@@ -279,6 +280,7 @@ export class AdminWalletService {
           }
 
           wallet.frozenFreeBalance = currentFrozenFree.minus(decimalAmount).toNumber();
+          wallet.freeBalance = new Decimal(wallet.freeBalance).plus(decimalAmount).toNumber();
           break;
 
         case FreezeActionEnum.FREEZE_LOCKED:
@@ -325,6 +327,37 @@ export class AdminWalletService {
       wallet.adminNote = reason;
       await manager.save(wallet);
 
+      let txnAmount = 0;
+      if (
+        action === FreezeActionEnum.FREEZE_FREE ||
+        action === FreezeActionEnum.UNFREEZE_FREE ||
+        action === FreezeActionEnum.FREEZE_LOCKED ||
+        action === FreezeActionEnum.UNFREEZE_LOCKED
+      ) {
+        txnAmount = decimalAmount.toNumber();
+      }
+
+      if (txnAmount > 0) {
+        const txn = manager.create(TransactionEntity, {
+          walletId: wallet.id,
+          wallet,
+          transactionId: crypto.randomUUID(),
+          transactionType: TransactionTypeEnum.ADMIN_ADJUSTMENT,
+          status: TransactionStatusEnum.COMPLETED,
+          amount: txnAmount,
+          fee: 0,
+          description: reason || `Admin ${action.toLowerCase().replace("_", " ")} operation`,
+          metadata: {
+            adminOperation: true,
+            actionType: "FREEZE_WALLET",
+            freezeAction: action,
+            amountPrecise: decimalAmount.toString(),
+          },
+          completedAt: new Date(),
+        });
+        await manager.save(txn);
+      }
+
       await this.logAdminAction(manager, adminId, walletId, "FREEZE_WALLET", {
         action,
         amount: decimalAmount ? decimalAmount.toString() : null,
@@ -369,6 +402,25 @@ export class AdminWalletService {
       }
 
       await manager.save(wallet);
+
+      const txn = manager.create(TransactionEntity, {
+        walletId: wallet.id,
+        wallet,
+        transactionId: crypto.randomUUID(),
+        transactionType: TransactionTypeEnum.ADMIN_ADJUSTMENT,
+        status: TransactionStatusEnum.COMPLETED,
+        amount: wallet.frozenFreeBalance + wallet.frozenLockedBalance,
+        fee: 0,
+        description: note || `Admin wallet status changed from ${oldStatus} to ${wallet.status}`,
+        metadata: {
+          adminOperation: true,
+          actionType: "UPDATE_STATUS",
+          oldStatus,
+          newStatus: wallet.status,
+        },
+        completedAt: new Date(),
+      });
+      await manager.save(txn);
 
       await this.logAdminAction(manager, adminId, walletId, "UPDATE_STATUS", {
         oldStatus,
@@ -493,14 +545,14 @@ export class AdminWalletService {
       });
 
     if (startDate) {
-      queryBuilder.andWhere("log.createdAt >= :startDate", { startDate });
+      queryBuilder.andWhere("log.createAt >= :startDate", { startDate });
     }
 
     if (endDate) {
-      queryBuilder.andWhere("log.createdAt <= :endDate", { endDate });
+      queryBuilder.andWhere("log.createAt <= :endDate", { endDate });
     }
 
-    const logs = await queryBuilder.orderBy("log.createdAt", "ASC").getMany();
+    const logs = await queryBuilder.orderBy("log.createAt", "ASC").getMany();
 
     return logs.map((log) => ({
       timestamp: log.createAt,
@@ -677,11 +729,11 @@ export class AdminWalletService {
   }
 
   private getTotalBalanceDecimal(wallet: WalletEntity): Decimal {
-    return new Decimal(wallet.freeBalance).plus(wallet.lockedBalance);
+    return new Decimal(wallet.freeBalance).plus(wallet.lockedBalance).plus(wallet.frozenFreeBalance).plus(wallet.frozenLockedBalance);
   }
 
   private getAvailableBalanceDecimal(wallet: WalletEntity): Decimal {
-    return new Decimal(wallet.freeBalance).minus(wallet.frozenFreeBalance);
+    return new Decimal(wallet.freeBalance);
   }
 
   private createTransactionRecord(

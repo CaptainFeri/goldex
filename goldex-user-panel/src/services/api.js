@@ -154,6 +154,20 @@ export const warehouseApi = {
     unwrap(await http.get(`/warehouse/packets/${id}`)),
 }
 
+export const creditApi = {
+  getActiveCredit: async () =>
+    unwrap(await http.get('/credits/active')),
+
+  getCredits: async () =>
+    unwrap(await http.get('/credits')),
+
+  getNotifications: async () =>
+    unwrap(await http.get('/credits/notifications')),
+
+  markAsRead: async (id) =>
+    unwrap(await http.patch(`/credits/notifications/${id}/read`)),
+}
+
 export const baseInfoApi = {
   getCountries: async (searchKey = '') =>
     unwrap(await http.get('/base-info/countries', {

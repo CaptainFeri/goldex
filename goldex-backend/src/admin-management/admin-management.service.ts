@@ -11,14 +11,25 @@ import { CreateAdminDto } from "./dto/create-admin.dto";
 import { UpdateAdminDto } from "./dto/update-admin.dto";
 import { SuspendAdminDto } from "./dto/suspend-admin.dto";
 import { AdminEntity } from "../admin/entity/admin.entity";
+import { AdminScheduleEntity } from "../admin-schedule/entity/admin-schedule.entity";
 import { AdminRole, RoleHierarchy } from "../admin/role/admin.roles.enum";
 import * as bcrypt from "bcryptjs";
+
+const FINANCE_DEFAULT_SCHEDULE = [
+  { dayOfWeek: 6, dayLabel: "Saturday",  startTime: "09:00", endTime: "18:00" },
+  { dayOfWeek: 0, dayLabel: "Sunday",    startTime: "09:00", endTime: "18:00" },
+  { dayOfWeek: 1, dayLabel: "Monday",    startTime: "09:00", endTime: "18:00" },
+  { dayOfWeek: 2, dayLabel: "Tuesday",   startTime: "09:00", endTime: "18:00" },
+  { dayOfWeek: 3, dayLabel: "Wednesday", startTime: "09:00", endTime: "18:00" },
+];
 
 @Injectable()
 export class AdminManagementService {
   constructor(
     @InjectRepository(AdminEntity)
-    private adminRepository: Repository<AdminEntity>
+    private adminRepository: Repository<AdminEntity>,
+    @InjectRepository(AdminScheduleEntity)
+    private scheduleRepository: Repository<AdminScheduleEntity>,
   ) {}
 
   async create(createAdminDto: CreateAdminDto, currentAdminId?: string): Promise<AdminEntity> {
@@ -48,7 +59,17 @@ export class AdminManagementService {
       role: createAdminDto.role || AdminRole.ADMIN,
     });
 
-    return await this.adminRepository.save(admin);
+    const saved = await this.adminRepository.save(admin);
+
+    // Auto-create work schedule for FINANCE role
+    if (saved.role === AdminRole.FINANCE) {
+      const entries = (createAdminDto.schedules ?? FINANCE_DEFAULT_SCHEDULE).map((s) =>
+        this.scheduleRepository.create({ ...s, adminId: saved.id, timezone: "Asia/Tehran" }),
+      );
+      await this.scheduleRepository.save(entries);
+    }
+
+    return saved;
   }
 
   async findByPhone(phone: string): Promise<AdminEntity | null> {

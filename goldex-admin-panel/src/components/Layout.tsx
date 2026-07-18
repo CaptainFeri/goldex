@@ -13,6 +13,8 @@ const NAV = [
   { to: "/warehouse", label: "انبار", icon: "🏭" },
   { to: "/finance", label: "مالی", icon: "💰" },
   { to: "/provider-finance", label: "مالی تأمین‌کنندگان", icon: "🏦" },
+  { to: "/credits", label: "اعتبارات", icon: "💳" },
+  { to: "/finance-logs", label: "گزارشات مالی", icon: "📄" },
   { section: "بازار" },
   { to: "/symbols", label: "نمادها", icon: "◈" },
   { to: "/pairs", label: "جفت‌ارزها", icon: "⇄" },
@@ -41,6 +43,8 @@ const TITLES: Record<string, string> = {
   "/orders": "مدیریت سفارش‌ها — جستجو، فیلتر و لغو",
   "/order-book": "دفتر سفارش — عمق بازار و آربیتراژ",
   "/discounts": "مدیریت کوپن‌های تخفیف",
+  "/credits": "مدیریت اعتبارات کاربران",
+  "/finance-logs": "گزارشات مالی — لاگ عملیات مالی",
 };
 
 export default function Layout() {

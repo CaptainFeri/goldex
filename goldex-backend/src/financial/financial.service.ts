@@ -234,6 +234,8 @@ export class FinancialService {
       .addSelect("s.slug", "slug")
       .addSelect("COALESCE(SUM(w.freeBalance), 0)", "free")
       .addSelect("COALESCE(SUM(w.lockedBalance), 0)", "locked")
+      .addSelect("COALESCE(SUM(w.frozenFreeBalance), 0)", "frozenFree")
+      .addSelect("COALESCE(SUM(w.frozenLockedBalance), 0)", "frozenLocked")
       .groupBy("s.id")
       .addGroupBy("s.name")
       .addGroupBy("s.slug")
@@ -259,6 +261,9 @@ export class FinancialService {
           symbol: { id: r.symbolId, name: r.name, slug: r.slug },
           customerFree: 0,
           customerLocked: 0,
+          customerFrozenFree: 0,
+          customerFrozenLocked: 0,
+          customerFrozen: 0,
           customerTotal: 0,
           systemProfit: 0,
         };
@@ -271,7 +276,10 @@ export class FinancialService {
       const e = ensure(r);
       e.customerFree = Number(r.free);
       e.customerLocked = Number(r.locked);
-      e.customerTotal = e.customerFree + e.customerLocked;
+      e.customerFrozenFree = Number(r.frozenFree);
+      e.customerFrozenLocked = Number(r.frozenLocked);
+      e.customerFrozen = Number(r.frozenFree) + Number(r.frozenLocked);
+      e.customerTotal = Number(r.free) + Number(r.locked) + Number(r.frozenFree) + Number(r.frozenLocked);
     }
     for (const r of profitRows) {
       ensure(r).systemProfit = Number(r.profit);

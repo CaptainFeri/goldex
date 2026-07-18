@@ -12,7 +12,7 @@ export class initSymbolPairMig1000000000028 implements MigrationInterface {
         picPath: "/icons/irr.png",
         gain: 0,
         gainType: "number",
-        symbolType: "fiat",
+        symbolType: "rial",
         unitType: "number",
         paymentGateWayType: PaymentGatewayEnum.UP,
         hasPaymentGateway: true,

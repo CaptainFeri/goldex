@@ -21,20 +21,10 @@ import { AdminRolesGuard } from "../admin/auth/Guard/admin.role.guard";
 import { AdminRoles } from "../admin/role/admin.role.decorator";
 import { AdminRole } from "../admin/role/admin.roles.enum";
 
-@Controller("admin")
+@Controller("admin/accounts")
 @ApiTags("Admin-Management")
 export class AdminManagementController {
   constructor(private readonly adminService: AdminManagementService) {}
-
-  @Post()
-  @UseGuards(AdminAuthGuard, AdminRolesGuard)
-  @AdminRoles(AdminRole.SUPER_ADMIN)
-  @ApiBearerAuth()
-  async create(@Body() createAdminDto: CreateAdminDto, @Req() req: any) {
-    const admin = await this.adminService.create(createAdminDto, req.admin?.id);
-    const { hashPassword, ...result } = admin;
-    return { data: result };
-  }
 
   @Get()
   @UseGuards(AdminAuthGuard, AdminRolesGuard)
@@ -48,6 +38,16 @@ export class AdminManagementController {
 
     const admins = await this.adminService.findAll(filters);
     return { data: admins.map(({ hashPassword, ...admin }) => admin) };
+  }
+
+  @Post()
+  @UseGuards(AdminAuthGuard, AdminRolesGuard)
+  @AdminRoles(AdminRole.SUPER_ADMIN)
+  @ApiBearerAuth()
+  async create(@Body() createAdminDto: CreateAdminDto, @Req() req: any) {
+    const admin = await this.adminService.create(createAdminDto, req.admin?.id);
+    const { hashPassword, ...result } = admin;
+    return { data: result };
   }
 
   @Get(":id")
@@ -68,6 +68,14 @@ export class AdminManagementController {
     return { data: admin };
   }
 
+  @Delete(":id")
+  @AdminRoles(AdminRole.SUPER_ADMIN)
+  @UseGuards(AdminAuthGuard, AdminRolesGuard)
+  @ApiBearerAuth()
+  async remove(@Param("id", ParseUUIDPipe) id: string, @Req() req: any) {
+    return { data: await this.adminService.remove(id, req.admin) };
+  }
+
   @Patch(":id/suspend")
   @AdminRoles(AdminRole.SUPER_ADMIN)
   @UseGuards(AdminAuthGuard, AdminRolesGuard)
@@ -75,13 +83,5 @@ export class AdminManagementController {
   async suspend(@Param("id", ParseUUIDPipe) id: string, @Body() suspendAdminDto: SuspendAdminDto, @Req() req: any) {
     const { hashPassword, ...admin } = await this.adminService.suspendAdmin(id, suspendAdminDto, req.admin);
     return { data: admin };
-  }
-
-  @Delete(":id")
-  @AdminRoles(AdminRole.SUPER_ADMIN)
-  @UseGuards(AdminAuthGuard, AdminRolesGuard)
-  @ApiBearerAuth()
-  async remove(@Param("id", ParseUUIDPipe) id: string, @Req() req: any) {
-    return { data: await this.adminService.remove(id, req.admin) };
   }
 }

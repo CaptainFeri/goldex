@@ -62,7 +62,7 @@ export class symbolMig1000000000017 implements MigrationInterface {
           {
             name: "symbol_type",
             type: "enum",
-            enum: ["fiat", "crypto", "material"],
+            enum: ["fiat", "crypto", "material", "rial"],
             default: "'fiat'",
             isNullable: false,
           },

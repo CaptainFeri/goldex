@@ -4,7 +4,20 @@ import { api, unwrap, apiError } from "../api/client";
 import { Card, Loading, ErrorState, Empty, Badge, Modal } from "../components/ui";
 import { fmtDate } from "../lib/format";
 import { useAuth } from "../auth/auth";
-import type { Admin, AdminRole } from "../api/types";
+import type { Admin, AdminRole, ScheduleEntry } from "../api/types";
+
+const DAYS: { value: number; label: string }[] = [
+  { value: 6, label: "شنبه" },
+  { value: 0, label: "یکشنبه" },
+  { value: 1, label: "دوشنبه" },
+  { value: 2, label: "سه‌شنبه" },
+  { value: 3, label: "چهارشنبه" },
+  { value: 4, label: "پنج‌شنبه" },
+  { value: 5, label: "جمعه" },
+];
+function dayLabel(d: number) {
+  return DAYS.find((x) => x.value === d)?.label ?? String(d);
+}
 
 const ROLES: { value: AdminRole; label: string }[] = [
   { value: "admin", label: "مدیر" },
@@ -25,12 +38,43 @@ function EditForm({
   const [email, setEmail] = useState(initial.email ?? "");
   const [password, setPassword] = useState("");
   const [role, setRole] = useState<AdminRole>(initial.role);
+  const [schedules, setSchedules] = useState<ScheduleEntry[]>(
+    initial.schedules ?? [],
+  );
+
+  const schedulesQ = useQuery({
+    queryKey: ["admin-schedules", initial.id],
+    queryFn: async () =>
+      unwrap<ScheduleEntry[]>((await api.get(`/admin/schedules/${initial.id}`)).data),
+    enabled: initial.role === "finance",
+  });
 
   const save = useMutation({
-    mutationFn: (body: any) => api.patch(`/admin/${initial.id}`, body),
+    mutationFn: (body: any) => api.patch(`/admin/accounts/${initial.id}`, body),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["admins"] });
       onClose();
+    },
+  });
+
+  const saveSchedule = useMutation({
+    mutationFn: (entries: ScheduleEntry[]) =>
+      Promise.all(
+        entries.map((s) => {
+          const body = {
+            adminId: initial.id,
+            dayOfWeek: s.dayOfWeek,
+            dayLabel: s.dayLabel,
+            startTime: s.startTime,
+            endTime: s.endTime,
+          };
+          return s.id
+            ? api.patch(`/admin/schedules/${s.id}`, { startTime: s.startTime, endTime: s.endTime })
+            : api.post("/admin/schedules", body);
+        }),
+      ),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["admin-schedules", initial.id] });
     },
   });
 
@@ -40,6 +84,39 @@ function EditForm({
     if (email) payload.email = email;
     if (password) payload.password = password;
     save.mutate(payload);
+  }
+
+  const deleteSchedule = useMutation({
+    mutationFn: (id: string) => api.delete(`/admin/schedules/${id}`),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["admin-schedules", initial.id] });
+    },
+  });
+
+  function toggleDay(day: number) {
+    setSchedules((prev) => {
+      const exists = prev.find((s) => s.dayOfWeek === day);
+      if (exists) {
+        if (exists.id) deleteSchedule.mutate(exists.id);
+        return prev.filter((s) => s.dayOfWeek !== day);
+      }
+      return [
+        ...prev,
+        {
+          id: undefined,
+          dayOfWeek: day,
+          dayLabel: dayLabel(day),
+          startTime: "09:00",
+          endTime: "18:00",
+        },
+      ];
+    });
+  }
+
+  function updateTime(day: number, field: "startTime" | "endTime", val: string) {
+    setSchedules((prev) =>
+      prev.map((s) => (s.dayOfWeek === day ? { ...s, [field]: val } : s)),
+    );
   }
 
   return (
@@ -81,6 +158,65 @@ function EditForm({
             ))}
           </select>
         </div>
+
+        {role === "finance" && (
+          <div className="field" style={{ marginTop: 12 }}>
+            <label>ساعت کاری</label>
+            {schedulesQ.isLoading && <Loading />}
+            <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+              {DAYS.map((d) => {
+                const s = schedules.find((x) => x.dayOfWeek === d.value);
+                return (
+                  <label
+                    key={d.value}
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 8,
+                      cursor: "pointer",
+                    }}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={!!s}
+                      onChange={() => toggleDay(d.value)}
+                    />
+                    <span style={{ minWidth: 70 }}>{d.label}</span>
+                    {s && (
+                      <>
+                        <input
+                          className="input mono"
+                          style={{ width: 70, textAlign: "center" }}
+                          value={s.startTime}
+                          onChange={(e) => updateTime(d.value, "startTime", e.target.value)}
+                          placeholder="09:00"
+                        />
+                        <span>تا</span>
+                        <input
+                          className="input mono"
+                          style={{ width: 70, textAlign: "center" }}
+                          value={s.endTime}
+                          onChange={(e) => updateTime(d.value, "endTime", e.target.value)}
+                          placeholder="18:00"
+                        />
+                      </>
+                    )}
+                  </label>
+                );
+              })}
+            </div>
+            <button
+              type="button"
+              className="btn sm"
+              style={{ marginTop: 8 }}
+              disabled={saveSchedule.isPending}
+              onClick={() => saveSchedule.mutate(schedules)}
+            >
+              ذخیره ساعت کاری
+            </button>
+          </div>
+        )}
+
         {save.isError && <div className="error-text">{apiError(save.error)}</div>}
         <div className="row" style={{ justifyContent: "flex-end", gap: 10, marginTop: 16 }}>
           <button type="button" className="btn ghost" onClick={onClose}>
@@ -98,7 +234,13 @@ function EditForm({
 function DetailsModal({ id, onClose }: { id: string; onClose: () => void }) {
   const q = useQuery({
     queryKey: ["admin-detail", id],
-    queryFn: async () => unwrap<Admin>((await api.get(`/admin/${id}`)).data),
+    queryFn: async () => unwrap<Admin>((await api.get(`/admin/accounts/${id}`)).data),
+  });
+  const schedulesQ = useQuery({
+    queryKey: ["admin-schedules", id],
+    queryFn: async () =>
+      unwrap<ScheduleEntry[]>((await api.get(`/admin/schedules/${id}`)).data),
+    enabled: q.data?.role === "finance",
   });
   const a = q.data;
   return (
@@ -108,24 +250,57 @@ function DetailsModal({ id, onClose }: { id: string; onClose: () => void }) {
       ) : q.isError ? (
         <ErrorState message={apiError(q.error)} />
       ) : a ? (
-        <div className="kv">
-          <span className="k">شناسه</span>
-          <span className="mono" style={{ fontSize: 12 }}>{a.id}</span>
-          <span className="k">موبایل</span>
-          <span className="mono" dir="ltr">{a.phone ?? "—"}</span>
-          <span className="k">ایمیل</span>
-          <span className="mono">{a.email ?? "—"}</span>
-          <span className="k">نقش</span>
-          <span>
-            <Badge kind={a.role === "superAdmin" ? "gold" : "gray"}>{roleLabel(a.role)}</Badge>
-          </span>
-          <span className="k">وضعیت</span>
-          <span>{a.isSuspended ? <Badge kind="red">معلق</Badge> : <Badge kind="green">فعال</Badge>}</span>
-          <span className="k">ایجاد</span>
-          <span>{fmtDate(a.createAt)}</span>
-          <span className="k">آخرین ورود</span>
-          <span>{fmtDate(a.lastLoginAt)}</span>
-        </div>
+        <>
+          <div className="kv">
+            <span className="k">شناسه</span>
+            <span className="mono" style={{ fontSize: 12 }}>{a.id}</span>
+            <span className="k">موبایل</span>
+            <span className="mono" dir="ltr">{a.phone ?? "—"}</span>
+            <span className="k">ایمیل</span>
+            <span className="mono">{a.email ?? "—"}</span>
+            <span className="k">نقش</span>
+            <span>
+              <Badge kind={a.role === "superAdmin" ? "gold" : "gray"}>{roleLabel(a.role)}</Badge>
+            </span>
+            <span className="k">وضعیت</span>
+            <span>{a.isSuspended ? <Badge kind="red">معلق</Badge> : <Badge kind="green">فعال</Badge>}</span>
+            <span className="k">ایجاد</span>
+            <span>{fmtDate(a.createAt)}</span>
+            <span className="k">آخرین ورود</span>
+            <span>{fmtDate(a.lastLoginAt)}</span>
+          </div>
+          {a.role === "finance" && (
+            <div style={{ marginTop: 16 }}>
+              <h4 style={{ margin: "0 0 8px" }}>ساعت کاری</h4>
+              {schedulesQ.isLoading ? (
+                <Loading />
+              ) : schedulesQ.data && schedulesQ.data.length > 0 ? (
+                <div className="table-wrap">
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>روز</th>
+                        <th>از</th>
+                        <th>تا</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {schedulesQ.data.map((s) => (
+                        <tr key={s.id}>
+                          <td>{dayLabel(s.dayOfWeek)}</td>
+                          <td>{s.startTime}</td>
+                          <td>{s.endTime}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              ) : (
+                <div className="muted">هیچ برنامه کاری ثبت نشده</div>
+              )}
+            </div>
+          )}
+        </>
       ) : null}
     </Modal>
   );
@@ -134,33 +309,63 @@ function DetailsModal({ id, onClose }: { id: string; onClose: () => void }) {
 export default function AdminsPage() {
   const qc = useQueryClient();
   const { admin: me } = useAuth();
-  const [form, setForm] = useState<{ phone: string; role: AdminRole }>({ phone: "", role: "admin" });
+  const [form, setForm] = useState<{
+    phone: string;
+    role: AdminRole;
+    schedules: ScheduleEntry[];
+  }>({ phone: "", role: "admin", schedules: [] });
   const [editing, setEditing] = useState<Admin | null>(null);
   const [detailId, setDetailId] = useState<string | null>(null);
 
   const list = useQuery({
     queryKey: ["admins"],
-    queryFn: async () => unwrap<Admin[]>((await api.get("/admin")).data),
+    queryFn: async () => unwrap<Admin[]>((await api.get("/admin/accounts")).data),
   });
 
   const create = useMutation({
-    mutationFn: (p: { phone: string; role: AdminRole }) => api.post("/admin", p),
+    mutationFn: (p: { phone: string; role: AdminRole; schedules: ScheduleEntry[] }) =>
+      api.post("/admin/accounts", p),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["admins"] });
-      setForm({ phone: "", role: "admin" });
+      setForm({ phone: "", role: "admin", schedules: [] });
     },
   });
   const suspend = useMutation({
     mutationFn: (p: { id: string; isSuspended: boolean }) =>
-      api.patch(`/admin/${p.id}/suspend`, { isSuspended: p.isSuspended }),
+      api.patch(`/admin/accounts/${p.id}/suspend`, { isSuspended: p.isSuspended }),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["admins"] }),
   });
   const remove = useMutation({
-    mutationFn: (id: string) => api.delete(`/admin/${id}`),
+    mutationFn: (id: string) => api.delete(`/admin/accounts/${id}`),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["admins"] }),
   });
 
   const admins = list.data ?? [];
+
+  function toggleDay(day: number) {
+    setForm((prev) => {
+      const exists = prev.schedules.find((s) => s.dayOfWeek === day);
+      if (exists) {
+        return { ...prev, schedules: prev.schedules.filter((s) => s.dayOfWeek !== day) };
+      }
+      return {
+        ...prev,
+        schedules: [
+          ...prev.schedules,
+          { dayOfWeek: day, dayLabel: dayLabel(day), startTime: "09:00", endTime: "18:00" },
+        ],
+      };
+    });
+  }
+
+  function updateTime(day: number, field: "startTime" | "endTime", val: string) {
+    setForm((prev) => ({
+      ...prev,
+      schedules: prev.schedules.map((s) =>
+        s.dayOfWeek === day ? { ...s, [field]: val } : s,
+      ),
+    }));
+  }
 
   function submit(e: React.FormEvent) {
     e.preventDefault();
@@ -187,7 +392,7 @@ export default function AdminsPage() {
             <select
               className="select"
               value={form.role}
-              onChange={(e) => setForm({ ...form, role: e.target.value as AdminRole })}
+              onChange={(e) => setForm({ ...form, role: e.target.value as AdminRole, schedules: [] })}
             >
               {ROLES.map((r) => (
                 <option key={r.value} value={r.value}>
@@ -200,6 +405,50 @@ export default function AdminsPage() {
             {create.isPending ? <span className="spin" /> : "ایجاد مدیر"}
           </button>
         </form>
+
+        {form.role === "finance" && (
+          <div style={{ marginTop: 12 }}>
+            <label style={{ fontWeight: 600, fontSize: 13, display: "block", marginBottom: 6 }}>ساعت کاری</label>
+            <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+              {DAYS.map((d) => {
+                const s = form.schedules.find((x) => x.dayOfWeek === d.value);
+                return (
+                  <label
+                    key={d.value}
+                    style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer" }}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={!!s}
+                      onChange={() => toggleDay(d.value)}
+                    />
+                    <span style={{ minWidth: 70 }}>{d.label}</span>
+                    {s && (
+                      <>
+                        <input
+                          className="input mono"
+                          style={{ width: 70, textAlign: "center" }}
+                          value={s.startTime}
+                          onChange={(e) => updateTime(d.value, "startTime", e.target.value)}
+                          placeholder="09:00"
+                        />
+                        <span>تا</span>
+                        <input
+                          className="input mono"
+                          style={{ width: 70, textAlign: "center" }}
+                          value={s.endTime}
+                          onChange={(e) => updateTime(d.value, "endTime", e.target.value)}
+                          placeholder="18:00"
+                        />
+                      </>
+                    )}
+                  </label>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
         {create.isError && <div className="error-text">{apiError(create.error)}</div>}
         <div className="muted" style={{ fontSize: 12, marginTop: 8 }}>
           مدیر جدید با همین شماره و کد یک‌بارمصرف (کاوه‌نگار) وارد می‌شود — بدون رمز عبور.
