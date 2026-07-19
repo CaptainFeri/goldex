@@ -1,7 +1,8 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useAuth } from '../context/AuthContext'
 import { useNavigate, useLocation } from 'react-router-dom'
 import { BrandHeader, ThemeToggle } from './UI'
+import { levelApi } from '../services/api'
 
 function WarehouseIcon() {
   return (
@@ -37,6 +38,7 @@ const navItems = [
   { label: 'Wallet', path: '/wallet', icon: WalletIcon },
   { label: 'Credit', path: '/credit', icon: CreditIcon },
   { label: 'Profile', path: '/profile', icon: UserIcon },
+  { label: 'Level', path: '/level', icon: StarIcon },
   { label: 'Verification', path: '/kyc', icon: ShieldIcon },
   { label: 'Sessions', path: '/sessions', icon: DeviceIcon },
   { label: 'Settings', path: '/settings', icon: SettingsIcon },
@@ -75,6 +77,14 @@ function UserIcon() {
   )
 }
 
+function StarIcon() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="nav-icon">
+      <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
+    </svg>
+  )
+}
+
 function DeviceIcon() {
   return (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="nav-icon">
@@ -105,6 +115,11 @@ export default function Sidebar({ user }) {
   const navigate = useNavigate()
   const location = useLocation()
   const [loggingOut, setLoggingOut] = useState(false)
+  const [level, setLevel] = useState(null)
+
+  useEffect(() => {
+    levelApi.getMyLevel().then(setLevel).catch(() => {})
+  }, [])
 
   const initials = user
     ? `${(user.firstName || '?')[0]}${(user.lastName || '?')[0]}`.toUpperCase()
@@ -128,7 +143,14 @@ export default function Sidebar({ user }) {
           <div style={{ fontSize: '0.9rem', fontWeight: 500, color: 'var(--text-primary)' }}>
             {user?.firstName} {user?.lastName}
           </div>
-          <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{user?.phone || user?.phoneNumber}</div>
+          <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: 4 }}>
+            {user?.phone || user?.phoneNumber}
+            {level && (
+              <span className="level-sidebar-badge">
+                {level.name}
+              </span>
+            )}
+          </div>
         </div>
       </div>
 

@@ -54,6 +54,13 @@ export class CreateCreditDto {
   @IsString()
   notes?: string;
 
+  @ApiProperty({ required: false })
+  @IsOptional()
+  @IsNumber()
+  @Min(1)
+  @Type(() => Number)
+  maxExecutionTradeLevel?: number;
+
   @ApiProperty({ required: false, type: [FrozenWalletDto] })
   @IsOptional()
   @ValidateNested({ each: true })

@@ -231,6 +231,8 @@ export class CreditService {
         hasCallMargin: dto.hasCallMargin || false,
         callMarginPercent: dto.callMarginPercent,
         reminderTimerHours: dto.reminderTimerHours || 24,
+        maxExecutionTradeLevel: dto.maxExecutionTradeLevel,
+        executedTradeLevel: 0,
         expireAt: new Date(dto.expireAt),
         activatedAt: new Date(),
         notes: dto.notes,

@@ -55,6 +55,12 @@ export class CreditEntity extends myBaseEntity {
   @Column({ type: "varchar", length: 50, nullable: true, name: "settled_by_admin_id" })
   settledByAdminId: string;
 
+  @Column({ type: "int", nullable: true, name: "max_execution_trade_level" })
+  maxExecutionTradeLevel: number;
+
+  @Column({ type: "int", default: 0, name: "executed_trade_level" })
+  executedTradeLevel: number;
+
   @Column({ type: "jsonb", nullable: true })
   metadata: any;
 

@@ -4,12 +4,13 @@ import { Response } from "express";
 import { FinanceLogService } from "./finance-log.service";
 import { FinanceLogQueryDto } from "./dto/finance-log-query.dto";
 import { AdminAuthGuard } from "../admin/auth/Guard/admin.guard";
+import { AdminWorkTimeGuard } from "../admin-schedule/admin-work-time.guard";
 import { AdminRoles } from "../admin/role/admin.role.decorator";
 import { AdminRole } from "../admin/role/admin.roles.enum";
 
 @ApiTags("Admin-Finance-Logs")
 @Controller("admin/finance-logs")
-@UseGuards(AdminAuthGuard)
+@UseGuards(AdminAuthGuard, AdminWorkTimeGuard)
 @ApiBearerAuth()
 export class FinanceLogController {
   constructor(private readonly financeLogService: FinanceLogService) {}

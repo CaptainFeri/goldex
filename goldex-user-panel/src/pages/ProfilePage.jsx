@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { useToast } from '../context/ToastContext'
-import { profileApi, baseInfoApi } from '../services/api'
+import { profileApi, baseInfoApi, levelApi } from '../services/api'
 import { Spinner, Alert, Button, TextField, SelectField } from '../components/UI'
 
 const GENDER = { 0: 'Not Set', 1: 'Male', 2: 'Female', 3: 'Non-binary' }
@@ -15,6 +16,7 @@ function formatDate(iso) {
 const emptyForm = { phone: '', gender: '0', countryId: '', address: '', postalCode: '' }
 
 export default function ProfilePage() {
+  const navigate = useNavigate()
   const { setUser } = useAuth()
   const toast = useToast()
   const [profile, setProfile] = useState(null)
@@ -26,13 +28,17 @@ export default function ProfilePage() {
   const [avatarBusy, setAvatarBusy] = useState(false)
   const [form, setForm] = useState(emptyForm)
 
+  const [myLevel, setMyLevel] = useState(null)
+
   const load = async () => {
     try {
-      const [data, countryList] = await Promise.all([
+      const [data, countryList, levelData] = await Promise.all([
         profileApi.getProfile(),
-        baseInfoApi.getCountries().catch(() => [])
+        baseInfoApi.getCountries().catch(() => []),
+        levelApi.getMyLevel().catch(() => null),
       ])
       setProfile(data)
+      setMyLevel(levelData)
       setCountries(Array.isArray(countryList) ? countryList : countryList?.items || [])
     } catch (_) {
       setError('Failed to load profile.')
@@ -205,6 +211,21 @@ export default function ProfilePage() {
               <Detail label="Country" value={profile.country} />
               <Detail label="Postal Code" value={profile.postalCode} />
               <Detail label="Address" value={profile.address} />
+            </div>
+          </div>
+        )}
+
+        {myLevel && (
+          <div className="card animate-fade-up">
+            <div className="card-title"><div className="gold-dot" />Account Level</div>
+            <div className="profile-grid">
+              <Detail label="Level" value={myLevel.name} accent />
+              <Detail label="Description" value={myLevel.description} />
+            </div>
+            <div className="btn-row" style={{ marginTop: 12 }}>
+              <button className="btn btn-secondary btn-auto" onClick={() => navigate('/level')}>
+                View Full Details →
+              </button>
             </div>
           </div>
         )}

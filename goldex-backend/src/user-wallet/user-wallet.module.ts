@@ -5,9 +5,11 @@ import { TypeOrmModule } from "@nestjs/typeorm";
 import { WalletEntity } from "../wallet/entities/wallet.entity";
 import { TransactionEntity } from "../wallet/entities/transaction.entity";
 import { SymbolEntity } from "../admin-symbol/entity/symbol.entity";
+import { UserMarketTypeEntity } from "../user/entity/user.market.type.entity";
+import { UserEntity } from "../user/entity/user.entity";
 
 @Module({
-  imports: [TypeOrmModule.forFeature([WalletEntity, TransactionEntity, SymbolEntity])],
+  imports: [TypeOrmModule.forFeature([WalletEntity, TransactionEntity, SymbolEntity, UserMarketTypeEntity, UserEntity])],
   providers: [UserWalletService],
   controllers: [UserWalletController],
   exports: [UserWalletService],

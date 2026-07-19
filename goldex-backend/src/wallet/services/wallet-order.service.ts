@@ -2,6 +2,7 @@ import { Injectable, Logger, BadRequestException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, DataSource } from 'typeorm';
 import { WalletEntity } from '../entities/wallet.entity';
+import { WalletStatusEnum } from '../enum/wallet-status.enum';
 import { TransactionEntity } from '../entities/transaction.entity';
 import { MESQAL_TO_GRAM } from '../../common/constants';
 import { PricePairEntity } from '../../admin-pair/entity/price.pair.entity';
@@ -553,6 +554,10 @@ export class WalletOrderService {
         status: 'ACTIVE',
       });
       wallet = await queryRunner.manager.save(wallet);
+    }
+
+    if (wallet.status !== WalletStatusEnum.ACTIVE) {
+      throw new BadRequestException("WALLET_FROZEN_CREDIT_EXPIRED");
     }
 
     // Postgres returns numeric/decimal columns as strings; coerce so arithmetic

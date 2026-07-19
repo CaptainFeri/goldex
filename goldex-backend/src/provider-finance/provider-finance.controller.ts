@@ -6,12 +6,13 @@ import { AdminAuthGuard } from "../admin/auth/Guard/admin.guard";
 import { AdminRolesGuard } from "../admin/auth/Guard/admin.role.guard";
 import { AdminRoles } from "../admin/role/admin.role.decorator";
 import { AdminRole } from "../admin/role/admin.roles.enum";
+import { AdminWorkTimeGuard } from "../admin-schedule/admin-work-time.guard";
 import { AdminExpressRequest } from "../admin/auth/types/adminExpressRequest";
 
 @ApiTags("Admin-Provider-Finance")
 @ApiBearerAuth()
 @Controller("admin/provider-finance")
-@UseGuards(AdminAuthGuard, AdminRolesGuard)
+@UseGuards(AdminAuthGuard, AdminWorkTimeGuard, AdminRolesGuard)
 @AdminRoles(AdminRole.SUPER_ADMIN, AdminRole.ADMIN, AdminRole.FINANCE)
 export class ProviderFinanceController {
   constructor(private readonly service: ProviderFinanceService) {}

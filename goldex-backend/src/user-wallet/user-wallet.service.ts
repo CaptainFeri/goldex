@@ -3,6 +3,9 @@ import { InjectRepository } from "@nestjs/typeorm";
 import { In, Repository } from "typeorm";
 import { SymbolEntity } from "../admin-symbol/entity/symbol.entity";
 import { UserEntity } from "../user/entity/user.entity";
+import { UserMarketTypeEntity } from "../user/entity/user.market.type.entity";
+import { MarketTypeEnum } from "../admin-pair/enum/market.type.enum";
+import { UserRoleEnum } from "../shared/enum/user.role.enum";
 import { WalletEntity } from "../wallet/entities/wallet.entity";
 import { TransactionEntity } from "../wallet/entities/transaction.entity";
 
@@ -14,7 +17,11 @@ export class UserWalletService {
     @InjectRepository(TransactionEntity)
     private readonly transactionRepo: Repository<TransactionEntity>,
     @InjectRepository(SymbolEntity)
-    private readonly symbolRepo: Repository<SymbolEntity>
+    private readonly symbolRepo: Repository<SymbolEntity>,
+    @InjectRepository(UserMarketTypeEntity)
+    private readonly userMarketTypeRepo: Repository<UserMarketTypeEntity>,
+    @InjectRepository(UserEntity)
+    private readonly userRepo: Repository<UserEntity>
   ) {}
 
   async registerGenerateWallets(user: UserEntity, marketTypes?: string[]) {
@@ -37,13 +44,15 @@ export class UserWalletService {
   }
 
   // All wallets for a user, each with its symbol and derived balances.
+  // Wallets are filtered by the user's assigned market types.
   async getUserWallets(userId: string) {
     const wallets = await this.walletRepo.find({
       where: { userId },
       relations: { symbol: true },
       order: { createAt: "ASC" },
     });
-    return wallets.map((w) => this.toWalletView(w));
+    const filtered = await this.filterWalletsByMarketType(userId, wallets);
+    return filtered.map((w) => this.toWalletView(w));
   }
 
   async getWalletById(userId: string, walletId: string) {
@@ -52,7 +61,9 @@ export class UserWalletService {
       relations: { symbol: true },
     });
     if (!wallet) throw new NotFoundException("Wallet not found");
-    return this.toWalletView(wallet);
+    const filtered = await this.filterWalletsByMarketType(userId, [wallet]);
+    if (filtered.length === 0) throw new NotFoundException("Wallet not found");
+    return this.toWalletView(filtered[0]);
   }
 
   // Paginated transactions across the user's wallets (optionally one wallet).
@@ -93,6 +104,21 @@ export class UserWalletService {
         completedAt: t.completedAt,
       })),
     };
+  }
+
+  // Filter wallets to only include those matching the user's assigned market types.
+  // Mirrors the logic in MarketController.getPairs.
+  private async filterWalletsByMarketType(userId: string, wallets: WalletEntity[]): Promise<WalletEntity[]> {
+    const userMts = await this.userMarketTypeRepo.find({ where: { userId } });
+    if (userMts.length > 0) {
+      const allowed = new Set(userMts.map((r) => r.marketType));
+      return wallets.filter((w) => w.symbol && allowed.has(w.symbol.marketType));
+    }
+    const user = await this.userRepo.findOne({ where: { id: userId } });
+    if (user && user.role === UserRoleEnum.PARTNER) {
+      return wallets;
+    }
+    return wallets.filter((w) => w.symbol?.marketType === MarketTypeEnum.FORMAL);
   }
 
   private toWalletView(w: WalletEntity) {

@@ -3,6 +3,8 @@ import { ApiTags, ApiBearerAuth } from "@nestjs/swagger";
 import { UserTelegramService } from "./user-telegram.service";
 import { UserAuthGuard } from "../user/auth/Guard/user.guard";
 import { UserExpressRequest } from "../user/auth/types/user-express-request";
+import { UserLevelGuard } from "../user-level/user-level.guard";
+import { RequireFeature } from "../user-level/decorator/require-feature.decorator";
 
 class LinkTelegramDto {
   telegramId: number;
@@ -14,7 +16,8 @@ export class UserTelegramController {
   constructor(private readonly service: UserTelegramService) {}
 
   @Post("link")
-  @UseGuards(UserAuthGuard)
+  @UseGuards(UserAuthGuard, UserLevelGuard)
+  @RequireFeature("TELEGRAM_BOT_ENABLED")
   @ApiBearerAuth()
   async link(@Req() req: UserExpressRequest, @Body() dto: LinkTelegramDto) {
     const entity = await this.service.link(dto.telegramId, req.user.id);

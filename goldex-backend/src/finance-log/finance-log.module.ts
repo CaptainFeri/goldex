@@ -8,9 +8,11 @@ import { UserEntity } from "../user/entity/user.entity";
 import { CreditEntity } from "../credit/entity/credit.entity";
 import { OrderEntity } from "../order/order.entity";
 import { WalletEntity } from "../wallet/entities/wallet.entity";
+import { AdminScheduleModule } from "../admin-schedule/admin-schedule.module";
 
 @Module({
   imports: [
+    AdminScheduleModule,
     TypeOrmModule.forFeature([
       FinanceLogEntity,
       AdminEntity,

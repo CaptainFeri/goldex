@@ -21,10 +21,12 @@ import { OrderQueryDto } from "./dto/order-query.dto";
 import { UserAuthGuard } from "../user/auth/Guard/user.guard";
 import { UserExpressRequest } from "../user/auth/types/user-express-request";
 import { OrderBookService } from "../order-book/order-book.service";
+import { UserLevelGuard } from "../user-level/user-level.guard";
+import { RequireFeature } from "../user-level/decorator/require-feature.decorator";
 
 @ApiTags("Orders")
 @ApiBearerAuth()
-@UseGuards(UserAuthGuard)
+@UseGuards(UserAuthGuard, UserLevelGuard)
 @Controller("orders")
 export class OrderController {
   constructor(

@@ -2,10 +2,11 @@ import { Controller, Get, Patch, Param, Req, UseGuards } from "@nestjs/common";
 import { ApiTags, ApiOperation, ApiBearerAuth } from "@nestjs/swagger";
 import { CreditService } from "../credit.service";
 import { UserAuthGuard } from "../../user/auth/Guard/user.guard";
+import { UserLevelGuard } from "../../user-level/user-level.guard";
 
 @ApiTags("User-Credit")
 @Controller("credits")
-@UseGuards(UserAuthGuard)
+@UseGuards(UserAuthGuard, UserLevelGuard)
 @ApiBearerAuth()
 export class CreditUserController {
   constructor(private readonly creditService: CreditService) {}

@@ -179,3 +179,11 @@ export const baseInfoApi = {
       params: { pageNumber: 1, pageSize: 100, searchKey: searchKey || undefined }
     }))
 }
+
+export const levelApi = {
+  getMyLevel: async () =>
+    unwrap(await http.get('/user-level/me')),
+
+  getMyFeatures: async () =>
+    unwrap(await http.get('/user-level/me/features')),
+}

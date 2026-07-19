@@ -3,12 +3,13 @@ import { ApiTags, ApiOperation, ApiBearerAuth } from "@nestjs/swagger";
 import { AdminScheduleService } from "./admin-schedule.service";
 import { CreateScheduleDto } from "./dto/create-schedule.dto";
 import { AdminAuthGuard } from "../admin/auth/Guard/admin.guard";
+import { AdminWorkTimeGuard } from "./admin-work-time.guard";
 import { AdminRoles } from "../admin/role/admin.role.decorator";
 import { AdminRole } from "../admin/role/admin.roles.enum";
 
 @ApiTags("Admin-Schedule")
 @Controller("admin/schedules")
-@UseGuards(AdminAuthGuard)
+@UseGuards(AdminAuthGuard, AdminWorkTimeGuard)
 @ApiBearerAuth()
 export class AdminScheduleController {
   constructor(private readonly scheduleService: AdminScheduleService) {}

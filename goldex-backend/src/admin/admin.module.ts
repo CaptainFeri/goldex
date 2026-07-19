@@ -8,10 +8,12 @@ import { AdminService } from "./service/admin.service";
 import { AdminAuthController } from "./controller/admin.auth.controller";
 import { AdminAuthMiddleware } from "./auth/middleware/admin-auth.middleware";
 import { RedisModule } from "../redis/redis.module";
+import { AdminScheduleModule } from "../admin-schedule/admin-schedule.module";
 
 @Module({
   imports: [
     RedisModule,
+    AdminScheduleModule,
     TypeOrmModule.forFeature([AdminEntity]),
     JwtModule.registerAsync({
       inject: [ConfigService],

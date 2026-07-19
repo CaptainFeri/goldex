@@ -2,12 +2,13 @@ import { Controller, DefaultValuePipe, Get, ParseIntPipe, Query, UseGuards } fro
 import { ApiBearerAuth, ApiOperation, ApiQuery, ApiTags } from "@nestjs/swagger";
 import { FinancialService } from "./financial.service";
 import { AdminAuthGuard } from "../admin/auth/Guard/admin.guard";
+import { AdminWorkTimeGuard } from "../admin-schedule/admin-work-time.guard";
 import { AdminRoles } from "../admin/role/admin.role.decorator";
 import { AdminRole } from "../admin/role/admin.roles.enum";
 
 @ApiTags("Admin-Financial")
 @ApiBearerAuth()
-@UseGuards(AdminAuthGuard)
+@UseGuards(AdminAuthGuard, AdminWorkTimeGuard)
 @Controller("admin/financial")
 export class AdminFinancialController {
   constructor(private readonly financialService: FinancialService) {}

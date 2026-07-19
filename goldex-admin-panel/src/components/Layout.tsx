@@ -24,6 +24,7 @@ const NAV = [
   { to: "/order-book", label: "دفتر سفارش", icon: "📊" },
   { to: "/discounts", label: "تخفیف‌ها", icon: "🏷️" },
   { section: "سیستم" },
+  { to: "/user-levels", label: "سطوح کاربری", icon: "🎖" },
   { to: "/admins", label: "مدیران", icon: "👤" },
 ];
 
@@ -45,6 +46,7 @@ const TITLES: Record<string, string> = {
   "/discounts": "مدیریت کوپن‌های تخفیف",
   "/credits": "مدیریت اعتبارات کاربران",
   "/finance-logs": "گزارشات مالی — لاگ عملیات مالی",
+  "/user-levels": "مدیریت سطوح کاربری — تعریف و اختصاص سطوح",
 };
 
 export default function Layout() {

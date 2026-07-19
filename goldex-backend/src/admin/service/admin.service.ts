@@ -1,15 +1,17 @@
-import { BadRequestException, Injectable } from "@nestjs/common";
+import { BadRequestException, ForbiddenException, Injectable } from "@nestjs/common";
 import { ConfigService, ConfigType } from "@nestjs/config";
 import { InjectRepository } from "@nestjs/typeorm";
 import { JwtService } from "@nestjs/jwt";
 import { Repository } from "typeorm";
 import * as bcrypt from "bcryptjs";
 import { AdminEntity } from "../entity/admin.entity";
+import { AdminRole } from "../role/admin.roles.enum";
 import appEnvConfig from "../../config/app.env.config";
 import { UserRoleEnum } from "../../shared/enum/user.role.enum";
 import TokenPayload from "../../shared/interface/tokenPayload.interface";
 import { RedisService } from "../../redis/redis.service";
 import { SmsService } from "../../sms/sms.service";
+import { AdminScheduleService } from "../../admin-schedule/admin-schedule.service";
 
 @Injectable()
 export class AdminService {
@@ -19,7 +21,8 @@ export class AdminService {
     private readonly jwtService: JwtService,
     private readonly redisService: RedisService,
     private readonly smsService: SmsService,
-    private readonly configService: ConfigService<ConfigType<typeof appEnvConfig>>
+    private readonly configService: ConfigService<ConfigType<typeof appEnvConfig>>,
+    private readonly scheduleService: AdminScheduleService
   ) {}
 
   /**
@@ -60,6 +63,13 @@ export class AdminService {
     const admin = await this.adminRepo.findOne({ where: { phone } });
     if (!admin) throw new BadRequestException("USER.NOT_FOUND");
     if (admin.isSuspended) throw new BadRequestException("ADMIN.SUSPENDED");
+
+    if (admin.role === AdminRole.FINANCE) {
+      const withinHours = await this.scheduleService.isWithinWorkHours(admin.id);
+      if (!withinHours) {
+        throw new ForbiddenException("Finance operations are only allowed during scheduled work hours (Saturday-Wednesday, 9AM-6PM IR time)");
+      }
+    }
 
     const storedOtp = await this.redisService.get(`admin_otp:${admin.id}`);
     if (!storedOtp) throw new BadRequestException("OTP.EXPIRED");

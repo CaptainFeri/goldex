@@ -20,6 +20,7 @@ import OrderBookPage from "./pages/OrderBookPage";
 import DiscountsPage from "./pages/DiscountsPage";
 import CreditsPage from "./pages/CreditsPage";
 import FinanceLogsPage from "./pages/FinanceLogsPage";
+import LevelsPage from "./pages/LevelsPage";
 
 function RequireAuth({ children }: { children: JSX.Element }) {
   const { token, checkSession } = useAuth();
@@ -63,6 +64,7 @@ export default function App() {
         <Route path="/discounts" element={<DiscountsPage />} />
         <Route path="/credits" element={<CreditsPage />} />
         <Route path="/finance-logs" element={<FinanceLogsPage />} />
+        <Route path="/user-levels" element={<LevelsPage />} />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>

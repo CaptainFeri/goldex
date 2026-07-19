@@ -22,6 +22,10 @@ import { UserMarketTypeEntity } from "../user/entity/user.market.type.entity";
 import { OrderBookService } from "../order-book/order-book.service";
 import { Side } from "nodejs-order-book";
 import { OrderSource } from "../order-book/interfaces/order-book.types";
+import { CreditEntity } from "../credit/entity/credit.entity";
+import { CreditOrderEntity } from "../credit/entity/credit-order.entity";
+import { CreditStatusEnum } from "../credit/enum/credit-status.enum";
+import { CreditOrderStatusEnum } from "../credit/enum/credit-order-status.enum";
 
 @Injectable()
 export class OrderService {
@@ -42,6 +46,10 @@ export class OrderService {
     @InjectRepository(UserMarketTypeEntity)
     private readonly userMarketTypeRepo: Repository<UserMarketTypeEntity>,
     private readonly orderBookService: OrderBookService,
+    @InjectRepository(CreditEntity)
+    private readonly creditRepo: Repository<CreditEntity>,
+    @InjectRepository(CreditOrderEntity)
+    private readonly creditOrderRepo: Repository<CreditOrderEntity>,
   ) {}
 
   async createOrder(userId: string, dto: CreateOrderDto): Promise<OrderEntity> {
@@ -82,6 +90,13 @@ export class OrderService {
 
       if (dto.orderType === OrderTypeEnum.LIMIT && !dto.price) {
         throw new BadRequestException("Price is required for limit orders");
+      }
+
+      const activeCredit = await this.creditRepo.findOne({
+        where: { userId, status: CreditStatusEnum.ACTIVE },
+      });
+      if (activeCredit && activeCredit.maxExecutionTradeLevel != null && activeCredit.executedTradeLevel >= activeCredit.maxExecutionTradeLevel) {
+        throw new BadRequestException("CREDIT_EXECUTION_LIMIT_REACHED");
       }
 
       const orderCode = this.generateOrderCode(dto.side, dto.orderType);
@@ -195,6 +210,21 @@ export class OrderService {
       // PENDING.
       try {
         await this.walletOrderService.freezeForOrder(savedOrder, pricePair);
+
+        // Track credit execution level and link the order to the credit.
+        if (activeCredit && activeCredit.maxExecutionTradeLevel != null) {
+          await this.creditRepo.update(activeCredit.id, {
+            executedTradeLevel: activeCredit.executedTradeLevel + 1,
+          });
+          const creditOrder = this.creditOrderRepo.create({
+            creditId: activeCredit.id,
+            orderId: savedOrder.id,
+            priceAtOrderTime: gramPrice,
+            status: CreditOrderStatusEnum.ACTIVE,
+            drawdownPercent: activeCredit.callMarginPercent,
+          });
+          await this.creditOrderRepo.save(creditOrder);
+        }
 
         if (dto.orderType === OrderTypeEnum.LIMIT) {
           // ── LIMIT: match in the order book ─────────────────────────

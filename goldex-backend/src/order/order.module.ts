@@ -16,6 +16,9 @@ import { QuoteRequestModule } from "../quote-request/quote-request.module";
 import { OrderBookService } from "../order-book/order-book.service";
 import { UserMarketTypeEntity } from "../user/entity/user.market.type.entity";
 import { TransactionEntity } from "../wallet/entities/transaction.entity";
+import { CreditEntity } from "../credit/entity/credit.entity";
+import { CreditOrderEntity } from "../credit/entity/credit-order.entity";
+import { UserLevelModule } from "../user-level/user-level.module";
 
 @Module({
   imports: [
@@ -26,12 +29,15 @@ import { TransactionEntity } from "../wallet/entities/transaction.entity";
       WalletEntity,
       UserMarketTypeEntity,
       TransactionEntity,
+      CreditEntity,
+      CreditOrderEntity,
     ]),
     WalletCoreModule,
     ProviderPairMappingModule,
     TelegramNotifierModule,
     UserTelegramModule,
     QuoteRequestModule,
+    UserLevelModule,
   ],
   controllers: [OrderController, TelegramWebhookController],
   providers: [OrderService, MatchService, OrderBookService],

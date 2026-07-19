@@ -1,4 +1,4 @@
-import { Column, Entity, JoinColumn, OneToMany, OneToOne } from "typeorm";
+import { Column, Entity, JoinColumn, ManyToOne, OneToMany, OneToOne } from "typeorm";
 import { UserDeviceEntity } from "./user.device.entity";
 import { UserProfileEntity } from "./user.profile.entity";
 import { myBaseEntity } from "../../shared/entity/base.entity";
@@ -8,6 +8,7 @@ import { UserKycEntity } from "./user.kyc.entity";
 import { UserBankAccountEntity } from "./user.bank.account.entity";
 import { WalletEntity } from "../../wallet/entities/wallet.entity";
 import { UserMarketTypeEntity } from "./user.market.type.entity";
+import { UserLevelEntity } from "../../user-level/entity/user-level.entity";
 
 @Entity("user")
 export class UserEntity extends myBaseEntity {
@@ -130,4 +131,17 @@ export class UserEntity extends myBaseEntity {
 
   @OneToMany(() => UserMarketTypeEntity, (umt) => umt.user)
   marketTypes: UserMarketTypeEntity[];
+
+  @ManyToOne(() => UserLevelEntity, (lvl) => lvl.users, { onDelete: "SET NULL" })
+  @JoinColumn({ name: "level_id" })
+  level: UserLevelEntity;
+
+  @Column({ name: "level_id", nullable: true })
+  levelId: string;
+
+  @Column({ type: "timestamptz", nullable: true, name: "level_assigned_at" })
+  levelAssignedAt: Date;
+
+  @Column({ type: "timestamptz", nullable: true, name: "level_expires_at" })
+  levelExpiresAt: Date;
 }

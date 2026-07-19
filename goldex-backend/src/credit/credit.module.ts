@@ -13,6 +13,7 @@ import { SymbolEntity } from "../admin-symbol/entity/symbol.entity";
 import { UserEntity } from "../user/entity/user.entity";
 import { FinanceLogEntity } from "../finance-log/entity/finance-log.entity";
 import { AdminScheduleModule } from "../admin-schedule/admin-schedule.module";
+import { UserLevelModule } from "../user-level/user-level.module";
 
 @Module({
   imports: [
@@ -27,6 +28,7 @@ import { AdminScheduleModule } from "../admin-schedule/admin-schedule.module";
       FinanceLogEntity,
     ]),
     AdminScheduleModule,
+    UserLevelModule,
   ],
   controllers: [CreditAdminController, CreditUserController],
   providers: [CreditService, CreditCronService],

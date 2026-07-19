@@ -39,6 +39,7 @@ import { QuoteRequestModule } from "./quote-request/quote-request.module";
 import { CreditModule } from "./credit/credit.module";
 import { FinanceLogModule } from "./finance-log/finance-log.module";
 import { AdminScheduleModule } from "./admin-schedule/admin-schedule.module";
+import { UserLevelModule } from "./user-level/user-level.module";
 
 @Module({
   imports: [
@@ -125,6 +126,7 @@ import { AdminScheduleModule } from "./admin-schedule/admin-schedule.module";
     TelegramNotifierModule,
     UserTelegramModule,
     QuoteRequestModule,
+    UserLevelModule,
   ],
   providers: [WinstonLoggerService],
   controllers: [],

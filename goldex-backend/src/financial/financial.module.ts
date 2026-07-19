@@ -13,9 +13,11 @@ import { OrderEntity } from "../order/order.entity";
 import { UserEntity } from "../user/entity/user.entity";
 import { UserKycEntity } from "../user/entity/user.kyc.entity";
 import { SymbolEntity } from "../admin-symbol/entity/symbol.entity";
+import { AdminScheduleModule } from "../admin-schedule/admin-schedule.module";
 
 @Module({
   imports: [
+    AdminScheduleModule,
     TypeOrmModule.forFeature([
       SystemLedgerEntity,
       ProviderBalanceSnapshotEntity,
