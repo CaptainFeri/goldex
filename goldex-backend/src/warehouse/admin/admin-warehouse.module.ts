@@ -13,6 +13,7 @@ import { TransactionEntity } from "../../wallet/entities/transaction.entity";
 import { ProviderSettlementEntity } from "../../provider-finance/entity/provider-settlement.entity";
 import { MinioModule } from "../../minio/minio.module";
 import { SmsModule } from "../../sms/sms.module";
+import { AdminScheduleModule } from "../../admin-schedule/admin-schedule.module";
 
 @Module({
   imports: [
@@ -27,6 +28,7 @@ import { SmsModule } from "../../sms/sms.module";
     ]),
     MinioModule,
     SmsModule,
+    AdminScheduleModule,
   ],
   controllers: [AdminWarehouseController],
   providers: [WarehouseService, PacketService, WarehouseRequestService],

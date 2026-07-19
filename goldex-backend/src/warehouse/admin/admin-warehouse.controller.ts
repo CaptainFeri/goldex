@@ -20,6 +20,7 @@ import { Response } from "express";
 import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth, ApiConsumes, ApiBody } from "@nestjs/swagger";
 import { FileInterceptor } from "@nestjs/platform-express";
 import { AdminAuthGuard } from "../../admin/auth/Guard/admin.guard";
+import { AdminWorkTimeGuard } from "../../admin-schedule/admin-work-time.guard";
 import { WarehouseService } from "../service/warehouse.service";
 import { PacketService } from "../service/packet.service";
 import { WarehouseRequestService } from "../service/warehouse-request.service";
@@ -36,7 +37,7 @@ import { AdminExpressRequest } from "../../admin/auth/types/adminExpressRequest"
 
 @ApiTags("Admin - Warehouse")
 @ApiBearerAuth()
-@UseGuards(AdminAuthGuard)
+@UseGuards(AdminAuthGuard, AdminWorkTimeGuard)
 @Controller("admin/warehouse")
 export class AdminWarehouseController {
   constructor(
