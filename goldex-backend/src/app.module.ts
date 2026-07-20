@@ -1,4 +1,5 @@
 import { Module } from "@nestjs/common";
+import { PublicFileController } from "./shared/controller/public-file.controller";
 import { AcceptLanguageResolver, I18nModule } from "nestjs-i18n";
 import { join } from "path";
 import * as path from "path";
@@ -40,6 +41,8 @@ import { CreditModule } from "./credit/credit.module";
 import { FinanceLogModule } from "./finance-log/finance-log.module";
 import { AdminScheduleModule } from "./admin-schedule/admin-schedule.module";
 import { UserLevelModule } from "./user-level/user-level.module";
+import { DepositModule } from "./deposit/deposit.module";
+import { WithdrawModule } from "./withdraw/withdraw.module";
 
 @Module({
   imports: [
@@ -127,9 +130,11 @@ import { UserLevelModule } from "./user-level/user-level.module";
     UserTelegramModule,
     QuoteRequestModule,
     UserLevelModule,
+    DepositModule,
+    WithdrawModule,
   ],
   providers: [WinstonLoggerService],
-  controllers: [],
+  controllers: [PublicFileController],
   exports: [WinstonLoggerService],
 })
 export class AppModule {}

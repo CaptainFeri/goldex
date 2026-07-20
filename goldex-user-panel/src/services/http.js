@@ -26,6 +26,8 @@ const http = axios.create({ baseURL: BASE })
 // or already carries an explicit Authorization header (e.g. registration temp
 // token, password-reset token).
 http.interceptors.request.use((config) => {
+  config.headers = config.headers ?? {}
+  config.headers['Accept-Language'] = 'en'
   const token = tokens.access
   if (token && !config.skipAuth && !config.headers.Authorization) {
     config.headers.Authorization = `Bearer ${token}`

@@ -117,5 +117,31 @@
   "FINANCE OPERATIONS ARE ONLY ALLOWED DURING SCHEDULED WORK HOURS (SATURDAY-WEDNESDAY, 9AM-6PM IR TIME)": "عملیات مالی فقط در ساعات کاری مجاز می‌باشد (شنبه تا چهارشنبه، ۹ صبح تا ۶ عصر به وقت ایران)",
 
   "CREDIT_EXECUTION_LIMIT_REACHED": "محدودیت تعداد معاملات اعتباری شما به پایان رسیده است. لطفاً برای ادامه معامله، اعتبار را تسویه کنید.",
-  "WALLET_FROZEN_CREDIT_EXPIRED": "کیف پول شما به دلیل انقضای اعتبار مسدود شده است. لطفاً با پشتیبانی تماس بگیرید."
+  "WALLET_FROZEN_CREDIT_EXPIRED": "کیف پول شما به دلیل انقضای اعتبار مسدود شده است. لطفاً با پشتیبانی تماس بگیرید.",
+
+  "ALREADY_SENT": "{property} قبلاً ارسال شده است",
+  "SYMBOL NOT FOUND": "نماد یافت نشد",
+  "DEPOSIT NOT FOUND": "واریز یافت نشد",
+  "WITHDRAW NOT FOUND": "برداشت یافت نشد",
+  "ACCESS DENIED": "دسترسی غیرمجاز",
+  "ONLY PENDING DEPOSITS CAN BE CANCELLED": "فقط واریزهای در انتظار قابل لغو هستند",
+  "ONLY PENDING WITHDRAWALS CAN BE CANCELLED": "فقط برداشت‌های در انتظار قابل لغو هستند",
+  "DEPOSIT IS NOT IN A PROCESSABLE STATE": "واریز در وضعیت قابل پردازش نیست",
+  "WITHDRAWAL IS NOT IN A PROCESSABLE STATE": "برداشت در وضعیت قابل پردازش نیست",
+  "USER DOES NOT HAVE A WALLET FOR THIS SYMBOL": "کاربر برای این نماد کیف پول ندارد",
+  "INSUFFICIENT BALANCE FOR WITHDRAWAL": "موجودی کافی برای برداشت نیست",
+  "QUANTITY CANNOT BE LESS THAN EXECUTED QUANTITY": "مقدار نمی‌تواند کمتر از مقدار اجرا شده باشد",
+  "USER LEVEL NOT FOUND": "سطح کاربری یافت نشد",
+  "LEVEL WITH THIS SLUG ALREADY EXISTS": "سطحی با این شناسه از قبل وجود دارد",
+  "CANNOT DELETE THE DEFAULT LEVEL": "نمی‌توان سطح پیش‌فرض را حذف کرد",
+  "CANNOT DELETE AN APPROVED DOCUMENT": "نمی‌توان مدرک تأیید شده را حذف کرد",
+  "DOCUMENT UPLOAD REQUIRES COMPLETING LEVEL 2 VERIFICATION FIRST.": "آپلود مدرک نیاز به تکمیل سطح ۲ احراز هویت دارد.",
+  "SOME DOCUMENTS WERE NOT FOUND": "برخی مدارک یافت نشدند",
+  "CANNOT UPDATE AN ADMIN WITH HIGHER OR EQUAL ROLE": "نمی‌توان ادمینی با نقش بالاتر یا مساوی را ویرایش کرد",
+  "CANNOT CHANGE ROLE OF AN ADMIN WITH EQUAL OR HIGHER AUTHORITY": "نمی‌توان نقش ادمینی با اختیار مساوی یا بالاتر را تغییر داد",
+  "CANNOT ASSIGN A ROLE HIGHER THAN YOUR OWN": "نمی‌توان نقشی بالاتر از نقش خود اختصاص داد",
+  "CANNOT SUSPEND AN ADMIN WITH EQUAL OR HIGHER ROLE": "نمی‌توان ادمینی با نقش مساوی یا بالاتر را تعلیق کرد",
+  "CANNOT DELETE AN ADMIN WITH EQUAL OR HIGHER ROLE": "نمی‌توان ادمینی با نقش مساوی یا بالاتر را حذف کرد",
+  "CANNOT SUSPEND A SUPER_ADMIN": "نمی‌توان یک SUPER_ADMIN را تعلیق کرد",
+  "CANNOT SPLIT AN ORPHAN PACKET": "نمی‌توان یک بسته یتیم را تقسیم کرد"
 }

@@ -136,6 +136,8 @@ export class UserWalletService {
             slug: w.symbol.slug,
             picPath: w.symbol.picPath,
             type: w.symbol.symbolType,
+            depositTypes: w.symbol.depositTypes,
+            withdrawTypes: w.symbol.withdrawTypes,
           }
         : null,
       freeBalance: free,

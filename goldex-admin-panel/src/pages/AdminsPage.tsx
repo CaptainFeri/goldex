@@ -46,7 +46,7 @@ function EditForm({
     queryKey: ["admin-schedules", initial.id],
     queryFn: async () =>
       unwrap<ScheduleEntry[]>((await api.get(`/admin/schedules/${initial.id}`)).data),
-    enabled: initial.role === "finance",
+    enabled: initial.role === "finance" || initial.role === "warehouse",
   });
 
   const save = useMutation({
@@ -159,7 +159,7 @@ function EditForm({
           </select>
         </div>
 
-        {role === "finance" && (
+        {(role === "finance" || role === "warehouse") && (
           <div className="field" style={{ marginTop: 12 }}>
             <label>ساعت کاری</label>
             {schedulesQ.isLoading && <Loading />}
@@ -240,7 +240,7 @@ function DetailsModal({ id, onClose }: { id: string; onClose: () => void }) {
     queryKey: ["admin-schedules", id],
     queryFn: async () =>
       unwrap<ScheduleEntry[]>((await api.get(`/admin/schedules/${id}`)).data),
-    enabled: q.data?.role === "finance",
+    enabled: q.data?.role === "finance" || q.data?.role === "warehouse",
   });
   const a = q.data;
   return (
@@ -269,7 +269,7 @@ function DetailsModal({ id, onClose }: { id: string; onClose: () => void }) {
             <span className="k">آخرین ورود</span>
             <span>{fmtDate(a.lastLoginAt)}</span>
           </div>
-          {a.role === "finance" && (
+          {(a.role === "finance" || a.role === "warehouse") && (
             <div style={{ marginTop: 16 }}>
               <h4 style={{ margin: "0 0 8px" }}>ساعت کاری</h4>
               {schedulesQ.isLoading ? (
@@ -406,7 +406,7 @@ export default function AdminsPage() {
           </button>
         </form>
 
-        {form.role === "finance" && (
+        {(form.role === "finance" || form.role === "warehouse") && (
           <div style={{ marginTop: 12 }}>
             <label style={{ fontWeight: 600, fontSize: 13, display: "block", marginBottom: 6 }}>ساعت کاری</label>
             <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>

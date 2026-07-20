@@ -226,6 +226,7 @@ export default function UsersPage() {
             <table>
               <thead>
                 <tr>
+                  <th></th>
                   <th>نام</th>
                   <th>موبایل</th>
                   <th>نقش</th>
@@ -239,6 +240,19 @@ export default function UsersPage() {
               <tbody>
                 {users.map((u) => (
                   <tr key={u.id}>
+                    <td style={{ padding: "2px 6px", textAlign: "center" }}>
+                      {(() => {
+                        const path = u.profile?.avatarImgPath;
+                        const src = path
+                          ? path.startsWith("edited-")
+                            ? `/uploads/${path}`
+                            : `/api/v1/profile/avatar/${path}`
+                          : null;
+                        return src
+                          ? <img src={src} alt="" style={{ width: 32, height: 32, borderRadius: "50%", objectFit: "cover" }} />
+                          : <span className="muted" style={{ fontSize: 11 }}>—</span>;
+                      })()}
+                    </td>
                     <td>{`${u.firstName ?? ""} ${u.lastName ?? ""}`.trim() || "—"}</td>
                     <td className="mono" dir="ltr" style={{ textAlign: "right" }}>{u.phone ?? "—"}</td>
                     <td>{roleBadge(u.role)}</td>

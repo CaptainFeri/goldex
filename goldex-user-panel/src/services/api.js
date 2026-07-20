@@ -180,6 +180,40 @@ export const baseInfoApi = {
     }))
 }
 
+export const depositApi = {
+  create: async (payload) =>
+    unwrap(await http.post('/deposit', payload)),
+
+  list: async (params = {}) =>
+    unwrap(await http.get('/deposit', { params })),
+
+  get: async (id) =>
+    unwrap(await http.get(`/deposit/${id}`)),
+
+  cancel: async (id) =>
+    unwrap(await http.post(`/deposit/${id}/cancel`)),
+
+  uploadPicture: async (file) => {
+    const form = new FormData()
+    form.append('file', file)
+    return unwrap(await http.post('/deposit/upload-picture', form))
+  },
+}
+
+export const withdrawApi = {
+  create: async (payload) =>
+    unwrap(await http.post('/withdraw', payload)),
+
+  list: async (params = {}) =>
+    unwrap(await http.get('/withdraw', { params })),
+
+  get: async (id) =>
+    unwrap(await http.get(`/withdraw/${id}`)),
+
+  cancel: async (id) =>
+    unwrap(await http.post(`/withdraw/${id}/cancel`)),
+}
+
 export const levelApi = {
   getMyLevel: async () =>
     unwrap(await http.get('/user-level/me')),

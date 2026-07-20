@@ -1,5 +1,6 @@
-import { ApiBearerAuth, ApiBody, ApiConsumes, ApiTags } from '@nestjs/swagger';
-import { FileFieldsInterceptor } from '@nestjs/platform-express';
+import { ApiBearerAuth, ApiBody, ApiConsumes, ApiOperation, ApiTags } from '@nestjs/swagger';
+import { FileInterceptor } from '@nestjs/platform-express';
+import { memoryStorage } from 'multer';
 import {
   BadRequestException,
   Body,
@@ -13,11 +14,12 @@ import {
   Post,
   Query,
   Req,
-  UploadedFiles,
+  Res,
+  UploadedFile,
   UseGuards,
   UseInterceptors,
 } from '@nestjs/common';
-import { diskStorage } from 'multer';
+import { Response } from 'express';
 import { UserService } from '../service/user.service';
 import { VerifyTokenDTO } from '../dto/verify.token.dto';
 import { UserAuthGuard } from '../auth/Guard/user.guard';
@@ -27,12 +29,15 @@ import { UpdatePasswordDTO } from '../dto/update.password.dto';
 import { Update2faSettingDto } from '../dto/update.2fa.setting.dto';
 import { UpdateUserSettingsDto } from '../dto/update.user.setting.dto';
 import { UserExpressRequest } from '../auth/types/user-express-request';
-import { checkImageFile, editFileName } from '../../shared/filter/upload.file.filter';
+import { MinioService } from '../../minio/minio.service';
 
 @ApiTags('Profile')
 @Controller({ path: 'profile', version: '1' })
 export class UserProfileController {
-  constructor(private readonly userService: UserService) {}
+  constructor(
+    private readonly userService: UserService,
+    private readonly minioService: MinioService
+  ) {}
 
   @Patch('2fa-settings')
   @ApiBearerAuth()
@@ -116,6 +121,16 @@ export class UserProfileController {
     };
   }
 
+  @Get('avatar/:objectName')
+  @ApiOperation({ summary: 'Get avatar image' })
+  async getAvatar(@Param('objectName') objectName: string, @Res() res: Response) {
+    const bucket = process.env.MINIO_BUCKET || 'default';
+    const stat = await this.minioService.getFileStat(bucket, objectName);
+    res.set({ 'Content-Type': stat.contentType, 'Content-Length': stat.size.toString() });
+    const stream = await this.minioService.getFileStream(bucket, objectName);
+    stream.pipe(res);
+  }
+
   @Patch('avatar')
   @ApiBearerAuth()
   @ApiConsumes('multipart/form-data')
@@ -124,21 +139,22 @@ export class UserProfileController {
     type: UpdateAvatarDto,
   })
   @UseGuards(UserAuthGuard)
-  @UseInterceptors(
-    FileFieldsInterceptor([{ name: 'avatar', maxCount: 1 }], {
-      storage: diskStorage({
-        destination: './public',
-        filename: editFileName,
-      }),
-      limits: { fileSize: 100 * 1024 * 1024 },
-    })
-  )
-  async updateAvatar(@Req() req: UserExpressRequest, @UploadedFiles() files: any[], @Body() data: UpdateAvatarDto) {
-    if (files && files['avatar']) {
-      checkImageFile(files['avatar'][0].originalname);
-      data.avatar = files['avatar'][0].filename;
-    }
-    const res = await this.userService.updateAvatar(req.user.id, data);
+  @UseInterceptors(FileInterceptor('avatar', { storage: memoryStorage(), limits: { fileSize: 100 * 1024 * 1024 } }))
+  async updateAvatar(@Req() req: UserExpressRequest, @UploadedFile() file: Express.Multer.File) {
+    if (!file) throw new BadRequestException('FILE.INVALID');
+    const userId = req.user.id;
+    const objectName = `avatar/${userId}/${Date.now()}-${file.originalname}`;
+    const uploadedFile = await this.minioService.uploadFile(
+      {
+        objectName,
+        stream: file.buffer,
+        size: file.size,
+        contentType: file.mimetype,
+        metadata: { userId, uploadedBy: 'user', originalName: file.originalname },
+      },
+      'avatar'
+    );
+    const res = await this.userService.updateAvatar(req.user.id, uploadedFile.name);
     return { data: { avatarImgPath: res } };
   }
 

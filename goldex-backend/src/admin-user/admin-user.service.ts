@@ -244,7 +244,9 @@ export class AdminUserService {
         registeredAt: true,
         blockedAt: true,
         createAt: true,
+        profile: { avatarImgPath: true },
       },
+      relations: { profile: true },
       order: {
         createAt: "desc",
       },

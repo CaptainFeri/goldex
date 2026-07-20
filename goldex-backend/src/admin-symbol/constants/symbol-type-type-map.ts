@@ -1,0 +1,43 @@
+﻿import { SymbolTypeEnum } from "../enum/symbol.type.enum";
+
+export const SYMBOL_TYPE_DEPOSIT_MAP: Record<SymbolTypeEnum, string[]> = {
+  [SymbolTypeEnum.RIAL]: ["manual", "payment-gateway"],
+  [SymbolTypeEnum.CRYPTO]: ["manual", "hdwallet"],
+  [SymbolTypeEnum.FIAT]: ["manual", "payment-gateway"],
+  [SymbolTypeEnum.MATERIAL]: ["warehouse", "borrow"],
+};
+
+export const SYMBOL_TYPE_WITHDRAW_MAP: Record<SymbolTypeEnum, string[]> = {
+  [SymbolTypeEnum.RIAL]: ["manual", "auto"],
+  [SymbolTypeEnum.CRYPTO]: ["manual", "auto"],
+  [SymbolTypeEnum.FIAT]: ["manual", "auto"],
+  [SymbolTypeEnum.MATERIAL]: ["warehouse", "borrow"],
+};
+
+export function getDefaultDepositTypes(symbolType: SymbolTypeEnum): string[] {
+  return [...(SYMBOL_TYPE_DEPOSIT_MAP[symbolType] ?? [])];
+}
+
+export function getDefaultWithdrawTypes(symbolType: SymbolTypeEnum): string[] {
+  return [...(SYMBOL_TYPE_WITHDRAW_MAP[symbolType] ?? [])];
+}
+
+export function validateDepositTypes(symbolType: SymbolTypeEnum, types: string[]): string | null {
+  const allowed = SYMBOL_TYPE_DEPOSIT_MAP[symbolType];
+  if (!allowed) return `Unknown symbol type: ${symbolType}`;
+  for (const t of types) {
+    if (!allowed.includes(t)) return `Deposit type "${t}" is not allowed for symbol type "${symbolType}". Allowed: ${allowed.join(", ")}`;
+  }
+  if (types.length === 0) return `At least one deposit type is required for symbol type "${symbolType}"`;
+  return null;
+}
+
+export function validateWithdrawTypes(symbolType: SymbolTypeEnum, types: string[]): string | null {
+  const allowed = SYMBOL_TYPE_WITHDRAW_MAP[symbolType];
+  if (!allowed) return `Unknown symbol type: ${symbolType}`;
+  for (const t of types) {
+    if (!allowed.includes(t)) return `Withdraw type "${t}" is not allowed for symbol type "${symbolType}". Allowed: ${allowed.join(", ")}`;
+  }
+  if (types.length === 0) return `At least one withdraw type is required for symbol type "${symbolType}"`;
+  return null;
+}

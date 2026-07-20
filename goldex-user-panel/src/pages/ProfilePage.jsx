@@ -26,6 +26,7 @@ export default function ProfilePage() {
   const [editing, setEditing] = useState(false)
   const [saving, setSaving] = useState(false)
   const [avatarBusy, setAvatarBusy] = useState(false)
+  const [avatarPreview, setAvatarPreview] = useState(null)
   const [form, setForm] = useState(emptyForm)
 
   const [myLevel, setMyLevel] = useState(null)
@@ -92,6 +93,7 @@ export default function ProfilePage() {
   const handleAvatarUpload = async (e) => {
     const file = e.target.files?.[0]
     if (!file) return
+    setAvatarPreview(URL.createObjectURL(file))
     setAvatarBusy(true)
     try {
       await profileApi.uploadAvatar(file)
@@ -103,6 +105,7 @@ export default function ProfilePage() {
       toast.error(err.response?.data?.message || 'Avatar upload failed.')
     } finally {
       setAvatarBusy(false)
+      setAvatarPreview(null)
       e.target.value = ''
     }
   }
@@ -134,7 +137,9 @@ export default function ProfilePage() {
 
   const initials = `${(profile.firstName || '?')[0]}${(profile.lastName || '?')[0]}`.toUpperCase()
   const avatarSrc = profile.avatarImgPath
-    ? (profile.avatarImgPath.startsWith('http') ? profile.avatarImgPath : `/uploads/${profile.avatarImgPath}`)
+    ? (profile.avatarImgPath.startsWith('edited-')
+      ? `/uploads/${profile.avatarImgPath}`
+      : `/api/v1/profile/avatar/${encodeURIComponent(profile.avatarImgPath)}`)
     : null
 
   return (
@@ -155,9 +160,11 @@ export default function ProfilePage() {
         {/* Identity / avatar card */}
         <div className="card animate-fade-up">
           <div style={{ display: 'flex', alignItems: 'center', gap: '1.25rem' }}>
-            {avatarSrc
-              ? <img className="avatar-img" src={avatarSrc} alt="avatar" onError={(e) => { e.currentTarget.style.display = 'none' }} />
-              : <div className="avatar">{initials}</div>}
+            {avatarPreview
+              ? <img className="avatar-img" src={avatarPreview} alt="avatar-preview" />
+              : avatarSrc
+                ? <img className="avatar-img" src={avatarSrc} alt="avatar" onError={(e) => { e.currentTarget.style.display = 'none' }} />
+                : <div className="avatar">{initials}</div>}
             <div style={{ flex: 1 }}>
               <div style={{ fontFamily: 'var(--font-display)', fontSize: '1.5rem', fontWeight: 500, color: 'var(--text-primary)' }}>
                 {profile.firstName} {profile.lastName}

@@ -576,14 +576,14 @@ export class UserService {
 
   //===================================================================================================\\
 
-  async updateAvatar(userId: string, updateAvatarDto: UpdateAvatarDto) {
+  async updateAvatar(userId: string, objectName: string) {
     let user = await this.userRepository.findOne({
       where: { id: userId },
       relations: { profile: true },
     });
 
     if (!user) throw new BadRequestException("USER.INVALID");
-    user.profile.avatarImgPath = updateAvatarDto.avatar;
+    user.profile.avatarImgPath = objectName;
     await this.userProfileRepository.save(user.profile);
     return user.profile.avatarImgPath;
   }

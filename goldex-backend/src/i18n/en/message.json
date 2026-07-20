@@ -117,5 +117,31 @@
   "FINANCE OPERATIONS ARE ONLY ALLOWED DURING SCHEDULED WORK HOURS (SATURDAY-WEDNESDAY, 9AM-6PM IR TIME)": "Finance operations are only allowed during scheduled work hours (Saturday-Wednesday, 9AM-6PM IR time)",
 
   "CREDIT_EXECUTION_LIMIT_REACHED": "Your credit execution limit has been reached. Please settle the credit to continue trading.",
-  "WALLET_FROZEN_CREDIT_EXPIRED": "Your wallet is frozen due to an expired credit. Please contact support."
+  "WALLET_FROZEN_CREDIT_EXPIRED": "Your wallet is frozen due to an expired credit. Please contact support.",
+
+  "ALREADY_SENT": "{property} already sent",
+  "SYMBOL NOT FOUND": "Symbol not found",
+  "DEPOSIT NOT FOUND": "Deposit not found",
+  "WITHDRAW NOT FOUND": "Withdraw not found",
+  "ACCESS DENIED": "Access denied",
+  "ONLY PENDING DEPOSITS CAN BE CANCELLED": "Only pending deposits can be cancelled",
+  "ONLY PENDING WITHDRAWALS CAN BE CANCELLED": "Only pending withdrawals can be cancelled",
+  "DEPOSIT IS NOT IN A PROCESSABLE STATE": "Deposit is not in a processable state",
+  "WITHDRAWAL IS NOT IN A PROCESSABLE STATE": "Withdrawal is not in a processable state",
+  "USER DOES NOT HAVE A WALLET FOR THIS SYMBOL": "User does not have a wallet for this symbol",
+  "INSUFFICIENT BALANCE FOR WITHDRAWAL": "Insufficient balance for withdrawal",
+  "QUANTITY CANNOT BE LESS THAN EXECUTED QUANTITY": "Quantity cannot be less than executed quantity",
+  "USER LEVEL NOT FOUND": "User level not found",
+  "LEVEL WITH THIS SLUG ALREADY EXISTS": "Level with this slug already exists",
+  "CANNOT DELETE THE DEFAULT LEVEL": "Cannot delete the default level",
+  "CANNOT DELETE AN APPROVED DOCUMENT": "Cannot delete an approved document",
+  "DOCUMENT UPLOAD REQUIRES COMPLETING LEVEL 2 VERIFICATION FIRST.": "Document upload requires completing Level 2 verification first.",
+  "SOME DOCUMENTS WERE NOT FOUND": "Some documents were not found",
+  "CANNOT UPDATE AN ADMIN WITH HIGHER OR EQUAL ROLE": "Cannot update an admin with higher or equal role",
+  "CANNOT CHANGE ROLE OF AN ADMIN WITH EQUAL OR HIGHER AUTHORITY": "Cannot change role of an admin with equal or higher authority",
+  "CANNOT ASSIGN A ROLE HIGHER THAN YOUR OWN": "Cannot assign a role higher than your own",
+  "CANNOT SUSPEND AN ADMIN WITH EQUAL OR HIGHER ROLE": "Cannot suspend an admin with equal or higher role",
+  "CANNOT DELETE AN ADMIN WITH EQUAL OR HIGHER ROLE": "Cannot delete an admin with equal or higher role",
+  "CANNOT SUSPEND A SUPER_ADMIN": "Cannot suspend a SUPER_ADMIN",
+  "CANNOT SPLIT AN ORPHAN PACKET": "Cannot split an orphan packet"
 }

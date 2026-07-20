@@ -1,5 +1,5 @@
 // symbol.service.ts
-import { Injectable, NotFoundException, Logger } from "@nestjs/common";
+import { Injectable, NotFoundException, BadRequestException, Logger } from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
 import { Repository } from "typeorm";
 import { CreateSymbolDto } from "./dto/create-symbol.dto";
@@ -9,6 +9,7 @@ import { SymbolTypeEnum } from "./enum/symbol.type.enum";
 import { UserMarketTypeEntity } from "../user/entity/user.market.type.entity";
 import { UserEntity } from "../user/entity/user.entity";
 import { WalletEntity } from "../wallet/entities/wallet.entity";
+import { getDefaultDepositTypes, getDefaultWithdrawTypes, validateDepositTypes, validateWithdrawTypes } from "./constants/symbol-type-type-map";
 
 @Injectable()
 export class AdminSymbolService {
@@ -25,8 +26,33 @@ export class AdminSymbolService {
     private readonly walletRepo: Repository<WalletEntity>,
   ) {}
 
+  private resolveTypes(dto: CreateSymbolDto | UpdateSymbolDto): Partial<SymbolEntity> {
+    const updates: Partial<SymbolEntity> = {};
+
+    if (dto.symbolType) {
+      if (dto.depositTypes) {
+        const err = validateDepositTypes(dto.symbolType, dto.depositTypes as string[]);
+        if (err) throw new BadRequestException(err);
+        updates.depositTypes = dto.depositTypes as string[];
+      } else {
+        updates.depositTypes = getDefaultDepositTypes(dto.symbolType);
+      }
+
+      if (dto.withdrawTypes) {
+        const err = validateWithdrawTypes(dto.symbolType, dto.withdrawTypes as string[]);
+        if (err) throw new BadRequestException(err);
+        updates.withdrawTypes = dto.withdrawTypes as string[];
+      } else {
+        updates.withdrawTypes = getDefaultWithdrawTypes(dto.symbolType);
+      }
+    }
+
+    return updates;
+  }
+
   async create(createSymbolDto: CreateSymbolDto): Promise<SymbolEntity> {
-    const symbol = this.symbolRepository.create(createSymbolDto);
+    const types = this.resolveTypes(createSymbolDto);
+    const symbol = this.symbolRepository.create({ ...createSymbolDto, ...types });
     const saved = await this.symbolRepository.save(symbol);
 
     // Auto-create wallets for users whose market type matches this symbol's market type
@@ -97,6 +123,20 @@ export class AdminSymbolService {
 
   async update(id: string, updateSymbolDto: UpdateSymbolDto): Promise<SymbolEntity> {
     const symbol = await this.findOne(id);
+
+    const merged = { ...updateSymbolDto };
+    const symbolType = updateSymbolDto.symbolType ?? symbol.symbolType;
+    const depositTypes = updateSymbolDto.depositTypes ?? updateSymbolDto.depositTypes === undefined ? undefined : updateSymbolDto.depositTypes;
+    const withdrawTypes = updateSymbolDto.withdrawTypes ?? updateSymbolDto.withdrawTypes === undefined ? undefined : updateSymbolDto.withdrawTypes;
+
+    if (depositTypes) {
+      const err = validateDepositTypes(symbolType, depositTypes as string[]);
+      if (err) throw new BadRequestException(err);
+    }
+    if (withdrawTypes) {
+      const err = validateWithdrawTypes(symbolType, withdrawTypes as string[]);
+      if (err) throw new BadRequestException(err);
+    }
 
     Object.assign(symbol, updateSymbolDto);
     return await this.symbolRepository.save(symbol);

@@ -21,6 +21,8 @@ import DiscountsPage from "./pages/DiscountsPage";
 import CreditsPage from "./pages/CreditsPage";
 import FinanceLogsPage from "./pages/FinanceLogsPage";
 import LevelsPage from "./pages/LevelsPage";
+import DepositsPage from "./pages/DepositsPage";
+import WithdrawsPage from "./pages/WithdrawsPage";
 
 function RequireAuth({ children }: { children: JSX.Element }) {
   const { token, checkSession } = useAuth();
@@ -65,6 +67,8 @@ export default function App() {
         <Route path="/credits" element={<CreditsPage />} />
         <Route path="/finance-logs" element={<FinanceLogsPage />} />
         <Route path="/user-levels" element={<LevelsPage />} />
+        <Route path="/deposits" element={<DepositsPage />} />
+        <Route path="/withdraws" element={<WithdrawsPage />} />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>

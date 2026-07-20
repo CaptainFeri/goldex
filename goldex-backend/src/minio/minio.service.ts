@@ -66,7 +66,8 @@ export class MinioService {
       .join("");
     try {
       const objectName = `${fileTarget}-${randomName}-${new Date().toISOString().slice(0, 10)}${fileExtName}`;
-      const metaData = this.prepareMetadata(options.metadata);
+      const userMeta = this.prepareMetadata(options.metadata);
+      const metaData = { ...userMeta, "Content-Type": options.contentType || "application/octet-stream" };
 
       let result: any;
 

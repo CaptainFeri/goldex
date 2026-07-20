@@ -3,13 +3,21 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, unwrap, apiError } from "../api/client";
 import { Card, Loading, ErrorState, Empty, Badge, Modal } from "../components/ui";
 import { fmtNum } from "../lib/format";
-import { GAIN_TYPES, SYMBOL_TYPES, UNIT_TYPES, PAYMENT_GATEWAYS, MARKET_TYPES_ENUM } from "../lib/enums";
+import { GAIN_TYPES, SYMBOL_TYPES, UNIT_TYPES, PAYMENT_GATEWAYS, MARKET_TYPES_ENUM, DEPOSIT_TYPES, WITHDRAW_TYPES, SYMBOL_TYPE_DEPOSIT_MAP, SYMBOL_TYPE_WITHDRAW_MAP } from "../lib/enums";
 
 function toArray(x: any): any[] {
   if (Array.isArray(x)) return x;
   if (x && Array.isArray(x.items)) return x.items;
   if (x && Array.isArray(x.data)) return x.data;
   return [];
+}
+
+function getDefaultDepositTypes(symbolType: string): string[] {
+  return SYMBOL_TYPE_DEPOSIT_MAP[symbolType] ?? ["manual"];
+}
+
+function getDefaultWithdrawTypes(symbolType: string): string[] {
+  return SYMBOL_TYPE_WITHDRAW_MAP[symbolType] ?? ["manual"];
 }
 
 const EMPTY = {
@@ -24,7 +32,13 @@ const EMPTY = {
   paymentGateWayType: "up",
   hasPaymentGateway: false,
   isActive: true,
+  depositTypes: getDefaultDepositTypes("material"),
+  withdrawTypes: getDefaultWithdrawTypes("material"),
 };
+
+function toggle(arr: string[], v: string): string[] {
+  return arr.includes(v) ? arr.filter((x) => x !== v) : [...arr, v];
+}
 
 function SymbolForm({ initial, onClose }: { initial?: any; onClose: () => void }) {
   const qc = useQueryClient();
@@ -41,6 +55,19 @@ function SymbolForm({ initial, onClose }: { initial?: any; onClose: () => void }
     },
   });
 
+  function handleSymbolTypeChange(v: string) {
+    if (!editing) {
+      setForm((f: any) => ({
+        ...f,
+        symbolType: v,
+        depositTypes: getDefaultDepositTypes(v),
+        withdrawTypes: getDefaultWithdrawTypes(v),
+      }));
+    } else {
+      set("symbolType", v);
+    }
+  }
+
   function submit(e: React.FormEvent) {
     e.preventDefault();
     const payload: any = {
@@ -54,6 +81,8 @@ function SymbolForm({ initial, onClose }: { initial?: any; onClose: () => void }
       marketType: form.marketType,
       hasPaymentGateway: !!form.hasPaymentGateway,
       isActive: !!form.isActive,
+      depositTypes: form.depositTypes,
+      withdrawTypes: form.withdrawTypes,
     };
     if (form.symbolType === "rial") {
       payload.paymentGateWayType = form.paymentGateWayType;
@@ -76,7 +105,7 @@ function SymbolForm({ initial, onClose }: { initial?: any; onClose: () => void }
           </div>
           <div className="field">
             <label>نوع نماد</label>
-            <select className="select" value={form.symbolType} onChange={(e) => set("symbolType", e.target.value)}>
+            <select className="select" value={form.symbolType} onChange={(e) => handleSymbolTypeChange(e.target.value)}>
               {SYMBOL_TYPES.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
             </select>
           </div>
@@ -113,6 +142,38 @@ function SymbolForm({ initial, onClose }: { initial?: any; onClose: () => void }
           <div className="field">
             <label>مسیر آیکون</label>
             <input className="input mono" dir="ltr" value={form.picPath} onChange={(e) => set("picPath", e.target.value)} placeholder="/icons/xau.png" />
+          </div>
+        </div>
+        <div className="grid grid-2" style={{ margin: "12px 0" }}>
+          <div className="field">
+            <label>نوع واریز</label>
+            <div className="checkbox-group">
+              {DEPOSIT_TYPES.map((o) => (
+                <label key={o.value} className="row" style={{ gap: 6, margin: "4px 0" }}>
+                  <input
+                    type="checkbox"
+                    checked={(form.depositTypes || []).includes(o.value)}
+                    onChange={() => set("depositTypes", toggle(form.depositTypes || [], o.value))}
+                  />
+                  {o.label}
+                </label>
+              ))}
+            </div>
+          </div>
+          <div className="field">
+            <label>نوع برداشت</label>
+            <div className="checkbox-group">
+              {WITHDRAW_TYPES.map((o) => (
+                <label key={o.value} className="row" style={{ gap: 6, margin: "4px 0" }}>
+                  <input
+                    type="checkbox"
+                    checked={(form.withdrawTypes || []).includes(o.value)}
+                    onChange={() => set("withdrawTypes", toggle(form.withdrawTypes || [], o.value))}
+                  />
+                  {o.label}
+                </label>
+              ))}
+            </div>
           </div>
         </div>
         <div className="row" style={{ gap: 20, margin: "4px 0 16px" }}>
@@ -178,6 +239,10 @@ function DetailsModal({ id, onClose }: { id: string; onClose: () => void }) {
           <span className="mono">{s.picPath || "—"}</span>
           <span className="k">درگاه پرداخت</span>
           <span>{s.paymentGateWayType ?? "—"}</span>
+          <span className="k">نوع واریز</span>
+          <span>{(s.depositTypes && Array.isArray(s.depositTypes) ? s.depositTypes.join("، ") : "—") || "—"}</span>
+          <span className="k">نوع برداشت</span>
+          <span>{(s.withdrawTypes && Array.isArray(s.withdrawTypes) ? s.withdrawTypes.join("، ") : "—") || "—"}</span>
         </div>
       ) : null}
     </Modal>
@@ -236,6 +301,8 @@ export default function SymbolsPage() {
                 <th>بازار</th>
                 <th>واحد</th>
                 <th>وضعیت</th>
+                <th>واریز</th>
+                <th>برداشت</th>
                 <th>عملیات</th>
               </tr>
             </thead>
@@ -248,6 +315,8 @@ export default function SymbolsPage() {
                   <td>{s.marketType === "informal" ? <Badge kind="gold">غیررسمی</Badge> : <Badge kind="green">رسمی</Badge>}</td>
                   <td>{s.unitType ?? "—"}</td>
                   <td>{s.isActive ? <Badge kind="green">فعال</Badge> : <Badge kind="gray">غیرفعال</Badge>}</td>
+                  <td style={{ fontSize: 12 }}>{s.depositTypes?.join(", ") || "—"}</td>
+                  <td style={{ fontSize: 12 }}>{s.withdrawTypes?.join(", ") || "—"}</td>
                   <td>
                     <div className="row">
                       <button className="btn sm" onClick={() => setDetailId(s.id)}>جزئیات</button>

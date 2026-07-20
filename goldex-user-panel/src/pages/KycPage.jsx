@@ -47,6 +47,7 @@ export default function KycPage() {
   const [savingL2, setSavingL2] = useState(false)
 
   const [docForm, setDocForm] = useState({ fileTarget: '', description: '', file: null })
+  const [docPreview, setDocPreview] = useState(null)
   const [uploading, setUploading] = useState(false)
   const [deleting, setDeleting] = useState(null)
 
@@ -273,8 +274,15 @@ export default function KycPage() {
                 <label className="avatar-upload-label">
                   {docForm.file ? docForm.file.name : 'Choose file…'}
                   <input type="file" hidden
-                    onChange={(e) => setDocForm((d) => ({ ...d, file: e.target.files?.[0] || null }))} />
+                    onChange={(e) => {
+                      const f = e.target.files?.[0] || null
+                      setDocForm((d) => ({ ...d, file: f }))
+                      setDocPreview(f ? URL.createObjectURL(f) : null)
+                    }} />
                 </label>
+                {docPreview && (
+                  <img src={docPreview} alt="preview" style={{ maxWidth: '100%', maxHeight: 200, borderRadius: 6, marginTop: 4 }} />
+                )}
               </Field>
               <div className="btn-row">
                 <Button type="submit" className="btn-auto" loading={uploading}
@@ -286,9 +294,13 @@ export default function KycPage() {
 
             {docs.length > 0 && (
               <div className="device-list" style={{ marginTop: '1.25rem' }}>
-                {docs.map((doc) => {
+                  {docs.map((doc) => {
                   const st = (doc.status || '').toLowerCase()
                   const canDelete = st === 'pending' || st === 'rejected'
+                  const objectName = doc.fileUrl?.startsWith('http')
+                    ? decodeURIComponent(doc.fileUrl.split('/').pop())
+                    : doc.fileUrl
+                  const previewUrl = objectName ? `/api/v1/kyc/document/${encodeURIComponent(objectName)}` : null
                   return (
                     <div key={doc.id} className="device-item">
                       <div className="device-info">
@@ -297,6 +309,11 @@ export default function KycPage() {
                         </div>
                         <div className="device-meta">
                           {doc.fileName}
+                          {previewUrl && (
+                            <a href={previewUrl} target="_blank" rel="noreferrer" style={{ marginLeft: 8, fontSize: '0.8rem' }}>
+                              Preview
+                            </a>
+                          )}
                           {doc.rejectionReason ? ` · ${doc.rejectionReason}` : ''}
                         </div>
                       </div>

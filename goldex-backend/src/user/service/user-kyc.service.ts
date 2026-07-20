@@ -101,7 +101,7 @@ export class UserKycService {
       userId,
       fileTarget: dto.fileTarget,
       fileName: file.originalname,
-      fileUrl: uploadedFile.url,
+      fileUrl: uploadedFile.name,
       fileSize: file.size,
       mimeType: file.mimetype,
       etag: uploadedFile.etag,

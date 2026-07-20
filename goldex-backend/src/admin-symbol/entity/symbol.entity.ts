@@ -78,6 +78,20 @@ export class SymbolEntity extends myBaseEntity {
   })
   isActive: boolean;
 
+  @Column("jsonb", {
+    nullable: true,
+    default: [],
+    name: "deposit_types",
+  })
+  depositTypes: string[];
+
+  @Column("jsonb", {
+    nullable: true,
+    default: [],
+    name: "withdraw_types",
+  })
+  withdrawTypes: string[];
+
   @OneToMany(() => PricePairEntity, (pair) => pair.quoteSymbol)
   quotePairs: PricePairEntity[];
 

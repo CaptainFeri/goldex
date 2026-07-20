@@ -55,11 +55,22 @@ interface KycDocument {
   [k: string]: any;
 }
 
+function docObjectName(fileUrl: string | undefined): string {
+  if (!fileUrl) return "";
+  if (fileUrl.startsWith("http")) {
+    try { return decodeURIComponent(fileUrl.split("/").pop()!); }
+    catch { return fileUrl.split("/").pop()!; }
+  }
+  return fileUrl;
+}
+
 function DocPreview({ doc }: { doc: KycDocument }) {
-  const url = doc.imageUrl ?? doc.fileUrl ?? doc.picture;
-  if (!url) return <span className="muted">—</span>;
+  const raw = doc.imageUrl ?? doc.fileUrl ?? doc.picture;
+  const objectName = docObjectName(raw);
+  if (!objectName) return <span className="muted">—</span>;
+  const proxyUrl = `/api/v1/admin/kyc/document/${encodeURIComponent(objectName)}`;
   return (
-    <a href={url} target="_blank" rel="noreferrer" className="btn sm ghost">
+    <a href={proxyUrl} target="_blank" rel="noreferrer" className="btn sm ghost">
       مشاهده تصویر
     </a>
   );

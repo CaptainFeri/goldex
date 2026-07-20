@@ -1,15 +1,20 @@
-import { Body, Controller, Get, Param, ParseUUIDPipe, Post, Query, Req, UseGuards } from "@nestjs/common";
+import { Body, Controller, Get, Param, ParseUUIDPipe, Post, Query, Req, Res, UseGuards } from "@nestjs/common";
+import { Response } from "express";
 import { AdminKycService } from "./admin-kyc.service";
 import { AdminAuthGuard } from "../admin/auth/Guard/admin.guard";
 import { ApiBearerAuth, ApiOperation, ApiQuery, ApiTags } from "@nestjs/swagger";
 import { AdminApproveDocumentsDto, AdminRejectDocumentDto, GetKycDocumentsQueryDto } from "./dto/admin-kyc.dto";
 import { AdminRoles } from "../admin/role/admin.role.decorator";
 import { AdminRole } from "../admin/role/admin.roles.enum";
+import { MinioService } from "../minio/minio.service";
 
 @Controller("admin/kyc")
 @ApiTags("Admin-Kyc")
 export class AdminKycController {
-  constructor(private readonly adminKycService: AdminKycService) {}
+  constructor(
+    private readonly adminKycService: AdminKycService,
+    private readonly minioService: MinioService
+  ) {}
 
   @Get("admin/pending")
   @ApiBearerAuth()
@@ -81,6 +86,16 @@ export class AdminKycController {
   //   async rejectMultipleDocuments(@Req() req, @Body() dto: AdminRejectMultipleDocumentsDto) {
   //     return await this.adminKycService.rejectMultipleDocuments(req.user.id, dto.documentIds, dto.reason, dto.notes);
   //   }
+
+  @Get("document/:objectName")
+  @ApiOperation({ summary: "Get KYC document content (Admin)" })
+  async getDocument(@Param("objectName") objectName: string, @Res() res: Response) {
+    const bucket = process.env.MINIO_BUCKET || "default";
+    const stat = await this.minioService.getFileStat(bucket, objectName);
+    res.set({ "Content-Type": stat.contentType, "Content-Length": stat.size.toString() });
+    const stream = await this.minioService.getFileStream(bucket, objectName);
+    stream.pipe(res);
+  }
 
   @Get("users/:userId/documents")
   @UseGuards(AdminAuthGuard)

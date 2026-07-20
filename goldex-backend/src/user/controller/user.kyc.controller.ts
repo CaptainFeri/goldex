@@ -7,10 +7,12 @@ import {
   ParseUUIDPipe,
   Post,
   Req,
+  Res,
   UploadedFile,
   UseGuards,
   UseInterceptors,
 } from "@nestjs/common";
+import { Response } from "express";
 import { UserKycService } from "../service/user-kyc.service";
 import { VerifyLevel1Dto } from "../dto/verifyLevel1.dto";
 import { VerifyBankAccountDto } from "../dto/verifyBankAccount.dto";
@@ -18,19 +20,24 @@ import { ApiBearerAuth, ApiConsumes, ApiOperation, ApiTags } from "@nestjs/swagg
 import { UserAuthGuard } from "../auth/Guard/user.guard";
 import { UserExpressRequest } from "../auth/types/user-express-request";
 import { FileInterceptor } from "@nestjs/platform-express";
+import { memoryStorage } from "multer";
 import { UploadKycDocumentDto } from "../dto/upload-kyc-document.dto";
+import { MinioService } from "../../minio/minio.service";
 
 @ApiTags("User-Kyc")
 @Controller("kyc")
 export class UserKycController {
-  constructor(private readonly kycService: UserKycService) {}
+  constructor(
+    private readonly kycService: UserKycService,
+    private readonly minioService: MinioService
+  ) {}
 
   @Post("upload")
   @UseGuards(UserAuthGuard)
   @ApiBearerAuth()
   @ApiOperation({ summary: "Upload KYC document (max 5 documents total)" })
   @ApiConsumes("multipart/form-data")
-  @UseInterceptors(FileInterceptor("file"))
+  @UseInterceptors(FileInterceptor("file", { storage: memoryStorage() }))
   async uploadDocument(@Req() req, @UploadedFile() file: Express.Multer.File, @Body() dto: UploadKycDocumentDto) {
     if (!file) {
       throw new Error("No file uploaded");
@@ -77,6 +84,16 @@ export class UserKycController {
   async deleteDocument(@Req() req, @Param("documentId", ParseUUIDPipe) documentId: string) {
     await this.kycService.deleteDocument(req.user.id, documentId);
     return { data: "Document deleted successfully" };
+  }
+
+  @Get("document/:objectName")
+  @ApiOperation({ summary: "Get KYC document content" })
+  async getDocument(@Param("objectName") objectName: string, @Res() res: Response) {
+    const bucket = process.env.MINIO_BUCKET || "default";
+    const stat = await this.minioService.getFileStat(bucket, objectName);
+    res.set({ "Content-Type": stat.contentType, "Content-Length": stat.size.toString() });
+    const stream = await this.minioService.getFileStream(bucket, objectName);
+    stream.pipe(res);
   }
 
   @Post("level-1")

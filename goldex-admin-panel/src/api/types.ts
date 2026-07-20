@@ -96,6 +96,8 @@ export interface SymbolItem {
   type?: string;
   marketType?: string;
   isActive?: boolean;
+  depositTypes?: string[];
+  withdrawTypes?: string[];
   [k: string]: any;
 }
 export interface PricePair {
@@ -357,6 +359,43 @@ export interface CustomerWithBalance {
   phone?: string;
   email?: string;
   balances?: { symbol: string; free: number; locked: number }[];
+  [k: string]: any;
+}
+
+// ---- Deposit & Withdraw ----
+export interface DepositRequest {
+  id: string;
+  userId: string;
+  user?: { id: string; firstName?: string; lastName?: string; phone?: string; email?: string };
+  symbolId: string;
+  symbol?: { id: string; name?: string; slug?: string };
+  type: string;
+  amount: number;
+  status: "PENDING" | "PROCESSING" | "COMPLETED" | "FAILED" | "CANCELLED";
+  adminId: string | null;
+  notes: string | null;
+  picturePath: string | null;
+  metadata: any;
+  completedAt: string | null;
+  createAt: string;
+  [k: string]: any;
+}
+
+export interface WithdrawRequest {
+  id: string;
+  userId: string;
+  user?: { id: string; firstName?: string; lastName?: string; phone?: string; email?: string };
+  symbolId: string;
+  symbol?: { id: string; name?: string; slug?: string };
+  type: string;
+  amount: number;
+  status: "PENDING" | "PROCESSING" | "COMPLETED" | "FAILED" | "CANCELLED";
+  adminId: string | null;
+  notes: string | null;
+  picturePath: string | null;
+  metadata: any;
+  completedAt: string | null;
+  createAt: string;
   [k: string]: any;
 }
 
