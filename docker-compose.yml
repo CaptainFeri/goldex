@@ -109,6 +109,37 @@ services:
       timeout: 10s
       retries: 5
 
+  portainer:
+    image: portainer/portainer-ce:latest
+    container_name: goldex-portainer
+    restart: unless-stopped
+    ports:
+      - "${PORTAINER_HTTP_PORT:-9002}:9000"
+      - "${PORTAINER_HTTPS_PORT:-9443}:9443"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - portainer_data:/data
+    networks:
+      - goldex-network
+
+  netdata:
+    image: netdata/netdata:latest
+    container_name: goldex-netdata
+    restart: unless-stopped
+    ports:
+      - "${NETDATA_PORT:-19999}:19999"
+    volumes:
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    pid: host
+    networks:
+      - goldex-network
+    cap_add:
+      - SYS_PTRACE
+    security_opt:
+      - apparmor:unconfined
+
   # ════════════════════════════════════════════
   # APP SERVICES
   # ════════════════════════════════════════════
@@ -312,6 +343,7 @@ volumes:
   rabbitmq_data:
   backend_logs:
   pricing_engine_logs:
+  portainer_data:
 
 # ════════════════════════════════════════════
 # NETWORKS
