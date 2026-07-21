@@ -74,7 +74,7 @@ services:
         condition: service_healthy
 
   minio:
-    image: minio/minio:RELEASE.2024-10-02T19-27-36Z
+    image: minio/minio:RELEASE.2025-04-03T14-56-28Z-cpuv1
     container_name: goldex-minio
     restart: unless-stopped
     command: server /data --console-address ":${MINIO_CONSOLE_PORT:-9001}"
