@@ -4,13 +4,33 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    restart: always
+    restart: unless-stopped
     environment:
       - BACKEND_HOST=${BACKEND_HOST:-goldex-service}
+      - BACKEND_PORT=${BACKEND_PORT:-3003}
     ports:
       - "${ADMIN_PANEL_PORT:-5190}:80"
     networks:
       - goldex-network
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "wget",
+          "--no-verbose",
+          "--tries=1",
+          "--spider",
+          "http://localhost:80/",
+        ]
+      interval: 30s
+      timeout: 5s
+      start_period: 10s
+      retries: 3
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
 
 networks:
   goldex-network:
