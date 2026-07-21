@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Goldex Dashboard</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    background: #0f172a; color: #e2e8f0; padding: 24px;
+  }
+  h1 { font-size: 22px; margin-bottom: 20px; display: flex; align-items: center; gap: 10px; }
+  h1 small { font-size: 13px; color: #94a3b8; font-weight: 400; }
+  h2 { font-size: 15px; margin-bottom: 12px; color: #94a3b8; text-transform: uppercase; letter-spacing: .06em; }
+
+  .sys-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; margin-bottom: 28px; }
+  .sys-card {
+    background: #1e293b; border-radius: 10px; padding: 16px;
+    border: 1px solid #334155;
+  }
+  .sys-card .label { font-size: 11px; color: #64748b; text-transform: uppercase; letter-spacing: .05em; }
+  .sys-card .value { font-size: 24px; font-weight: 700; margin-top: 4px; }
+  .sys-card .sub { font-size: 12px; color: #94a3b8; margin-top: 2px; }
+
+  .bar-wrap { background: #334155; border-radius: 6px; height: 8px; margin-top: 8px; overflow: hidden; }
+  .bar-fill { height: 100%; border-radius: 6px; transition: width .5s; }
+  .bar-cpu { background: linear-gradient(90deg, #3b82f6, #06b6d4); }
+  .bar-mem { background: linear-gradient(90deg, #8b5cf6, #d946ef); }
+
+  .svc-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 10px; }
+  .svc-card {
+    background: #1e293b; border: 1px solid #334155; border-radius: 10px; padding: 14px;
+    transition: border-color .2s;
+  }
+  .svc-card.up { border-left: 3px solid #22c55e; }
+  .svc-card.down { border-left: 3px solid #ef4444; }
+  .svc-card .top { display: flex; justify-content: space-between; align-items: center; }
+  .svc-card .name { font-weight: 600; font-size: 13px; }
+  .svc-card .badge {
+    font-size: 10px; padding: 2px 8px; border-radius: 10px; font-weight: 600;
+  }
+  .svc-card.up .badge { background: #22c55e22; color: #22c55e; }
+  .svc-card.down .badge { background: #ef444422; color: #ef4444; }
+  .svc-card .detail { font-size: 11px; color: #64748b; margin-top: 6px; }
+  .svc-card .detail span { color: #94a3b8; }
+  .svc-card a { color: #38bdf8; text-decoration: none; font-size: 11px; }
+  .svc-card a:hover { text-decoration: underline; }
+
+  .footer { margin-top: 28px; text-align: center; font-size: 12px; color: #475569; }
+  .footer button {
+    background: #1e293b; border: 1px solid #334155; color: #94a3b8;
+    padding: 6px 16px; border-radius: 6px; cursor: pointer; font-size: 12px;
+  }
+  .footer button:hover { background: #334155; }
+  .status-bar { font-size: 11px; color: #64748b; margin-bottom: 16px; }
+</style>
+</head>
+<body>
+
+<h1>Goldex Monitor <small>container dashboard</small></h1>
+
+<div id="statusBar" class="status-bar">Loading...</div>
+
+<h2>System Resources</h2>
+<div class="sys-grid" id="sysGrid"></div>
+
+<h2>Services</h2>
+<div class="svc-grid" id="svcGrid"></div>
+
+<div class="footer">
+  <button onclick="location.reload()">Refresh</button>
+  &nbsp; auto-updates every 10s
+</div>
+
+<script>
+const EXTERNAL = {
+  "PostgreSQL":          "http://localhost:5434",
+  "pgAdmin":            "http://localhost:5050",
+  "Redis":              "http://localhost:6381",
+  "Redis Insight":      "http://localhost:5540",
+  "MinIO API":          "http://localhost:9000",
+  "MinIO Console":      "http://localhost:9001",
+  "RabbitMQ AMQP":      null,
+  "RabbitMQ Mgmt":      "http://localhost:15672",
+  "Goldex Backend":     "http://localhost:4040",
+  "Pricing Engine":     "http://localhost:4000",
+  "Pricing Mock":       "http://localhost:5000",
+  "Telegram Bot":       "http://localhost:3001",
+  "Telegram Monitoring":"http://localhost:3002",
+  "Admin Panel":        "http://localhost:5190",
+  "User Panel":         "http://localhost:5173",
+};
+
+async function load() {
+  try {
+    const [sys, svcs] = await Promise.all([
+      fetch("/api/system").then(r => r.json()),
+      fetch("/api/services").then(r => r.json()),
+    ]);
+    renderSys(sys);
+    renderSvcs(svcs);
+    const up = svcs.filter(s => s.alive).length;
+    document.getElementById("statusBar").textContent =
+      `${up}/${svcs.length} services online · last updated ${new Date().toLocaleTimeString()}`;
+  } catch {
+    document.getElementById("statusBar").textContent = "Error loading data";
+  }
+}
+
+function renderSys(sys) {
+  const cpuBar = Math.min(parseFloat(sys.cpuLoad), 100);
+  const memBar = Math.min(parseFloat(sys.memUsedPercent), 100);
+  document.getElementById("sysGrid").innerHTML = `
+    <div class="sys-card">
+      <div class="label">CPU</div>
+      <div class="value">${sys.cpuLoad}%</div>
+      <div class="sub">${sys.cpus} cores · ${sys.loadavg?.[0]?.toFixed(2) ?? '—'} load</div>
+      <div class="bar-wrap"><div class="bar-fill bar-cpu" style="width:${cpuBar}%"></div></div>
+    </div>
+    <div class="sys-card">
+      <div class="label">Memory</div>
+      <div class="value">${(sys.totalMem / 1073741824).toFixed(1)} GB</div>
+      <div class="sub">${(sys.freeMem / 1073741824).toFixed(1)} GB free · ${memBar}% used</div>
+      <div class="bar-wrap"><div class="bar-fill bar-mem" style="width:${memBar}%"></div></div>
+    </div>
+    <div class="sys-card">
+      <div class="label">Host</div>
+      <div class="value" style="font-size:18px">${sys.hostname}</div>
+      <div class="sub">${sys.platform} ${sys.arch}</div>
+    </div>
+    <div class="sys-card">
+      <div class="label">Uptime</div>
+      <div class="value" style="font-size:18px">${fmtUptime(sys.uptime)}</div>
+      <div class="sub">since last restart</div>
+    </div>
+  `;
+}
+
+function renderSvcs(svcs) {
+  document.getElementById("svcGrid").innerHTML = svcs.map(s => {
+    const cls = s.alive ? "up" : "down";
+    const ext = EXTERNAL[s.name];
+    let detail = `${s.host}:${s.port}`;
+    if (ext) detail += ` · <a href="${ext}" target="_blank">open</a>`;
+    return `
+      <div class="svc-card ${cls}">
+        <div class="top">
+          <div class="name">${s.name}</div>
+          <div class="badge">${s.alive ? "UP" : "DOWN"}</div>
+        </div>
+        <div class="detail">${detail}</div>
+      </div>
+    `;
+  }).join("");
+}
+
+function fmtUptime(s) {
+  const d = Math.floor(s / 86400); s -= d * 86400;
+  const h = Math.floor(s / 3600); s -= h * 3600;
+  const m = Math.floor(s / 60);
+  if (d) return `${d}d ${h}h ${m}m`;
+  if (h) return `${h}h ${m}m`;
+  return `${m}m`;
+}
+
+load();
+setInterval(load, 10000);
+</script>
+</body>
+</html>
