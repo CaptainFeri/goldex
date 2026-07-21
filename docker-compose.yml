@@ -117,6 +117,8 @@ services:
     restart: unless-stopped
     ports:
       - "${MONITOR_PORT:-8080}:8080"
+    environment:
+      EXTERNAL_HOST: ${EXTERNAL_HOST:-http://localhost}
     networks:
       - goldex-network
     healthcheck:
