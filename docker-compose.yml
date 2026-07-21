@@ -269,6 +269,8 @@ services:
     depends_on:
       goldex-backend:
         condition: service_started
+    env_file:
+      - .env
     environment:
       BACKEND_HOST: goldex-backend
       BACKEND_PORT: 3000
@@ -277,7 +279,7 @@ services:
     networks:
       - goldex-network
     healthcheck:
-      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:80/"]
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://127.0.0.1:80/"]
       interval: 30s
       timeout: 5s
       start_period: 10s
@@ -297,6 +299,8 @@ services:
     depends_on:
       goldex-backend:
         condition: service_started
+    env_file:
+      - .env
     environment:
       BACKEND_HOST: goldex-backend
       BACKEND_PORT: 3000
@@ -305,7 +309,7 @@ services:
     networks:
       - goldex-network
     healthcheck:
-      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:80/"]
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://127.0.0.1:80/"]
       interval: 30s
       timeout: 5s
       start_period: 10s
