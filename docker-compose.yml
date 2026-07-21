@@ -149,7 +149,7 @@ services:
       - .env
     environment:
       GOLDEX_REDIS_HOST: redis
-      GOLDEX_REDIS_PORT: 6379
+      GOLDEX_REDIS_INTERNAL_PORT: 6379
       GOLDEX_PRICING_REDIS_HOST: redis
       GOLDEX_PRICING_REDIS_PORT: 6379
       GOLDEX_RABBITMQ_HOST: rabbitmq
