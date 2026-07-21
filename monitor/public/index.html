@@ -200,10 +200,7 @@ h1 small{font-size:12px;color:var(--text2);font-weight:400;letter-spacing:0;disp
   <div class="sys-grid" id="sysGrid"></div>
 </section>
 
-<section class="section">
-  <div class="section-title">Services</div>
-  <div class="svc-grid" id="svcGrid"></div>
-</section>
+<div id="svcSections"></div>
 
 <div class="footer">
   <button onclick="load()">⟳ Refresh</button>
@@ -220,10 +217,11 @@ async function load() {
     renderSys(sys);
     renderSvcs(svcs);
     const up = svcs.filter(s => s.alive).length;
+    const total = svcs.length;
     const dot = document.getElementById("statusDot");
-    dot.className = "status-dot";
-    if (up === svcs.length) dot.classList.add("loading");
-    document.getElementById("statusText").textContent = `All services ${up === svcs.length ? "operational" : `(${up}/${svcs.length} online)`}`;
+    dot.className = "status-dot loading";
+    if (up === total) dot.classList.remove("loading");
+    document.getElementById("statusText").textContent = `${up}/${total} online`;
     document.getElementById("statusTime").textContent = new Date().toLocaleTimeString();
     lastLoad = Date.now();
   } catch {
@@ -311,32 +309,48 @@ function renderSys(sys) {
 }
 
 function renderSvcs(svcs) {
-  document.getElementById("svcGrid").innerHTML = svcs.map(s => {
-    const cls = s.alive ? "up" : "down";
-    const ext = s.externalUrl;
+  const groups = {};
+  for (const s of svcs) {
+    if (!groups[s.category]) groups[s.category] = [];
+    groups[s.category].push(s);
+  }
+  const order = ["Infrastructure", "Management UI", "Backend", "Frontend"];
+  const container = document.getElementById("svcSections");
+  container.innerHTML = order.map(cat => {
+    if (!groups[cat]) return "";
+    const items = groups[cat].map(s => {
+      const cls = s.alive ? "up" : "down";
+      const ext = s.externalUrl;
+      return `
+        <div class="svc-card ${cls}">
+          <div class="top">
+            <div class="name">
+              ${s.name}
+              <small>${s.internalEndpoint}</small>
+            </div>
+            <div class="badge ${cls}">
+              <span class="badge-dot"></span> ${s.alive ? "UP" : "DOWN"}
+            </div>
+          </div>
+          <div class="endpoints">
+            <div class="ep-row">
+              <span class="ep-label">INT</span>
+              <code>${s.internalEndpoint}</code>
+            </div>
+            <div class="ep-row">
+              <span class="ep-label">EXT</span>
+              <code>${ext ? new URL(ext).host : '—'}</code>
+              ${ext ? `<a href="${ext}" target="_blank" rel="noopener">open ↗</a>` : ''}
+            </div>
+          </div>
+        </div>
+      `;
+    }).join("");
     return `
-      <div class="svc-card ${cls}">
-        <div class="top">
-          <div class="name">
-            ${s.name}
-            <small>${s.internalEndpoint}</small>
-          </div>
-          <div class="badge ${cls}">
-            <span class="badge-dot"></span> ${s.alive ? "UP" : "DOWN"}
-          </div>
-        </div>
-        <div class="endpoints">
-          <div class="ep-row">
-            <span class="ep-label">INT</span>
-            <code>${s.internalEndpoint}</code>
-          </div>
-          <div class="ep-row">
-            <span class="ep-label">EXT</span>
-            <code>${ext ? new URL(ext).host : '—'}</code>
-            ${ext ? `<a href="${ext}" target="_blank" rel="noopener">open ↗</a>` : ''}
-          </div>
-        </div>
-      </div>
+      <section class="section">
+        <div class="section-title">${cat}</div>
+        <div class="svc-grid">${items}</div>
+      </section>
     `;
   }).join("");
 }

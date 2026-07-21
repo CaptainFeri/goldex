@@ -11,21 +11,25 @@ const EXTERNAL_HOST = process.env.EXTERNAL_HOST || "http://localhost";
 app.use(express.static("public"));
 
 const services = [
-  { name: "PostgreSQL",          host: "postgres",                    port: 5432, externalPort: 5434 },
-  { name: "pgAdmin",             host: "pgadmin",                     port: 80,   externalPort: 5050 },
-  { name: "Redis",               host: "redis",                       port: 6379, externalPort: 6381 },
-  { name: "Redis Insight",       host: "redis-insight",               port: 5540, externalPort: 5540 },
-  { name: "MinIO API",           host: "minio",                       port: 9000, externalPort: 9000 },
-  { name: "MinIO Console",       host: "minio",                       port: 9001, externalPort: 9001 },
-  { name: "RabbitMQ AMQP",       host: "rabbitmq",                    port: 5672, externalPort: 5672 },
-  { name: "RabbitMQ Mgmt",       host: "rabbitmq",                    port: 15672, externalPort: 15672 },
-  { name: "Goldex Backend",      host: "goldex-backend",              port: 3000, externalPort: 4040 },
-  { name: "Pricing Engine",      host: "goldex-pricing-engine",       port: 3000, externalPort: 4000 },
-  { name: "Pricing Mock",        host: "goldex-pricing-engine-mock",  port: 5000, externalPort: 5000 },
-  { name: "Telegram Bot",        host: "goldex-telegram-bot",         port: 4000, externalPort: 3001 },
-  { name: "Telegram Monitoring", host: "telegram-monitoring",         port: 3000, externalPort: 3002 },
-  { name: "Admin Panel",         host: "admin-panel",                 port: 80,   externalPort: 5190 },
-  { name: "User Panel",          host: "user-panel",                  port: 80,   externalPort: 5173 },
+  // Infrastructure
+  { name: "PostgreSQL",          category: "Infrastructure",  host: "postgres",                    port: 5432,  externalPort: 5434 },
+  { name: "Redis",               category: "Infrastructure",  host: "redis",                       port: 6379,  externalPort: 6381 },
+  { name: "RabbitMQ AMQP",       category: "Infrastructure",  host: "rabbitmq",                    port: 5672,  externalPort: 5672 },
+  { name: "MinIO API",           category: "Infrastructure",  host: "minio",                       port: 9000,  externalPort: 9000 },
+  // Management UI
+  { name: "pgAdmin",             category: "Management UI",   host: "pgadmin",                     port: 80,    externalPort: 5050 },
+  { name: "Redis Insight",       category: "Management UI",   host: "redis-insight",               port: 5540,  externalPort: 5540 },
+  { name: "RabbitMQ Mgmt",       category: "Management UI",   host: "rabbitmq",                    port: 15672, externalPort: 15672 },
+  { name: "MinIO Console",       category: "Management UI",   host: "minio",                       port: 9001,  externalPort: 9001 },
+  // Backend
+  { name: "Goldex Backend",      category: "Backend",         host: "goldex-backend",              port: 3000,  externalPort: 4040 },
+  { name: "Pricing Engine",      category: "Backend",         host: "goldex-pricing-engine",       port: 3000,  externalPort: 4000 },
+  { name: "Pricing Mock",        category: "Backend",         host: "goldex-pricing-engine-mock",  port: 5000,  externalPort: 5000 },
+  { name: "Telegram Bot",        category: "Backend",         host: "goldex-telegram-bot",         port: 4000,  externalPort: 3001 },
+  { name: "Telegram Monitoring", category: "Backend",         host: "telegram-monitoring",         port: 3000,  externalPort: 3002 },
+  // Frontend
+  { name: "Admin Panel",         category: "Frontend",        host: "admin-panel",                 port: 80,    externalPort: 5190 },
+  { name: "User Panel",          category: "Frontend",        host: "user-panel",                  port: 80,    externalPort: 5173 },
 ];
 
 function checkTcp(host, port, timeout = 4000) {
