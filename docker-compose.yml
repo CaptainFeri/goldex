@@ -1,0 +1,322 @@
+services:
+  # ════════════════════════════════════════════
+  # INFRASTRUCTURE
+  # ════════════════════════════════════════════
+
+  postgres:
+    image: postgres:15-alpine
+    container_name: goldex-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${GOLDEX_AUTH_POSTGRES_USERNAME:-postgres}
+      POSTGRES_PASSWORD: ${GOLDEX_AUTH_POSTGRES_PASSWORD:-postgres}
+      POSTGRES_DB: ${GOLDEX_AUTH_POSTGRES_DBNAME:-GOLDEX-DB}
+      POSTGRES_MULTIPLE_DATABASES: ${POSTGRES_MULTIPLE_DATABASES:-gold_price_db,goldex_telegram_bot_db}
+    ports:
+      - "${POSTGRES_EXTERNAL_PORT:-5434}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./postgres-init:/docker-entrypoint-initdb.d
+    networks:
+      - goldex-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${GOLDEX_AUTH_POSTGRES_USERNAME:-postgres}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    container_name: goldex-pgadmin
+    restart: unless-stopped
+    environment:
+      PGADMIN_DEFAULT_EMAIL: ${GOLDEX_PGADMIN_DEFAULT_EMAIL:-admin@example.com}
+      PGADMIN_DEFAULT_PASSWORD: ${GOLDEX_PGADMIN_DEFAULT_PASSWORD:-admin}
+    ports:
+      - "${PGADMIN_EXTERNAL_PORT:-5050}:80"
+    volumes:
+      - pgadmin_data:/var/lib/pgadmin
+    networks:
+      - goldex-network
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  redis:
+    image: redis:7-alpine
+    container_name: goldex-redis
+    restart: unless-stopped
+    command: redis-server --appendonly yes
+    ports:
+      - "${REDIS_EXTERNAL_PORT:-6381}:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - goldex-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis-insight:
+    image: redis/redisinsight:latest
+    container_name: goldex-redis-insight
+    restart: unless-stopped
+    ports:
+      - "${REDIS_INSIGHT_EXTERNAL_PORT:-5540}:5540"
+    volumes:
+      - redis_insight_data:/db
+    networks:
+      - goldex-network
+    depends_on:
+      redis:
+        condition: service_healthy
+
+  minio:
+    image: minio/minio:latest
+    container_name: goldex-minio
+    restart: unless-stopped
+    command: server /data --console-address ":${MINIO_CONSOLE_PORT:-9001}"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minioadmin123}
+    ports:
+      - "${MINIO_API_PORT:-9000}:9000"
+      - "${MINIO_CONSOLE_PORT:-9001}:9001"
+    volumes:
+      - minio_data:/data
+    networks:
+      - goldex-network
+
+  rabbitmq:
+    image: rabbitmq:4-management-alpine
+    container_name: goldex-rabbitmq
+    restart: unless-stopped
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:-guest}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASS:-guest}
+    ports:
+      - "${RABBITMQ_PORT:-5672}:5672"
+      - "${RABBITMQ_MGMT_PORT:-15672}:15672"
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+    networks:
+      - goldex-network
+    healthcheck:
+      test: ["CMD", "rabbitmqctl", "status"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+
+  # ════════════════════════════════════════════
+  # APP SERVICES
+  # ════════════════════════════════════════════
+
+  goldex-backend:
+    build:
+      context: ./goldex-backend
+      dockerfile: Dockerfile
+    container_name: goldex-backend
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+      minio:
+        condition: service_started
+    env_file:
+      - .env
+    environment:
+      GOLDEX_REDIS_HOST: redis
+      GOLDEX_REDIS_PORT: 6379
+      GOLDEX_PRICING_REDIS_HOST: redis
+      GOLDEX_PRICING_REDIS_PORT: 6379
+      GOLDEX_RABBITMQ_HOST: rabbitmq
+      BASE_APP_POSTGRES_URL: postgres
+      GOLDEX_AUTH_POSTGRES_URL: postgres
+      MINIO_ENDPOINT: minio
+      NODE_ENV: production
+    ports:
+      - "${BACKEND_EXTERNAL_PORT:-4040}:${GOLDEX_APP_INTERNAL_PORT:-3000}"
+    volumes:
+      - backend_logs:/app/logs
+    networks:
+      - goldex-network
+
+  goldex-pricing-engine:
+    build:
+      context: ./goldex-pricing-engine
+      dockerfile: Dockerfile
+      target: runner
+    container_name: goldex-pricing-engine
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    env_file:
+      - .env
+    environment:
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_USERNAME: ${GOLDEX_AUTH_POSTGRES_USERNAME:-postgres}
+      DB_PASSWORD: ${GOLDEX_AUTH_POSTGRES_PASSWORD:-postgres}
+      DB_DATABASE: gold_price_db
+      RABBITMQ_HOST: rabbitmq
+      RABBITMQ_PORT: 5672
+      MOCK_HOST: goldex-pricing-engine-mock
+      MOCK_PORT: 5000
+      PORT: 3000
+      NODE_ENV: production
+    ports:
+      - "${PRICING_ENGINE_EXTERNAL_PORT:-4000}:3000"
+    volumes:
+      - pricing_engine_logs:/app/logs
+    networks:
+      - goldex-network
+
+  goldex-pricing-engine-mock:
+    build:
+      context: ./goldex-pricing-engine
+      dockerfile: Dockerfile
+      target: mock
+    container_name: goldex-pricing-engine-mock
+    restart: unless-stopped
+    ports:
+      - "${MOCK_EXTERNAL_PORT:-5000}:5000"
+    environment:
+      MOCK_PORT: 5000
+      MOCK_TICK_MS: ${MOCK_TICK_MS:-10000}
+      MOCK_JITTER_PCT: ${MOCK_JITTER_PCT:-0.003}
+      MOCK_EXTRA_ITEMS: ${MOCK_EXTRA_ITEMS:-0}
+    networks:
+      - goldex-network
+
+  goldex-telegram-bot:
+    build:
+      context: ./goldex-telegram-bot
+      dockerfile: Dockerfile
+    container_name: goldex-telegram-bot
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    env_file:
+      - .env
+    environment:
+      TELEGRAM_BOT_POSTGRES_URL: postgres
+      TELEGRAM_BOT_POSTGRES_PORT: 5432
+      GOLDEX_BACKEND_URL: http://goldex-backend:3000
+    ports:
+      - "${TELEGRAM_BOT_EXTERNAL_PORT:-3001}:${TELEGRAM_BOT_PORT:-4000}"
+    networks:
+      - goldex-network
+
+  telegram-monitoring:
+    build:
+      context: ./telegram_monitoring
+      dockerfile: Dockerfile
+    container_name: telegram-monitoring
+    restart: unless-stopped
+    depends_on:
+      redis:
+        condition: service_healthy
+    env_file:
+      - .env
+    environment:
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      PORT: 3000
+    ports:
+      - "${TELEGRAM_MONITORING_EXTERNAL_PORT:-3002}:3000"
+    volumes:
+      - ./telegram_monitoring/sessions:/app/sessions
+    networks:
+      - goldex-network
+
+  admin-panel:
+    build:
+      context: ./goldex-admin-panel
+      dockerfile: Dockerfile
+    container_name: goldex-admin-panel
+    restart: unless-stopped
+    depends_on:
+      goldex-backend:
+        condition: service_started
+    environment:
+      BACKEND_HOST: goldex-backend
+      BACKEND_PORT: 3000
+    ports:
+      - "${ADMIN_PANEL_PORT:-5190}:80"
+    networks:
+      - goldex-network
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:80/"]
+      interval: 30s
+      timeout: 5s
+      start_period: 10s
+      retries: 3
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  user-panel:
+    build:
+      context: ./goldex-user-panel
+      dockerfile: Dockerfile
+    container_name: goldex-user-panel
+    restart: unless-stopped
+    depends_on:
+      goldex-backend:
+        condition: service_started
+    environment:
+      BACKEND_HOST: goldex-backend
+      BACKEND_PORT: 3000
+    ports:
+      - "${USER_PANEL_PORT:-5173}:80"
+    networks:
+      - goldex-network
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:80/"]
+      interval: 30s
+      timeout: 5s
+      start_period: 10s
+      retries: 3
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+# ════════════════════════════════════════════
+# VOLUMES
+# ════════════════════════════════════════════
+
+volumes:
+  postgres_data:
+  pgadmin_data:
+  redis_data:
+  redis_insight_data:
+  minio_data:
+  rabbitmq_data:
+  backend_logs:
+  pricing_engine_logs:
+
+# ════════════════════════════════════════════
+# NETWORKS
+# ════════════════════════════════════════════
+
+networks:
+  goldex-network:
+    driver: bridge
