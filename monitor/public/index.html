@@ -153,6 +153,45 @@ h1 small{font-size:12px;color:var(--text2);font-weight:400;letter-spacing:0;disp
   color:var(--blue);text-decoration:none;font-size:11px;
 }
 .ep-row a:hover{text-decoration:underline;color:var(--cyan)}
+.svc-actions{margin-top:8px;display:flex;gap:6px}
+.btn-logs{
+  background:var(--surface2);border:1px solid var(--border);
+  color:var(--text2);padding:4px 10px;border-radius:6px;
+  cursor:pointer;font-size:10px;transition:all .2s;
+}
+.btn-logs:hover{background:var(--border);color:var(--text)}
+
+/* Log modal */
+.modal-overlay{
+  display:none;position:fixed;inset:0;z-index:1000;
+  background:rgba(0,0,0,.7);backdrop-filter:blur(4px);
+  align-items:center;justify-content:center;
+}
+.modal-overlay.open{display:flex}
+.modal{
+  background:var(--surface);border:1px solid var(--border);
+  border-radius:12px;width:90vw;max-width:900px;
+  max-height:80vh;display:flex;flex-direction:column;
+}
+.modal-header{
+  display:flex;justify-content:space-between;align-items:center;
+  padding:14px 18px;border-bottom:1px solid var(--border);
+}
+.modal-header h3{font-size:14px;font-weight:600}
+.modal-close{
+  background:none;border:none;color:var(--text3);font-size:18px;
+  cursor:pointer;padding:4px 8px;border-radius:4px;
+}
+.modal-close:hover{background:var(--surface2);color:var(--text)}
+.modal-body{
+  padding:14px 18px;overflow-y:auto;flex:1;
+  font-family:"SF Mono","Fira Code","Cascadia Code",monospace;
+  font-size:11px;line-height:1.5;color:var(--text2);
+  white-space:pre-wrap;word-break:break-all;
+}
+.modal-body .log-line{display:block}
+.modal-body .log-line::before{content:attr(data-n);color:var(--text3);margin-right:10px;min-width:32px;display:inline-block;text-align:right}
+.modal-loading{text-align:center;padding:40px;color:var(--text3);font-size:12px}
 
 /* Footer */
 .footer{
@@ -202,6 +241,18 @@ h1 small{font-size:12px;color:var(--text2);font-weight:400;letter-spacing:0;disp
 
 <div id="svcSections"></div>
 
+<div class="modal-overlay" id="logModal">
+  <div class="modal">
+    <div class="modal-header">
+      <h3 id="logTitle">Logs</h3>
+      <button class="modal-close" onclick="closeLogs()">✕</button>
+    </div>
+    <div class="modal-body" id="logBody">
+      <div class="modal-loading">Loading logs...</div>
+    </div>
+  </div>
+</div>
+
 <div class="footer">
   <button onclick="load()">⟳ Refresh</button>
   <span class="countdown" id="countdown">Auto-refresh in 10s</span>
@@ -239,6 +290,7 @@ function tick() {
   document.getElementById("countdown").textContent = `Auto-refresh in ${remaining}s`;
   if (remaining <= 0) { load(); countdown = 10; }
 }
+document.addEventListener("keydown", e => { if (e.key === "Escape") closeLogs(); });
 setInterval(tick, 500);
 load();
 
@@ -343,6 +395,9 @@ function renderSvcs(svcs) {
               ${ext ? `<a href="${ext}" target="_blank" rel="noopener">open ↗</a>` : ''}
             </div>
           </div>
+          <div class="svc-actions">
+            <button class="btn-logs" onclick="viewLogs('${s.containerName}','${s.name}')">📋 Logs</button>
+          </div>
         </div>
       `;
     }).join("");
@@ -353,6 +408,36 @@ function renderSvcs(svcs) {
       </section>
     `;
   }).join("");
+}
+
+async function viewLogs(container, name) {
+  const modal = document.getElementById("logModal");
+  const title = document.getElementById("logTitle");
+  const body = document.getElementById("logBody");
+  modal.classList.add("open");
+  title.textContent = `Logs — ${name} (${container})`;
+  body.innerHTML = '<div class="modal-loading">Loading logs...</div>';
+  try {
+    const res = await fetch(`/api/logs/${container}?lines=80`);
+    const data = await res.json();
+    const lines = data.log.split("\n").filter(Boolean);
+    body.innerHTML = lines.map((l, i) =>
+      `<span class="log-line" data-n="${i + 1}">${escHtml(l)}</span>`
+    ).join("");
+    body.scrollTop = body.scrollHeight;
+  } catch {
+    body.innerHTML = '<div class="modal-loading" style="color:var(--red)">Failed to load logs</div>';
+  }
+}
+
+function closeLogs() {
+  document.getElementById("logModal").classList.remove("open");
+}
+
+function escHtml(s) {
+  const d = document.createElement("div");
+  d.textContent = s;
+  return d.innerHTML;
 }
 
 function fmtUptime(s) {
