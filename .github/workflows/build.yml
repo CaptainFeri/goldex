@@ -11,8 +11,7 @@ jobs:
     runs-on: ubuntu-latest
 
     permissions:
-      actions: write
-      contents: read
+      contents: write
 
     env:
       ANDROID_HOME: /usr/local/lib/android/sdk
@@ -50,15 +49,13 @@ jobs:
           cd $GITHUB_WORKSPACE/goldex-sms-forwarder
           gradle assembleDebug
 
-      - name: Upload APK
+      - name: Upload APK to Release
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          mkdir -p /tmp/artifact
-          cp $GITHUB_WORKSPACE/goldex-sms-forwarder/app/build/outputs/apk/debug/app-debug.apk /tmp/artifact/
-          cd /tmp/artifact && zip -r /tmp/app-debug.zip app-debug.apk
-          curl -L -X POST \
-            -H "Accept: application/vnd.github+json" \
-            -H "Authorization: Bearer ${GITHUB_TOKEN}" \
-            -F "file=@/tmp/app-debug.zip;type=application/zip" \
-            "https://uploads.github.com/repos/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}/artifacts?name=app-debug&expiration_in_days=7"
+          gh release delete "latest-build" --yes 2>/dev/null || true
+          gh release create "latest-build" \
+            "$GITHUB_WORKSPACE/goldex-sms-forwarder/app/build/outputs/apk/debug/app-debug.apk" \
+            --title "Latest Build" \
+            --notes "APK from commit ${GITHUB_SHA}" \
+            --latest
