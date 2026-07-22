@@ -37,15 +37,7 @@ Leave keyword empty to forward **all** SMS messages.
 
 Push to `main`. Go to **Actions** tab → select **Build APK** → download the artifact.
 
-### Option 2 — Docker
-
-```bash
-docker build -t sms-forwarder-builder .
-docker run --rm -v ${PWD}/output:/output sms-forwarder-builder \
-    cp /app/app/build/outputs/apk/debug/app-debug.apk /output/
-```
-
-### Option 3 — Manual (Android Studio)
+### Option 2 — Manual (Android Studio)
 
 Open `goldex-sms-forwarder/` in Android Studio, then **Build → Build Bundle(s) / APK(s) → Build APK(s)**.
 
