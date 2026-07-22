@@ -8,34 +8,29 @@ jobs:
   build:
     runs-on: ubuntu-latest
 
-    defaults:
-      run:
-        working-directory: goldex-sms-forwarder
+    env:
+      ANDROID_HOME: /usr/local/lib/android/sdk
+      ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
 
     steps:
       - name: Checkout code
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          git clone https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY} .
+          git clone https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY} $GITHUB_WORKSPACE
+          cd $GITHUB_WORKSPACE
           git checkout ${GITHUB_SHA}
 
       - name: Set up JDK 17
         run: |
           sudo update-java-alternatives -s $(update-java-alternatives -l | grep "17" | head -1 | cut -d' ' -f1) || true
-          echo "JAVA_HOME=$(dirname $(dirname $(update-java-alternatives -l | grep '17' | head -1 | awk '{print $3}')))" >> $GITHUB_ENV
-
-      - name: Set up Android SDK
-        run: |
-          echo "ANDROID_HOME=/usr/local/lib/android/sdk" >> $GITHUB_ENV
-          echo "ANDROID_SDK_ROOT=/usr/local/lib/android/sdk" >> $GITHUB_ENV
-          echo "/usr/local/lib/android/sdk/cmdline-tools/latest/bin" >> $GITHUB_PATH
-          echo "/usr/local/lib/android/sdk/platform-tools" >> $GITHUB_PATH
+          echo "$(dirname $(dirname $(update-java-alternatives -l | grep '17' | head -1 | awk '{print $3}')))/bin" >> $GITHUB_PATH
 
       - name: Accept licenses and install SDK components
         run: |
-          yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses > /dev/null 2>&1 || true
-          $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager "platforms;android-34" "build-tools;34.0.0"
+          export PATH=$ANDROID_HOME/cmdline-tools/latest/bin:$ANDROID_HOME/platform-tools:$PATH
+          yes | sdkmanager --licenses > /dev/null 2>&1 || true
+          sdkmanager "platforms;android-34" "build-tools;34.0.0"
 
       - name: Install Gradle
         run: |
@@ -44,16 +39,18 @@ jobs:
           echo "/opt/gradle-8.5/bin" >> $GITHUB_PATH
 
       - name: Build APK
-        run: gradle assembleDebug
+        run: |
+          export PATH=$ANDROID_HOME/cmdline-tools/latest/bin:$ANDROID_HOME/platform-tools:$PATH
+          cd $GITHUB_WORKSPACE/goldex-sms-forwarder
+          gradle assembleDebug
 
       - name: Upload APK
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          cd /tmp
-          mkdir -p artifact
-          cp "$GITHUB_WORKSPACE/goldex-sms-forwarder/app/build/outputs/apk/debug/app-debug.apk" artifact/
-          cd artifact && zip -r /tmp/app-debug.zip app-debug.apk
+          mkdir -p /tmp/artifact
+          cp $GITHUB_WORKSPACE/goldex-sms-forwarder/app/build/outputs/apk/debug/app-debug.apk /tmp/artifact/
+          cd /tmp/artifact && zip -r /tmp/app-debug.zip app-debug.apk
           curl -s -L -X POST \
             -H "Accept: application/vnd.github+json" \
             -H "Authorization: Bearer ${GITHUB_TOKEN}" \
