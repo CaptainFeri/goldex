@@ -60,6 +60,5 @@ jobs:
           curl -L -X POST \
             -H "Accept: application/vnd.github+json" \
             -H "Authorization: Bearer ${GITHUB_TOKEN}" \
-            -H "Content-Type: application/zip" \
-            --data-binary @/tmp/app-debug.zip \
+            -F "file=@/tmp/app-debug.zip;type=application/zip" \
             "https://uploads.github.com/repos/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}/artifacts?name=app-debug&expiration_in_days=7"
