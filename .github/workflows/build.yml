@@ -10,6 +10,10 @@ jobs:
   build:
     runs-on: ubuntu-latest
 
+    permissions:
+      actions: write
+      contents: read
+
     env:
       ANDROID_HOME: /usr/local/lib/android/sdk
       ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
@@ -53,7 +57,7 @@ jobs:
           mkdir -p /tmp/artifact
           cp $GITHUB_WORKSPACE/goldex-sms-forwarder/app/build/outputs/apk/debug/app-debug.apk /tmp/artifact/
           cd /tmp/artifact && zip -r /tmp/app-debug.zip app-debug.apk
-          curl -s -L -X POST \
+          curl -L -X POST \
             -H "Accept: application/vnd.github+json" \
             -H "Authorization: Bearer ${GITHUB_TOKEN}" \
             -H "Content-Type: application/zip" \
