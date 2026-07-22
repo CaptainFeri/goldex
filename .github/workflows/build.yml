@@ -2,6 +2,8 @@ name: Build APK
 
 on:
   push:
+    paths:
+      - 'goldex-sms-forwarder/**'
   workflow_dispatch:
 
 jobs:
@@ -34,9 +36,9 @@ jobs:
 
       - name: Install Gradle
         run: |
-          curl -fsSL https://services.gradle.org/distributions/gradle-8.5-bin.zip -o /tmp/gradle.zip
+          curl -fsSL https://services.gradle.org/distributions/gradle-8.6-bin.zip -o /tmp/gradle.zip
           sudo unzip -q /tmp/gradle.zip -d /opt
-          echo "/opt/gradle-8.5/bin" >> $GITHUB_PATH
+          echo "/opt/gradle-8.6/bin" >> $GITHUB_PATH
 
       - name: Build APK
         run: |
