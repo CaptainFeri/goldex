@@ -1110,15 +1110,12 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
         ? `${srcPrice.toLocaleString()} تومان`
         : '💰 قیمت بازار';
 
-      // 6. Determine who should accept (the SELLER) and send them the accept button
-      if (srcSide === 'SELL') {
-        // Original is SELL → owner is SELLER, clicker is BUYER
-        // Send accept button to SELLER, notify BUYER that request was sent
-        const sellerChatId = this.activeOrders.get(orderId)?.chatId;
+      const srcEntryChatId = srcFromBackend ? this.activeOrders.get(orderId)?.chatId : (srcData as any).chatId;
 
-        if (sellerChatId && sellerChatId > 0) {
-          await this.sendMessage(sellerChatId,
-            `🔔 *درخواست تطبیق سفارش ${sideLabel}*\n\n` +
+      if (srcSide === 'SELL') {
+        if (srcEntryChatId && srcEntryChatId > 0) {
+          await this.sendMessage(srcEntryChatId,
+            `🔔 *درخواست تطبیق سفارش فروش*\n\n` +
             `یک خریدار برای سفارش فروش شما پیدا شده است.\n` +
             `💰 قیمت واحد: ${priceLabel}\n` +
             `⚖️ مقدار: ${srcQty.toLocaleString()} گرم\n\n` +
@@ -1139,7 +1136,6 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
             this.mainMenuReply()
           );
         } else {
-          // Can't reach seller directly — tell clicker their order is pending
           await this.sendMessage(chatId,
             `📋 *سفارش ${sideLabel} شما ثبت شد*\n\n` +
             `متأسفانه نمی‌توانیم به فروشنده اطلاع‌رسانی کنیم.\n` +
@@ -1148,10 +1144,8 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
           );
         }
       } else {
-        // Original is BUY → clicker is SELLER
-        // Send accept button to SELLER (clicker), notify BUYER (original owner)
         await this.sendMessage(chatId,
-          `🔔 *درخواست تطبیق سفارش ${sideLabel}*\n\n` +
+          `🔔 *درخواست تطبیق سفارش فروش*\n\n` +
           `یک خریدار برای سفارش فروش شما پیدا شده است.\n` +
           `💰 قیمت واحد: ${priceLabel}\n` +
           `⚖️ مقدار: ${srcQty.toLocaleString()} گرم\n\n` +
@@ -1165,10 +1159,8 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
           }
         );
 
-        // Notify the original buyer that a seller was found
-        const buyerChatId = this.activeOrders.get(orderId)?.chatId;
-        if (buyerChatId && buyerChatId > 0) {
-          await this.sendMessage(buyerChatId,
+        if (srcEntryChatId && srcEntryChatId > 0) {
+          await this.sendMessage(srcEntryChatId,
             `📋 *درخواست تطبیق شما به فروشنده ارسال شد*\n\n` +
             `یک فروشنده جدید برای سفارش خرید شما پیدا شده است.\n` +
             `پس از تأیید فروشنده، معامله تکمیل و به شما اطلاع داده می‌شود. ✅`,
@@ -1231,14 +1223,17 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
         }
       }
 
-      // Notify the SELLER via DM
-      if (sellOrder && sellOrder.chatId > 0) {
-        await this.sendMessage(sellOrder.chatId,
-          `✅ *سفارش فروش شما تکمیل شد*\n\n` +
-          `خریدار سفارش شما را تطبیق داد.\n` +
-          `💰 موجودی کیف پول شما به‌روزرسانی شد.\n\n` +
-          `از منوی زیر استفاده کنید:`,
-          this.mainMenuReply());
+      // Notify the BUYER that the seller accepted the match
+      if (matchedBuyOrderId) {
+        const buyOrder = this.activeOrders.get(matchedBuyOrderId);
+        if (buyOrder && buyOrder.chatId > 0) {
+          await this.sendMessage(buyOrder.chatId,
+            `✅ *سفارش خرید شما تکمیل شد*\n\n` +
+            `فروشنده درخواست تطبیق شما را تأیید کرد.\n` +
+            `💰 موجودی کیف پول شما به‌روزرسانی شد.\n\n` +
+            `از منوی زیر استفاده کنید:`,
+            this.mainMenuReply());
+        }
       }
 
       // Update both orders' channel messages with matched status
