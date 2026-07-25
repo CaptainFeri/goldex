@@ -25,14 +25,6 @@ export class QuoteRequestController {
     private readonly pairRepo: Repository<PricePairEntity>,
   ) {}
 
-  @Get(":id")
-  @UseGuards(UserAuthGuard)
-  @ApiBearerAuth()
-  async getById(@Param("id") id: string) {
-    const request = await this.service.findById(id);
-    return { data: request };
-  }
-
   @Get("pairs")
   async getPairs() {
     const pairs = await this.pairRepo.find({
@@ -69,6 +61,14 @@ export class QuoteRequestController {
   async getPending() {
     const requests = await this.service.getPending();
     return { data: requests };
+  }
+
+  @Get(":id")
+  @UseGuards(UserAuthGuard)
+  @ApiBearerAuth()
+  async getById(@Param("id") id: string) {
+    const request = await this.service.findById(id);
+    return { data: request };
   }
 
   @Post(":id/match")
