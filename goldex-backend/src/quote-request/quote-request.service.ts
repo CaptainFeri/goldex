@@ -94,11 +94,8 @@ export class QuoteRequestService {
     });
     if (!request) throw new Error("درخواست یافت نشد");
     if (request.status !== QuoteRequestStatus.PENDING) throw new Error("این درخواست دیگر فعال نیست");
-    if (request.userId === matcherUserId) throw new Error("نمی‌توانید درخواست خود را تطبیق دهید");
 
     const pair = request.pricePair;
-    const SELLER_ID = request.userId;
-    const BUYER_ID = matcherUserId;
     const quantity = Number(request.quantity);
     const price = Number(request.price);
     const totalValue = quantity * price;
@@ -107,7 +104,31 @@ export class QuoteRequestService {
       throw new Error("قیمت سفارش نامعتبر است");
     }
 
+    let sellerId: string;
+    let buyerId: string;
     let buyerOrder: QuoteRequestEntity | null = null;
+
+    if (request.userId === matcherUserId) {
+      // Seller is approving the match — find the matching BUY order
+      buyerOrder = await this.repo.findOne({
+        where: {
+          pricePairId: request.pricePairId,
+          side: OrderSideEnum.BUY,
+          status: QuoteRequestStatus.PENDING,
+          userId: Not(matcherUserId),
+        },
+        order: { createAt: "ASC" },
+      });
+      if (!buyerOrder) {
+        throw new Error("هیچ سفارش خریدی برای تطبیق یافت نشد");
+      }
+      sellerId = request.userId;
+      buyerId = buyerOrder.userId;
+    } else {
+      // Buyer is calling match (the current order is SELL, caller is buyer)
+      sellerId = request.userId;
+      buyerId = matcherUserId;
+    }
 
     const queryRunner = this.dataSource.createQueryRunner();
     await queryRunner.connect();
@@ -115,10 +136,10 @@ export class QuoteRequestService {
 
     try {
       // Get wallets with pessimistic lock (prevents race conditions)
-      const sellerXauWallet = await this.getWallet(queryRunner, SELLER_ID, pair.baseSymbol.id);
-      const buyerXauWallet = await this.getWallet(queryRunner, BUYER_ID, pair.baseSymbol.id);
-      const sellerIrWallet = await this.getWallet(queryRunner, SELLER_ID, pair.quoteSymbol.id);
-      const buyerIrWallet = await this.getWallet(queryRunner, BUYER_ID, pair.quoteSymbol.id);
+      const sellerXauWallet = await this.getWallet(queryRunner, sellerId, pair.baseSymbol.id);
+      const buyerXauWallet = await this.getWallet(queryRunner, buyerId, pair.baseSymbol.id);
+      const sellerIrWallet = await this.getWallet(queryRunner, sellerId, pair.quoteSymbol.id);
+      const buyerIrWallet = await this.getWallet(queryRunner, buyerId, pair.quoteSymbol.id);
 
       // Validate seller has enough locked XAU
       if (sellerXauWallet.lockedBalance < quantity) {
@@ -200,7 +221,7 @@ export class QuoteRequestService {
           type: SystemLedgerType.COMMISSION_SELL,
           amount: sellCommission,
           requestId: request.id,
-          userId: SELLER_ID,
+          userId: sellerId,
           description: `P2P sell commission (${sellCommRate}%) in ${pair.baseSymbol.slug}`,
         });
       }
@@ -210,7 +231,7 @@ export class QuoteRequestService {
           type: SystemLedgerType.COMMISSION_BUY,
           amount: buyCommission,
           requestId: request.id,
-          userId: BUYER_ID,
+          userId: buyerId,
           description: `P2P buy commission (${buyCommRate}%) in ${pair.quoteSymbol.slug}`,
         });
       }
@@ -221,18 +242,28 @@ export class QuoteRequestService {
       request.matchedAt = new Date();
       await queryRunner.manager.save(request);
 
-      // Also mark buyer's matching BUY order as matched (if exists)
-      buyerOrder = await queryRunner.manager.findOne(QuoteRequestEntity, {
-        where: {
-          userId: BUYER_ID,
-          side: OrderSideEnum.BUY,
-          pricePairId: request.pricePairId,
-          status: QuoteRequestStatus.PENDING,
-        },
-      });
+      // Mark buyer's matching BUY order as matched (find inside txn with lock)
+      if (buyerOrder) {
+        // Already found above in seller path — refresh inside transaction
+        buyerOrder = await queryRunner.manager.findOne(QuoteRequestEntity, {
+          where: { id: buyerOrder.id },
+          lock: { mode: "pessimistic_write" },
+        });
+      }
+      if (!buyerOrder) {
+        buyerOrder = await queryRunner.manager.findOne(QuoteRequestEntity, {
+          where: {
+            userId: buyerId,
+            side: OrderSideEnum.BUY,
+            pricePairId: request.pricePairId,
+            status: QuoteRequestStatus.PENDING,
+          },
+          lock: { mode: "pessimistic_write" },
+        });
+      }
       if (buyerOrder) {
         buyerOrder.status = QuoteRequestStatus.MATCHED;
-        buyerOrder.matchedUserId = SELLER_ID;
+        buyerOrder.matchedUserId = sellerId;
         buyerOrder.matchedAt = new Date();
         await queryRunner.manager.save(buyerOrder);
       }
