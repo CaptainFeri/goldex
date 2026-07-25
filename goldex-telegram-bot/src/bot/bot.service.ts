@@ -942,14 +942,19 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
       );
     }
 
+    // Use query.from.id for user operations — when the callback originates
+    // from a channel message, query.message.chat.id is the channel ID, not
+    // the user's DM chat ID.
+    const userChatId = query.from.id;
+
     if (data.startsWith('fulfill:')) {
       const orderId = data.slice(8);
-      await this.handleFulfillCallback(chatId, orderId);
+      await this.handleFulfillCallback(userChatId, orderId);
     }
 
     if (data.startsWith('accept:')) {
       const orderId = data.slice(7);
-      await this.handleAcceptCallback(chatId, orderId);
+      await this.handleAcceptCallback(userChatId, orderId);
     }
   }
 
