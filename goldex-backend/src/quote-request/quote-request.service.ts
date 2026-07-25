@@ -280,6 +280,15 @@ export class QuoteRequestService {
     }
   }
 
+  async findById(id: string): Promise<QuoteRequestEntity> {
+    const request = await this.repo.findOne({
+      where: { id },
+      relations: { pricePair: { baseSymbol: true, quoteSymbol: true } },
+    });
+    if (!request) throw new Error("درخواست یافت نشد");
+    return request;
+  }
+
   async getPending(): Promise<QuoteRequestEntity[]> {
     return this.repo.find({
       where: { status: QuoteRequestStatus.PENDING },

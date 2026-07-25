@@ -166,6 +166,16 @@ export class BackendApiService {
     return res.data.data;
   }
 
+  async getQuoteRequestById(accessToken: string, id: string): Promise<QuoteRequestItem> {
+    const res = await firstValueFrom(
+      this.httpService.get<BackendApiResponse<QuoteRequestItem>>(
+        this.url(`/quote-requests/${id}`),
+        { headers: this.authHeaders(accessToken) },
+      ),
+    );
+    return res.data.data;
+  }
+
   async linkTelegram(accessToken: string, telegramId: number): Promise<void> {
     await firstValueFrom(
       this.httpService.post(

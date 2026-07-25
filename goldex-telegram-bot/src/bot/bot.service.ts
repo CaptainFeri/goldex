@@ -811,7 +811,7 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
       const inlineMatchBtn: TelegramBot.InlineKeyboardButton[][] = [];
       if (orderId) {
         inlineMatchBtn.push([
-          { text: '✅ تطبیق سفارش', callback_data: `accept:${orderId}` },
+          { text: '✅ تطبیق سفارش', callback_data: `fulfill:${orderId}` },
         ]);
       }
       const sent = await this.sendToChannel(channelMsg, {
@@ -942,117 +942,351 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
       );
     }
 
+    if (data.startsWith('fulfill:')) {
+      const orderId = data.slice(8);
+      await this.handleFulfillCallback(chatId, orderId);
+    }
+
     if (data.startsWith('accept:')) {
       const orderId = data.slice(7);
-      const user = await this.userService.findByChatId(chatId);
-      if (!user || user.state !== UserState.AUTHENTICATED) {
-        await this.sendMessage(chatId, '🔒 ابتدا باید وارد شوید.', this.mainMenuReply());
+      await this.handleAcceptCallback(chatId, orderId);
+    }
+  }
+
+  private async handleFulfillCallback(chatId: number, orderId: string) {
+    const user = await this.userService.findByChatId(chatId);
+    if (!user || user.state !== UserState.AUTHENTICATED) {
+      await this.sendMessage(chatId, '🔒 ابتدا باید وارد شوید.', this.mainMenuReply());
+      return;
+    }
+
+    if (!(await this.ensurePartner(user))) {
+      await this.sendMessage(chatId, '⚠️ فقط کاربران ویژه (پارتنر) می‌توانند سفارش تطبیق دهند.', this.mainMenuReply());
+      return;
+    }
+
+    try {
+      // 1. Get the original order details (fast path from local, fallback to backend)
+      let srcData: any = this.activeOrders.get(orderId);
+      let srcFromBackend = false;
+      if (!srcData) {
+        const backendData = await this.backendApi.getQuoteRequestById(user.accessToken, orderId);
+        srcData = backendData;
+        srcFromBackend = true;
+      }
+
+      if (!srcData) {
+        await this.sendMessage(chatId, '❌ سفارش یافت نشد.', this.mainMenuReply());
         return;
       }
 
-      if (!(await this.ensurePartner(user))) {
-        await this.sendMessage(chatId, '⚠️ فقط کاربران ویژه (پارتنر) می‌توانند سفارش تطبیق دهند.', this.mainMenuReply());
+      const srcStatus = srcData.status;
+      if (srcStatus !== 'PENDING') {
+        await this.sendMessage(chatId, '❌ این سفارش دیگر فعال نیست و قبلاً تطبیق یافته یا لغو شده است.', this.mainMenuReply());
         return;
       }
 
-      const sellOrder = this.activeOrders.get(orderId);
-
-      // Prevent seller from matching their own order
-      if (sellOrder && sellOrder.chatId === chatId) {
+      // Prevent self-fulfill
+      const srcChatId = srcFromBackend ? null : srcData.chatId;
+      if (srcChatId === chatId) {
         await this.sendMessage(chatId,
           '⚠️ شما نمی‌توانید سفارش خود را تطبیق دهید.\n\nمنتظر بمانید تا فرد دیگری سفارش شما را تطبیق کند.',
           this.mainMenuReply());
         return;
       }
 
-      try {
-        // ── Balance check & prepare ──
-        let required = 0;
-        if (sellOrder && sellOrder.price && sellOrder.price > 0 && sellOrder.pairQuoteSymbolId) {
-          const wallets = await this.backendApi.getWallets(user.accessToken);
-          const quoteWallet = wallets.find(w => w.symbol?.id === sellOrder.pairQuoteSymbolId);
-          required = sellOrder.price * sellOrder.quantity;
-          const available = Number(quoteWallet?.freeBalance || 0);
-          if (available < required) {
-            await this.sendMessage(chatId,
-              `❌ *موجودی ناکافی*\n\n` +
-              `برای تطبیق این سفارش حداقل ${required.toLocaleString()} تومان نیاز دارید.\n` +
-              `موجودی فعلی: ${available.toLocaleString()} تومان\n\n` +
-              `لطفاً ابتدا موجودی خود را افزایش دهید. 💰`,
-              this.mainMenuReply());
-            return;
-          }
+      const srcSide = srcData.side;
+      const oppositeSide = srcSide === 'BUY' ? 'SELL' : 'BUY';
+      const srcQty = Number(srcData.quantity);
+      const srcPrice = srcData.price ? Number(srcData.price) : undefined;
+      const srcPairId = srcData.pricePairId;
 
-          // Balance sufficient — proceed with match.
-          // The backend's match() handles wallet transfer, commission, and
-          // transaction recording — no separate BUY order needed.
-        }
+      // 2. Get pair info and check wallet balance
+      const pairs = await this.backendApi.getPricePairs(user.accessToken);
+      const pair = pairs.find((p) => p.id === srcPairId);
+      if (!pair) {
+        await this.sendMessage(chatId, '❌ جفت‌ارز سفارش یافت نشد.', this.mainMenuReply());
+        return;
+      }
 
-        // Call backend to execute the match (transfers XAU minus commission to buyer,
-        // IRR minus commission to seller, records transactions & system profit)
-        const matchResult = await this.backendApi.acceptMatch(user.accessToken, orderId);
-
-        // Update local state
-        if (sellOrder) {
-          sellOrder.status = 'MATCHED';
-          this.activeOrders.set(orderId, sellOrder);
-        }
-
-        // Notify seller via DM (buyer also gets notified by the backend's Telegram bot)
-        if (sellOrder) {
-          await this.sendMessage(sellOrder.chatId,
-            `✅ *سفارش فروش شما تکمیل شد*\n\n` +
-            `خریدار سفارش شما را تطبیق داد.\n` +
-            `💰 موجودی کیف پول شما به‌روزرسانی شد.\n\n` +
-            `از منوی زیر استفاده کنید:`,
+      const wallets = await this.backendApi.getWallets(user.accessToken);
+      if (oppositeSide === 'BUY') {
+        const quoteId = pair.quoteSymbol?.id;
+        const quoteWallet = wallets.find((w) => w.symbol?.id === quoteId);
+        const required = (srcPrice || 0) * srcQty;
+        const available = Number(quoteWallet?.freeBalance || 0);
+        if (available < required) {
+          await this.sendMessage(chatId,
+            `❌ *موجودی ناکافی*\n\n` +
+            `برای خرید ${srcQty.toLocaleString()} گرم، حداقل ${required.toLocaleString()} تومان نیاز دارید.\n` +
+            `موجودی فعلی: ${available.toLocaleString()} تومان\n\n` +
+            `لطفاً ابتدا موجودی خود را افزایش دهید. 💰`,
             this.mainMenuReply());
+          return;
         }
+      } else {
+        const baseId = pair.baseSymbol?.id;
+        const baseWallet = wallets.find((w) => w.symbol?.id === baseId);
+        const available = Number(baseWallet?.freeBalance || 0);
+        if (available < srcQty) {
+          await this.sendMessage(chatId,
+            `❌ *موجودی ناکافی*\n\n` +
+            `برای فروش ${srcQty.toLocaleString()} گرم، حداقل ${srcQty.toLocaleString()} گرم ${pair.baseSymbol?.slug || 'XAU'} نیاز دارید.\n` +
+            `موجودی فعلی: ${available.toLocaleString()} گرم\n\n` +
+            `لطفاً ابتدا موجودی خود را افزایش دهید. 💰`,
+            this.mainMenuReply());
+          return;
+        }
+      }
 
-        // Update both orders' channel messages with matched status (keep info, remove button)
-        const orderIdsToUpdate = [orderId, matchResult?.matchedBuyOrderId].filter(Boolean) as string[];
-        for (const oid of orderIdsToUpdate) {
-          const stored = this.channelMessages.get(oid);
-          const info = this.activeOrders.get(oid);
-          if (stored) {
-            try {
-              const sideLabel = info?.side === 'BUY' ? 'خرید' : 'فروش';
-              const priceLabel = info?.price
-                ? `${info.price.toLocaleString()} تومان`
-                : '💰 قیمت بازار';
-              const totalPrice = info?.price && info?.quantity
-                ? `${(info.price * info.quantity).toLocaleString()} تومان`
-                : '—';
-              const msg =
-                `📄 *سفارش ${sideLabel}*\n` +
-                `🆔 کد: ${oid.slice(0, 8)}...\n` +
-                `📊 جفت‌ارز: ${info?.pairLabel || '—'}\n` +
-                `⚖️ مقدار: ${Number(info?.quantity || 0).toLocaleString()} گرم\n` +
-                `💰 قیمت واحد: ${priceLabel}\n` +
-                `💵 جمع کل: ${totalPrice}\n` +
-                `📌 وضعیت: ✅ تکمیل شده`;
-              await this.bot.editMessageText(msg, {
-                chat_id: stored.chatId,
-                message_id: stored.messageId,
-                parse_mode: 'Markdown',
-                reply_markup: { inline_keyboard: [] },
-              });
-              this.logger.log(`Channel message ${stored.messageId} updated for matched order ${oid}`);
-            } catch {
-              this.logger.warn(`Could not edit channel message ${stored.messageId} for order ${oid}`);
+      // 3. Re-check order status from backend before creating opposite order (race condition mitigation)
+      try {
+        const freshCheck = await this.backendApi.getQuoteRequestById(user.accessToken, orderId);
+        if (freshCheck.status !== 'PENDING') {
+          await this.sendMessage(chatId, '❌ این سفارش در لحظه توسط شخص دیگری تطبیق یافت.', this.mainMenuReply());
+          return;
+        }
+      } catch {
+        // If backend check fails, proceed with local data
+      }
+
+      // 4. Create the opposite-side order for the clicker
+      const createResult = await this.backendApi.createQuoteRequest(user.accessToken, {
+        side: oppositeSide,
+        pricePairId: srcPairId,
+        quantity: srcQty,
+        price: srcPrice,
+      });
+
+      const newOrderId = createResult.request.id;
+      const pairLabel = `${pair.baseSymbol?.slug || '?'}/${pair.quoteSymbol?.slug || '?'}`;
+
+      // 5. Track the new order locally
+      this.activeOrders.set(newOrderId, {
+        orderId: newOrderId,
+        chatId,
+        userId: user.id,
+        side: oppositeSide,
+        price: srcPrice || null,
+        quantity: srcQty,
+        pairLabel,
+        pricePairId: srcPairId,
+        pairQuoteSymbolId: pair.quoteSymbol?.id,
+        status: 'PENDING',
+      });
+
+      // Also track original order if not already tracked (populate owner info from backend)
+      if (srcFromBackend) {
+        let ownerChatId = 0;
+        let ownerUserId = '';
+        try {
+          const goldexUserId = srcData.userId;
+          if (goldexUserId) {
+            const ownerUser = await this.userService.findByGoldexUserId(goldexUserId);
+            if (ownerUser) {
+              ownerChatId = ownerUser.telegramChatId;
+              ownerUserId = ownerUser.id;
             }
           }
+        } catch {
+          this.logger.warn(`Could not resolve owner for order ${orderId}`);
         }
 
-        await this.sendMessage(chatId,
-          '✅ *درخواست تطبیق شما ثبت شد*\n\n' +
-          'فروشنده مطلع خواهد شد.\n' +
-          'پس از تکمیل، موجودی کیف پول شما به‌روزرسانی می‌شود.',
-          this.mainMenuReply());
-      } catch (err) {
-        this.logger.error(`Accept match failed for order ${orderId}: ${err.message}`);
-        const reason = err?.response?.data?.message || err.message || 'خطا در تطبیق';
-        await this.sendMessage(chatId, `❌ *تطبیق ناموفق*\n\n${reason}`, this.mainMenuReply());
+        this.activeOrders.set(orderId, {
+          orderId,
+          chatId: ownerChatId,
+          userId: ownerUserId,
+          side: srcSide,
+          price: srcPrice || null,
+          quantity: srcQty,
+          pairLabel,
+          pricePairId: srcPairId,
+          pairQuoteSymbolId: pair.quoteSymbol?.id,
+          status: 'PENDING',
+        });
       }
+
+      const sideLabel = oppositeSide === 'BUY' ? 'خرید' : 'فروش';
+      const priceLabel = srcPrice
+        ? `${srcPrice.toLocaleString()} تومان`
+        : '💰 قیمت بازار';
+
+      // 6. Determine who should accept (the BUYER) and send them the accept button
+      if (srcSide === 'SELL') {
+        // Original is SELL → clicker is BUYER → send accept to clicker
+        await this.sendMessage(chatId,
+          `🔔 *فرصت تطبیق سفارش ${sideLabel}*\n\n` +
+          `سفارش ${sideLabel} شما با موفقیت ثبت شد.\n` +
+          `💰 قیمت واحد: ${priceLabel}\n` +
+          `⚖️ مقدار: ${srcQty.toLocaleString()} گرم\n\n` +
+          `برای تأیید نهایی معامله و تکمیل آن، دکمه زیر را کلیک کنید:`,
+          {
+            reply_markup: {
+              inline_keyboard: [[
+                { text: '✅ قبول تطبیق', callback_data: `accept:${orderId}` }
+              ]],
+            },
+          }
+        );
+      } else {
+        // Original is BUY → clicker is SELLER → need original BUYER to accept
+        let buyerChatId: number | null = null;
+        const originalOrder = this.activeOrders.get(orderId);
+        if (originalOrder && originalOrder.chatId > 0) {
+          buyerChatId = originalOrder.chatId;
+        }
+
+        if (buyerChatId) {
+          await this.sendMessage(buyerChatId,
+            `🔔 *فرصت تطبیق سفارش ${sideLabel}*\n\n` +
+            `یک فروشنده جدید برای سفارش خرید شما پیدا شده است.\n` +
+            `💰 قیمت واحد: ${priceLabel}\n` +
+            `⚖️ مقدار: ${srcQty.toLocaleString()} گرم\n\n` +
+            `برای تأیید نهایی معامله، دکمه زیر را کلیک کنید:`,
+            {
+              reply_markup: {
+                inline_keyboard: [[
+                  { text: '✅ قبول تطبیق', callback_data: `accept:${newOrderId}` }
+                ]],
+              },
+            }
+          );
+
+          await this.sendMessage(chatId,
+            `📋 *سفارش ${sideLabel} شما ثبت شد*\n\n` +
+            `🔍 خریدار مطلع شد و در صورت تأیید، معامله انجام می‌شود.\n` +
+            `پس از تکمیل، به شما اطلاع داده می‌شود. ✅`,
+            this.mainMenuReply()
+          );
+        } else {
+          await this.sendMessage(chatId,
+            `📋 *سفارش ${sideLabel} شما در صف انتظار ثبت شد*\n\n` +
+            `متأسفانه نمی‌توانیم به خریدار اصلی اطلاع‌رسانی کنیم.\n` +
+            `منتظر بمانید تا خریدار سفارش شما را تطبیق دهد.`,
+            this.mainMenuReply()
+          );
+        }
+      }
+    } catch (err) {
+      this.logger.error(`Fulfill callback failed for order ${orderId}: ${err.message}`);
+      const reason = err?.response?.data?.message || err.message || 'خطا در تطبیق';
+      await this.sendMessage(chatId, `❌ *خطا*\n\n${reason}`, this.mainMenuReply());
+    }
+  }
+
+  private async handleAcceptCallback(chatId: number, orderId: string) {
+    const user = await this.userService.findByChatId(chatId);
+    if (!user || user.state !== UserState.AUTHENTICATED) {
+      await this.sendMessage(chatId, '🔒 ابتدا باید وارد شوید.', this.mainMenuReply());
+      return;
+    }
+
+    if (!(await this.ensurePartner(user))) {
+      await this.sendMessage(chatId, '⚠️ فقط کاربران ویژه (پارتنر) می‌توانند سفارش تطبیق دهند.', this.mainMenuReply());
+      return;
+    }
+
+    const sellOrder = this.activeOrders.get(orderId);
+
+    // Prevent seller from matching their own order
+    if (sellOrder && sellOrder.chatId === chatId) {
+      await this.sendMessage(chatId,
+        '⚠️ شما نمی‌توانید سفارش خود را تطبیق دهید.\n\nمنتظر بمانید تا فرد دیگری سفارش شما را تطبیق کند.',
+        this.mainMenuReply());
+      return;
+    }
+
+    try {
+      // Check order status from backend first (race condition mitigation)
+      try {
+        const freshOrder = await this.backendApi.getQuoteRequestById(user.accessToken, orderId);
+        if (freshOrder.status !== 'PENDING') {
+          await this.sendMessage(chatId,
+            '❌ این سفارش دیگر فعال نیست و قبلاً توسط شخص دیگری تطبیق یافته یا لغو شده است.\n\n' +
+            'اگر سفارش ثبت کرده‌اید، می‌توانید از بخش سفارشات من آن را لغو کنید.',
+            this.mainMenuReply());
+          return;
+        }
+      } catch {
+        // Backend check failed, proceed with local data
+      }
+
+      // Call backend to execute the match
+      const matchResult = await this.backendApi.acceptMatch(user.accessToken, orderId);
+
+      // Update local state
+      if (sellOrder) {
+        sellOrder.status = 'MATCHED';
+        this.activeOrders.set(orderId, sellOrder);
+      }
+
+      // Update the opposite order status too (the BUY order that was created during fulfill)
+      const matchedBuyOrderId = matchResult?.matchedBuyOrderId;
+      if (matchedBuyOrderId) {
+        const buyOrder = this.activeOrders.get(matchedBuyOrderId);
+        if (buyOrder) {
+          buyOrder.status = 'MATCHED';
+          this.activeOrders.set(matchedBuyOrderId, buyOrder);
+        }
+      }
+
+      // Notify the SELLER via DM
+      if (sellOrder && sellOrder.chatId > 0) {
+        await this.sendMessage(sellOrder.chatId,
+          `✅ *سفارش فروش شما تکمیل شد*\n\n` +
+          `خریدار سفارش شما را تطبیق داد.\n` +
+          `💰 موجودی کیف پول شما به‌روزرسانی شد.\n\n` +
+          `از منوی زیر استفاده کنید:`,
+          this.mainMenuReply());
+      }
+
+      // Update both orders' channel messages with matched status
+      const orderIdsToUpdate = [orderId, matchedBuyOrderId].filter(Boolean) as string[];
+      for (const oid of orderIdsToUpdate) {
+        const stored = this.channelMessages.get(oid);
+        const info = this.activeOrders.get(oid);
+        if (stored) {
+          try {
+            const sideLabel = info?.side === 'BUY' ? 'خرید' : 'فروش';
+            const priceLabel = info?.price
+              ? `${info.price.toLocaleString()} تومان`
+              : '💰 قیمت بازار';
+            const totalPrice = info?.price && info?.quantity
+              ? `${(info.price * info.quantity).toLocaleString()} تومان`
+              : '—';
+            const msg =
+              `📄 *سفارش ${sideLabel}*\n` +
+              `🆔 کد: ${oid.slice(0, 8)}...\n` +
+              `📊 جفت‌ارز: ${info?.pairLabel || '—'}\n` +
+              `⚖️ مقدار: ${Number(info?.quantity || 0).toLocaleString()} گرم\n` +
+              `💰 قیمت واحد: ${priceLabel}\n` +
+              `💵 جمع کل: ${totalPrice}\n` +
+              `📌 وضعیت: ✅ تکمیل شده`;
+            await this.bot.editMessageText(msg, {
+              chat_id: stored.chatId,
+              message_id: stored.messageId,
+              parse_mode: 'Markdown',
+              reply_markup: { inline_keyboard: [] },
+            });
+            this.logger.log(`Channel message ${stored.messageId} updated for matched order ${oid}`);
+          } catch {
+            this.logger.warn(`Could not edit channel message ${stored.messageId} for order ${oid}`);
+          }
+        }
+      }
+
+      await this.sendMessage(chatId,
+        '✅ *درخواست تطبیق شما ثبت شد*\n\n' +
+        'فروشنده مطلع خواهد شد.\n' +
+        'پس از تکمیل، موجودی کیف پول شما به‌روزرسانی می‌شود.',
+        this.mainMenuReply());
+    } catch (err) {
+      this.logger.error(`Accept match failed for order ${orderId}: ${err.message}`);
+      const reason = err?.response?.data?.message || err.message || 'خطا در تطبیق';
+      await this.sendMessage(chatId,
+        `❌ *تطبیق ناموفق*\n\n${reason}\n\n` +
+        `اگر سفارش ثبت کرده‌اید، می‌توانید از بخش سفارشات من آن را لغو کنید.`,
+        this.mainMenuReply());
     }
   }
 

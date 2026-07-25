@@ -95,6 +95,12 @@ export class UserService {
     }
   }
 
+  async findByGoldexUserId(goldexUserId: string): Promise<TelegramUserEntity | null> {
+    return this.userRepo.findOne({
+      where: { goldexUserId },
+    });
+  }
+
   async findAllAuthenticated(): Promise<TelegramUserEntity[]> {
     return this.userRepo.find({
       where: { state: UserState.AUTHENTICATED },

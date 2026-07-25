@@ -75,6 +75,7 @@ export interface QuoteRequestResult {
 
 export interface QuoteRequestItem {
   id: string;
+  userId: string;
   side: string;
   quantity: number;
   price: number | null;
@@ -82,6 +83,7 @@ export interface QuoteRequestItem {
   status: string;
   createAt: string;
   totalPrice?: number;
+  pricePairId: string;
   pricePair: {
     baseSymbol?: { id: string; name: string; slug: string };
     quoteSymbol?: { id: string; name: string; slug: string };
