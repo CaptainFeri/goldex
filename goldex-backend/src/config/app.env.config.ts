@@ -64,7 +64,7 @@ export default () => ({
     channelId: process.env.TELEGRAM_CHANNEL_ID,
   },
   ocr: {
-    provider: process.env.OCR_PROVIDER || 'paddle',
+    provider: process.env.OCR_PROVIDER || 'kraken',
     serviceUrl: process.env.OCR_SERVICE_URL || 'http://localhost:8000/ocr',
   },
 });

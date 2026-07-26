@@ -1,0 +1,8 @@
+fastapi
+uvicorn
+kraken
+Pillow
+numpy<2
+pydantic
+torch
+torchvision

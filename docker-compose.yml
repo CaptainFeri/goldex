@@ -95,13 +95,13 @@ services:
       - goldex-network
 
   ocr-worker:
-    build: ./paddle-ocr-service
+    build: ./kraken-ocr-service
     container_name: goldex-ocr-worker
     restart: unless-stopped
     ports:
       - "${OCR_WORKER_PORT:-8000}:8000"
     volumes:
-      - paddleocr_models:/root/.paddleocr
+      - kraken_models:/root/.local/share/kraken
     networks:
       - goldex-network
   monitor:
@@ -151,7 +151,7 @@ services:
       BASE_APP_POSTGRES_URL: postgres
       GOLDEX_AUTH_POSTGRES_URL: postgres
       MINIO_ENDPOINT: minio
-      OCR_PROVIDER: ${OCR_PROVIDER:-paddle}
+      OCR_PROVIDER: ${OCR_PROVIDER:-kraken}
       OCR_SERVICE_URL: http://ocr-worker:8000/ocr
       NODE_ENV: production
     ports:
@@ -318,7 +318,7 @@ volumes:
   rabbitmq_data:
   backend_logs:
   pricing_engine_logs:
-  paddleocr_models:
+  kraken_models:
 
 # ════════════════════════════════════════════
 # NETWORKS
