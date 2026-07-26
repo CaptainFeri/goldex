@@ -2,10 +2,19 @@ import base64
 import io
 import logging
 import os
+import sys
 import urllib.request
+import warnings
+from contextlib import redirect_stderr, contextmanager
 from pathlib import Path
 
-import torch
+os.environ['KMP_WARNINGS'] = 'FALSE'
+
+warnings.filterwarnings('ignore', message='Using legacy polygon extractor')
+
+with open(os.devnull, 'w') as _dn, redirect_stderr(_dn):
+    import torch
+
 torch.set_num_threads(min(4, os.cpu_count() or 1))
 torch.backends.mkldnn.enabled = False
 
@@ -15,6 +24,16 @@ from PIL import Image
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s %(levelname)s %(message)s')
 logger = logging.getLogger("kraken-ocr")
+
+
+@contextmanager
+def _suppress_c_warnings():
+    old = sys.stderr
+    sys.stderr = io.StringIO()
+    try:
+        yield
+    finally:
+        sys.stderr = old
 
 MODEL_DIR = Path("/models")
 MODEL_PATH = MODEL_DIR / "arabic_best.mlmodel"
@@ -27,12 +46,14 @@ def download_model() -> None:
     logger.info("Model downloaded.")
 
 if not MODEL_PATH.exists():
-    download_model()
+    with _suppress_c_warnings():
+        download_model()
 
 logger.info(f"Loading Kraken model from {MODEL_PATH}")
-from kraken import binarization, pageseg, rpred
-from kraken.lib import models as kmodels
-model = kmodels.load_any(str(MODEL_PATH))
+with _suppress_c_warnings():
+    from kraken import binarization, pageseg, rpred
+    from kraken.lib import models as kmodels
+    model = kmodels.load_any(str(MODEL_PATH))
 logger.info("Kraken OCR ready.")
 
 app = FastAPI(title="KrakenOCR API")
@@ -50,9 +71,6 @@ def resize_image(img: Image.Image) -> Image.Image:
         return img.resize((int(w * scale), int(h * scale)), Image.LANCZOS)
     return img
 
-def reverse_text(text: str) -> str:
-    return ' '.join(w[::-1] for w in text.split())
-
 class OcrPayload(BaseModel):
     base64_image: str
 
@@ -62,18 +80,19 @@ def health():
 
 @app.post("/ocr")
 def extract_text(payload: OcrPayload):
-    try:
-        img_data = base64.b64decode(payload.base64_image)
-        img = resize_image(Image.open(io.BytesIO(img_data)))
+    with _suppress_c_warnings():
+        try:
+            img_data = base64.b64decode(payload.base64_image)
+            img = resize_image(Image.open(io.BytesIO(img_data)))
 
-        bw = binarization.nlbin(img)
-        seg = pageseg.segment(bw)
+            bw = binarization.nlbin(img)
+            seg = pageseg.segment(bw)
 
-        texts = []
-        for record in rpred.rpred(model, bw, seg):
-            texts.append(reverse_text(record.prediction))
+            texts = []
+            for record in rpred.rpred(model, bw, seg):
+                texts.append(record.prediction)
 
-        return {"success": True, "texts": texts}
-    except Exception as e:
-        logger.error(f"OCR error: {e}", exc_info=True)
-        return {"success": False, "error": str(e)}
+            return {"success": True, "texts": texts}
+        except Exception as e:
+            logger.error(f"OCR error: {e}", exc_info=True)
+            return {"success": False, "error": str(e)}
