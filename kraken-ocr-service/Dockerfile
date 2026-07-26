@@ -9,7 +9,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-RUN python -c "from kraken.lib import vgsl; vgsl.TorchVGSLModel.load_model('arabic')"
+RUN mkdir -p /root/.local/share/kraken && \
+    kraken get arabic
 
 COPY . .
 

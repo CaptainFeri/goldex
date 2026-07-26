@@ -1,6 +1,8 @@
 import base64
 import io
 import logging
+import os
+import subprocess
 from fastapi import FastAPI
 from pydantic import BaseModel
 from PIL import Image
@@ -10,11 +12,21 @@ from kraken.lib import vgsl
 logging.basicConfig(level=logging.INFO, format='%(asctime)s %(levelname)s %(message)s')
 logger = logging.getLogger("kraken-ocr")
 
-app = FastAPI(title="KrakenOCR API")
+KRAKEN_DATA_DIR = os.path.expanduser('~/.local/share/kraken')
+MODEL_NAME = 'arabic.mlmodel'
+MODEL_PATH = os.path.join(KRAKEN_DATA_DIR, MODEL_NAME)
+
+if not os.path.exists(MODEL_PATH):
+    logger.info("Downloading Kraken Arabic model...")
+    os.makedirs(KRAKEN_DATA_DIR, exist_ok=True)
+    subprocess.run(['kraken', 'get', 'arabic'], check=True)
+    logger.info("Model downloaded.")
 
 logger.info("Loading Kraken Arabic model...")
-model = vgsl.TorchVGSLModel.load_model('arabic')
+model = vgsl.TorchVGSLModel.load_model(MODEL_PATH)
 logger.info("Kraken OCR ready.")
+
+app = FastAPI(title="KrakenOCR API")
 
 MIN_DIM = 1000
 
