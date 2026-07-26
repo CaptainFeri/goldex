@@ -28,12 +28,15 @@ logger = logging.getLogger("kraken-ocr")
 
 @contextmanager
 def _suppress_c_warnings():
-    old = sys.stderr
-    sys.stderr = io.StringIO()
+    devnull = os.open(os.devnull, os.O_WRONLY)
+    old_fd = os.dup(2)
+    os.dup2(devnull, 2)
+    os.close(devnull)
     try:
         yield
     finally:
-        sys.stderr = old
+        os.dup2(old_fd, 2)
+        os.close(old_fd)
 
 MODEL_DIR = Path("/models")
 MODEL_PATH = MODEL_DIR / "arabic_best.mlmodel"
