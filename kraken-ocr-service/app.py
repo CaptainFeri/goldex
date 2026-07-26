@@ -2,9 +2,12 @@ import base64
 import io
 import logging
 import os
-import sys
 import urllib.request
 from pathlib import Path
+
+import torch
+torch.set_num_threads(1)
+torch.backends.mkldnn.enabled = False
 
 from fastapi import FastAPI
 from pydantic import BaseModel
@@ -27,6 +30,7 @@ if not MODEL_PATH.exists():
     download_model()
 
 logger.info(f"Loading Kraken model from {MODEL_PATH}")
+from kraken import binarization, pageseg, rpred
 from kraken.lib import models as kmodels
 model = kmodels.load_any(str(MODEL_PATH))
 logger.info("Kraken OCR ready.")
@@ -58,7 +62,6 @@ def extract_text(payload: OcrPayload):
         img_data = base64.b64decode(payload.base64_image)
         img = upscale(Image.open(io.BytesIO(img_data)))
 
-        from kraken import binarization, pageseg, rpred
         bw = binarization.nlbin(img)
         seg = pageseg.segment(bw)
 
