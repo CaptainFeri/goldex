@@ -12,13 +12,6 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir --default-timeout=300 \
     -r requirements.txt
 
-# Download models before copying source code
-# --mount=type=cache keeps models on host, NOT in image → small image, fast export
-# Cache persists across builds even when layer is invalidated
-COPY download_models.py .
-RUN --mount=type=cache,target=/root/.EasyOCR \
-    python download_models.py
-
 COPY . .
 
 CMD ["uvicorn", "app:app", "--host", "0.0.0.0", "--port", "8000"]
