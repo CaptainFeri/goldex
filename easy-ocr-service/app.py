@@ -2,8 +2,8 @@ import base64
 import io
 import logging
 import re
+import threading
 
-import cv2
 import numpy as np
 import easyocr
 from fastapi import FastAPI
@@ -15,9 +15,23 @@ logger = logging.getLogger("easy-ocr")
 
 app = FastAPI(title="EasyOCR API")
 
-logger.info("Loading EasyOCR (Persian)...")
-reader = easyocr.Reader(['fa'], gpu=False)
-logger.info("EasyOCR ready.")
+_reader = None
+_reader_lock = threading.Lock()
+_reader_ready = False
+
+
+def get_reader():
+    global _reader, _reader_ready
+    if _reader_ready:
+        return _reader
+    with _reader_lock:
+        if not _reader_ready:
+            logger.info("Loading EasyOCR (Persian)...")
+            _reader = easyocr.Reader(['fa'], gpu=False)
+            _reader_ready = True
+            logger.info("EasyOCR ready.")
+    return _reader
+
 
 PERSIAN_DEPOSIT_KEYWORDS = [
     'واریز', 'دریافت', 'افزایش', 'اعتبار', 'برداشت شده',
@@ -34,18 +48,6 @@ PERSIAN_DIGITS = {
     '٠': '0', '١': '1', '٢': '2', '٣': '3', '٤': '4',
     '٥': '5', '٦': '6', '٧': '7', '٨': '8', '٩': '9',
 }
-
-
-def preprocess_image(img_array: np.ndarray) -> np.ndarray:
-    gray = cv2.cvtColor(img_array, cv2.COLOR_RGB2GRAY)
-    clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
-    enhanced = clahe.apply(gray)
-    denoised = cv2.fastNlMeansDenoising(enhanced, None, h=10,
-                                         templateWindowSize=7,
-                                         searchWindowSize=21)
-    kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (2, 2))
-    processed = cv2.morphologyEx(denoised, cv2.MORPH_CLOSE, kernel)
-    return processed
 
 
 def convert_persian_numbers(text: str) -> str:
@@ -85,20 +87,21 @@ class OcrPayload(BaseModel):
 
 @app.get("/health")
 def health():
+    if not _reader_ready:
+        return {"status": "loading", "detail": "OCR model is loading"}
     return {"status": "ok"}
 
 
 @app.post("/ocr")
 def extract_text(payload: OcrPayload):
     try:
+        reader = get_reader()
+
         img_data = base64.b64decode(payload.base64_image)
         img = Image.open(io.BytesIO(img_data)).convert('RGB')
         img_array = np.array(img)
 
-        processed = preprocess_image(img_array)
-        processed_rgb = cv2.cvtColor(processed, cv2.COLOR_GRAY2RGB)
-
-        results = reader.readtext(processed_rgb, detail=1)
+        results = reader.readtext(img_array, detail=1)
         texts = [reverse_text(text) for (_, text, conf) in results if conf > 0.3]
 
         full_text = ' '.join(texts)
