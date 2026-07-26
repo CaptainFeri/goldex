@@ -3,27 +3,38 @@ import io
 import logging
 import os
 import subprocess
+import sys
+from pathlib import Path
+
 from fastapi import FastAPI
 from pydantic import BaseModel
 from PIL import Image
-from kraken import binarization, pageseg, rpred
-from kraken.lib import vgsl
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s %(levelname)s %(message)s')
 logger = logging.getLogger("kraken-ocr")
 
-KRAKEN_DATA_DIR = os.path.expanduser('~/.local/share/kraken')
-MODEL_NAME = 'arabic.mlmodel'
-MODEL_PATH = os.path.join(KRAKEN_DATA_DIR, MODEL_NAME)
+ARABIC_MODEL_DOI = "10.5281/zenodo.7050295"
+KNOWN_MODEL_PATH = "/models/arabic.mlmodel"
 
-if not os.path.exists(MODEL_PATH):
-    logger.info("Downloading Kraken Arabic model...")
-    os.makedirs(KRAKEN_DATA_DIR, exist_ok=True)
-    subprocess.run(['kraken', 'get', 'arabic'], check=True)
-    logger.info("Model downloaded.")
+def _resolve_model() -> str:
+    if os.path.exists(KNOWN_MODEL_PATH):
+        return KNOWN_MODEL_PATH
+    htrmopo = Path.home() / ".local" / "share" / "htrmopo"
+    if htrmopo.exists():
+        for mlmodel in htrmopo.rglob("*.mlmodel"):
+            return str(mlmodel)
+    logger.info("Model not found. Downloading via kraken get ...")
+    os.makedirs(htrmopo, exist_ok=True)
+    subprocess.run([sys.executable, "-m", "kraken", "get", ARABIC_MODEL_DOI], check=True)
+    for mlmodel in htrmopo.rglob("*.mlmodel"):
+        return str(mlmodel)
+    raise FileNotFoundError("Could not locate or download a Kraken Arabic model")
 
-logger.info("Loading Kraken Arabic model...")
-model = vgsl.TorchVGSLModel.load_model(MODEL_PATH)
+model_path = _resolve_model()
+logger.info(f"Loading Kraken model from {model_path}")
+
+from kraken.lib import models as kmodels
+model = kmodels.load_any(model_path)
 logger.info("Kraken OCR ready.")
 
 app = FastAPI(title="KrakenOCR API")
@@ -53,6 +64,7 @@ def extract_text(payload: OcrPayload):
         img_data = base64.b64decode(payload.base64_image)
         img = upscale(Image.open(io.BytesIO(img_data)))
 
+        from kraken import binarization, pageseg, rpred
         bw = binarization.nlbin(img)
         seg = pageseg.segment(bw)
 
