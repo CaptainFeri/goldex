@@ -153,6 +153,7 @@ services:
       MINIO_ENDPOINT: minio
       OCR_PROVIDER: ${OCR_PROVIDER:-kraken}
       OCR_SERVICE_URL: http://ocr-worker:8000/ocr
+      OCR_TIMEOUT: ${OCR_TIMEOUT:-120000}
       NODE_ENV: production
     ports:
       - "${BACKEND_EXTERNAL_PORT:-4040}:${GOLDEX_APP_INTERNAL_PORT:-3000}"

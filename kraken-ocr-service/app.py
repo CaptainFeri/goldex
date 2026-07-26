@@ -6,7 +6,7 @@ import urllib.request
 from pathlib import Path
 
 import torch
-torch.set_num_threads(1)
+torch.set_num_threads(min(4, os.cpu_count() or 1))
 torch.backends.mkldnn.enabled = False
 
 from fastapi import FastAPI
@@ -37,14 +37,18 @@ logger.info("Kraken OCR ready.")
 
 app = FastAPI(title="KrakenOCR API")
 
-MIN_DIM = 1000
+MIN_DIM = 800
+MAX_DIM = 2000
 
-def upscale(img: Image.Image) -> Image.Image:
+def resize_image(img: Image.Image) -> Image.Image:
     w, h = img.size
-    if w >= MIN_DIM and h >= MIN_DIM:
-        return img
-    scale = max(MIN_DIM / w, MIN_DIM / h)
-    return img.resize((int(w * scale), int(h * scale)), Image.LANCZOS)
+    if w < MIN_DIM or h < MIN_DIM:
+        scale = max(MIN_DIM / w, MIN_DIM / h)
+        return img.resize((int(w * scale), int(h * scale)), Image.LANCZOS)
+    if w > MAX_DIM or h > MAX_DIM:
+        scale = min(MAX_DIM / w, MAX_DIM / h)
+        return img.resize((int(w * scale), int(h * scale)), Image.LANCZOS)
+    return img
 
 def reverse_text(text: str) -> str:
     return ' '.join(w[::-1] for w in text.split())
@@ -60,7 +64,7 @@ def health():
 def extract_text(payload: OcrPayload):
     try:
         img_data = base64.b64decode(payload.base64_image)
-        img = upscale(Image.open(io.BytesIO(img_data)))
+        img = resize_image(Image.open(io.BytesIO(img_data)))
 
         bw = binarization.nlbin(img)
         seg = pageseg.segment(bw)

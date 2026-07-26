@@ -34,7 +34,7 @@ export class OcrService {
   ) {
     const ocrConfig = this.configService.get("ocr");
     this.ocrServiceUrl = ocrConfig?.serviceUrl || "http://localhost:8000/ocr";
-    this.timeout = ocrConfig?.timeout || 30000;
+    this.timeout = ocrConfig?.timeout || 120000;
     this.logger.log(`OCR Service URL: ${this.ocrServiceUrl}`);
   }
 

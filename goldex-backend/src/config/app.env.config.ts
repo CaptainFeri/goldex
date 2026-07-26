@@ -66,5 +66,6 @@ export default () => ({
   ocr: {
     provider: process.env.OCR_PROVIDER || 'kraken',
     serviceUrl: process.env.OCR_SERVICE_URL || 'http://localhost:8000/ocr',
+    timeout: parseInt(process.env.OCR_TIMEOUT) || 120000,
   },
 });
