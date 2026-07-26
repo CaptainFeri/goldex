@@ -156,6 +156,21 @@ function ProcessDepositModal({
         {deposit.picturePath && <div><strong>تصویر:</strong> <img src={picUrl(deposit.picturePath)} alt="deposit-pic" style={{ maxWidth: "100%", maxHeight: 300, borderRadius: 6, marginTop: 4, cursor: "pointer" }} onClick={() => window.open(picUrl(deposit.picturePath), "_blank")} /></div>}
         {deposit.notes && <div><strong>توضیحات کاربر:</strong> {deposit.notes}</div>}
         {deposit.adminNotes && <div><strong>توضیحات ادمین:</strong> {deposit.adminNotes}</div>}
+        {deposit.metadata?.ocr && (
+          <div style={{ background: 'var(--surface)', padding: 12, borderRadius: 8, marginTop: 8 }}>
+            <strong>📄 داده‌های استخراج شده از رسید:</strong>
+            <div>تاریخ: {deposit.metadata.ocr.parsed?.date || '—'}</div>
+            <div>مبلغ: {deposit.metadata.ocr.parsed?.amount || '—'}</div>
+            <div>کد پیگیری: {deposit.metadata.ocr.parsed?.transactionId || '—'}</div>
+            <div>شماره کارت: {deposit.metadata.ocr.parsed?.cardNumber || '—'}</div>
+            {deposit.metadata.ocr.raw_text && (
+              <details style={{ marginTop: 8 }}>
+                <summary style={{ cursor: 'pointer', fontSize: 12 }}>متن کامل OCR</summary>
+                <pre style={{ fontSize: 11, whiteSpace: 'pre-wrap', marginTop: 4, maxHeight: 120, overflow: 'auto' }}>{deposit.metadata.ocr.raw_text}</pre>
+              </details>
+            )}
+          </div>
+        )}
       </div>
 
       {readOnly ? (

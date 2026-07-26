@@ -1,0 +1,7 @@
+fastapi
+uvicorn
+easyocr==1.7.2
+Pillow
+numpy<2
+pydantic
+opencv-python-headless

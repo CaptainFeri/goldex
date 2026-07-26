@@ -19,11 +19,6 @@ services:
       - ./postgres-init:/docker-entrypoint-initdb.d
     networks:
       - goldex-network
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${GOLDEX_AUTH_POSTGRES_USERNAME:-postgres}"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
 
   pgadmin:
     image: dpage/pgadmin4:latest
@@ -40,7 +35,7 @@ services:
       - goldex-network
     depends_on:
       postgres:
-        condition: service_healthy
+        condition: service_started
 
   redis:
     image: redis:7-alpine
@@ -53,11 +48,6 @@ services:
       - redis_data:/data
     networks:
       - goldex-network
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
 
   redis-insight:
     image: redis/redisinsight:latest
@@ -71,7 +61,7 @@ services:
       - goldex-network
     depends_on:
       redis:
-        condition: service_healthy
+        condition: service_started
 
   minio:
     image: minio/minio:RELEASE.2025-04-03T14-56-28Z-cpuv1
@@ -103,11 +93,28 @@ services:
       - rabbitmq_data:/var/lib/rabbitmq
     networks:
       - goldex-network
-    healthcheck:
-      test: ["CMD", "rabbitmqctl", "status"]
-      interval: 15s
-      timeout: 10s
-      retries: 5
+
+  ocr-worker:
+    build: ./paddle-ocr-service
+    container_name: goldex-ocr-worker
+    restart: unless-stopped
+    ports:
+      - "${OCR_WORKER_PORT:-8000}:8000"
+    volumes:
+      - paddleocr_models:/root/.paddleocr
+    networks:
+      - goldex-network
+
+  easy-ocr-worker:
+    build: ./easy-ocr-service
+    container_name: goldex-easy-ocr-worker
+    restart: unless-stopped
+    ports:
+      - "${EASY_OCR_WORKER_PORT:-8001}:8000"
+    volumes:
+      - easyocr_models:/root/.EasyOCR
+    networks:
+      - goldex-network
 
   monitor:
     build:
@@ -123,12 +130,6 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock
     networks:
       - goldex-network
-    healthcheck:
-      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8080/"]
-      interval: 30s
-      timeout: 5s
-      start_period: 10s
-      retries: 3
 
   # ════════════════════════════════════════════
   # APP SERVICES
@@ -142,12 +143,16 @@ services:
     restart: unless-stopped
     depends_on:
       postgres:
-        condition: service_healthy
+        condition: service_started
       redis:
-        condition: service_healthy
+        condition: service_started
       rabbitmq:
-        condition: service_healthy
+        condition: service_started
       minio:
+        condition: service_started
+      ocr-worker:
+        condition: service_started
+      easy-ocr-worker:
         condition: service_started
     env_file:
       - .env
@@ -160,6 +165,9 @@ services:
       BASE_APP_POSTGRES_URL: postgres
       GOLDEX_AUTH_POSTGRES_URL: postgres
       MINIO_ENDPOINT: minio
+      OCR_PROVIDER: ${OCR_PROVIDER:-paddle}
+      OCR_SERVICE_URL: http://ocr-worker:8000/ocr
+      EASY_OCR_SERVICE_URL: http://easy-ocr-worker:8000/ocr
       NODE_ENV: production
     ports:
       - "${BACKEND_EXTERNAL_PORT:-4040}:${GOLDEX_APP_INTERNAL_PORT:-3000}"
@@ -177,11 +185,11 @@ services:
     restart: unless-stopped
     depends_on:
       postgres:
-        condition: service_healthy
+        condition: service_started
       redis:
-        condition: service_healthy
+        condition: service_started
       rabbitmq:
-        condition: service_healthy
+        condition: service_started
     env_file:
       - .env
     environment:
@@ -230,7 +238,7 @@ services:
     restart: unless-stopped
     depends_on:
       postgres:
-        condition: service_healthy
+        condition: service_started
     env_file:
       - .env
     environment:
@@ -250,7 +258,7 @@ services:
     restart: unless-stopped
     depends_on:
       redis:
-        condition: service_healthy
+        condition: service_started
     env_file:
       - .env
     environment:
@@ -282,12 +290,6 @@ services:
       - "${ADMIN_PANEL_PORT:-5190}:80"
     networks:
       - goldex-network
-    healthcheck:
-      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://127.0.0.1:80/"]
-      interval: 30s
-      timeout: 5s
-      start_period: 10s
-      retries: 3
     logging:
       driver: "json-file"
       options:
@@ -312,12 +314,6 @@ services:
       - "${USER_PANEL_PORT:-5173}:80"
     networks:
       - goldex-network
-    healthcheck:
-      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://127.0.0.1:80/"]
-      interval: 30s
-      timeout: 5s
-      start_period: 10s
-      retries: 3
     logging:
       driver: "json-file"
       options:
@@ -337,6 +333,8 @@ volumes:
   rabbitmq_data:
   backend_logs:
   pricing_engine_logs:
+  paddleocr_models:
+  easyocr_models:
 
 # ════════════════════════════════════════════
 # NETWORKS

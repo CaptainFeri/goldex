@@ -156,6 +156,21 @@ function ProcessWithdrawModal({
         {withdraw.picturePath && <div><strong>تصویر:</strong> <img src={picUrl(withdraw.picturePath)} alt="withdraw-pic" style={{ maxWidth: "100%", maxHeight: 300, borderRadius: 6, marginTop: 4, cursor: "pointer" }} onClick={() => window.open(picUrl(withdraw.picturePath), "_blank")} /></div>}
         {withdraw.notes && <div><strong>توضیحات کاربر:</strong> {withdraw.notes}</div>}
         {withdraw.adminNotes && <div><strong>توضیحات ادمین:</strong> {withdraw.adminNotes}</div>}
+        {withdraw.metadata?.ocr && (
+          <div style={{ background: 'var(--surface)', padding: 12, borderRadius: 8, marginTop: 8 }}>
+            <strong>📄 داده‌های استخراج شده از رسید:</strong>
+            <div>تاریخ: {withdraw.metadata.ocr.parsed?.date || '—'}</div>
+            <div>مبلغ: {withdraw.metadata.ocr.parsed?.amount || '—'}</div>
+            <div>کد پیگیری: {withdraw.metadata.ocr.parsed?.transactionId || '—'}</div>
+            <div>شماره کارت: {withdraw.metadata.ocr.parsed?.cardNumber || '—'}</div>
+            {withdraw.metadata.ocr.raw_text && (
+              <details style={{ marginTop: 8 }}>
+                <summary style={{ cursor: 'pointer', fontSize: 12 }}>متن کامل OCR</summary>
+                <pre style={{ fontSize: 11, whiteSpace: 'pre-wrap', marginTop: 4, maxHeight: 120, overflow: 'auto' }}>{withdraw.metadata.ocr.raw_text}</pre>
+              </details>
+            )}
+          </div>
+        )}
       </div>
 
       {readOnly ? (

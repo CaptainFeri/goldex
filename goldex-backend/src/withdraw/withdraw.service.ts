@@ -50,6 +50,7 @@ export class WithdrawService {
       amount: dto.amount,
       notes: dto.notes,
       picturePath: dto.picturePath,
+      metadata: dto.metadata,
       status: WithdrawStatusEnum.PENDING,
     });
 

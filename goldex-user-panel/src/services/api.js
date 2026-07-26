@@ -198,6 +198,12 @@ export const depositApi = {
     form.append('file', file)
     return unwrap(await http.post('/deposit/upload-picture', form))
   },
+
+  uploadAndOcr: async (file) => {
+    const form = new FormData()
+    form.append('file', file)
+    return unwrap(await http.post('/deposit/upload-and-ocr', form))
+  },
 }
 
 export const withdrawApi = {
@@ -212,6 +218,18 @@ export const withdrawApi = {
 
   cancel: async (id) =>
     unwrap(await http.post(`/withdraw/${id}/cancel`)),
+
+  uploadPicture: async (file) => {
+    const form = new FormData()
+    form.append('file', file)
+    return unwrap(await http.post('/withdraw/upload-picture', form))
+  },
+
+  uploadAndOcr: async (file) => {
+    const form = new FormData()
+    form.append('file', file)
+    return unwrap(await http.post('/withdraw/upload-and-ocr', form))
+  },
 }
 
 export const levelApi = {

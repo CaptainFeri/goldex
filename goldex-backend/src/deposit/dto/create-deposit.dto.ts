@@ -1,4 +1,4 @@
-import { IsString, IsNumber, IsOptional, IsIn } from "class-validator";
+import { IsString, IsNumber, IsOptional, IsObject } from "class-validator";
 import { ApiProperty } from "@nestjs/swagger";
 
 export class CreateDepositDto {
@@ -23,4 +23,9 @@ export class CreateDepositDto {
   @IsString()
   @ApiProperty({ required: false })
   picturePath?: string;
+
+  @IsOptional()
+  @IsObject()
+  @ApiProperty({ required: false })
+  metadata?: Record<string, any>;
 }

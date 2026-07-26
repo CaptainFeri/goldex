@@ -63,4 +63,9 @@ export default () => ({
     botToken: process.env.TELEGRAM_BOT_TOKEN,
     channelId: process.env.TELEGRAM_CHANNEL_ID,
   },
+  ocr: {
+    provider: process.env.OCR_PROVIDER || 'paddle',
+    serviceUrl: process.env.OCR_SERVICE_URL || 'http://localhost:8000/ocr',
+    easyOcrUrl: process.env.EASY_OCR_SERVICE_URL || 'http://localhost:8001/ocr',
+  },
 });

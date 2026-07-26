@@ -8,6 +8,7 @@ import { WithdrawQueryDto } from "./dto/withdraw-query.dto";
 import { UserAuthGuard } from "../user/auth/Guard/user.guard";
 import { UserExpressRequest } from "../user/auth/types/user-express-request";
 import { MinioService } from "../minio/minio.service";
+import { OcrService } from "../ocr/ocr.service";
 
 @ApiTags("Withdraw")
 @ApiBearerAuth()
@@ -16,7 +17,8 @@ import { MinioService } from "../minio/minio.service";
 export class WithdrawController {
   constructor(
     private readonly withdrawService: WithdrawService,
-    private readonly minioService: MinioService
+    private readonly minioService: MinioService,
+    private readonly ocrService: OcrService,
   ) {}
 
   @Post()
@@ -52,6 +54,53 @@ export class WithdrawController {
       "withdraw",
     );
     return { data: { url: uploadedFile.name } };
+  }
+
+  @Post("upload-and-ocr")
+  @ApiOperation({ summary: "Upload withdrawal picture and run OCR" })
+  @ApiConsumes("multipart/form-data")
+  @UseInterceptors(FileInterceptor("file", { storage: memoryStorage() }))
+  async uploadAndOcr(@Req() req: UserExpressRequest, @UploadedFile() file: Express.Multer.File) {
+    if (!file) throw new Error("No file uploaded");
+    const userId = req.user["id"];
+    const objectName = `withdraw/${userId}/${Date.now()}-${file.originalname}`;
+    const uploadedFile = await this.minioService.uploadFile(
+      {
+        objectName,
+        stream: file.buffer,
+        size: file.size,
+        contentType: file.mimetype,
+        metadata: { userId, uploadedBy: "user", originalName: file.originalname },
+      },
+      "withdraw",
+    );
+    const base64Image = file.buffer.toString("base64");
+    let ocrResult;
+    try {
+      ocrResult = await this.ocrService.processImage(base64Image);
+    } catch (error) {
+      console.error(`OCR processing failed: ${error}`);
+      ocrResult = {
+        success: false,
+        texts: [],
+        parsed: {
+          date: null,
+          amount: null,
+          transactionId: null,
+          cardNumber: null,
+          accountNumber: null,
+          sourceCard: null,
+          destCard: null,
+        },
+        raw: "",
+      };
+    }
+    return {
+      data: {
+        url: uploadedFile.name,
+        ocr: ocrResult,
+      },
+    };
   }
 
   @Get(":id")

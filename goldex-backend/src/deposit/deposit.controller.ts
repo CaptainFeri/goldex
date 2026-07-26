@@ -9,6 +9,7 @@ import {
   Req,
   UseInterceptors,
   UploadedFile,
+  BadRequestException,
 } from "@nestjs/common";
 import { ApiTags, ApiOperation, ApiBearerAuth, ApiConsumes } from "@nestjs/swagger";
 import { FileInterceptor } from "@nestjs/platform-express";
@@ -19,6 +20,7 @@ import { DepositQueryDto } from "./dto/deposit-query.dto";
 import { UserAuthGuard } from "../user/auth/Guard/user.guard";
 import { UserExpressRequest } from "../user/auth/types/user-express-request";
 import { MinioService } from "../minio/minio.service";
+import { OcrService } from "../ocr/ocr.service";
 
 @ApiTags("Deposit")
 @ApiBearerAuth()
@@ -27,7 +29,8 @@ import { MinioService } from "../minio/minio.service";
 export class DepositController {
   constructor(
     private readonly depositService: DepositService,
-    private readonly minioService: MinioService
+    private readonly minioService: MinioService,
+    private readonly ocrService: OcrService
   ) {}
 
   @Post()
@@ -77,5 +80,75 @@ export class DepositController {
   async cancel(@Req() req: UserExpressRequest, @Param("id") id: string) {
     const userId = req.user["id"];
     return { data: await this.depositService.cancel(userId, id) };
+  }
+
+  // deposit.controller.ts (updated upload-and-ocr endpoint)
+  @Post("upload-and-ocr")
+  @ApiOperation({ summary: "Upload deposit picture and run OCR" })
+  @ApiConsumes("multipart/form-data")
+  @UseInterceptors(
+    FileInterceptor("file", {
+      storage: memoryStorage(),
+      limits: {
+        fileSize: 10 * 1024 * 1024, // 10MB limit
+      },
+    })
+  )
+  async uploadAndOcr(@Req() req: UserExpressRequest, @UploadedFile() file: Express.Multer.File) {
+    if (!file) throw new Error("No file uploaded");
+
+    const userId = req.user["id"];
+    const objectName = `deposit/${userId}/${Date.now()}-${file.originalname}`;
+
+    // Upload to MinIO (handle errors)
+    let uploadedFile;
+    try {
+      uploadedFile = await this.minioService.uploadFile(
+        {
+          objectName,
+          stream: file.buffer,
+          size: file.size,
+          contentType: file.mimetype,
+          metadata: { userId, uploadedBy: "user", originalName: file.originalname },
+        },
+        "deposit"
+      );
+    } catch (error) {
+      console.error(`Failed to upload file: ${error}`);
+      throw new BadRequestException("Failed to upload file");
+    }
+
+    try {
+      const base64Image = file.buffer.toString("base64");
+      const ocrResult = await this.ocrService.processImage(base64Image);
+
+      return {
+        data: {
+          url: uploadedFile.name,
+          ocr: ocrResult,
+        },
+      };
+    } catch (error) {
+      console.error(`OCR processing failed: ${error}`);
+      return {
+        data: {
+          url: uploadedFile.name,
+          ocr: {
+            success: false,
+            texts: [],
+            parsed: {
+              date: null,
+              amount: null,
+              transactionId: null,
+              cardNumber: null,
+              accountNumber: null,
+              sourceCard: null,
+              destCard: null,
+            },
+            raw: "",
+          },
+        },
+      };
+    }
   }
 }

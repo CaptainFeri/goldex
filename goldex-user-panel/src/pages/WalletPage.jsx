@@ -44,12 +44,38 @@ const cancelReq = async (api, id, onDone) => {
   }
 }
 
+function OcrPreviewBox({ ocr, ocrLoading }) {
+  if (ocrLoading) {
+    return <div style={{ background: 'var(--bg)', padding: 12, borderRadius: 8, fontSize: 13, color: 'var(--text-muted)' }}>⏳ Processing receipt image…</div>
+  }
+  if (!ocr) return null
+  const p = ocr.parsed
+  return (
+    <div style={{ background: 'var(--bg)', padding: 12, borderRadius: 8, fontSize: 13, lineHeight: 1.8 }}>
+      <div style={{ fontWeight: 600, marginBottom: 6 }}>📄 Extracted Receipt Data</div>
+      <div><strong>Date:</strong> {p.date || '—'}</div>
+      <div><strong>Amount:</strong> {p.amount || '—'}</div>
+      <div><strong>Ref ID:</strong> {p.transactionId || '—'}</div>
+      <div><strong>Card:</strong> {p.cardNumber ? `${p.cardNumber.slice(0, 4)} **** ${p.cardNumber.slice(-4)}` : '—'}</div>
+      {ocr.raw_text && (
+        <details style={{ marginTop: 6 }}>
+          <summary style={{ cursor: 'pointer', fontSize: 12, color: 'var(--text-muted)' }}>View Raw Text</summary>
+          <pre style={{ fontSize: 11, whiteSpace: 'pre-wrap', marginTop: 4, maxHeight: 120, overflow: 'auto' }}>{ocr.raw_text}</pre>
+        </details>
+      )}
+    </div>
+  )
+}
+
 function DepositModal({ symbolId, symbolSlug, depositTypes: allowedDepositTypes, onClose, onDone }) {
   const [type, setType] = useState(allowedDepositTypes?.[0] || 'manual')
   const [amount, setAmount] = useState('')
   const [notes, setNotes] = useState('')
   const [pictureFile, setPictureFile] = useState(null)
   const [picturePreview, setPicturePreview] = useState(null)
+  const [picturePath, setPicturePath] = useState('')
+  const [ocrData, setOcrData] = useState(null)
+  const [ocrLoading, setOcrLoading] = useState(false)
   const [warehouses, setWarehouses] = useState([])
   const [warehouseId, setWarehouseId] = useState('')
   const [submitting, setSubmitting] = useState(false)
@@ -61,6 +87,25 @@ function DepositModal({ symbolId, symbolSlug, depositTypes: allowedDepositTypes,
       warehouseApi.getWarehouses().then(setWarehouses).catch(() => {})
     }
   }, [allowedDepositTypes])
+
+  const handleFileChange = async (e) => {
+    const f = e.target.files?.[0] || null
+    setPictureFile(f)
+    setPicturePreview(f ? URL.createObjectURL(f) : null)
+    setOcrData(null)
+    setPicturePath('')
+    if (!f) return
+    setOcrLoading(true)
+    try {
+      const result = await depositApi.uploadAndOcr(f)
+      setPicturePath(result.url)
+      setOcrData(result.ocr)
+    } catch (err) {
+      setError('OCR processing failed: ' + (err?.response?.data?.message || err.message))
+    } finally {
+      setOcrLoading(false)
+    }
+  }
 
   const handleSubmit = async (e) => {
     e.preventDefault()
@@ -75,12 +120,12 @@ function DepositModal({ symbolId, symbolSlug, depositTypes: allowedDepositTypes,
       if (isWarehouse) {
         await warehouseApi.createDeposit({ warehouseId, weight: Number(amount), symbolId, notes: notes || undefined })
       } else {
-        let picturePath
-        if (type === 'manual' && pictureFile) {
-          const { url } = await depositApi.uploadPicture(pictureFile)
-          picturePath = url
+        const payload = { symbolId, type, amount: Number(amount), notes: notes || undefined }
+        if (type === 'manual') {
+          payload.picturePath = picturePath || undefined
+          if (ocrData) payload.metadata = { ocr: ocrData }
         }
-        await depositApi.create({ symbolId, type, amount: Number(amount), notes: notes || undefined, picturePath })
+        await depositApi.create(payload)
       }
       onDone()
       onClose()
@@ -136,15 +181,11 @@ function DepositModal({ symbolId, symbolSlug, depositTypes: allowedDepositTypes,
               </div>
               {type === 'manual' && (
                 <div className="field">
-                  <label>Picture (optional)</label>
-                  <input className="form-input" type="file" accept="image/*"
-                    onChange={(e) => {
-                      const f = e.target.files?.[0] || null
-                      setPictureFile(f)
-                      setPicturePreview(f ? URL.createObjectURL(f) : null)
-                    }} />
+                  <label>Receipt Picture</label>
+                  <input className="form-input" type="file" accept="image/*" onChange={handleFileChange} />
                   {pictureFile && <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>{pictureFile.name}</span>}
                   {picturePreview && <img src={picturePreview} alt="preview" style={{ maxWidth: '100%', maxHeight: 200, borderRadius: 6, marginTop: 4 }} />}
+                  <OcrPreviewBox ocr={ocrData} ocrLoading={ocrLoading} />
                 </div>
               )}
             </>
@@ -167,6 +208,11 @@ function WithdrawModal({ symbolId, symbolSlug, withdrawTypes: allowedWithdrawTyp
   const [type, setType] = useState(allowedWithdrawTypes?.[0] || 'manual')
   const [amount, setAmount] = useState('')
   const [notes, setNotes] = useState('')
+  const [pictureFile, setPictureFile] = useState(null)
+  const [picturePreview, setPicturePreview] = useState(null)
+  const [picturePath, setPicturePath] = useState('')
+  const [ocrData, setOcrData] = useState(null)
+  const [ocrLoading, setOcrLoading] = useState(false)
   const [warehouses, setWarehouses] = useState([])
   const [warehouseId, setWarehouseId] = useState('')
   const [submitting, setSubmitting] = useState(false)
@@ -178,6 +224,25 @@ function WithdrawModal({ symbolId, symbolSlug, withdrawTypes: allowedWithdrawTyp
       warehouseApi.getWarehouses().then(setWarehouses).catch(() => {})
     }
   }, [allowedWithdrawTypes])
+
+  const handleFileChange = async (e) => {
+    const f = e.target.files?.[0] || null
+    setPictureFile(f)
+    setPicturePreview(f ? URL.createObjectURL(f) : null)
+    setOcrData(null)
+    setPicturePath('')
+    if (!f) return
+    setOcrLoading(true)
+    try {
+      const result = await withdrawApi.uploadAndOcr(f)
+      setPicturePath(result.url)
+      setOcrData(result.ocr)
+    } catch (err) {
+      setError('OCR processing failed: ' + (err?.response?.data?.message || err.message))
+    } finally {
+      setOcrLoading(false)
+    }
+  }
 
   const handleSubmit = async (e) => {
     e.preventDefault()
@@ -192,7 +257,12 @@ function WithdrawModal({ symbolId, symbolSlug, withdrawTypes: allowedWithdrawTyp
       if (isWarehouse) {
         await warehouseApi.createWithdraw({ warehouseId, weight: Number(amount), symbolId, notes: notes || undefined })
       } else {
-        await withdrawApi.create({ symbolId, type, amount: Number(amount), notes: notes || undefined })
+        const payload = { symbolId, type, amount: Number(amount), notes: notes || undefined }
+        if (type === 'manual') {
+          payload.picturePath = picturePath || undefined
+          if (ocrData) payload.metadata = { ocr: ocrData }
+        }
+        await withdrawApi.create(payload)
       }
       onDone()
       onClose()
@@ -240,11 +310,22 @@ function WithdrawModal({ symbolId, symbolSlug, withdrawTypes: allowedWithdrawTyp
               </div>
             </>
           ) : (
-            <div className="field">
-              <label>Amount</label>
-              <input className="form-input" type="number" step="0.00000001" min="0.00000001"
-                value={amount} onChange={(e) => setAmount(e.target.value)} required placeholder="e.g. 10" />
-            </div>
+            <>
+              <div className="field">
+                <label>Amount</label>
+                <input className="form-input" type="number" step="0.00000001" min="0.00000001"
+                  value={amount} onChange={(e) => setAmount(e.target.value)} required placeholder="e.g. 10" />
+              </div>
+              {type === 'manual' && (
+                <div className="field">
+                  <label>Receipt Picture</label>
+                  <input className="form-input" type="file" accept="image/*" onChange={handleFileChange} />
+                  {pictureFile && <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>{pictureFile.name}</span>}
+                  {picturePreview && <img src={picturePreview} alt="preview" style={{ maxWidth: '100%', maxHeight: 200, borderRadius: 6, marginTop: 4 }} />}
+                  <OcrPreviewBox ocr={ocrData} ocrLoading={ocrLoading} />
+                </div>
+              )}
+            </>
           )}
           <div className="field">
             <label>Notes (optional)</label>
