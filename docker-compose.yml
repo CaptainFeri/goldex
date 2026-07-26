@@ -104,18 +104,6 @@ services:
       - paddleocr_models:/root/.paddleocr
     networks:
       - goldex-network
-
-  easy-ocr-worker:
-    build: ./easy-ocr-service
-    container_name: goldex-easy-ocr-worker
-    restart: unless-stopped
-    ports:
-      - "${EASY_OCR_WORKER_PORT:-8001}:8000"
-    volumes:
-      - easyocr_models:/root/.EasyOCR
-    networks:
-      - goldex-network
-
   monitor:
     build:
       context: ./monitor
@@ -152,8 +140,6 @@ services:
         condition: service_started
       ocr-worker:
         condition: service_started
-      easy-ocr-worker:
-        condition: service_started
     env_file:
       - .env
     environment:
@@ -167,7 +153,6 @@ services:
       MINIO_ENDPOINT: minio
       OCR_PROVIDER: ${OCR_PROVIDER:-paddle}
       OCR_SERVICE_URL: http://ocr-worker:8000/ocr
-      EASY_OCR_SERVICE_URL: http://easy-ocr-worker:8000/ocr
       NODE_ENV: production
     ports:
       - "${BACKEND_EXTERNAL_PORT:-4040}:${GOLDEX_APP_INTERNAL_PORT:-3000}"
@@ -334,7 +319,6 @@ volumes:
   backend_logs:
   pricing_engine_logs:
   paddleocr_models:
-  easyocr_models:
 
 # ════════════════════════════════════════════
 # NETWORKS

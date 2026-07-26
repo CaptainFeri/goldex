@@ -25,9 +25,7 @@ export interface ParsedOcrData {
 @Injectable()
 export class OcrService {
   private readonly logger = new Logger(OcrService.name);
-  private readonly ocrProvider: string;
   private readonly ocrServiceUrl: string;
-  private readonly easyOcrUrl: string;
   private readonly timeout: number;
 
   constructor(
@@ -35,16 +33,13 @@ export class OcrService {
     private readonly configService: ConfigService
   ) {
     const ocrConfig = this.configService.get("ocr");
-    this.ocrProvider = ocrConfig?.provider || "paddle";
     this.ocrServiceUrl = ocrConfig?.serviceUrl || "http://localhost:8000/ocr";
-    this.easyOcrUrl = ocrConfig?.easyOcrUrl || "http://localhost:8001/ocr";
     this.timeout = ocrConfig?.timeout || 30000;
-    this.logger.log(`OCR Provider: ${this.ocrProvider}`);
     this.logger.log(`OCR Service URL: ${this.ocrServiceUrl}`);
   }
 
   private get serviceUrl(): string {
-    return this.ocrProvider === "easyocr" ? this.easyOcrUrl : this.ocrServiceUrl;
+    return this.ocrServiceUrl;
   }
 
   async processImage(base64Image: string): Promise<{
