@@ -101,7 +101,7 @@ services:
     ports:
       - "${OCR_WORKER_PORT:-8000}:8000"
     volumes:
-      - kraken_models:/root/.local/share/kraken
+      - kraken_models:/models
     networks:
       - goldex-network
   monitor:

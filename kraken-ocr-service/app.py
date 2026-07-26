@@ -2,8 +2,8 @@ import base64
 import io
 import logging
 import os
-import subprocess
 import sys
+import urllib.request
 from pathlib import Path
 
 from fastapi import FastAPI
@@ -13,28 +13,22 @@ from PIL import Image
 logging.basicConfig(level=logging.INFO, format='%(asctime)s %(levelname)s %(message)s')
 logger = logging.getLogger("kraken-ocr")
 
-ARABIC_MODEL_DOI = "10.5281/zenodo.7050295"
-KNOWN_MODEL_PATH = "/models/arabic.mlmodel"
+MODEL_DIR = Path("/models")
+MODEL_PATH = MODEL_DIR / "arabic_best.mlmodel"
+MODEL_URL = "https://zenodo.org/api/records/7050296/files/arabic_best.mlmodel/content"
 
-def _resolve_model() -> str:
-    if os.path.exists(KNOWN_MODEL_PATH):
-        return KNOWN_MODEL_PATH
-    htrmopo = Path.home() / ".local" / "share" / "htrmopo"
-    if htrmopo.exists():
-        for mlmodel in htrmopo.rglob("*.mlmodel"):
-            return str(mlmodel)
-    logger.info("Model not found. Downloading via kraken get ...")
-    os.makedirs(htrmopo, exist_ok=True)
-    subprocess.run([sys.executable, "-m", "kraken", "get", ARABIC_MODEL_DOI], check=True)
-    for mlmodel in htrmopo.rglob("*.mlmodel"):
-        return str(mlmodel)
-    raise FileNotFoundError("Could not locate or download a Kraken Arabic model")
+def download_model() -> None:
+    MODEL_DIR.mkdir(parents=True, exist_ok=True)
+    logger.info(f"Downloading model from {MODEL_URL} ...")
+    urllib.request.urlretrieve(MODEL_URL, MODEL_PATH)
+    logger.info("Model downloaded.")
 
-model_path = _resolve_model()
-logger.info(f"Loading Kraken model from {model_path}")
+if not MODEL_PATH.exists():
+    download_model()
 
+logger.info(f"Loading Kraken model from {MODEL_PATH}")
 from kraken.lib import models as kmodels
-model = kmodels.load_any(model_path)
+model = kmodels.load_any(str(MODEL_PATH))
 logger.info("Kraken OCR ready.")
 
 app = FastAPI(title="KrakenOCR API")
