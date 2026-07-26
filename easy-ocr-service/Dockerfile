@@ -12,10 +12,12 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir --default-timeout=300 \
     -r requirements.txt
 
-# Download models before copying source code — this layer is cached
-# so model downloads only happen once, not on every code change
+# Download models before copying source code
+# --mount=type=cache keeps models on host, NOT in image → small image, fast export
+# Cache persists across builds even when layer is invalidated
 COPY download_models.py .
-RUN python download_models.py
+RUN --mount=type=cache,target=/root/.EasyOCR \
+    python download_models.py
 
 COPY . .
 
