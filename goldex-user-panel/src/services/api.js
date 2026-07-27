@@ -214,10 +214,6 @@ export const depositApi = {
 }
 
 export const withdrawApi = {
-  same pattern...
-}
-
-export const withdrawApi = {
   create: async (payload) =>
     unwrap(await http.post('/withdraw', payload)),
 
