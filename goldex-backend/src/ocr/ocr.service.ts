@@ -38,6 +38,8 @@ export interface ParsedOcrData {
   accountNumber: string | null;
   sourceCard: string | null;
   destCard: string | null;
+  sourceIban: string | null;
+  destinationIban: string | null;
   rawText?: string;
 }
 
@@ -226,6 +228,8 @@ export class OcrService {
       accountNumber: null,
       sourceCard: null,
       destCard: null,
+      sourceIban: null,
+      destinationIban: null,
     };
   }
 
@@ -276,6 +280,7 @@ export class OcrService {
     this.extractDate(fullText, cleanedLines, result);
     this.extractTransactionId(fullText, cleanedLines, result);
     this.extractSourceDestCards(fullText, cleanedLines, result);
+    this.extractIban(fullText, cleanedLines, result);
 
     return result;
   }
@@ -475,6 +480,70 @@ export class OcrService {
             result.destCard = numbers.substring(0, 16);
           }
         }
+      }
+    }
+  }
+
+  private extractIban(fullText: string, lines: string[], result: ParsedOcrData): void {
+    const ibanPattern = /\bIR\s*[0-9\s]{24,26}\b/i;
+    const ibanCleanPattern = /\b(IR)(\d{2})\s*(\d{4})\s*(\d{4})\s*(\d{4})\s*(\d{4})\s*(\d{4})\s*(\d{4})?\b/i;
+    const ibanFlatPattern = /\b(IR\d{24})\b/i;
+
+    const extractIbanNumber = (text: string): string | null => {
+      let match = text.match(ibanFlatPattern);
+      if (match) return match[1].toUpperCase();
+      match = text.match(ibanCleanPattern);
+      if (match) {
+        const digits = match.slice(2).join("").replace(/\s/g, "");
+        if (digits.length >= 24) return "IR" + digits.substring(0, 24);
+      }
+      match = text.match(ibanPattern);
+      if (match) {
+        const cleaned = match[0].replace(/\s/g, "").toUpperCase();
+        if (cleaned.startsWith("IR") && cleaned.length >= 26) return cleaned.substring(0, 26);
+      }
+      return null;
+    };
+
+    const sourceKeywords = /مبدا|مبدأ|مبداء|Source|Origin|از|شبا\s*مبدا|شبا\s*مبدأ/i;
+    const destKeywords = /مقصد|Destination|به|Target|شبا\s*مقصد/i;
+
+    for (const line of lines) {
+      if (sourceKeywords.test(line) && !destKeywords.test(line)) {
+        const iban = extractIbanNumber(line);
+        if (iban) {
+          result.sourceIban = iban;
+          break;
+        }
+      }
+    }
+
+    for (const line of lines) {
+      if (destKeywords.test(line) && !sourceKeywords.test(line)) {
+        const iban = extractIbanNumber(line);
+        if (iban) {
+          result.destinationIban = iban;
+          break;
+        }
+      }
+    }
+
+    if (!result.sourceIban && !result.destinationIban) {
+      const ibans: string[] = [];
+      const allMatches = fullText.match(/\bIR[0-9\s]{24,26}\b/gi);
+      if (allMatches) {
+        for (const m of allMatches) {
+          const cleaned = m.replace(/\s/g, "").toUpperCase();
+          if (cleaned.startsWith("IR") && cleaned.length >= 26) {
+            ibans.push(cleaned.substring(0, 26));
+          }
+        }
+      }
+      if (ibans.length === 1) {
+        result.destinationIban = ibans[0];
+      } else if (ibans.length >= 2) {
+        result.sourceIban = ibans[0];
+        result.destinationIban = ibans[1];
       }
     }
   }
