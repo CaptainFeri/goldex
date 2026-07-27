@@ -43,13 +43,6 @@ async def lifespan(app: FastAPI):
     app.state.model = model
     app.state.settings = settings
 
-    try:
-        from app.metrics import setup_metrics
-
-        setup_metrics(app)
-    except ImportError:
-        logger.info("prometheus-fastapi-instrumentator not installed; skipping metrics")
-
     if settings.feedback_enabled:
         settings.feedback_data_dir.mkdir(parents=True, exist_ok=True)
         logger.info("Feedback data directory: %s", settings.feedback_data_dir)
@@ -103,6 +96,14 @@ def create_app() -> FastAPI:
     from app.router import router
 
     app.include_router(router)
+
+    try:
+        from app.metrics import setup_metrics
+
+        setup_metrics(app)
+    except ImportError:
+        logger.info("prometheus-fastapi-instrumentator not installed; skipping metrics")
+
     return app
 
 
