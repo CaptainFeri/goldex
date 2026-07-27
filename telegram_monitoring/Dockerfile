@@ -28,10 +28,10 @@ COPY --from=builder /app/node_modules ./node_modules
 COPY --from=builder /app/dist ./dist
 
 
-# Create and set appropriate permissions for a static directory
+# Create and set appropriate permissions for static directories
 RUN mkdir -p /app/public && chmod 777 /app/public
 COPY --from=builder /app/public ./public
-# RUN mkdir -p /app/logs && chown -R node:node /app/logs
+RUN mkdir -p /app/sessions && chown -R node:node /app/sessions
 
 # Expose the application port
 EXPOSE 3000

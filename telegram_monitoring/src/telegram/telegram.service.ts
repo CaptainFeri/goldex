@@ -139,7 +139,7 @@ export class TelegramService implements OnModuleInit, OnModuleDestroy {
       return new StringSession(this.options.sessionString);
     }
 
-    return new StoreSession(this.options.sessionFolder ?? 'sessions');
+    return new StoreSession(this.options.sessionFolder || 'sessions');
   }
 
   private async resolveMonitoredChannels(): Promise<void> {
