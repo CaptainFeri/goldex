@@ -41,7 +41,6 @@ def setup_metrics(app):
     global _instrumentator
     _instrumentator = Instrumentator(
         should_group_status_codes=False,
-        should_ignore_untrained_endpoints=True,
         latency_histogram_buckets=(50, 100, 250, 500, 1000, 2000, 5000, 10000, 30000),
     )
     _instrumentator.instrument(app).expose(app, endpoint="/metrics")
