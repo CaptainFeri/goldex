@@ -45,4 +45,14 @@ export class AuthController {
       throw new HttpException((e as Error).message, HttpStatus.BAD_REQUEST);
     }
   }
+
+  @Post('resend')
+  @HttpCode(200)
+  async resendCode() {
+    const result = await this.telegram.resendCode();
+    if (!result) {
+      throw new HttpException('Failed to resend code', HttpStatus.INTERNAL_SERVER_ERROR);
+    }
+    return { success: true, sentTo: result.sentTo, timeout: result.timeout };
+  }
 }

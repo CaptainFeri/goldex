@@ -97,14 +97,41 @@ export class TelegramService implements OnModuleInit, OnModuleDestroy {
           new Promise<string>((resolve) => {
             this.authCodeResolver = resolve;
           }),
-        onError: (err) => this.logger.error('Auth error', err),
+        onError: (err) => {
+          this.logger.error('Auth error', err);
+          if ((err as any)?.code) this.logger.error(`Error code: ${(err as any).code}`);
+          if ((err as any)?.errorMessage) this.logger.error(`Error message: ${(err as any).errorMessage}`);
+        },
       })
       .then(async () => {
         const savedSession = this.client.session.save() as unknown as string;
         this.logger.warn(`Session string: ${savedSession}`);
         await this.finalizeInitialization();
       })
-      .catch((err) => this.logger.error('Auth failed', err));
+      .catch((err) => {
+        this.logger.error('Auth failed', err);
+        if ((err as any)?.code) this.logger.error(`Error code: ${(err as any).code}`);
+        if ((err as any)?.errorMessage) this.logger.error(`Error message: ${(err as any).errorMessage}`);
+      });
+  }
+
+  async resendCode(): Promise<{ sentTo: string; timeout: number } | null> {
+    try {
+      const result = await this.client.sendCode(
+        { apiId: this.options.apiId, apiHash: this.options.apiHash },
+        this.options.phoneNumber,
+      );
+      this.logger.log('Verification code resent');
+      return {
+        sentTo: result.type || 'unknown',
+        timeout: result.timeout || 0,
+      };
+    } catch (err) {
+      this.logger.error('Failed to resend code', err);
+      if ((err as any)?.code) this.logger.error(`Error code: ${(err as any).code}`);
+      if ((err as any)?.errorMessage) this.logger.error(`Error message: ${(err as any).errorMessage}`);
+      return null;
+    }
   }
 
   private createSession() {
