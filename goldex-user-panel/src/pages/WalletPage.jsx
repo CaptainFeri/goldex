@@ -1,7 +1,7 @@
 import { useEffect, useState, useCallback } from 'react'
 import { walletApi, warehouseApi, depositApi, withdrawApi } from '../services/api'
 import { Spinner, Alert, Button } from '../components/UI'
-import JalaliDatePicker from '../components/JalaliDatePicker'
+
 
 const TX_BADGE = {
   completed: 'badge-success',
@@ -67,13 +67,12 @@ function OcrPreviewBox({ ocr, ocrLoading, ocrEdits, setOcrEdits, imageBase64 }) 
       </div>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginTop: 4 }}>
         <label style={{ fontSize: 12 }}>Date</label>
-        <JalaliDatePicker value={ocrEdits.date} onChange={(v) => handleChange('date', v)} />
+        <input className="form-input" value={ocrEdits.date} onChange={(e) => handleChange('date', e.target.value)} placeholder="1402/06/15" />
         <label style={{ fontSize: 12 }}>Amount</label>
         <input className="form-input" value={ocrEdits.amount} onChange={(e) => handleChange('amount', e.target.value)} placeholder="Amount" />
         <label style={{ fontSize: 12 }}>Ref ID</label>
         <input className="form-input" value={ocrEdits.transactionId} onChange={(e) => handleChange('transactionId', e.target.value)} placeholder="Ref ID" />
         <label style={{ fontSize: 12 }}>Card Number</label>
-        <input className="form-input" value={ocrEdits.cardNumber} onChange={(e) => handleChange('cardNumber', e.target.value)} placeholder="Card Number" />
         <label style={{ fontSize: 12 }}>Source IBAN</label>
         <input className="form-input" value={ocrEdits.sourceIban || ''} onChange={(e) => handleChange('sourceIban', e.target.value)} placeholder="IRxxxxxxxxxxxxxxxxxxxxxxxx" dir="ltr" />
         <label style={{ fontSize: 12 }}>Destination IBAN</label>
@@ -138,7 +137,6 @@ function DepositModal({ symbolId, symbolSlug, depositTypes: allowedDepositTypes,
           date: ocrResult.parsed.date || '',
           amount: ocrResult.parsed.amount || '',
           transactionId: ocrResult.parsed.transactionId || '',
-          cardNumber: ocrResult.parsed.cardNumber || '',
           sourceIban: ocrResult.parsed.sourceIban || '',
           destinationIban: ocrResult.parsed.destinationIban || '',
         })
@@ -174,7 +172,6 @@ function DepositModal({ symbolId, symbolSlug, depositTypes: allowedDepositTypes,
                   date: ocrEditsDeposit?.date || ocrData.parsed?.date || null,
                   amount: ocrEditsDeposit?.amount || ocrData.parsed?.amount || null,
                   transactionId: ocrEditsDeposit?.transactionId || ocrData.parsed?.transactionId || null,
-                  cardNumber: ocrEditsDeposit?.cardNumber || ocrData.parsed?.cardNumber || null,
                   sourceIban: ocrEditsDeposit?.sourceIban || ocrData.parsed?.sourceIban || null,
                   destinationIban: ocrEditsDeposit?.destinationIban || ocrData.parsed?.destinationIban || null,
                 },
@@ -310,7 +307,6 @@ function WithdrawModal({ symbolId, symbolSlug, withdrawTypes: allowedWithdrawTyp
           date: ocrResult.parsed.date || '',
           amount: ocrResult.parsed.amount || '',
           transactionId: ocrResult.parsed.transactionId || '',
-          cardNumber: ocrResult.parsed.cardNumber || '',
           sourceIban: ocrResult.parsed.sourceIban || '',
           destinationIban: ocrResult.parsed.destinationIban || '',
         })
@@ -346,7 +342,6 @@ function WithdrawModal({ symbolId, symbolSlug, withdrawTypes: allowedWithdrawTyp
                   date: ocrEditsWithdraw?.date || ocrData.parsed?.date || null,
                   amount: ocrEditsWithdraw?.amount || ocrData.parsed?.amount || null,
                   transactionId: ocrEditsWithdraw?.transactionId || ocrData.parsed?.transactionId || null,
-                  cardNumber: ocrEditsWithdraw?.cardNumber || ocrData.parsed?.cardNumber || null,
                   sourceIban: ocrEditsWithdraw?.sourceIban || ocrData.parsed?.sourceIban || null,
                   destinationIban: ocrEditsWithdraw?.destinationIban || ocrData.parsed?.destinationIban || null,
                 },

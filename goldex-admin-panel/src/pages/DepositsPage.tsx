@@ -2,7 +2,6 @@ import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api, unwrap, apiError } from "../api/client";
 import { Card, Badge, Loading, ErrorState, Empty, Modal } from "../components/ui";
-import JalaliDatePicker from "../components/JalaliDatePicker";
 import { DEPOSIT_TYPES } from "../lib/enums";
 import type { DepositRequest } from "../api/types";
 
@@ -147,7 +146,7 @@ function ProcessDepositModal({
   const [notes, setNotes] = useState("");
   const [ocrEdits, setOcrEdits] = useState<Record<string, string>>(() => {
     const p = deposit.metadata?.ocr?.parsed;
-    return p ? { date: p.date || '', amount: p.amount || '', transactionId: p.transactionId || '', cardNumber: p.cardNumber || '', sourceIban: p.sourceIban || '', destinationIban: p.destinationIban || '' } : { date: '', amount: '', transactionId: '', cardNumber: '', sourceIban: '', destinationIban: '' };
+    return p ? { date: p.date || '', amount: p.amount || '', transactionId: p.transactionId || '', sourceIban: p.sourceIban || '', destinationIban: p.destinationIban || '' } : { date: '', amount: '', transactionId: '', sourceIban: '', destinationIban: '' };
   });
   const ocrData = deposit.metadata?.ocr;
 
@@ -175,20 +174,17 @@ function ProcessDepositModal({
                 <div>تاریخ: {ocrData.parsed?.date || '—'}</div>
                 <div>مبلغ: {ocrData.parsed?.amount || '—'}</div>
                 <div>کد پیگیری: {ocrData.parsed?.transactionId || '—'}</div>
-                <div>شماره کارت: {ocrData.parsed?.cardNumber || '—'}</div>
                 <div>شبا مبدأ: {ocrData.parsed?.sourceIban || '—'}</div>
                 <div>شبا مقصد: {ocrData.parsed?.destinationIban || '—'}</div>
               </>
             ) : (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginTop: 4 }}>
                 <label style={{ fontSize: 12, color: 'var(--text-muted)' }}>تاریخ</label>
-                <JalaliDatePicker value={ocrEdits.date || ''} onChange={(v) => setOcrEdits((p) => ({ ...p, date: v }))} placeholder="تاریخ" />
+                <input className="input" value={ocrEdits.date || ''} onChange={(e) => setOcrEdits((p) => ({ ...p, date: e.target.value }))} placeholder="تاریخ 1402/06/15" />
                 <label style={{ fontSize: 12, color: 'var(--text-muted)' }}>مبلغ</label>
                 <input className="input" value={ocrEdits.amount || ''} onChange={(e) => setOcrEdits((p) => ({ ...p, amount: e.target.value }))} placeholder="مبلغ" />
                 <label style={{ fontSize: 12, color: 'var(--text-muted)' }}>کد پیگیری</label>
                 <input className="input" value={ocrEdits.transactionId || ''} onChange={(e) => setOcrEdits((p) => ({ ...p, transactionId: e.target.value }))} placeholder="کد پیگیری" />
-                <label style={{ fontSize: 12, color: 'var(--text-muted)' }}>شماره کارت</label>
-                <input className="input" value={ocrEdits.cardNumber || ''} onChange={(e) => setOcrEdits((p) => ({ ...p, cardNumber: e.target.value }))} placeholder="شماره کارت" />
                 <label style={{ fontSize: 12, color: 'var(--text-muted)' }}>شبا مبدأ</label>
                 <input className="input" value={ocrEdits.sourceIban || ''} onChange={(e) => setOcrEdits((p) => ({ ...p, sourceIban: e.target.value }))} placeholder="IRxxxxxxxxxxxxxxxxxxxxxxxx" dir="ltr" />
                 <label style={{ fontSize: 12, color: 'var(--text-muted)' }}>شبا مقصد</label>
@@ -217,7 +213,7 @@ function ProcessDepositModal({
             payload.metadata = {
               ocr: {
                 ...ocrData,
-                parsed: { date: ocrEdits.date || null, amount: ocrEdits.amount || null, transactionId: ocrEdits.transactionId || null, cardNumber: ocrEdits.cardNumber || null, sourceIban: ocrEdits.sourceIban || null, destinationIban: ocrEdits.destinationIban || null },
+                parsed: { date: ocrEdits.date || null, amount: ocrEdits.amount || null, transactionId: ocrEdits.transactionId || null, sourceIban: ocrEdits.sourceIban || null, destinationIban: ocrEdits.destinationIban || null },
               },
             };
           }
