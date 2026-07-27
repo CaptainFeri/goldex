@@ -39,7 +39,7 @@ class Settings(BaseSettings):
     provider: str = "kraken"
     timeout: int = 120000
 
-    rate_limit: str = "10/minute"
+    rate_limit: str = "60/minute"
 
     rabbitmq_url: str = "amqp://guest:guest@rabbitmq:5672/"
     ocr_request_queue: str = "ocr_requests"
