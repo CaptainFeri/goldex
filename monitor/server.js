@@ -2,13 +2,32 @@ const express = require("express");
 const os = require("os");
 const net = require("net");
 const dns = require("dns");
+const http = require("http");
 const { execSync, exec } = require("child_process");
 
 const app = express();
 const PORT = 8080;
 const EXTERNAL_HOST = process.env.EXTERNAL_HOST || "http://localhost";
 
+const OCR_HOST = process.env.OCR_HOST || "ocr-worker";
+const OCR_PORT = process.env.OCR_PORT || 8000;
+
 app.use(express.static("public"));
+
+const sysHistory = { cpu: [], mem: [], disk: [], timestamps: [] };
+const MAX_HISTORY = 60;
+
+function fetchJson(url) {
+  return new Promise((resolve, reject) => {
+    http.get(url, (res) => {
+      let data = "";
+      res.on("data", (c) => (data += c));
+      res.on("end", () => {
+        try { resolve(JSON.parse(data)); } catch { resolve(null); }
+      });
+    }).on("error", reject);
+  });
+}
 
 const services = [
   // Infrastructure
@@ -135,6 +154,15 @@ const services = [
     port: 80,
     externalPort: 5173,
   },
+  // OCR
+  {
+    name: "OCR Worker",
+    category: "Backend",
+    containerName: "ocr-worker",
+    host: "ocr-worker",
+    port: 8000,
+    externalPort: 8000,
+  },
 ];
 
 function checkTcp(host, port, timeout = 4000) {
@@ -226,6 +254,17 @@ function getDiskUsage() {
 app.get("/api/system", (_req, res) => {
   const cpu = getCpuInfo();
   const procMem = process.memoryUsage();
+  const disk = getDiskUsage();
+
+  const now = Date.now();
+  sysHistory.cpu.push({ time: now, value: cpu.avgLoad });
+  sysHistory.mem.push({ time: now, value: parseFloat(((1 - os.freemem() / os.totalmem()) * 100).toFixed(1)) });
+  if (disk) sysHistory.disk.push({ time: now, value: disk.usedPercent });
+  sysHistory.timestamps.push(now);
+  while (sysHistory.cpu.length > MAX_HISTORY) sysHistory.cpu.shift();
+  while (sysHistory.mem.length > MAX_HISTORY) sysHistory.mem.shift();
+  while (sysHistory.disk.length > MAX_HISTORY) sysHistory.disk.shift();
+  while (sysHistory.timestamps.length > MAX_HISTORY) sysHistory.timestamps.shift();
 
   res.json({
     hostname: os.hostname(),
@@ -249,8 +288,30 @@ app.get("/api/system", (_req, res) => {
       external: procMem.external,
     },
     network: getNetworkInfo(),
-    disk: getDiskUsage(),
+    disk: disk,
   });
+});
+
+app.get("/api/system/history", (_req, res) => {
+  res.json({ cpu: sysHistory.cpu, mem: sysHistory.mem, disk: sysHistory.disk });
+});
+
+app.get("/api/ocr/health", async (_req, res) => {
+  try {
+    const data = await fetchJson(`http://${OCR_HOST}:${OCR_PORT}/health`);
+    res.json(data || { status: "unreachable", model_loaded: false });
+  } catch {
+    res.json({ status: "unreachable", model_loaded: false });
+  }
+});
+
+app.get("/api/ocr/train-status", async (_req, res) => {
+  try {
+    const data = await fetchJson(`http://${OCR_HOST}:${OCR_PORT}/train/status`);
+    res.json(data || { state: "unreachable" });
+  } catch {
+    res.json({ state: "unreachable" });
+  }
 });
 
 app.get("/api/logs/:container", (req, res) => {
