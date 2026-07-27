@@ -33,8 +33,8 @@ COPY --from=builder /usr/local /usr/local
 
 RUN groupadd -r ocr --gid 1001 && \
     useradd -r -g ocr --uid 1001 -m ocr && \
-    mkdir -p /models && \
-    chown -R ocr:ocr /app /models
+    mkdir -p /models /data/feedback && \
+    chown -R ocr:ocr /app /models /data
 
 COPY --chown=ocr:ocr app/ ./app/
 COPY --chown=ocr:ocr data_model/ ./data_model/
