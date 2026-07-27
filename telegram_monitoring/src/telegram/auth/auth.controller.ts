@@ -53,6 +53,6 @@ export class AuthController {
     if (!result) {
       throw new HttpException('Failed to resend code', HttpStatus.INTERNAL_SERVER_ERROR);
     }
-    return { success: true, sentTo: result.sentTo, timeout: result.timeout };
+    return { success: true, sentViaApp: result.sentViaApp, phoneCodeHash: result.phoneCodeHash };
   }
 }

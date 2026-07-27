@@ -115,16 +115,16 @@ export class TelegramService implements OnModuleInit, OnModuleDestroy {
       });
   }
 
-  async resendCode(): Promise<{ sentTo: string; timeout: number } | null> {
+  async resendCode(): Promise<{ sentViaApp: boolean; phoneCodeHash: string } | null> {
     try {
       const result = await this.client.sendCode(
         { apiId: this.options.apiId, apiHash: this.options.apiHash },
         this.options.phoneNumber,
       );
-      this.logger.log('Verification code resent');
+      this.logger.log(`Verification code resent (via app: ${result.isCodeViaApp})`);
       return {
-        sentTo: result.type || 'unknown',
-        timeout: result.timeout || 0,
+        sentViaApp: result.isCodeViaApp,
+        phoneCodeHash: result.phoneCodeHash,
       };
     } catch (err) {
       this.logger.error('Failed to resend code', err);
