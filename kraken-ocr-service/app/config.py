@@ -4,8 +4,6 @@ from pydantic_settings import BaseSettings
 
 
 class Settings(BaseSettings):
-    model_class = "Settings"
-
     model_path: Path = Path("/models/arabic_best.mlmodel")
     model_url: str = (
         "https://zenodo.org/api/records/7050296/files/arabic_best.mlmodel/content"
