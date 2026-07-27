@@ -1,0 +1,16 @@
+__pycache__
+*.pyc
+*.pyo
+.git
+.gitignore
+.env
+venv
+.venv
+*.egg-info
+dist
+build
+.DS_Store
+README.md
+tests/
+training/
+data_model/training/

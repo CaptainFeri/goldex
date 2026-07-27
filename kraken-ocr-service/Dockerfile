@@ -3,9 +3,8 @@ FROM python:3.10-slim AS builder
 
 WORKDIR /build
 
-ENV PIP_DEFAULT_TIMEOUT=100 \
-    PIP_DISABLE_PIP_VERSION_CHECK=1 \
-    PIP_NO_CACHE_DIR=1
+ENV PIP_DEFAULT_TIMEOUT=300 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     libgomp1 \
