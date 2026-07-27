@@ -204,6 +204,17 @@ export const depositApi = {
     form.append('file', file)
     return unwrap(await http.post('/deposit/upload-and-ocr', form))
   },
+
+  sendOcrFeedback: async (imageBase64, originalTexts, correctedTexts) =>
+    unwrap(await http.post('/deposit/ocr-feedback', {
+      image_base64: imageBase64,
+      original_texts: originalTexts,
+      corrected_texts: correctedTexts,
+    })),
+}
+
+export const withdrawApi = {
+  same pattern...
 }
 
 export const withdrawApi = {
@@ -230,6 +241,13 @@ export const withdrawApi = {
     form.append('file', file)
     return unwrap(await http.post('/withdraw/upload-and-ocr', form))
   },
+
+  sendOcrFeedback: async (imageBase64, originalTexts, correctedTexts) =>
+    unwrap(await http.post('/withdraw/ocr-feedback', {
+      image_base64: imageBase64,
+      original_texts: originalTexts,
+      corrected_texts: correctedTexts,
+    })),
 }
 
 export const levelApi = {

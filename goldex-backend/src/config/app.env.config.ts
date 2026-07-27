@@ -65,7 +65,16 @@ export default () => ({
   },
   ocr: {
     provider: process.env.OCR_PROVIDER || 'kraken',
-    serviceUrl: process.env.OCR_SERVICE_URL || 'http://localhost:8000/ocr',
+    serviceUrl: process.env.OCR_SERVICE_URL || 'http://ocr-worker:8000/ocr',
+    feedbackUrl: process.env.OCR_FEEDBACK_URL || 'http://ocr-worker:8000/ocr/feedback',
+    healthUrl: process.env.OCR_HEALTH_URL || 'http://ocr-worker:8000/health',
+    trainStatusUrl: process.env.OCR_TRAIN_STATUS_URL || 'http://ocr-worker:8000/train/status',
+    trainTriggerUrl: process.env.OCR_TRAIN_TRIGGER_URL || 'http://ocr-worker:8000/train/trigger',
     timeout: parseInt(process.env.OCR_TIMEOUT) || 120000,
+    mode: process.env.OCR_MODE || 'http',
+    feedbackEnabled: process.env.OCR_FEEDBACK_ENABLED !== 'false',
+    rabbitmqRequestQueue: process.env.OCR_RABBITMQ_REQUEST_QUEUE || 'ocr_requests',
+    rabbitmqResultExchange: process.env.OCR_RABBITMQ_RESULT_EXCHANGE || 'ocr_results',
+    rabbitmqResultRoutingKey: process.env.OCR_RABBITMQ_RESULT_ROUTING_KEY || 'ocr.result',
   },
 });

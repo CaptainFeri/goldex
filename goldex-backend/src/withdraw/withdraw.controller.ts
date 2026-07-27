@@ -103,6 +103,25 @@ export class WithdrawController {
     };
   }
 
+  @Post("ocr-feedback")
+  @ApiOperation({ summary: "Send OCR correction feedback for withdraw receipt" })
+  async ocrFeedback(
+    @Body()
+    body: {
+      image_base64: string;
+      original_texts: string[];
+      corrected_texts: string[];
+    }
+  ) {
+    const sent = await this.ocrService.sendFeedback(
+      body.image_base64,
+      body.original_texts,
+      body.corrected_texts,
+      "withdraw"
+    );
+    return { data: { success: sent } };
+  }
+
   @Get(":id")
   @ApiOperation({ summary: "Get withdrawal details" })
   async findOne(@Req() req: UserExpressRequest, @Param("id") id: string) {

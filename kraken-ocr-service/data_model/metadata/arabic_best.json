@@ -1,0 +1,17 @@
+{
+  "name": "arabic_best",
+  "version": "1.0.0",
+  "language": "ar",
+  "script": "Arabic",
+  "source": "zenodo",
+  "url": "https://zenodo.org/api/records/7050296/files/arabic_best.mlmodel/content",
+  "description": "Kraken base Arabic OCR model. Fine-tune on Persian data to improve accuracy.",
+  "training_samples": null,
+  "metrics": {
+    "cer": null,
+    "wer": null
+  },
+  "training_date": null,
+  "base_model": null,
+  "notes": "Baseline model from Kraken Zenodo. Use as starting point for Persian fine-tuning."
+}

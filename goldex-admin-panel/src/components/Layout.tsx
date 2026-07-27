@@ -17,6 +17,7 @@ const NAV = [
   { to: "/finance-logs", label: "گزارشات مالی", icon: "📄" },
   { to: "/deposits", label: "واریزها", icon: "📥" },
   { to: "/withdraws", label: "برداشت‌ها", icon: "📤" },
+  { to: "/ocr", label: "مدیریت OCR", icon: "🔍" },
   { section: "بازار" },
   { to: "/symbols", label: "نمادها", icon: "◈" },
   { to: "/pairs", label: "جفت‌ارزها", icon: "⇄" },
@@ -51,6 +52,7 @@ const TITLES: Record<string, string> = {
   "/user-levels": "مدیریت سطوح کاربری — تعریف و اختصاص سطوح",
   "/deposits": "مدیریت درخواست‌های واریز",
   "/withdraws": "مدیریت درخواست‌های برداشت",
+  "/ocr": "مدیریت سرویس OCR — وضعیت مدل و آموزش خودکار",
 };
 
 export default function Layout() {

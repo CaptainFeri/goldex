@@ -127,6 +127,7 @@ export class WithdrawService {
       withdraw.status = dto.status;
       withdraw.adminId = adminId;
       if (dto.notes) withdraw.notes = dto.notes;
+      if (dto.metadata) withdraw.metadata = { ...(withdraw.metadata || {}), ...dto.metadata };
       if (dto.status === WithdrawStatusEnum.COMPLETED || dto.status === WithdrawStatusEnum.FAILED) {
         withdraw.completedAt = new Date();
       }

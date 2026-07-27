@@ -8,7 +8,26 @@ interface OcrResult {
   success: boolean;
   texts: string[];
   error?: string;
+  processing_time_ms?: number;
   metadata?: Record<string, any>;
+}
+
+export interface OcrHealthResponse {
+  status: string;
+  model_loaded: boolean;
+  model_name?: string;
+  model_language?: string;
+  model_path?: string;
+}
+
+export interface OcrTrainStatusResponse {
+  state: string;
+  started_at?: number;
+  last_train_at?: number;
+  last_result?: any;
+  error?: string;
+  sample_count: number;
+  available_samples: number;
 }
 
 export interface ParsedOcrData {
@@ -22,57 +41,62 @@ export interface ParsedOcrData {
   rawText?: string;
 }
 
+export interface OcrProcessResult {
+  success: boolean;
+  texts: string[];
+  parsed: ParsedOcrData;
+  raw?: string;
+  processing_time_ms?: number;
+}
+
 @Injectable()
 export class OcrService {
   private readonly logger = new Logger(OcrService.name);
   private readonly ocrServiceUrl: string;
+  private readonly ocrFeedbackUrl: string;
+  private readonly ocrHealthUrl: string;
+  private readonly ocrTrainStatusUrl: string;
+  private readonly ocrTrainTriggerUrl: string;
   private readonly timeout: number;
+  private readonly feedbackEnabled: boolean;
 
   constructor(
     private readonly httpService: HttpService,
     private readonly configService: ConfigService
   ) {
     const ocrConfig = this.configService.get("ocr");
-    this.ocrServiceUrl = ocrConfig?.serviceUrl || "http://localhost:8000/ocr";
+    this.ocrServiceUrl = ocrConfig?.serviceUrl || "http://ocr-worker:8000/ocr";
+    this.ocrFeedbackUrl = ocrConfig?.feedbackUrl || "http://ocr-worker:8000/ocr/feedback";
+    this.ocrHealthUrl = ocrConfig?.healthUrl || "http://ocr-worker:8000/health";
+    this.ocrTrainStatusUrl = ocrConfig?.trainStatusUrl || "http://ocr-worker:8000/train/status";
+    this.ocrTrainTriggerUrl = ocrConfig?.trainTriggerUrl || "http://ocr-worker:8000/train/trigger";
     this.timeout = ocrConfig?.timeout || 120000;
+    this.feedbackEnabled = ocrConfig?.feedbackEnabled !== false;
     this.logger.log(`OCR Service URL: ${this.ocrServiceUrl}`);
   }
 
-  private get serviceUrl(): string {
-    return this.ocrServiceUrl;
-  }
-
-  async processImage(base64Image: string): Promise<{
-    success: boolean;
-    texts: string[];
-    parsed: ParsedOcrData;
-    raw?: string;
-  }> {
+  async processImage(base64Image: string): Promise<OcrProcessResult> {
     if (!base64Image) {
       throw new BadRequestException("No image data provided");
     }
 
-    // Remove data URL prefix if present
     const cleanBase64 = base64Image.replace(/^data:image\/\w+;base64,/, "");
 
     try {
       this.logger.log("Sending image to OCR service...");
 
-      const url = this.serviceUrl;
       const response = await firstValueFrom(
         this.httpService
           .post<OcrResult>(
-            url,
+            this.ocrServiceUrl,
             {
               base64_image: cleanBase64,
-              language: "fa", // Persian language detection
+              language: "fa",
               detect_orientation: true,
             },
             {
               timeout: this.timeout,
-              headers: {
-                "Content-Type": "application/json",
-              },
+              headers: { "Content-Type": "application/json" },
             }
           )
           .pipe(
@@ -83,9 +107,7 @@ export class OcrService {
           )
       );
 
-      this.logger.log(`OCR response received: ${response}`);
-
-      const { success, texts = [] } = response.data;
+      const { success, texts = [], processing_time_ms } = response.data;
 
       if (!success) {
         this.logger.warn("OCR service returned success=false");
@@ -99,25 +121,99 @@ export class OcrService {
       const parsed = this.parseTexts(texts);
       parsed.rawText = texts.join("\n");
 
-      this.logger.log(`OCR completed: ${texts.length} lines extracted`);
+      this.logger.log(
+        `OCR completed: ${texts.length} lines in ${processing_time_ms ?? "?"}ms`
+      );
 
       return {
         success: true,
         texts,
         parsed,
         raw: texts.join("\n"),
+        processing_time_ms,
       };
     } catch (error: any) {
       this.logger.error(`OCR service call failed: ${error.message}`);
-      this.logger.error(`Error details: ${JSON.stringify(error.response?.data || error.stack)}`);
-
-      // Return a structured error response
       return {
         success: false,
         texts: [],
         parsed: this.emptyParsed(),
         raw: `Error: ${error.message}`,
       };
+    }
+  }
+
+  async sendFeedback(
+    imageBase64: string,
+    originalTexts: string[],
+    correctedTexts: string[],
+    jobId?: string
+  ): Promise<boolean> {
+    if (!this.feedbackEnabled) {
+      this.logger.warn("OCR feedback is disabled");
+      return false;
+    }
+
+    try {
+      const cleanBase64 = imageBase64.replace(/^data:image\/\w+;base64,/, "");
+      await firstValueFrom(
+        this.httpService.post(
+          this.ocrFeedbackUrl,
+          {
+            image_base64: cleanBase64,
+            original_texts: originalTexts,
+            corrected_texts: correctedTexts,
+            job_id: jobId,
+          },
+          { timeout: 10000 }
+        )
+      );
+      this.logger.log(`Feedback sent: ${correctedTexts.length} corrections`);
+      return true;
+    } catch (error: any) {
+      this.logger.error(`Failed to send OCR feedback: ${error.message}`);
+      return false;
+    }
+  }
+
+  async getHealth(): Promise<OcrHealthResponse | null> {
+    try {
+      const response = await firstValueFrom(
+        this.httpService.get<OcrHealthResponse>(this.ocrHealthUrl, {
+          timeout: 5000,
+        })
+      );
+      return response.data;
+    } catch {
+      return null;
+    }
+  }
+
+  async getTrainStatus(): Promise<OcrTrainStatusResponse | null> {
+    try {
+      const response = await firstValueFrom(
+        this.httpService.get<OcrTrainStatusResponse>(this.ocrTrainStatusUrl, {
+          timeout: 5000,
+        })
+      );
+      return response.data;
+    } catch {
+      return null;
+    }
+  }
+
+  async triggerTrain(): Promise<{ status: string } | null> {
+    try {
+      const response = await firstValueFrom(
+        this.httpService.post<{ status: string }>(
+          this.ocrTrainTriggerUrl,
+          {},
+          { timeout: 5000 }
+        )
+      );
+      return response.data;
+    } catch {
+      return null;
     }
   }
 
@@ -136,84 +232,44 @@ export class OcrService {
   private normalizePersianText(text: string): string {
     if (!text) return "";
 
-    // Persian to English digit mapping
     const persianDigits: Record<string, string> = {
-      "۰": "0",
-      "۱": "1",
-      "۲": "2",
-      "۳": "3",
-      "۴": "4",
-      "۵": "5",
-      "۶": "6",
-      "۷": "7",
-      "۸": "8",
-      "۹": "9",
-      "٠": "0",
-      "١": "1",
-      "٢": "2",
-      "٣": "3",
-      "٤": "4",
-      "٥": "5",
-      "٦": "6",
-      "٧": "7",
-      "٨": "8",
-      "٩": "9",
+      "۰": "0", "۱": "1", "۲": "2", "۳": "3", "۴": "4",
+      "۵": "5", "۶": "6", "۷": "7", "۸": "8", "۹": "9",
+      "٠": "0", "١": "1", "٢": "2", "٣": "3", "٤": "4",
+      "٥": "5", "٦": "6", "٧": "7", "٨": "8", "٩": "9",
     };
 
-    // Common OCR mistakes
     const characterMap: Record<string, string> = {
-      ة: "غ",
-      أ: "ا",
-      إ: "ا",
-      ؤ: "و",
-      ى: "ی",
-      ي: "ی",
-      ك: "ک",
-      ۀ: "ه",
-      ئ: "ی",
-      ء: "",
-      ـ: "",
+      ة: "غ", أ: "ا", إ: "ا", ؤ: "و", ى: "ی",
+      ي: "ی", ك: "ک", ۀ: "ه", ئ: "ی", ء: "", ـ: "",
     };
 
     let normalized = text;
-
-    // Replace Persian/Arabic digits
     for (const [persian, english] of Object.entries(persianDigits)) {
       normalized = normalized.replace(new RegExp(persian, "g"), english);
     }
-
-    // Replace common character mistakes
     for (const [bad, good] of Object.entries(characterMap)) {
       normalized = normalized.replace(new RegExp(bad, "g"), good);
     }
-
-    // Remove extra spaces
-    normalized = normalized.replace(/\s+/g, " ").trim();
-
-    return normalized;
+    return normalized.replace(/\s+/g, " ").trim();
   }
 
   private parseTexts(lines: string[]): ParsedOcrData {
     if (!lines || lines.length === 0) {
-      this.logger.warn("No lines to parse");
       return this.emptyParsed();
     }
 
-    // Clean and normalize all lines
-    const cleanedLines = lines.map((line) => this.normalizePersianText(line)).filter((line) => line.length > 0);
+    const cleanedLines = lines
+      .map((line) => this.normalizePersianText(line))
+      .filter((line) => line.length > 0);
 
     if (cleanedLines.length === 0) {
-      this.logger.warn("No valid text after cleaning");
       return this.emptyParsed();
     }
 
     const fullText = cleanedLines.join(" ");
-    // this.logger.debug(`Full text for parsing: ${fullText.substring(0, 200)}...`);
-    this.logger.debug(`Full text for parsing: ${fullText}...`);
-
     const result = this.emptyParsed();
 
-    // Extract data using patterns
     this.extractCardNumber(fullText, cleanedLines, result);
     this.extractAccountNumber(fullText, cleanedLines, result);
     this.extractAmount(fullText, cleanedLines, result);
@@ -221,19 +277,17 @@ export class OcrService {
     this.extractTransactionId(fullText, cleanedLines, result);
     this.extractSourceDestCards(fullText, cleanedLines, result);
 
-    this.logger.debug(`Parsed result: ${JSON.stringify(result)}`);
     return result;
   }
 
+  // ---- Extraction helpers (unchanged) ----
+
   private extractCardNumber(fullText: string, lines: string[], result: ParsedOcrData): void {
-    // Pattern for 16-digit card number (with or without spaces/hyphens)
     const patterns = [
       /(?<!\d)(\d{4})\s*[-–—]?\s*(\d{4})\s*[-–—]?\s*(\d{4})\s*[-–—]?\s*(\d{4})(?!\d)/g,
       /(?<!\d)(\d{4})\s*(\d{4})\s*(\d{4})\s*(\d{4})(?!\d)/g,
       /(?<!\d)(\d{16})(?!\d)/g,
     ];
-
-    // First try to find with "شماره کارت" keyword
     const cardNumberRegex = /شماره\s*کارت|شماره\s*كارت|Card\s*No|Card\s*Number/i;
     for (const line of lines) {
       if (cardNumberRegex.test(line)) {
@@ -243,33 +297,26 @@ export class OcrService {
             const fullMatch = match[0].replace(/[-\s]/g, "");
             if (fullMatch.length >= 16) {
               result.cardNumber = fullMatch.substring(0, 16);
-              this.logger.debug(`Found card number with keyword: ${result.cardNumber}`);
               return;
             }
           }
         }
       }
     }
-
-    // Then try to find any 16-digit number
     for (const pattern of patterns) {
       const matches = fullText.matchAll(pattern);
       for (const match of matches) {
         const fullMatch = match[0].replace(/[-\s]/g, "");
         if (fullMatch.length >= 16) {
           result.cardNumber = fullMatch.substring(0, 16);
-          this.logger.debug(`Found card number: ${result.cardNumber}`);
           return;
         }
       }
     }
-
-    // Search line by line for 16-digit numbers
     for (const line of lines) {
       const numbers = line.replace(/[^\d]/g, "");
       if (numbers.length >= 16) {
         result.cardNumber = numbers.substring(0, 16);
-        this.logger.debug(`Found card number from line: ${result.cardNumber}`);
         return;
       }
     }
@@ -277,29 +324,23 @@ export class OcrService {
 
   private extractAccountNumber(fullText: string, lines: string[], result: ParsedOcrData): void {
     const accountRegex = /شماره\s*حساب|Account\s*No|Account\s*Number|حساب|شبا|IBAN/i;
-
     for (const line of lines) {
       if (accountRegex.test(line)) {
         const numbers = line.replace(/[^\d]/g, "");
         if (numbers.length >= 6 && numbers.length <= 24) {
           result.accountNumber = numbers;
-          this.logger.debug(`Found account number: ${result.accountNumber}`);
           return;
         }
       }
     }
-
-    // Fallback: look for 6-24 digit numbers near account keywords
     const accountPattern = /(?:شماره\s*حساب|Account|حساب|شبا|IBAN)[\s:]*(\d{6,24})/i;
     const match = fullText.match(accountPattern);
     if (match) {
       result.accountNumber = match[1];
-      this.logger.debug(`Found account number from pattern: ${result.accountNumber}`);
     }
   }
 
   private extractAmount(fullText: string, lines: string[], result: ParsedOcrData): void {
-    // Look for amount with currency indicators
     const amountPatterns = [
       /مبلغ\s*[:]*\s*([\d,]+)\s*(?:ریال|ريال|تومان|Rial|Toman|IRT)/i,
       /([\d,]+)\s*(?:ریال|ريال|تومان|Rial|Toman|IRT)/i,
@@ -310,20 +351,16 @@ export class OcrService {
       /Price\s*[:]*\s*([\d,]+)/i,
       /value\s*[:]*\s*([\d,]+)/i,
     ];
-
     for (const pattern of amountPatterns) {
       const match = fullText.match(pattern);
       if (match) {
         const amount = match[1].replace(/,/g, "");
         if (!isNaN(Number(amount)) && Number(amount) > 0) {
           result.amount = amount;
-          this.logger.debug(`Found amount: ${result.amount}`);
           return;
         }
       }
     }
-
-    // Look for standalone large numbers
     const numberMatches = fullText.match(/\b\d{4,15}\b/g);
     if (numberMatches) {
       const amounts = numberMatches
@@ -331,10 +368,8 @@ export class OcrService {
         .filter((n) => !isNaN(Number(n)) && Number(n) > 1000 && Number(n) < 1e12)
         .map((n) => Number(n))
         .sort((a, b) => b - a);
-
       if (amounts.length > 0) {
         result.amount = String(amounts[0]);
-        this.logger.debug(`Found amount from numbers: ${result.amount}`);
       }
     }
   }
@@ -346,45 +381,27 @@ export class OcrService {
       /(\d{4}[\/\-.]\d{1,2}[\/\-.]\d{1,2})/,
       /(\d{2}[\/\-.]\d{2}[\/\-.]\d{4})/,
     ];
-
     for (const pattern of datePatterns) {
       const match = fullText.match(pattern);
       if (match) {
         result.date = match[1];
-        this.logger.debug(`Found date: ${result.date}`);
         return;
       }
     }
-
-    // Look for Persian month names
     const persianMonths = [
-      "فروردین",
-      "اردیبهشت",
-      "خرداد",
-      "تیر",
-      "مرداد",
-      "شهریور",
-      "مهر",
-      "آبان",
-      "آذر",
-      "دی",
-      "بهمن",
-      "اسفند",
+      "فروردین", "اردیبهشت", "خرداد", "تیر", "مرداد", "شهریور",
+      "مهر", "آبان", "آذر", "دی", "بهمن", "اسفند",
     ];
-
     for (let i = 0; i < lines.length; i++) {
       for (const month of persianMonths) {
         if (lines[i].includes(month)) {
-          // Look for day and year in nearby lines
           const nearbyText = lines.slice(Math.max(0, i - 1), Math.min(lines.length, i + 2)).join(" ");
           const numbers = nearbyText.match(/\b(\d{1,2})\b/g);
           const years = nearbyText.match(/\b(\d{2,4})\b/g);
-
           if (numbers && years) {
             const day = numbers[0];
             const year = years[years.length - 1] || "????";
             result.date = `${year}/${month}/${day}`;
-            this.logger.debug(`Found date from month: ${result.date}`);
             return;
           }
         }
@@ -397,24 +414,19 @@ export class OcrService {
       /(?:پیگیری|پيگيری|Tracking|Ref|Reference|شماره\s*پیگیری|شماره\s*تراکنش|کد\s*پیگیری|کد\s*رهگیری|مرجع|سفارش)[\s:]*([A-Za-z0-9]{4,20})/i,
       /\b([A-Z0-9]{6,20})\b/,
     ];
-
     for (const pattern of txPatterns) {
       const match = fullText.match(pattern);
       if (match) {
         result.transactionId = match[1];
-        this.logger.debug(`Found transaction ID: ${result.transactionId}`);
         return;
       }
     }
-
-    // Look for alphanumeric codes in lines with keywords
     const txKeywords = /پیگیری|پيگيری|Tracking|Ref|Reference|کد|Code|شماره|ID|No|Ref/i;
     for (const line of lines) {
       if (txKeywords.test(line)) {
         const code = line.replace(/[^A-Za-z0-9]/g, "");
         if (code.length >= 4 && code.length <= 20) {
           result.transactionId = code;
-          this.logger.debug(`Found transaction ID from line: ${result.transactionId}`);
           return;
         }
       }
@@ -422,51 +434,35 @@ export class OcrService {
   }
 
   private extractSourceDestCards(fullText: string, lines: string[], result: ParsedOcrData): void {
-    // Source card (مبدا)
     const sourcePatterns = [
       /(?:مبدا|مبدأ|مبداء|Source|Origin|از)[\s:]*(\d{4})\s*[-–—]?\s*(\d{4})\s*[-–—]?\s*(\d{4})\s*[-–—]?\s*(\d{4})/i,
       /از\s*([^\d]*?)(\d{4})\s*[-–—]?\s*(\d{4})\s*[-–—]?\s*(\d{4})\s*[-–—]?\s*(\d{4})/i,
     ];
-
     for (const pattern of sourcePatterns) {
       const match = fullText.match(pattern);
       if (match) {
-        const cardNumber = match
-          .slice(1)
-          .join("")
-          .replace(/[^0-9]/g, "");
+        const cardNumber = match.slice(1).join("").replace(/[^0-9]/g, "");
         if (cardNumber.length >= 16) {
           result.sourceCard = cardNumber.substring(0, 16);
-          this.logger.debug(`Found source card: ${result.sourceCard}`);
           break;
         }
       }
     }
-
-    // Dest card (مقصد)
     const destPatterns = [
       /(?:مقصد|Destination|به|Target)[\s:]*(\d{4})\s*[-–—]?\s*(\d{4})\s*[-–—]?\s*(\d{4})\s*[-–—]?\s*(\d{4})/i,
       /به\s*([^\d]*?)(\d{4})\s*[-–—]?\s*(\d{4})\s*[-–—]?\s*(\d{4})\s*[-–—]?\s*(\d{4})/i,
     ];
-
     for (const pattern of destPatterns) {
       const match = fullText.match(pattern);
       if (match) {
-        const cardNumber = match
-          .slice(1)
-          .join("")
-          .replace(/[^0-9]/g, "");
+        const cardNumber = match.slice(1).join("").replace(/[^0-9]/g, "");
         if (cardNumber.length >= 16) {
           result.destCard = cardNumber.substring(0, 16);
-          this.logger.debug(`Found destination card: ${result.destCard}`);
           break;
         }
       }
     }
-
-    // If no source/dest found but we have a card number, use it as both
     if (!result.sourceCard && !result.destCard && result.cardNumber) {
-      // Try to determine which is which based on context
       for (const line of lines) {
         if (/مبدا|مبدأ|Source|Origin|از/.test(line)) {
           const numbers = line.replace(/[^\d]/g, "");

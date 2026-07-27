@@ -98,6 +98,9 @@ services:
     build: ./kraken-ocr-service
     container_name: goldex-ocr-worker
     restart: unless-stopped
+    depends_on:
+      rabbitmq:
+        condition: service_started
     ports:
       - "${OCR_WORKER_PORT:-8000}:8000"
     volumes:

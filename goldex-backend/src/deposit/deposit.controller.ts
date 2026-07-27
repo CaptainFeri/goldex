@@ -151,4 +151,23 @@ export class DepositController {
       };
     }
   }
+
+  @Post("ocr-feedback")
+  @ApiOperation({ summary: "Send OCR correction feedback for deposit receipt" })
+  async ocrFeedback(
+    @Body()
+    body: {
+      image_base64: string;
+      original_texts: string[];
+      corrected_texts: string[];
+    }
+  ) {
+    const sent = await this.ocrService.sendFeedback(
+      body.image_base64,
+      body.original_texts,
+      body.corrected_texts,
+      "deposit"
+    );
+    return { data: { success: sent } };
+  }
 }

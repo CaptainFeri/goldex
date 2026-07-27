@@ -1,0 +1,75 @@
+name: OCR Service CI
+
+on:
+  push:
+    paths:
+      - 'kraken-ocr-service/**'
+  pull_request:
+    paths:
+      - 'kraken-ocr-service/**'
+  workflow_dispatch:
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: kraken-ocr-service
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.10
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+
+      - name: Install lint deps
+        run: pip install ruff mypy
+
+      - name: Lint with ruff
+        run: ruff check app/ tests/
+
+      - name: Type check with mypy
+        run: mypy app/ --ignore-missing-imports || true
+
+  test:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: kraken-ocr-service
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.10
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+
+      - name: Install test deps
+        run: |
+          pip install fastapi pydantic pydantic-settings Pillow numpy pytest httpx
+
+      - name: Run unit tests
+        run: pytest tests/ -v
+
+  docker:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: kraken-ocr-service
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: ./kraken-ocr-service
+          push: false
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

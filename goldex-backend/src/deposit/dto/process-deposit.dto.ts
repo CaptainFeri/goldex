@@ -1,4 +1,4 @@
-import { IsEnum, IsOptional, IsString } from "class-validator";
+import { IsEnum, IsObject, IsOptional, IsString } from "class-validator";
 import { ApiProperty } from "@nestjs/swagger";
 import { DepositStatusEnum } from "../enum/deposit-status.enum";
 
@@ -11,4 +11,9 @@ export class ProcessDepositDto {
   @IsString()
   @ApiProperty({ required: false })
   notes?: string;
+
+  @IsOptional()
+  @IsObject()
+  @ApiProperty({ required: false, description: "Updated OCR parsed data to save as metadata.ocr" })
+  metadata?: Record<string, any>;
 }

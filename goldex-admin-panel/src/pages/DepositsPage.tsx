@@ -144,6 +144,11 @@ function ProcessDepositModal({
 }) {
   const [status, setStatus] = useState<"COMPLETED" | "CANCELLED">("COMPLETED");
   const [notes, setNotes] = useState("");
+  const [ocrEdits, setOcrEdits] = useState<Record<string, string>>(() => {
+    const p = deposit.metadata?.ocr?.parsed;
+    return p ? { date: p.date || '', amount: p.amount || '', transactionId: p.transactionId || '', cardNumber: p.cardNumber || '' } : { date: '', amount: '', transactionId: '', cardNumber: '' };
+  });
+  const ocrData = deposit.metadata?.ocr;
 
   return (
     <Modal title={`بررسی درخواست واریز`} onClose={onClose}>
@@ -156,17 +161,37 @@ function ProcessDepositModal({
         {deposit.picturePath && <div><strong>تصویر:</strong> <img src={picUrl(deposit.picturePath)} alt="deposit-pic" style={{ maxWidth: "100%", maxHeight: 300, borderRadius: 6, marginTop: 4, cursor: "pointer" }} onClick={() => window.open(picUrl(deposit.picturePath), "_blank")} /></div>}
         {deposit.notes && <div><strong>توضیحات کاربر:</strong> {deposit.notes}</div>}
         {deposit.adminNotes && <div><strong>توضیحات ادمین:</strong> {deposit.adminNotes}</div>}
-        {deposit.metadata?.ocr && (
+        {ocrData && (
           <div style={{ background: 'var(--surface)', padding: 12, borderRadius: 8, marginTop: 8 }}>
-            <strong>📄 داده‌های استخراج شده از رسید:</strong>
-            <div>تاریخ: {deposit.metadata.ocr.parsed?.date || '—'}</div>
-            <div>مبلغ: {deposit.metadata.ocr.parsed?.amount || '—'}</div>
-            <div>کد پیگیری: {deposit.metadata.ocr.parsed?.transactionId || '—'}</div>
-            <div>شماره کارت: {deposit.metadata.ocr.parsed?.cardNumber || '—'}</div>
-            {deposit.metadata.ocr.raw_text && (
+            <div style={{ fontWeight: 600, marginBottom: 4, display: 'flex', justifyContent: 'space-between' }}>
+              <span>📄 داده‌های استخراج شده از رسید</span>
+              {ocrData.processing_time_ms && (
+                <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>{ocrData.processing_time_ms}ms</span>
+              )}
+            </div>
+            {readOnly ? (
+              <>
+                <div>تاریخ: {ocrData.parsed?.date || '—'}</div>
+                <div>مبلغ: {ocrData.parsed?.amount || '—'}</div>
+                <div>کد پیگیری: {ocrData.parsed?.transactionId || '—'}</div>
+                <div>شماره کارت: {ocrData.parsed?.cardNumber || '—'}</div>
+              </>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginTop: 4 }}>
+                <label style={{ fontSize: 12, color: 'var(--text-muted)' }}>تاریخ</label>
+                <input className="input" value={ocrEdits.date || ''} onChange={(e) => setOcrEdits((p) => ({ ...p, date: e.target.value }))} placeholder="تاریخ" />
+                <label style={{ fontSize: 12, color: 'var(--text-muted)' }}>مبلغ</label>
+                <input className="input" value={ocrEdits.amount || ''} onChange={(e) => setOcrEdits((p) => ({ ...p, amount: e.target.value }))} placeholder="مبلغ" />
+                <label style={{ fontSize: 12, color: 'var(--text-muted)' }}>کد پیگیری</label>
+                <input className="input" value={ocrEdits.transactionId || ''} onChange={(e) => setOcrEdits((p) => ({ ...p, transactionId: e.target.value }))} placeholder="کد پیگیری" />
+                <label style={{ fontSize: 12, color: 'var(--text-muted)' }}>شماره کارت</label>
+                <input className="input" value={ocrEdits.cardNumber || ''} onChange={(e) => setOcrEdits((p) => ({ ...p, cardNumber: e.target.value }))} placeholder="شماره کارت" />
+              </div>
+            )}
+            {ocrData.raw_text && (
               <details style={{ marginTop: 8 }}>
                 <summary style={{ cursor: 'pointer', fontSize: 12 }}>متن کامل OCR</summary>
-                <pre style={{ fontSize: 11, whiteSpace: 'pre-wrap', marginTop: 4, maxHeight: 120, overflow: 'auto' }}>{deposit.metadata.ocr.raw_text}</pre>
+                <pre style={{ fontSize: 11, whiteSpace: 'pre-wrap', marginTop: 4, maxHeight: 120, overflow: 'auto' }}>{ocrData.raw_text}</pre>
               </details>
             )}
           </div>
@@ -178,7 +203,19 @@ function ProcessDepositModal({
           <button type="button" className="btn" onClick={onClose}>بستن</button>
         </div>
       ) : (
-        <form className="modal-form" onSubmit={(e) => { e.preventDefault(); onSave!({ status, notes: notes || undefined }); }}>
+        <form className="modal-form" onSubmit={(e) => {
+          e.preventDefault();
+          const payload: any = { status, notes: notes || undefined };
+          if (ocrData) {
+            payload.metadata = {
+              ocr: {
+                ...ocrData,
+                parsed: { date: ocrEdits.date || null, amount: ocrEdits.amount || null, transactionId: ocrEdits.transactionId || null, cardNumber: ocrEdits.cardNumber || null },
+              },
+            };
+          }
+          onSave!(payload);
+        }}>
           <div className="form-grid">
             <div className="field">
               <label>نتیجه بررسی</label>

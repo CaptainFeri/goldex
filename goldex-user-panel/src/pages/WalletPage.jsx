@@ -44,19 +44,36 @@ const cancelReq = async (api, id, onDone) => {
   }
 }
 
-function OcrPreviewBox({ ocr, ocrLoading }) {
+function OcrPreviewBox({ ocr, ocrLoading, ocrEdits, setOcrEdits, imageBase64 }) {
   if (ocrLoading) {
     return <div style={{ background: 'var(--bg)', padding: 12, borderRadius: 8, fontSize: 13, color: 'var(--text-muted)' }}>⏳ Processing receipt image…</div>
   }
-  if (!ocr) return null
-  const p = ocr.parsed
+  if (!ocr || !ocrEdits) return null
+
+  const handleChange = (field, value) => {
+    setOcrEdits((prev) => ({ ...prev, [field]: value }))
+  }
+
   return (
     <div style={{ background: 'var(--bg)', padding: 12, borderRadius: 8, fontSize: 13, lineHeight: 1.8 }}>
-      <div style={{ fontWeight: 600, marginBottom: 6 }}>📄 Extracted Receipt Data</div>
-      <div><strong>Date:</strong> {p.date || '—'}</div>
-      <div><strong>Amount:</strong> {p.amount || '—'}</div>
-      <div><strong>Ref ID:</strong> {p.transactionId || '—'}</div>
-      <div><strong>Card:</strong> {p.cardNumber ? `${p.cardNumber.slice(0, 4)} **** ${p.cardNumber.slice(-4)}` : '—'}</div>
+      <div style={{ fontWeight: 600, marginBottom: 6, display: 'flex', justifyContent: 'space-between' }}>
+        <span>📄 Extracted Receipt Data</span>
+        {ocr.processing_time_ms && (
+          <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>
+            {ocr.processing_time_ms}ms
+          </span>
+        )}
+      </div>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginTop: 4 }}>
+        <label style={{ fontSize: 12 }}>Date</label>
+        <input className="form-input" value={ocrEdits.date} onChange={(e) => handleChange('date', e.target.value)} placeholder="Date" />
+        <label style={{ fontSize: 12 }}>Amount</label>
+        <input className="form-input" value={ocrEdits.amount} onChange={(e) => handleChange('amount', e.target.value)} placeholder="Amount" />
+        <label style={{ fontSize: 12 }}>Ref ID</label>
+        <input className="form-input" value={ocrEdits.transactionId} onChange={(e) => handleChange('transactionId', e.target.value)} placeholder="Ref ID" />
+        <label style={{ fontSize: 12 }}>Card Number</label>
+        <input className="form-input" value={ocrEdits.cardNumber} onChange={(e) => handleChange('cardNumber', e.target.value)} placeholder="Card Number" />
+      </div>
       {ocr.raw_text && (
         <details style={{ marginTop: 6 }}>
           <summary style={{ cursor: 'pointer', fontSize: 12, color: 'var(--text-muted)' }}>View Raw Text</summary>
@@ -76,6 +93,8 @@ function DepositModal({ symbolId, symbolSlug, depositTypes: allowedDepositTypes,
   const [picturePath, setPicturePath] = useState('')
   const [ocrData, setOcrData] = useState(null)
   const [ocrLoading, setOcrLoading] = useState(false)
+  const [ocrImageBase64, setOcrImageBase64] = useState('')
+  const [ocrEditsDeposit, setOcrEditsDeposit] = useState(null)
   const [warehouses, setWarehouses] = useState([])
   const [warehouseId, setWarehouseId] = useState('')
   const [submitting, setSubmitting] = useState(false)
@@ -93,13 +112,30 @@ function DepositModal({ symbolId, symbolSlug, depositTypes: allowedDepositTypes,
     setPictureFile(f)
     setPicturePreview(f ? URL.createObjectURL(f) : null)
     setOcrData(null)
+    setOcrEditsDeposit(null)
     setPicturePath('')
+    setOcrImageBase64('')
     if (!f) return
     setOcrLoading(true)
     try {
+      const reader = new FileReader()
+      reader.onload = async () => {
+        const b64 = reader.result.split(',')[1]
+        setOcrImageBase64(b64)
+      }
+      reader.readAsDataURL(f)
       const result = await depositApi.uploadAndOcr(f)
       setPicturePath(result.url)
-      setOcrData(result.ocr)
+      const ocrResult = result.ocr
+      setOcrData(ocrResult)
+      if (ocrResult?.parsed) {
+        setOcrEditsDeposit({
+          date: ocrResult.parsed.date || '',
+          amount: ocrResult.parsed.amount || '',
+          transactionId: ocrResult.parsed.transactionId || '',
+          cardNumber: ocrResult.parsed.cardNumber || '',
+        })
+      }
     } catch (err) {
       setError('OCR processing failed: ' + (err?.response?.data?.message || err.message))
     } finally {
@@ -123,7 +159,19 @@ function DepositModal({ symbolId, symbolSlug, depositTypes: allowedDepositTypes,
         const payload = { symbolId, type, amount: Number(amount), notes: notes || undefined }
         if (type === 'manual') {
           payload.picturePath = picturePath || undefined
-          if (ocrData) payload.metadata = { ocr: ocrData }
+          if (ocrData) {
+            payload.metadata = {
+              ocr: {
+                ...ocrData,
+                parsed: {
+                  date: ocrEditsDeposit?.date || ocrData.parsed?.date || null,
+                  amount: ocrEditsDeposit?.amount || ocrData.parsed?.amount || null,
+                  transactionId: ocrEditsDeposit?.transactionId || ocrData.parsed?.transactionId || null,
+                  cardNumber: ocrEditsDeposit?.cardNumber || ocrData.parsed?.cardNumber || null,
+                },
+              },
+            }
+          }
         }
         await depositApi.create(payload)
       }
@@ -185,7 +233,7 @@ function DepositModal({ symbolId, symbolSlug, depositTypes: allowedDepositTypes,
                   <input className="form-input" type="file" accept="image/*" onChange={handleFileChange} />
                   {pictureFile && <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>{pictureFile.name}</span>}
                   {picturePreview && <img src={picturePreview} alt="preview" style={{ maxWidth: '100%', maxHeight: 200, borderRadius: 6, marginTop: 4 }} />}
-                  <OcrPreviewBox ocr={ocrData} ocrLoading={ocrLoading} />
+                  <OcrPreviewBox ocr={ocrData} ocrLoading={ocrLoading} ocrEdits={ocrEditsDeposit} setOcrEdits={setOcrEditsDeposit} imageBase64={ocrImageBase64} />
                 </div>
               )}
             </>
@@ -213,6 +261,8 @@ function WithdrawModal({ symbolId, symbolSlug, withdrawTypes: allowedWithdrawTyp
   const [picturePath, setPicturePath] = useState('')
   const [ocrData, setOcrData] = useState(null)
   const [ocrLoading, setOcrLoading] = useState(false)
+  const [ocrImageBase64, setOcrImageBase64] = useState('')
+  const [ocrEditsWithdraw, setOcrEditsWithdraw] = useState(null)
   const [warehouses, setWarehouses] = useState([])
   const [warehouseId, setWarehouseId] = useState('')
   const [submitting, setSubmitting] = useState(false)
@@ -230,13 +280,30 @@ function WithdrawModal({ symbolId, symbolSlug, withdrawTypes: allowedWithdrawTyp
     setPictureFile(f)
     setPicturePreview(f ? URL.createObjectURL(f) : null)
     setOcrData(null)
+    setOcrEditsWithdraw(null)
     setPicturePath('')
+    setOcrImageBase64('')
     if (!f) return
     setOcrLoading(true)
     try {
+      const reader = new FileReader()
+      reader.onload = async () => {
+        const b64 = reader.result.split(',')[1]
+        setOcrImageBase64(b64)
+      }
+      reader.readAsDataURL(f)
       const result = await withdrawApi.uploadAndOcr(f)
       setPicturePath(result.url)
-      setOcrData(result.ocr)
+      const ocrResult = result.ocr
+      setOcrData(ocrResult)
+      if (ocrResult?.parsed) {
+        setOcrEditsWithdraw({
+          date: ocrResult.parsed.date || '',
+          amount: ocrResult.parsed.amount || '',
+          transactionId: ocrResult.parsed.transactionId || '',
+          cardNumber: ocrResult.parsed.cardNumber || '',
+        })
+      }
     } catch (err) {
       setError('OCR processing failed: ' + (err?.response?.data?.message || err.message))
     } finally {
@@ -260,7 +327,19 @@ function WithdrawModal({ symbolId, symbolSlug, withdrawTypes: allowedWithdrawTyp
         const payload = { symbolId, type, amount: Number(amount), notes: notes || undefined }
         if (type === 'manual') {
           payload.picturePath = picturePath || undefined
-          if (ocrData) payload.metadata = { ocr: ocrData }
+          if (ocrData) {
+            payload.metadata = {
+              ocr: {
+                ...ocrData,
+                parsed: {
+                  date: ocrEditsWithdraw?.date || ocrData.parsed?.date || null,
+                  amount: ocrEditsWithdraw?.amount || ocrData.parsed?.amount || null,
+                  transactionId: ocrEditsWithdraw?.transactionId || ocrData.parsed?.transactionId || null,
+                  cardNumber: ocrEditsWithdraw?.cardNumber || ocrData.parsed?.cardNumber || null,
+                },
+              },
+            }
+          }
         }
         await withdrawApi.create(payload)
       }
@@ -322,7 +401,7 @@ function WithdrawModal({ symbolId, symbolSlug, withdrawTypes: allowedWithdrawTyp
                   <input className="form-input" type="file" accept="image/*" onChange={handleFileChange} />
                   {pictureFile && <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>{pictureFile.name}</span>}
                   {picturePreview && <img src={picturePreview} alt="preview" style={{ maxWidth: '100%', maxHeight: 200, borderRadius: 6, marginTop: 4 }} />}
-                  <OcrPreviewBox ocr={ocrData} ocrLoading={ocrLoading} />
+                  <OcrPreviewBox ocr={ocrData} ocrLoading={ocrLoading} ocrEdits={ocrEditsWithdraw} setOcrEdits={setOcrEditsWithdraw} imageBase64={ocrImageBase64} />
                 </div>
               )}
             </>
