@@ -12,7 +12,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 COPY requirements.txt .
 RUN --mount=type=cache,target=/root/.cache/pip \
-    pip install --user -r requirements.txt
+    pip install -r requirements.txt
 
 
 FROM python:3.10-slim AS runner
@@ -29,8 +29,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libgomp1 \
     && rm -rf /var/lib/apt/lists/*
 
-COPY --from=builder /root/.local /root/.local
-ENV PATH=/root/.local/bin:$PATH
+COPY --from=builder /usr/local /usr/local
 
 RUN groupadd -r ocr --gid 1001 && \
     useradd -r -g ocr --uid 1001 -m ocr && \
