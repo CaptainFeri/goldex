@@ -1,5 +1,5 @@
-from prometheus_client import Counter, Gauge, Histogram
-from prometheus_fastapi_instrumentator import Instrumentator
+from prometheus_client import Counter, Gauge, Histogram, generate_latest, CONTENT_TYPE_LATEST
+from fastapi import Response
 
 inference_duration = Histogram(
     "ocr_inference_duration_ms",
@@ -34,14 +34,6 @@ training_samples = Gauge(
     "Number of samples used in last training",
 )
 
-_instrumentator: Instrumentator | None = None
 
-
-def setup_metrics(app):
-    global _instrumentator
-    _instrumentator = Instrumentator()
-    _instrumentator.instrument(app).expose(app, endpoint="/metrics")
-
-
-def get_instrumentator() -> Instrumentator | None:
-    return _instrumentator
+def metrics_endpoint() -> Response:
+    return Response(content=generate_latest(), media_type=CONTENT_TYPE_LATEST)

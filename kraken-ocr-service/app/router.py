@@ -13,6 +13,7 @@ from app.image import (
     save_feedback_sample,
     validate_image,
 )
+from app.metrics import metrics_endpoint
 from app.schemas import (
     HealthResponse,
     OCRBatchRequest,
@@ -61,6 +62,11 @@ def ready(model=Depends(_get_model)):
         model_language=model.metadata.get("language"),
         model_path=model.model_path,
     )
+
+
+@router.get("/metrics")
+def metrics():
+    return metrics_endpoint()
 
 
 @router.post("/ocr", response_model=OCRResponse)

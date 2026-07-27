@@ -96,14 +96,6 @@ def create_app() -> FastAPI:
     from app.router import router
 
     app.include_router(router)
-
-    try:
-        from app.metrics import setup_metrics
-
-        setup_metrics(app)
-    except ImportError:
-        logger.info("prometheus-fastapi-instrumentator not installed; skipping metrics")
-
     return app
 
 
