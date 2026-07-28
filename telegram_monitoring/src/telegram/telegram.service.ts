@@ -51,6 +51,8 @@ export class TelegramService implements OnModuleInit, OnModuleDestroy {
   private authCodeResolver: ((code: string) => void) | null = null;
   private authPasswordResolver: ((password: string) => void) | null = null;
 
+  private floodedUntil: number | null = null;
+
   private healthCheckTimer: ReturnType<typeof setInterval> | null = null;
 
   constructor(
@@ -126,6 +128,12 @@ export class TelegramService implements OnModuleInit, OnModuleDestroy {
   }
 
   private startDeferredAuth(): void {
+    if (this.floodedUntil && Date.now() < this.floodedUntil) {
+      const remaining = Math.ceil((this.floodedUntil - Date.now()) / 1000);
+      this.logger.warn(`Flooded — skipping auth start (${remaining}s remaining)`);
+      return;
+    }
+
     this.client
       .start({
         phoneNumber: () => Promise.resolve(this.options.phoneNumber),
@@ -146,9 +154,20 @@ export class TelegramService implements OnModuleInit, OnModuleDestroy {
           const e = err as { code?: unknown; errorMessage?: unknown };
           if (e.code) this.logger.error(`Error code: ${String(e.code)}`);
           if (e.errorMessage) this.logger.error(`Error message: ${String(e.errorMessage)}`);
+
+          if (e.code === 420) {
+            const floodErr = err as { seconds?: number; errorMessage?: string };
+            const wait = floodErr.seconds ?? 300;
+            this.floodedUntil = Date.now() + wait * 1000;
+            this.logger.error(`FLOOD detected — waiting ${wait}s before next auth attempt`);
+            this.authCodeResolver = null;
+            this.authPasswordResolver = null;
+            throw err;
+          }
         },
       })
       .then(async () => {
+        this.floodedUntil = null;
         await this.persistSession();
         await this.finalizeInitialization();
         this.startHealthCheck();
@@ -556,16 +575,25 @@ export class TelegramService implements OnModuleInit, OnModuleDestroy {
     return this.client;
   }
 
-  getAuthState(): { ready: boolean; waitingFor: string | null } {
-    if (!this.client) return { ready: false, waitingFor: null };
-    if (this.authCodeResolver) return { ready: false, waitingFor: 'code' };
+  getAuthState(): { ready: boolean; waitingFor: string | null; floodedUntil: number | null } {
+    if (!this.client) return { ready: false, waitingFor: null, floodedUntil: null };
+
+    if (this.floodedUntil) {
+      if (Date.now() < this.floodedUntil) {
+        return { ready: false, waitingFor: `flooded (${Math.ceil((this.floodedUntil - Date.now()) / 1000)}s)`, floodedUntil: this.floodedUntil };
+      }
+      this.floodedUntil = null;
+    }
+
+    if (this.authCodeResolver) return { ready: false, waitingFor: 'code', floodedUntil: null };
     if (this.authPasswordResolver)
-      return { ready: false, waitingFor: 'password' };
-    return { ready: true, waitingFor: null };
+      return { ready: false, waitingFor: 'password', floodedUntil: null };
+    return { ready: true, waitingFor: null, floodedUntil: null };
   }
 
   async retryConnection(sessionString?: string): Promise<boolean> {
     try {
+      this.floodedUntil = null;
       if (this.client?.connected) {
         await this.disconnect();
       }
