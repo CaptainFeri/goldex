@@ -62,4 +62,23 @@ export class AuthController {
     const result = await this.telegram.retryConnection();
     return { success: result };
   }
+
+  @Get('session')
+  getSession() {
+    const sessionString = this.telegram.getSessionString();
+    if (!sessionString) {
+      throw new HttpException('No active session', HttpStatus.NOT_FOUND);
+    }
+    return { sessionString };
+  }
+
+  @Post('session')
+  @HttpCode(200)
+  async importSession(@Body('sessionString') sessionString: string) {
+    if (!sessionString) {
+      throw new HttpException('sessionString is required', HttpStatus.BAD_REQUEST);
+    }
+    const success = await this.telegram.importSession(sessionString);
+    return { success };
+  }
 }

@@ -64,9 +64,13 @@ export class TelegramService implements OnModuleInit, OnModuleDestroy {
   }
 
   async onModuleInit(): Promise<void> {
-    const sessionString = this.options.sessionString
-      ?? await this.sessionManager.loadSessionString();
-    const session = this.sessionManager.createSession(sessionString || undefined);
+    await this.initClient();
+  }
+
+  private async initClient(sessionString?: string): Promise<boolean> {
+    const ss = sessionString || this.options.sessionString
+      || await this.sessionManager.loadSessionString();
+    const session = this.sessionManager.createSession(ss || undefined);
 
     this.client = new TelegramClient(
       session,
@@ -86,7 +90,7 @@ export class TelegramService implements OnModuleInit, OnModuleDestroy {
       this.logger.warn(
         'Could not connect to Telegram. Run POST /api/auth/retry once network is available.',
       );
-      return;
+      return false;
     }
 
     const isAuthorized = await this.client.isUserAuthorized();
@@ -95,13 +99,14 @@ export class TelegramService implements OnModuleInit, OnModuleDestroy {
       this.logger.log('User already authorized');
       await this.finalizeInitialization();
       this.startHealthCheck();
-      return;
+      return true;
     }
 
     this.logger.log(
       'Authentication required. Waiting for code via POST /api/auth/code...',
     );
     this.startDeferredAuth();
+    return true;
   }
 
   async onModuleDestroy(): Promise<void> {
@@ -199,7 +204,8 @@ export class TelegramService implements OnModuleInit, OnModuleDestroy {
 
   private async persistSession(): Promise<void> {
     try {
-      const savedSession = this.client.session.save() as unknown as string;
+      const saved = this.client.session.save() as unknown;
+      const savedSession = typeof saved === 'string' ? saved : null;
       if (savedSession) {
         await this.sessionManager.saveSessionString(savedSession);
       }
@@ -572,32 +578,40 @@ export class TelegramService implements OnModuleInit, OnModuleDestroy {
     return { ready: true, waitingFor: null };
   }
 
-  async retryConnection(): Promise<boolean> {
+  async retryConnection(sessionString?: string): Promise<boolean> {
     try {
       if (this.client?.connected) {
         await this.disconnect();
       }
-      const connected = await this.connectWithRetry();
-      if (!connected) return false;
-
-      const authorized = await this.client.isUserAuthorized();
-
-      if (authorized) {
-        this.logger.log('Reconnected and authorized');
-        await this.finalizeInitialization();
-        this.startHealthCheck();
-        return true;
+      if (this.healthCheckTimer) {
+        clearInterval(this.healthCheckTimer);
+        this.healthCheckTimer = null;
       }
-
-      this.logger.log(
-        'Connected but not authorized. Submit code via POST /api/auth/code...',
-      );
-      this.startDeferredAuth();
-      return true;
+      return await this.initClient(sessionString);
     } catch (error) {
       this.logger.error('Retry connection failed', error);
       return false;
     }
+  }
+
+  getSessionString(): string | null {
+    try {
+      const session = this.client?.session;
+      if (!session) return null;
+      const saved = session.save() as unknown;
+      if (typeof saved !== 'string' || !saved) return null;
+      return saved;
+    } catch {
+      return null;
+    }
+  }
+
+  async importSession(sessionString: string): Promise<boolean> {
+    if (!sessionString) return false;
+    await this.sessionManager.saveSessionString(sessionString);
+    process.env.TELEGRAM_SESSION_STRING = sessionString;
+    this.logger.log('Session imported. Reconnecting...');
+    return this.retryConnection(sessionString);
   }
 
   submitCode(code: string): void {
