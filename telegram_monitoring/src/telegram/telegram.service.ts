@@ -607,15 +607,22 @@ export class TelegramService implements OnModuleInit, OnModuleDestroy {
 
       const authKey = session.getAuthKey();
       const key = authKey?.getKey();
-      if (!key) return null;
+      if (!key || !session.serverAddress) return null;
+
+      const addressBuffer = Buffer.from(session.serverAddress);
+      const addressLengthBuffer = Buffer.alloc(2);
+      addressLengthBuffer.writeInt16BE(addressBuffer.length, 0);
+      const portBuffer = Buffer.alloc(2);
+      portBuffer.writeInt16BE(session.port, 0);
 
       const data = Buffer.concat([
-        Buffer.from(String(session.dcId)),
-        Buffer.from(session.serverAddress),
-        Buffer.from(String(session.port)),
+        Buffer.from([session.dcId]),
+        addressLengthBuffer,
+        addressBuffer,
+        portBuffer,
         key,
       ]);
-      return StringSession.encode(data);
+      return '1' + StringSession.encode(data);
     } catch {
       return null;
     }
