@@ -335,6 +335,7 @@ export class TelegramService implements OnModuleInit, OnModuleDestroy {
       new CallbackQuery({}),
     );
 
+    this.eventEmitter.removeAllListeners('market.opportunity');
     this.eventEmitter.on('market.opportunity', (opportunity: MarketOpportunity) => {
       this.onMarketOpportunity(opportunity);
     });
@@ -565,8 +566,14 @@ export class TelegramService implements OnModuleInit, OnModuleDestroy {
 
   async disconnect(): Promise<void> {
     if (this.client) {
-      await this.client.disconnect();
-      await this.client.destroy();
+      const oldClient = this.client;
+      this.client = null! as TelegramClient;
+      try {
+        await oldClient.disconnect();
+        await oldClient.destroy();
+      } catch {
+        // ignore disconnect errors
+      }
       this.logger.log('Telegram client disconnected');
     }
   }
@@ -593,9 +600,12 @@ export class TelegramService implements OnModuleInit, OnModuleDestroy {
 
   async retryConnection(sessionString?: string): Promise<boolean> {
     try {
+      this.authCodeResolver = null;
+      this.authPasswordResolver = null;
       this.floodedUntil = null;
-      if (this.client?.connected) {
+      if (this.client) {
         await this.disconnect();
+        await new Promise((resolve) => setTimeout(resolve, 1000));
       }
       if (this.healthCheckTimer) {
         clearInterval(this.healthCheckTimer);
