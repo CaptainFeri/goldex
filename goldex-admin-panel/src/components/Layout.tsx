@@ -26,6 +26,8 @@ const NAV = [
   { to: "/orders", label: "مدیریت سفارش‌ها", icon: "📋" },
   { to: "/order-book", label: "دفتر سفارش", icon: "📊" },
   { to: "/discounts", label: "تخفیف‌ها", icon: "🏷️" },
+  { section: "تلگرام" },
+  { to: "/telegram-market", label: "بازار طلا", icon: "📊" },
   { section: "سیستم" },
   { to: "/user-levels", label: "سطوح کاربری", icon: "🎖" },
   { to: "/admins", label: "مدیران", icon: "👤" },
@@ -53,6 +55,7 @@ const TITLES: Record<string, string> = {
   "/deposits": "مدیریت درخواست‌های واریز",
   "/withdraws": "مدیریت درخواست‌های برداشت",
   "/ocr": "مدیریت سرویس OCR — وضعیت مدل و آموزش خودکار",
+  "/telegram-market": "بازار طلا — قیمت‌های لحظه‌ای از تلگرام",
 };
 
 export default function Layout() {

@@ -24,6 +24,7 @@ import LevelsPage from "./pages/LevelsPage";
 import DepositsPage from "./pages/DepositsPage";
 import WithdrawsPage from "./pages/WithdrawsPage";
 import OcrAdminPage from "./pages/OcrAdminPage";
+import TelegramMarketPage from "./pages/TelegramMarketPage";
 
 function RequireAuth({ children }: { children: JSX.Element }) {
   const { token, checkSession } = useAuth();
@@ -71,6 +72,7 @@ export default function App() {
         <Route path="/deposits" element={<DepositsPage />} />
         <Route path="/withdraws" element={<WithdrawsPage />} />
         <Route path="/ocr" element={<OcrAdminPage />} />
+        <Route path="/telegram-market" element={<TelegramMarketPage />} />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>

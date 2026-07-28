@@ -20,6 +20,7 @@ const SECONDARY_NAV: { to: string; label: string; icon: string; end?: boolean }[
   { to: "/orders", label: "مدیریت سفارش‌ها", icon: "📋" },
   { to: "/order-book", label: "دفتر سفارش", icon: "📊" },
   { to: "/admins", label: "مدیران", icon: "👤" },
+  { to: "/telegram-market", label: "بازار طلا", icon: "📊" },
 ];
 
 export default function MobileNav() {

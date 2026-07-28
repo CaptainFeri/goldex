@@ -399,6 +399,54 @@ export interface WithdrawRequest {
   [k: string]: any;
 }
 
+// ---- Telegram monitoring / market maker ----
+export interface TelegramMarketState {
+  deliveryType: string;
+  bestBid: number | null;
+  bestAsk: number | null;
+  spread: number | null;
+  lastPrice: number;
+  lastAction: string;
+  priceChange: number;
+  priceChangePercent: number;
+  direction: 'UP' | 'DOWN' | 'FLAT';
+  volume: number;
+  lastUpdate: number;
+}
+
+export type TelegramOpportunityType = 'PRICE_MOVEMENT' | 'BEST_PRICE';
+
+export interface TelegramOpportunityRecord {
+  id: number;
+  date: number;
+  type: TelegramOpportunityType;
+  deliveryType: string;
+  direction: 'UP' | 'DOWN' | 'FLAT';
+  price: number;
+  previousPrice: number;
+  changePercent: number;
+  messageId: number;
+  quantity: number;
+  description?: string;
+}
+
+export interface TelegramPricePoint {
+  date: number;
+  messageId: number;
+  price: number;
+  side: string;
+  ourAction: string;
+  subType: string;
+  deliveryType: string;
+  quantity: number;
+  description?: string;
+}
+
+export interface TelegramPriceFilters {
+  subTypes: { value: string; label: string }[];
+  deliveryTypes: string[];
+}
+
 // ---- Order detail ----
 export interface AdminOrder {
   id: string;
