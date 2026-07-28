@@ -6,6 +6,7 @@ import {
 } from '@nestjs/common';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import { Api, TelegramClient } from 'telegram';
+import { StringSession } from 'telegram/sessions';
 import { NewMessage, NewMessageEvent } from 'telegram/events';
 import {
   CallbackQuery,
@@ -204,8 +205,7 @@ export class TelegramService implements OnModuleInit, OnModuleDestroy {
 
   private async persistSession(): Promise<void> {
     try {
-      const saved = this.client.session.save() as unknown;
-      const savedSession = typeof saved === 'string' ? saved : null;
+      const savedSession = this.getSessionString();
       if (savedSession) {
         await this.sessionManager.saveSessionString(savedSession);
       }
@@ -598,9 +598,24 @@ export class TelegramService implements OnModuleInit, OnModuleDestroy {
     try {
       const session = this.client?.session;
       if (!session) return null;
-      const saved = session.save() as unknown;
-      if (typeof saved !== 'string' || !saved) return null;
-      return saved;
+
+      if (session instanceof StringSession) {
+        const saved = session.save();
+        if (saved) return saved;
+        return null;
+      }
+
+      const authKey = session.getAuthKey();
+      const key = authKey?.getKey();
+      if (!key) return null;
+
+      const data = Buffer.concat([
+        Buffer.from(String(session.dcId)),
+        Buffer.from(session.serverAddress),
+        Buffer.from(String(session.port)),
+        key,
+      ]);
+      return StringSession.encode(data);
     } catch {
       return null;
     }
