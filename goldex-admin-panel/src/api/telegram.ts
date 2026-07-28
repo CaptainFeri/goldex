@@ -1,4 +1,5 @@
-import { api, unwrap } from "./client";
+import axios from "axios";
+import { getToken } from "./client";
 import type {
   TelegramMarketState,
   TelegramOpportunityRecord,
@@ -6,12 +7,23 @@ import type {
   TelegramPriceFilters,
 } from "./types";
 
-const TG = "/tg-api/api";
+const tgApi = axios.create({
+  baseURL: "/tg-api/api",
+});
+
+tgApi.interceptors.request.use((config) => {
+  config.headers = config.headers ?? {};
+  const token = getToken();
+  if (token) {
+    config.headers.Authorization = `Bearer ${token}`;
+  }
+  return config;
+});
 
 export const telegramApi = {
   getMarket: async (): Promise<TelegramMarketState[]> => {
-    const r = await api.get(`${TG}/market`);
-    return unwrap<TelegramMarketState[]>(r.data);
+    const r = await tgApi.get("/market");
+    return r.data as TelegramMarketState[];
   },
 
   getOpportunities: async (params?: {
@@ -20,17 +32,17 @@ export const telegramApi = {
     from?: number;
     to?: number;
   }): Promise<TelegramOpportunityRecord[]> => {
-    const r = await api.get(`${TG}/opportunities`, { params });
-    return unwrap<TelegramOpportunityRecord[]>(r.data);
+    const r = await tgApi.get("/opportunities", { params });
+    return r.data as TelegramOpportunityRecord[];
   },
 
   getPrices: async (params?: Record<string, string | number | undefined>): Promise<TelegramPricePoint[]> => {
-    const r = await api.get(`${TG}/prices`, { params });
-    return unwrap<TelegramPricePoint[]>(r.data);
+    const r = await tgApi.get("/prices", { params });
+    return r.data as TelegramPricePoint[];
   },
 
   getPriceFilters: async (): Promise<TelegramPriceFilters> => {
-    const r = await api.get(`${TG}/prices/filters`);
-    return unwrap<TelegramPriceFilters>(r.data);
+    const r = await tgApi.get("/prices/filters");
+    return r.data as TelegramPriceFilters;
   },
 };
