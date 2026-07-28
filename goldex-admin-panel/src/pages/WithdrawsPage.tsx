@@ -24,6 +24,7 @@ const fmtNum = (n: any) => (n ?? 0).toLocaleString("fa-IR");
 const fmtDate = (d: string | null) =>
   d ? new Date(d).toLocaleDateString("fa-IR", { year: "numeric", month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }) : "—";
 const typeLabel = (t: string) => WITHDRAW_TYPES.find((x) => x.value === t)?.label ?? t;
+const picUrl = (p: string | null | undefined) => p ? `/api/v1/admin/withdraw/picture/${encodeURIComponent(p)}` : "";
 
 export default function WithdrawsPage() {
   const [statusFilter, setStatusFilter] = useState("");
@@ -178,6 +179,13 @@ function ProcessWithdrawModal({
         {withdraw.notes && <div><strong>توضیحات کاربر:</strong> {withdraw.notes}</div>}
         {withdraw.adminNotes && <div><strong>توضیحات ادمین:</strong> {withdraw.adminNotes}</div>}
 
+        {readOnly && withdraw.picturePath && (
+          <div style={{ marginTop: 8 }}>
+            <strong>تصویر رسید:</strong>
+            <div><img src={picUrl(withdraw.picturePath)} alt="receipt" style={{ maxWidth: "100%", maxHeight: 300, borderRadius: 6, marginTop: 4, cursor: "pointer" }} onClick={() => window.open(picUrl(withdraw.picturePath), "_blank")} /></div>
+          </div>
+        )}
+
         {!readOnly && (
           <div style={{ background: 'var(--surface)', padding: 12, borderRadius: 8, marginTop: 8 }}>
             <div style={{ fontWeight: 600, marginBottom: 8 }}>آپلود رسید برداشت (ادمین)</div>
@@ -194,21 +202,24 @@ function ProcessWithdrawModal({
           </div>
         )}
 
-        {ocrData && (
+        {(() => {
+          const displayOcr = readOnly ? withdraw.metadata?.ocr : ocrData;
+          if (!displayOcr) return null;
+          return (
           <div style={{ background: 'var(--surface)', padding: 12, borderRadius: 8, marginTop: 8 }}>
             <div style={{ fontWeight: 600, marginBottom: 4, display: 'flex', justifyContent: 'space-between' }}>
               <span>داده‌های استخراج شده از رسید</span>
-              {ocrData.processing_time_ms && (
-                <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>{ocrData.processing_time_ms}ms</span>
+              {displayOcr.processing_time_ms && (
+                <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>{displayOcr.processing_time_ms}ms</span>
               )}
             </div>
             {readOnly ? (
               <>
-                <div>تاریخ: {ocrData.parsed?.date || '—'}</div>
-                <div>مبلغ: {ocrData.parsed?.amount || '—'}</div>
-                <div>کد پیگیری: {ocrData.parsed?.transactionId || '—'}</div>
-                <div>شبا مبدأ: {ocrData.parsed?.sourceIban || '—'}</div>
-                <div>شبا مقصد: {ocrData.parsed?.destinationIban || '—'}</div>
+                <div>تاریخ: {displayOcr.parsed?.date || '—'}</div>
+                <div>مبلغ: {displayOcr.parsed?.amount || '—'}</div>
+                <div>کد پیگیری: {displayOcr.parsed?.transactionId || '—'}</div>
+                <div>شبا مبدأ: {displayOcr.parsed?.sourceIban || '—'}</div>
+                <div>شبا مقصد: {displayOcr.parsed?.destinationIban || '—'}</div>
               </>
             ) : (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginTop: 4 }}>
@@ -224,14 +235,15 @@ function ProcessWithdrawModal({
                 <input className="input" value={ocrEdits.destinationIban || ''} onChange={(e) => setOcrEdits((p) => ({ ...p, destinationIban: e.target.value }))} placeholder="IRxxxxxxxxxxxxxxxxxxxxxxxx" dir="ltr" />
               </div>
             )}
-            {ocrData.raw_text && (
+            {displayOcr.raw_text && (
               <details style={{ marginTop: 8 }}>
                 <summary style={{ cursor: 'pointer', fontSize: 12 }}>متن کامل OCR</summary>
-                <pre style={{ fontSize: 11, whiteSpace: 'pre-wrap', marginTop: 4, maxHeight: 120, overflow: 'auto' }}>{ocrData.raw_text}</pre>
+                <pre style={{ fontSize: 11, whiteSpace: 'pre-wrap', marginTop: 4, maxHeight: 120, overflow: 'auto' }}>{displayOcr.raw_text}</pre>
               </details>
             )}
           </div>
-        )}
+          );
+        })()}
       </div>
 
       {readOnly ? (
