@@ -262,13 +262,6 @@ function WithdrawModal({ symbolId, symbolSlug, withdrawTypes: allowedWithdrawTyp
   const [type, setType] = useState(allowedWithdrawTypes?.[0] || 'manual')
   const [amount, setAmount] = useState('')
   const [notes, setNotes] = useState('')
-  const [pictureFile, setPictureFile] = useState(null)
-  const [picturePreview, setPicturePreview] = useState(null)
-  const [picturePath, setPicturePath] = useState('')
-  const [ocrData, setOcrData] = useState(null)
-  const [ocrLoading, setOcrLoading] = useState(false)
-  const [ocrImageBase64, setOcrImageBase64] = useState('')
-  const [ocrEditsWithdraw, setOcrEditsWithdraw] = useState(null)
   const [warehouses, setWarehouses] = useState([])
   const [warehouseId, setWarehouseId] = useState('')
   const [submitting, setSubmitting] = useState(false)
@@ -280,43 +273,6 @@ function WithdrawModal({ symbolId, symbolSlug, withdrawTypes: allowedWithdrawTyp
       warehouseApi.getWarehouses().then(setWarehouses).catch(() => {})
     }
   }, [allowedWithdrawTypes])
-
-  const handleFileChange = async (e) => {
-    const f = e.target.files?.[0] || null
-    setPictureFile(f)
-    setPicturePreview(f ? URL.createObjectURL(f) : null)
-    setOcrData(null)
-    setOcrEditsWithdraw(null)
-    setPicturePath('')
-    setOcrImageBase64('')
-    if (!f) return
-    setOcrLoading(true)
-    try {
-      const reader = new FileReader()
-      reader.onload = async () => {
-        const b64 = reader.result.split(',')[1]
-        setOcrImageBase64(b64)
-      }
-      reader.readAsDataURL(f)
-      const result = await withdrawApi.uploadAndOcr(f)
-      setPicturePath(result.url)
-      const ocrResult = result.ocr
-      setOcrData(ocrResult)
-      if (ocrResult?.parsed) {
-        setOcrEditsWithdraw({
-          date: ocrResult.parsed.date || '',
-          amount: ocrResult.parsed.amount || '',
-          transactionId: ocrResult.parsed.transactionId || '',
-          sourceIban: ocrResult.parsed.sourceIban || '',
-          destinationIban: ocrResult.parsed.destinationIban || '',
-        })
-      }
-    } catch (err) {
-      setError('OCR processing failed: ' + (err?.response?.data?.message || err.message))
-    } finally {
-      setOcrLoading(false)
-    }
-  }
 
   const handleSubmit = async (e) => {
     e.preventDefault()
@@ -332,23 +288,6 @@ function WithdrawModal({ symbolId, symbolSlug, withdrawTypes: allowedWithdrawTyp
         await warehouseApi.createWithdraw({ warehouseId, weight: Number(amount), symbolId, notes: notes || undefined })
       } else {
         const payload = { symbolId, type, amount: Number(amount), notes: notes || undefined }
-        if (type === 'manual') {
-          payload.picturePath = picturePath || undefined
-          if (ocrData) {
-            payload.metadata = {
-              ocr: {
-                ...ocrData,
-                parsed: {
-                  date: ocrEditsWithdraw?.date || ocrData.parsed?.date || null,
-                  amount: ocrEditsWithdraw?.amount || ocrData.parsed?.amount || null,
-                  transactionId: ocrEditsWithdraw?.transactionId || ocrData.parsed?.transactionId || null,
-                  sourceIban: ocrEditsWithdraw?.sourceIban || ocrData.parsed?.sourceIban || null,
-                  destinationIban: ocrEditsWithdraw?.destinationIban || ocrData.parsed?.destinationIban || null,
-                },
-              },
-            }
-          }
-        }
         await withdrawApi.create(payload)
       }
       onDone()
@@ -403,15 +342,6 @@ function WithdrawModal({ symbolId, symbolSlug, withdrawTypes: allowedWithdrawTyp
                 <input className="form-input" type="number" step="0.00000001" min="0.00000001"
                   value={amount} onChange={(e) => setAmount(e.target.value)} required placeholder="e.g. 10" />
               </div>
-              {type === 'manual' && (
-                <div className="field">
-                  <label>Receipt Picture</label>
-                  <input className="form-input" type="file" accept="image/*" onChange={handleFileChange} />
-                  {pictureFile && <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>{pictureFile.name}</span>}
-                  {picturePreview && <img src={picturePreview} alt="preview" style={{ maxWidth: '100%', maxHeight: 200, borderRadius: 6, marginTop: 4 }} />}
-                  <OcrPreviewBox ocr={ocrData} ocrLoading={ocrLoading} ocrEdits={ocrEditsWithdraw} setOcrEdits={setOcrEditsWithdraw} imageBase64={ocrImageBase64} />
-                </div>
-              )}
             </>
           )}
           <div className="field">
@@ -646,17 +576,12 @@ export default function WalletPage() {
               <table className="order-table">
                 <thead>
                   <tr>
-                    <th>Picture</th><th>Symbol</th><th>Type</th><th>Amount</th><th>Status</th><th>Created</th><th />
+                    <th>Symbol</th><th>Type</th><th>Amount</th><th>Status</th><th>Created</th><th />
                   </tr>
                 </thead>
                 <tbody>
                   {withdraws.map((w) => (
                     <tr key={w.id}>
-                      <td>
-                        {w.picturePath
-                          ? <img src={`/api/v1/withdraw/picture/${encodeURIComponent(w.picturePath)}`} alt="pic" style={{ width: 48, height: 48, objectFit: 'cover', borderRadius: 4, cursor: 'pointer' }} onClick={() => window.open(`/api/v1/withdraw/picture/${encodeURIComponent(w.picturePath)}`, '_blank')} />
-                          : '—'}
-                      </td>
                       <td>{w.symbol?.slug || w.symbol?.name || '—'}</td>
                       <td>{w.type}</td>
                       <td>{fmt(w.amount)}</td>

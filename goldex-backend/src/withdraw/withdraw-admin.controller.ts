@@ -1,5 +1,7 @@
-import { Controller, Get, Patch, Body, Param, Query, UseGuards, Req, Logger } from "@nestjs/common";
-import { ApiTags, ApiOperation, ApiBearerAuth } from "@nestjs/swagger";
+import { Controller, Get, Patch, Post, Body, Param, Query, UseGuards, Req, Logger, UseInterceptors, UploadedFile, BadRequestException } from "@nestjs/common";
+import { ApiTags, ApiOperation, ApiBearerAuth, ApiConsumes } from "@nestjs/swagger";
+import { FileInterceptor } from "@nestjs/platform-express";
+import { memoryStorage } from "multer";
 import { WithdrawService } from "./withdraw.service";
 import { WithdrawQueryDto } from "./dto/withdraw-query.dto";
 import { ProcessWithdrawDto } from "./dto/process-withdraw.dto";
@@ -37,6 +39,47 @@ export class WithdrawAdminController {
     return { data: await this.withdrawService.findById(id) };
   }
 
+  @Post("upload-and-ocr")
+  @AdminRoles(AdminRole.ADMIN, AdminRole.SUPER_ADMIN, AdminRole.FINANCE)
+  @ApiOperation({ summary: "Upload withdrawal receipt image and run OCR (admin)" })
+  @ApiConsumes("multipart/form-data")
+  @UseInterceptors(FileInterceptor("file", { storage: memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } }))
+  async uploadAndOcr(@Req() req: AdminExpressRequest, @UploadedFile() file: Express.Multer.File) {
+    if (!file) throw new BadRequestException("No file uploaded");
+
+    const adminId = req.admin?.id || "system";
+    const objectName = `withdraw-admin/${adminId}/${Date.now()}-${file.originalname}`;
+
+    let uploadedFile;
+    try {
+      uploadedFile = await this.minioService.uploadFile(
+        {
+          objectName,
+          stream: file.buffer,
+          size: file.size,
+          contentType: file.mimetype,
+          metadata: { adminId, uploadedBy: "admin", originalName: file.originalname },
+        },
+        "withdraw"
+      );
+    } catch (error) {
+      throw new BadRequestException("Failed to upload file");
+    }
+
+    try {
+      const base64Image = file.buffer.toString("base64");
+      const ocrResult = await this.ocrService.processImage(base64Image);
+      return { data: { url: uploadedFile.name, ocr: ocrResult } };
+    } catch (error) {
+      return {
+        data: {
+          url: uploadedFile.name,
+          ocr: { success: false, texts: [], parsed: { date: null, amount: null, transactionId: null, cardNumber: null, accountNumber: null, sourceCard: null, destCard: null }, raw: "" },
+        },
+      };
+    }
+  }
+
   @Patch(":id/process")
   @AdminRoles(AdminRole.ADMIN, AdminRole.SUPER_ADMIN, AdminRole.FINANCE)
   @ApiOperation({ summary: "Approve or reject a withdrawal" })
@@ -50,7 +93,7 @@ export class WithdrawAdminController {
     if (correctedParsed) {
       const original = await this.withdrawService.findById(id);
       originalParsed = original.metadata?.ocr?.parsed || null;
-      picturePath = original.picturePath;
+      picturePath = dto.picturePath || original.picturePath;
     }
 
     const result = await this.withdrawService.process(adminId, id, dto);

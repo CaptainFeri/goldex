@@ -128,6 +128,7 @@ export class DepositService {
       deposit.status = dto.status;
       deposit.adminId = adminId;
       if (dto.notes) deposit.notes = dto.notes;
+      if (dto.picturePath) deposit.picturePath = dto.picturePath;
       if (dto.metadata) deposit.metadata = { ...(deposit.metadata || {}), ...dto.metadata };
       if (dto.status === DepositStatusEnum.COMPLETED || dto.status === DepositStatusEnum.FAILED) {
         deposit.completedAt = new Date();

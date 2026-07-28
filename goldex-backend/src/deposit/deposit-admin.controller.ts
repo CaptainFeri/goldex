@@ -45,12 +45,12 @@ export class DepositAdminController {
 
     const correctedParsed = dto.metadata?.ocr?.parsed;
     let originalParsed: Record<string, any> | null = null;
-    let picturePath: string | null = null;
+    let picturePath: string | null = dto.picturePath || null;
 
     if (correctedParsed) {
       const original = await this.depositService.findById(id);
       originalParsed = original.metadata?.ocr?.parsed || null;
-      picturePath = original.picturePath;
+      if (!picturePath) picturePath = original.picturePath;
     }
 
     const result = await this.depositService.process(adminId, id, dto);

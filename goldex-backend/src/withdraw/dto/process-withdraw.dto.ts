@@ -13,6 +13,11 @@ export class ProcessWithdrawDto {
   notes?: string;
 
   @IsOptional()
+  @IsString()
+  @ApiProperty({ required: false, description: "Picture path from upload-and-ocr (admin uploads receipt)" })
+  picturePath?: string;
+
+  @IsOptional()
   @IsObject()
   @ApiProperty({ required: false, description: "Updated OCR parsed data to save as metadata.ocr" })
   metadata?: Record<string, any>;

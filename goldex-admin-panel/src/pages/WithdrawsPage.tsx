@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useRef } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api, unwrap, apiError } from "../api/client";
 import { Card, Badge, Loading, ErrorState, Empty, Modal } from "../components/ui";
@@ -24,7 +24,6 @@ const fmtNum = (n: any) => (n ?? 0).toLocaleString("fa-IR");
 const fmtDate = (d: string | null) =>
   d ? new Date(d).toLocaleDateString("fa-IR", { year: "numeric", month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }) : "—";
 const typeLabel = (t: string) => WITHDRAW_TYPES.find((x) => x.value === t)?.label ?? t;
-const picUrl = (p: string | null | undefined) => p ? `/api/v1/admin/withdraw/picture/${encodeURIComponent(p)}` : "";
 
 export default function WithdrawsPage() {
   const [statusFilter, setStatusFilter] = useState("");
@@ -66,7 +65,6 @@ export default function WithdrawsPage() {
           <table>
             <thead>
               <tr>
-                <th>تصویر</th>
                 <th>کاربر</th>
                 <th>نماد</th>
                 <th>نوع برداشت</th>
@@ -79,11 +77,6 @@ export default function WithdrawsPage() {
             <tbody>
               {(list.data.items as WithdrawRequest[]).map((w) => (
                 <tr key={w.id}>
-                  <td>
-                    {w.picturePath
-                      ? <img src={picUrl(w.picturePath)} alt="pic" style={{ width: 48, height: 48, objectFit: "cover", borderRadius: 4, cursor: "pointer" }} onClick={() => window.open(picUrl(w.picturePath), "_blank")} />
-                      : "—"}
-                  </td>
                   <td>
                     {w.user ? `${w.user.firstName ?? ""} ${w.user.lastName ?? ""}`.trim() || w.user.phone || w.user.email || w.userId : w.userId}
                   </td>
@@ -144,11 +137,35 @@ function ProcessWithdrawModal({
 }) {
   const [status, setStatus] = useState<"COMPLETED" | "CANCELLED">("COMPLETED");
   const [notes, setNotes] = useState("");
-  const [ocrEdits, setOcrEdits] = useState<Record<string, string>>(() => {
-    const p = withdraw.metadata?.ocr?.parsed;
-    return p ? { date: p.date || '', amount: p.amount || '', transactionId: p.transactionId || '', sourceIban: p.sourceIban || '', destinationIban: p.destinationIban || '' } : { date: '', amount: '', transactionId: '', sourceIban: '', destinationIban: '' };
-  });
-  const ocrData = withdraw.metadata?.ocr;
+  const fileRef = useRef<HTMLInputElement>(null);
+  const [uploading, setUploading] = useState(false);
+  const [uploadError, setUploadError] = useState("");
+  const [picturePath, setPicturePath] = useState<string | null>(null);
+  const [ocrData, setOcrData] = useState<any>(null);
+  const [ocrEdits, setOcrEdits] = useState<Record<string, string>>({ date: '', amount: '', transactionId: '', sourceIban: '', destinationIban: '' });
+  const [uploadedPreview, setUploadedPreview] = useState<string>("");
+
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setUploadError("");
+    setUploading(true);
+    setUploadedPreview(URL.createObjectURL(file));
+    const formData = new FormData();
+    formData.append("file", file);
+    try {
+      const res = await api.post("/admin/withdraw/upload-and-ocr", formData, { headers: { "Content-Type": "multipart/form-data" } });
+      const result = unwrap<{ url: string; ocr: any }>(res.data);
+      setPicturePath(result.url);
+      setOcrData(result.ocr);
+      const p = result.ocr?.parsed || {};
+      setOcrEdits({ date: p.date || '', amount: p.amount || '', transactionId: p.transactionId || '', sourceIban: p.sourceIban || '', destinationIban: p.destinationIban || '' });
+    } catch (err) {
+      setUploadError("آپلود تصویر با خطا مواجه شد، لطفاً دوباره تلاش کنید");
+    } finally {
+      setUploading(false);
+    }
+  };
 
   return (
     <Modal title={`بررسی درخواست برداشت`} onClose={onClose}>
@@ -158,13 +175,29 @@ function ProcessWithdrawModal({
         <div><strong>نوع:</strong> {typeLabel(withdraw.type)}</div>
         <div><strong>مبلغ:</strong> {fmtNum(withdraw.amount)}</div>
         <div><strong>وضعیت:</strong> {STATUS_LABELS[withdraw.status] ?? withdraw.status}</div>
-        {withdraw.picturePath && <div><strong>تصویر:</strong> <img src={picUrl(withdraw.picturePath)} alt="withdraw-pic" style={{ maxWidth: "100%", maxHeight: 300, borderRadius: 6, marginTop: 4, cursor: "pointer" }} onClick={() => window.open(picUrl(withdraw.picturePath), "_blank")} /></div>}
         {withdraw.notes && <div><strong>توضیحات کاربر:</strong> {withdraw.notes}</div>}
         {withdraw.adminNotes && <div><strong>توضیحات ادمین:</strong> {withdraw.adminNotes}</div>}
+
+        {!readOnly && (
+          <div style={{ background: 'var(--surface)', padding: 12, borderRadius: 8, marginTop: 8 }}>
+            <div style={{ fontWeight: 600, marginBottom: 8 }}>آپلود رسید برداشت (ادمین)</div>
+            <input ref={fileRef} type="file" accept="image/*" onChange={handleFileChange} style={{ display: 'none' }} />
+            <button type="button" className="btn sm" onClick={() => fileRef.current?.click()} disabled={uploading}>
+              {uploading ? <><span className="spin" /> در حال آپلود…</> : "انتخاب تصویر"}
+            </button>
+            {uploadError && <div style={{ color: 'var(--red)', fontSize: 12, marginTop: 4 }}>{uploadError}</div>}
+            {uploadedPreview && !uploading && (
+              <div style={{ marginTop: 8 }}>
+                <img src={uploadedPreview} alt="receipt" style={{ maxWidth: "100%", maxHeight: 300, borderRadius: 6 }} />
+              </div>
+            )}
+          </div>
+        )}
+
         {ocrData && (
           <div style={{ background: 'var(--surface)', padding: 12, borderRadius: 8, marginTop: 8 }}>
             <div style={{ fontWeight: 600, marginBottom: 4, display: 'flex', justifyContent: 'space-between' }}>
-              <span>📄 داده‌های استخراج شده از رسید</span>
+              <span>داده‌های استخراج شده از رسید</span>
               {ocrData.processing_time_ms && (
                 <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>{ocrData.processing_time_ms}ms</span>
               )}
@@ -209,6 +242,7 @@ function ProcessWithdrawModal({
         <form className="modal-form" onSubmit={(e) => {
           e.preventDefault();
           const payload: any = { status, notes: notes || undefined };
+          if (picturePath) payload.picturePath = picturePath;
           if (ocrData) {
             payload.metadata = {
               ocr: {
@@ -235,7 +269,7 @@ function ProcessWithdrawModal({
 
           <div className="modal-actions">
             <button type="button" className="btn ghost" onClick={onClose}>انصراف</button>
-            <button type="submit" className="btn" disabled={loading}>
+            <button type="submit" className="btn" disabled={loading || !picturePath}>
               {loading ? <><span className="spin" /> در حال پردازش…</> : status === "COMPLETED" ? "تأیید برداشت" : "لغو درخواست"}
             </button>
           </div>
