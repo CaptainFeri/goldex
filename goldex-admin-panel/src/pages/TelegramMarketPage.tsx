@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Line } from "react-chartjs-2";
 import { telegramApi } from "../api/telegram";
 import { Card, Loading, ErrorState, Empty } from "../components/ui";
@@ -56,8 +56,19 @@ export default function TelegramMarketPage() {
         limit: chartLimit || undefined,
       }),
     enabled: tab === "chart",
-    refetchInterval: tab === "chart" ? 5_000 : undefined,
   });
+
+  const pollRef = useRef<ReturnType<typeof setInterval>>();
+  useEffect(() => {
+    if (tab !== "chart") {
+      clearInterval(pollRef.current);
+      pollRef.current = undefined;
+      return;
+    }
+    prices.refetch();
+    pollRef.current = setInterval(() => prices.refetch(), 3_000);
+    return () => clearInterval(pollRef.current);
+  }, [tab, chartSubType, chartDeliveryType, chartAction, chartLimit]);
 
   const formatChartData = () => {
     const points = prices.data ?? [];
