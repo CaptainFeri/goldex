@@ -55,6 +55,10 @@ for (let i = 0; i < 12; i++) {
 
 const buy = snapshots.find((s) => s.messageId === 104);
 const sell = snapshots.find((s) => s.messageId === 211);
+if (!buy || !sell) {
+  console.error('Could not find sample buy/sell snapshots');
+  process.exit(1);
+}
 const opportunity: ArbitrageOpportunity = {
   categoryKey: 'shena',
   subType: 'shena',

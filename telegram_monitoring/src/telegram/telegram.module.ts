@@ -1,6 +1,7 @@
 import { DynamicModule, Global, Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { TelegramService } from './telegram.service';
+import { SessionManagerService } from './session-manager.service';
 import { TELEGRAM_OPTIONS } from './telegram.constants';
 import { TelegramOptions } from './interfaces';
 import { PriceHistoryService } from './price/price-history.service';
@@ -22,6 +23,7 @@ export class TelegramModule {
           provide: TELEGRAM_OPTIONS,
           useValue: options,
         },
+        SessionManagerService,
         PriceHistoryService,
         PricePersistenceService,
         ArbitragePersistenceService,
@@ -55,6 +57,7 @@ export class TelegramModule {
             targetChannel: config.get<string>('telegram.targetChannel', ''),
           }),
         },
+        SessionManagerService,
         PriceHistoryService,
         PricePersistenceService,
         ArbitragePersistenceService,

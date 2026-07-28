@@ -19,7 +19,7 @@ function mockRedis(): RedisService {
     ),
     zadd: jest.fn(async (key: string, score: number, member: string) => {
       if (!sorted.has(key)) sorted.set(key, new Map());
-      sorted.get(key).set(member, score);
+      sorted.get(key)!.set(member, score);
       return 1;
     }),
     zrange: jest.fn(async (key: string, _min: number, _max: number) => {

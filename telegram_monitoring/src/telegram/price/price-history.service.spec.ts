@@ -81,25 +81,30 @@ describe('PriceHistoryService arbitrage', () => {
     const sell = record('73,600,000 🔵خرید⏳با حواله 1 تا', 2, 1010);
     const opp = service.detectArbitrage(sell, 1010);
 
-    expect(service.markReportedIfNew(opp)).toBe(true);
-    expect(service.markReportedIfNew(opp)).toBe(false); // same pair => suppressed
+    expect(opp).not.toBeNull();
+    expect(service.markReportedIfNew(opp!)).toBe(true);
+    expect(service.markReportedIfNew(opp!)).toBe(false); // same pair => suppressed
 
     // A better sell price changes the pair => reportable again.
     const sell2 = record('73,700,000 🔵خرید⏳با حواله 1 تا', 3, 1020);
     const opp2 = service.detectArbitrage(sell2, 1020);
-    expect(opp2.sell.price).toBe(73700000);
-    expect(service.markReportedIfNew(opp2)).toBe(true);
+    expect(opp2).not.toBeNull();
+    expect(opp2!.sell.price).toBe(73700000);
+    expect(service.markReportedIfNew(opp2!)).toBe(true);
   });
 
   it('attaches the buy/sell order buttons from the source snapshots', () => {
-    const buy = parsePriceMessage('73,500,000 🔴فروش⏳با حواله 1 تا');
-    service.record(buy, 1, 1000, { text: '1', data: 'grp|ord|111|1|1' });
-    const sell = parsePriceMessage('73,600,000 🔵خرید⏳با حواله 1 تا');
-    service.record(sell, 2, 1010, { text: '1', data: 'grp|ord|222|2|1' });
+    const buyParsed = parsePriceMessage('73,500,000 🔴فروش⏳با حواله 1 تا');
+    expect(buyParsed).not.toBeNull();
+    service.record(buyParsed!, 1, 1000, { text: '1', data: 'grp|ord|111|1|1' });
+    const sellParsed = parsePriceMessage('73,600,000 🔵خرید⏳با حواله 1 تا');
+    expect(sellParsed).not.toBeNull();
+    service.record(sellParsed!, 2, 1010, { text: '1', data: 'grp|ord|222|2|1' });
 
-    const opp = service.detectArbitrage(sell, 1010);
-    expect(opp.buy.orderButton).toEqual({ text: '1', data: 'grp|ord|111|1|1' });
-    expect(opp.sell.orderButton).toEqual({
+    const opp = service.detectArbitrage(sellParsed!, 1010);
+    expect(opp).not.toBeNull();
+    expect(opp!.buy.orderButton).toEqual({ text: '1', data: 'grp|ord|111|1|1' });
+    expect(opp!.sell.orderButton).toEqual({
       text: '1',
       data: 'grp|ord|222|2|1',
     });
@@ -110,8 +115,9 @@ describe('PriceHistoryService arbitrage', () => {
     record('73,500,000 🔴فروش⏳با حواله 3 تا', 1, 1000);
     const sell = record('73,600,000 🔵خرید⏳با حواله 2 تا', 2, 1010);
     const opp = service.detectArbitrage(sell, 1010);
-    expect(opp.quantity).toBe(2);
-    expect(opp.totalProfit).toBe(profit(100000, 2));
+    expect(opp).not.toBeNull();
+    expect(opp!.quantity).toBe(2);
+    expect(opp!.totalProfit).toBe(profit(100000, 2));
   });
 
   it('buckets history by sub-type', () => {

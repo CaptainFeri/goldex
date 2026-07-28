@@ -6,7 +6,6 @@ import {
 } from '@nestjs/common';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import { Api, TelegramClient } from 'telegram';
-import { StringSession, StoreSession } from 'telegram/sessions';
 import { NewMessage, NewMessageEvent } from 'telegram/events';
 import {
   CallbackQuery,
@@ -15,6 +14,7 @@ import {
 import type { Dialog } from 'telegram/tl/custom/dialog';
 import { TELEGRAM_OPTIONS } from './telegram.constants';
 import type { TelegramOptions } from './interfaces';
+import { SessionManagerService } from './session-manager.service';
 import { StructuredLogger } from '../logger/structured-logger';
 import { CustomFile } from 'telegram/client/uploads';
 import { PriceHistoryService } from './price/price-history.service';
@@ -23,15 +23,34 @@ import { parsePriceMessage } from './price/price-message.parser';
 import { formatArbitrageMessage } from './price/price-message.formatter';
 import type { ArbitrageOpportunity, OrderButton } from './price/price.types';
 
+type Entity = Api.User | Api.Chat | Api.Channel;
+
+function entityDisplayName(entity: Entity): string {
+  if ('title' in entity) return (entity as Api.Chat | Api.Channel).title;
+  if ('firstName' in entity) return (entity as Api.User).firstName ?? (entity as Api.User).username ?? 'unknown';
+  return 'unknown';
+}
+
+function entityIdStr(entity: Entity): string {
+  return String(entity.id);
+}
+
+function entityUsername(entity: Entity): string | undefined {
+  if ('username' in entity) return (entity as Api.Channel).username;
+  return undefined;
+}
+
 @Injectable()
 export class TelegramService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new StructuredLogger(TelegramService.name);
-  private client: TelegramClient;
-  private monitoredPeerIds: (string | number)[] = [];
+  private client!: TelegramClient;
+  private monitoredPeerIds: string[] = [];
   private targetPeerId: string | null = null;
 
   private authCodeResolver: ((code: string) => void) | null = null;
   private authPasswordResolver: ((password: string) => void) | null = null;
+
+  private healthCheckTimer: ReturnType<typeof setInterval> | null = null;
 
   constructor(
     @Inject(TELEGRAM_OPTIONS)
@@ -39,10 +58,15 @@ export class TelegramService implements OnModuleInit, OnModuleDestroy {
     private readonly eventEmitter: EventEmitter2,
     private readonly priceHistory: PriceHistoryService,
     private readonly chartImage: ChartImageService,
-  ) {}
+    private readonly sessionManager: SessionManagerService,
+  ) {
+    this.sessionManager.setSessionFolder(this.options.sessionFolder || 'sessions');
+  }
 
   async onModuleInit(): Promise<void> {
-    const session = this.createSession();
+    const sessionString = this.options.sessionString
+      ?? await this.sessionManager.loadSessionString();
+    const session = this.sessionManager.createSession(sessionString || undefined);
 
     this.client = new TelegramClient(
       session,
@@ -60,6 +84,7 @@ export class TelegramService implements OnModuleInit, OnModuleDestroy {
     if (isAuthorized) {
       this.logger.log('User already authorized');
       await this.finalizeInitialization();
+      this.startHealthCheck();
       return;
     }
 
@@ -70,6 +95,10 @@ export class TelegramService implements OnModuleInit, OnModuleDestroy {
   }
 
   async onModuleDestroy(): Promise<void> {
+    if (this.healthCheckTimer) {
+      clearInterval(this.healthCheckTimer);
+      this.healthCheckTimer = null;
+    }
     await this.disconnect();
   }
 
@@ -78,7 +107,6 @@ export class TelegramService implements OnModuleInit, OnModuleDestroy {
     await this.resolveMonitoredChannels();
     await this.resolveTargetChannel();
     this.registerEventHandlers();
-    // await this.fetchRecentHistory();
   }
 
   private startDeferredAuth(): void {
@@ -99,19 +127,21 @@ export class TelegramService implements OnModuleInit, OnModuleDestroy {
           }),
         onError: (err) => {
           this.logger.error('Auth error', err);
-          if ((err as any)?.code) this.logger.error(`Error code: ${(err as any).code}`);
-          if ((err as any)?.errorMessage) this.logger.error(`Error message: ${(err as any).errorMessage}`);
+          const e = err as { code?: unknown; errorMessage?: unknown };
+          if (e.code) this.logger.error(`Error code: ${String(e.code)}`);
+          if (e.errorMessage) this.logger.error(`Error message: ${String(e.errorMessage)}`);
         },
       })
       .then(async () => {
-        const savedSession = this.client.session.save() as unknown as string;
-        this.logger.warn(`Session string: ${savedSession}`);
+        await this.persistSession();
         await this.finalizeInitialization();
+        this.startHealthCheck();
       })
       .catch((err) => {
         this.logger.error('Auth failed', err);
-        if ((err as any)?.code) this.logger.error(`Error code: ${(err as any).code}`);
-        if ((err as any)?.errorMessage) this.logger.error(`Error message: ${(err as any).errorMessage}`);
+        const e = err as { code?: unknown; errorMessage?: unknown };
+        if (e.code) this.logger.error(`Error code: ${String(e.code)}`);
+        if (e.errorMessage) this.logger.error(`Error message: ${String(e.errorMessage)}`);
       });
   }
 
@@ -128,18 +158,43 @@ export class TelegramService implements OnModuleInit, OnModuleDestroy {
       };
     } catch (err) {
       this.logger.error('Failed to resend code', err);
-      if ((err as any)?.code) this.logger.error(`Error code: ${(err as any).code}`);
-      if ((err as any)?.errorMessage) this.logger.error(`Error message: ${(err as any).errorMessage}`);
+      const e = err as { code?: unknown; errorMessage?: unknown };
+      if (e.code) this.logger.error(`Error code: ${String(e.code)}`);
+      if (e.errorMessage) this.logger.error(`Error message: ${String(e.errorMessage)}`);
       return null;
     }
   }
 
-  private createSession() {
-    if (this.options.sessionString) {
-      return new StringSession(this.options.sessionString);
+  private async persistSession(): Promise<void> {
+    try {
+      const savedSession = this.client.session.save() as unknown as string;
+      if (savedSession) {
+        await this.sessionManager.saveSessionString(savedSession);
+      }
+    } catch (error) {
+      this.logger.error('Failed to persist session', error);
     }
+  }
 
-    return new StoreSession(this.options.sessionFolder || 'sessions');
+  private startHealthCheck(): void {
+    const INTERVAL_MS = 60_000;
+    this.healthCheckTimer = setInterval(async () => {
+      try {
+        const authorized = await this.client.isUserAuthorized();
+        if (!authorized) {
+          this.logger.warn('Session expired. Attempting reconnection...');
+          await this.client.connect();
+          const reauthorized = await this.client.isUserAuthorized();
+          if (!reauthorized) {
+            this.logger.error('Reconnection failed - session is invalid');
+          } else {
+            this.logger.log('Reconnection successful');
+          }
+        }
+      } catch (error) {
+        this.logger.error('Health check failed', error);
+      }
+    }, INTERVAL_MS);
   }
 
   private async resolveMonitoredChannels(): Promise<void> {
@@ -160,10 +215,10 @@ export class TelegramService implements OnModuleInit, OnModuleDestroy {
       let resolved = false;
       for (const id of candidates) {
         try {
-          const entity: any = await this.client.getEntity(id);
-          this.monitoredPeerIds.push(entity.id.toString());
+          const entity = await this.client.getEntity(id) as Entity;
+          this.monitoredPeerIds.push(entityIdStr(entity));
           this.logger.log(
-            `Monitoring: ${entity.title || entity.username || entity.id}`,
+            `Monitoring: ${entityDisplayName(entity)}`,
           );
           resolved = true;
           break;
@@ -196,10 +251,10 @@ export class TelegramService implements OnModuleInit, OnModuleDestroy {
 
     for (const id of candidates) {
       try {
-        const entity: any = await this.client.getEntity(id);
-        this.targetPeerId = entity.id.toString();
+        const entity = await this.client.getEntity(id) as Entity;
+        this.targetPeerId = entityIdStr(entity);
         this.logger.log(
-          `Target channel resolved: ${entity.title || entity.username || this.targetPeerId}`,
+          `Target channel resolved: ${entityDisplayName(entity)}`,
         );
         return;
       } catch {
@@ -211,44 +266,6 @@ export class TelegramService implements OnModuleInit, OnModuleDestroy {
       `Could not resolve target channel "${target}". Make sure the account is a member. ` +
         `Use @username or full numeric ID with -100 prefix.`,
     );
-  }
-
-  private async fetchRecentHistory(): Promise<void> {
-    for (const peerId of this.monitoredPeerIds) {
-      try {
-        const messages = await this.client.getMessages(peerId, { limit: 50 });
-        this.logger.log(
-          `Fetched ${messages.length} recent messages from ${peerId}`,
-        );
-
-        for (const msg of messages) {
-          if (!msg) continue;
-          const chat: any = msg.chat;
-          const sender: any = msg.sender;
-          const chatTitle = chat?.title || chat?.username || peerId.toString();
-          const msgData = {
-            type: 'HISTORY',
-            chatId: peerId.toString(),
-            chatTitle,
-            senderId: msg.senderId?.toString(),
-            senderName: sender?.username || sender?.firstName || 'unknown',
-            text: msg.message,
-            date: msg.date,
-            messageId: msg.id,
-            history: true,
-          };
-          const { type, ...rest } = msgData;
-          this.logger.logStructured(type, rest);
-
-          this.eventEmitter.emit('telegram.message', {
-            ...msgData,
-            raw: msg,
-          });
-        }
-      } catch (error) {
-        this.logger.error(`Failed to fetch history for ${peerId}`, error);
-      }
-    }
   }
 
   private registerEventHandlers(): void {
@@ -278,13 +295,13 @@ export class TelegramService implements OnModuleInit, OnModuleDestroy {
     });
 
     const chatId = message.chatId?.toString();
-    const chat: any = await message.getChat();
-    const sender: any = await message.getSender();
-    const chatTitle = chat?.title || chat?.username || chatId;
-    const senderName = sender?.firstName || sender?.username || 'unknown';
+    const chat = await message.getChat() as Entity | undefined;
+    const sender = await message.getSender() as Entity | undefined;
+    const chatTitle = chat ? entityDisplayName(chat) : chatId;
+    const senderName = sender ? entityDisplayName(sender) : 'unknown';
 
     const msgData = {
-      type: 'NEW_MESSAGE',
+      type: 'NEW_MESSAGE' as const,
       chatId,
       chatTitle,
       senderId: sender?.id?.toString(),
@@ -303,11 +320,6 @@ export class TelegramService implements OnModuleInit, OnModuleDestroy {
     await this.processPriceMessage(message);
   }
 
-  /**
-   * Parses a price post and records it in the in-memory history. Only when a
-   * *new* arbitrage opportunity is detected is a report sent to the target
-   * channel — regular price updates are not forwarded.
-   */
   private async processPriceMessage(message: Api.Message): Promise<void> {
     const parsed = parsePriceMessage(message.message);
     if (!parsed) return;
@@ -345,12 +357,6 @@ export class TelegramService implements OnModuleInit, OnModuleDestroy {
     }
   }
 
-  /**
-   * Sends the arbitrage report with a chart screenshot of the opportunity's
-   * bucket. Falls back to a text-only alert if the image can't be rendered
-   * (e.g. QuickChart unreachable). The report text carries tap-to-open links
-   * to the source orders, since user accounts can't send inline buttons.
-   */
   private async sendArbitrageAlert(
     opportunity: ArbitrageOpportunity,
     subType: string,
@@ -371,7 +377,6 @@ export class TelegramService implements OnModuleInit, OnModuleDestroy {
     }
   }
 
-  /** Sends a PNG (with caption) to the target channel. */
   private async sendPhotoToTarget(
     image: Buffer,
     caption: string,
@@ -382,30 +387,28 @@ export class TelegramService implements OnModuleInit, OnModuleDestroy {
     await this.client.sendFile(entity, { file, caption });
   }
 
-  /** Picks the first inline button (quantity 1) from a source message. */
   private firstOrderButton(
     replyMarkup?: Api.TypeReplyMarkup,
   ): OrderButton | undefined {
     return this.extractButtons(replyMarkup)[0]?.[0];
   }
 
-  /** Flattens an inline keyboard into a simple [row][button] text/url/data list. */
   private extractButtons(
     replyMarkup?: Api.TypeReplyMarkup,
   ): { text: string; url?: string; data?: string }[][] {
-    const markup: any = replyMarkup;
-    if (!markup?.rows) return [];
-    return markup.rows.map((row: any) =>
-      (row.buttons ?? []).map((btn: any) => ({
-        text: btn.text,
-        url: btn.url,
-        data:
-          btn.data instanceof Buffer
-            ? btn.data.toString('utf-8')
-            : typeof btn.data === 'string'
-              ? btn.data
-              : undefined,
-      })),
+    if (!replyMarkup) return [];
+    if (!('rows' in replyMarkup)) return [];
+    return replyMarkup.rows.map((row: { buttons: Api.TypeKeyboardButton[] }) =>
+      (row.buttons ?? []).map((btn) => {
+        const data = 'data' in btn
+          ? (btn.data instanceof Buffer ? btn.data.toString('utf-8') : String(btn.data))
+          : undefined;
+        return {
+          text: btn.text,
+          url: 'url' in btn ? btn.url : undefined,
+          data,
+        };
+      }),
     );
   }
 
@@ -438,15 +441,15 @@ export class TelegramService implements OnModuleInit, OnModuleDestroy {
     const dataStr = data ? Buffer.from(data).toString('utf-8') : '';
     const parts = dataStr.split('|');
 
-    const sender: any = event.sender;
-    const chat: any = await event.getChat();
+    const sender = event.sender as Entity | undefined;
+    const chat = await event.getChat() as Entity | undefined;
 
     this.logger.logStructured('CALLBACK_QUERY', {
       queryId: query.queryId?.toString(),
       senderId: sender?.id?.toString(),
-      senderName: sender?.firstName || sender?.username || 'unknown',
+      senderName: sender ? entityDisplayName(sender) : 'unknown',
       chatId: chat?.id?.toString(),
-      chatTitle: chat?.title || chat?.username || '',
+      chatTitle: chat ? entityDisplayName(chat) : '',
       data: dataStr,
       parts,
       messageId: event.messageId,
@@ -457,9 +460,9 @@ export class TelegramService implements OnModuleInit, OnModuleDestroy {
     this.eventEmitter.emit('telegram.callbackQuery', {
       queryId: query.queryId?.toString(),
       senderId: sender?.id?.toString(),
-      senderName: sender?.firstName || sender?.username || 'unknown',
+      senderName: sender ? entityDisplayName(sender) : 'unknown',
       chatId: chat?.id?.toString(),
-      chatTitle: chat?.title || chat?.username || '',
+      chatTitle: chat ? entityDisplayName(chat) : '',
       data: dataStr,
       parts,
       messageId: event.messageId,
@@ -495,8 +498,7 @@ export class TelegramService implements OnModuleInit, OnModuleDestroy {
     const dialogs = await this.client.getDialogs({});
     return dialogs.map((dialog: Dialog) => ({
       id: dialog.id?.toString() ?? '',
-      title:
-        dialog.title || dialog.name || dialog.entity?.className || 'unknown',
+      title: dialog.title || dialog.name || dialog.entity?.className || 'unknown',
       type: dialog.isGroup
         ? 'group'
         : dialog.isChannel
