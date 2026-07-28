@@ -3,6 +3,7 @@ import { OnEvent } from '@nestjs/event-emitter';
 import { Observable, Subject } from 'rxjs';
 import { StructuredLogger } from '../../logger/structured-logger';
 import { RedisService } from '../../redis/redis.service';
+import { RabbitMQPublisherService } from '../rabbitmq-publisher.service';
 import {
   PricePoint,
   PriceQuery,
@@ -26,7 +27,10 @@ export class PricePersistenceService implements OnModuleInit {
     return this.added.asObservable();
   }
 
-  constructor(private readonly redis: RedisService) {}
+  constructor(
+    private readonly redis: RedisService,
+    private readonly rmq: RabbitMQPublisherService,
+  ) {}
 
   async onModuleInit(): Promise<void> {
     await this.load();
@@ -92,6 +96,7 @@ export class PricePersistenceService implements OnModuleInit {
     this.persist(point).catch((error) =>
       this.logger.error('Failed to persist price to Redis', error),
     );
+    this.rmq.publish('telegram.price', point).catch(() => {});
   }
 
   private async persist(point: PricePoint): Promise<void> {

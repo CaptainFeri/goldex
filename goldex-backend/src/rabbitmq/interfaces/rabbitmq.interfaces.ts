@@ -16,6 +16,11 @@ export enum MessagePatterns {
   ORDER_STATUS_CHANGED = 'provider.order.status.changed',
   PROVIDER_BALANCE_UPDATED = 'provider.balance.updated',
   PROVIDER_DEALS_UPDATED = 'provider.deals.updated',
+
+  // Telegram monitoring
+  TELEGRAM_PRICE = 'telegram.price',
+  TELEGRAM_OPPORTUNITY = 'telegram.opportunity',
+  TELEGRAM_MARKET_SNAPSHOT = 'telegram.market.snapshot',
 }
 
 export interface RabbitMQMessage {

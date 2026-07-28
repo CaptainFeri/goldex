@@ -2,6 +2,10 @@ import { PricePersistenceService } from './price-persistence.service';
 import { PriceSnapshot, sideToAction } from './price.types';
 import { RedisService } from '../../redis/redis.service';
 
+function noopRmq(): any {
+  return { publish: jest.fn().mockResolvedValue(undefined) };
+}
+
 function mockRedis(): RedisService {
   const store = new Map<string, string>();
   const sets = new Map<string, Set<string>>();
@@ -58,7 +62,7 @@ describe('PricePersistenceService', () => {
   let service: PricePersistenceService;
 
   beforeEach(() => {
-    service = new PricePersistenceService(mockRedis());
+    service = new PricePersistenceService(mockRedis(), noopRmq());
   });
 
   it('filters by sub-type, action (our perspective) and date range', () => {
@@ -129,7 +133,7 @@ describe('PricePersistenceService', () => {
     await client.sadd('price:filters:subTypes', p1.subType);
     await client.sadd('price:filters:deliveryTypes', p1.deliveryType);
 
-    const reloaded = new PricePersistenceService(redis);
+    const reloaded = new PricePersistenceService(redis, noopRmq());
     await reloaded.onModuleInit();
 
     expect(reloaded.query()).toHaveLength(1);

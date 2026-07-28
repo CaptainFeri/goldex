@@ -277,8 +277,6 @@ services:
     environment:
       BACKEND_HOST: goldex-backend
       BACKEND_PORT: 3000
-      TELEGRAM_HOST: telegram-monitoring
-      TELEGRAM_PORT: 3002
     ports:
       - "${ADMIN_PANEL_PORT:-5190}:80"
     networks:

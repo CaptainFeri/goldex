@@ -18,10 +18,6 @@ export default defineConfig({
         target: BACKEND,
         changeOrigin: true,
       },
-      "/tg-api": {
-        target: process.env.VITE_TELEGRAM_URL || "http://localhost:3000",
-        changeOrigin: true,
-      },
     },
   },
 });

@@ -43,6 +43,7 @@ import { AdminScheduleModule } from "./admin-schedule/admin-schedule.module";
 import { UserLevelModule } from "./user-level/user-level.module";
 import { DepositModule } from "./deposit/deposit.module";
 import { WithdrawModule } from "./withdraw/withdraw.module";
+import { AdminTelegramMonitoringModule } from "./admin-telegram-monitoring/admin-telegram-monitoring.module";
 
 @Module({
   imports: [
@@ -132,6 +133,7 @@ import { WithdrawModule } from "./withdraw/withdraw.module";
     UserLevelModule,
     DepositModule,
     WithdrawModule,
+    AdminTelegramMonitoringModule,
   ],
   providers: [WinstonLoggerService],
   controllers: [PublicFileController],

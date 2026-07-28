@@ -2,6 +2,7 @@ import { Injectable, OnModuleInit } from '@nestjs/common';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import { StructuredLogger } from '../../logger/structured-logger';
 import { RedisService } from '../../redis/redis.service';
+import { RabbitMQPublisherService } from '../rabbitmq-publisher.service';
 import {
   MarketOpportunity,
   MarketOpportunityType,
@@ -26,6 +27,7 @@ export class MarketMakerService implements OnModuleInit {
   constructor(
     private readonly eventEmitter: EventEmitter2,
     private readonly redis: RedisService,
+    private readonly rmq: RabbitMQPublisherService,
   ) {}
 
   async onModuleInit(): Promise<void> {
@@ -155,6 +157,10 @@ export class MarketMakerService implements OnModuleInit {
     }
 
     this.previousPrices.set(dt, { price: parsed.price, ourAction: parsed.ourAction });
+
+    this.rmq.publish('telegram.market.snapshot', {
+      markets: Array.from(this.markets.values()),
+    }).catch(() => {});
   }
 
   private detectPriceMovement(
@@ -266,6 +272,7 @@ export class MarketMakerService implements OnModuleInit {
     this.records.push(record);
     this.persist(record).catch(() => {});
     this.eventEmitter.emit('market.opportunity', opportunity);
+    this.rmq.publish('telegram.opportunity', opportunity).catch(() => {});
   }
 
   private async persist(record: OpportunityRecord): Promise<void> {

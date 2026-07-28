@@ -10,6 +10,7 @@ import { MarketMakerService } from './price/market-maker.service';
 import { ChartImageService } from './price/chart-image.service';
 import { PriceController, MarketMakerController, OpportunityController } from './price/price.controller';
 import { AuthController } from './auth/auth.controller';
+import { RabbitMQPublisherService } from './rabbitmq-publisher.service';
 
 @Global()
 @Module({})
@@ -28,6 +29,7 @@ export class TelegramModule {
         PricePersistenceService,
         MarketMakerService,
         ChartImageService,
+        RabbitMQPublisherService,
         TelegramService,
       ],
       exports: [TelegramService, PriceHistoryService],
@@ -62,6 +64,7 @@ export class TelegramModule {
         PricePersistenceService,
         MarketMakerService,
         ChartImageService,
+        RabbitMQPublisherService,
         TelegramService,
       ],
       exports: [TelegramService, PriceHistoryService],
