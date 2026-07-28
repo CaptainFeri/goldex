@@ -561,7 +561,139 @@ tbody tr:hover {
   margin-top: 6px;
 }
 
-/* ─── Order Book ──────────────────────────────────────────── */
+/* ─── Telegram Market ──────────────────────────────────────── */
+.tab-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 20px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: var(--bg-elev-2);
+  color: var(--text-dim);
+  font-weight: 600;
+  font-size: 14px;
+  transition: all 0.2s;
+  cursor: pointer;
+  font-family: inherit;
+}
+.tab-btn:hover {
+  border-color: var(--gold);
+  color: var(--text);
+  background: var(--bg-elev);
+}
+.tab-btn.active {
+  background: linear-gradient(135deg, var(--gold), #b6921f);
+  color: #1a1206;
+  border-color: transparent;
+  box-shadow: 0 4px 16px rgba(212, 175, 55, 0.3);
+}
+.tab-btn.active .live-dot {
+  background: #1a1206;
+}
+
+.live-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--green);
+  animation: pulse-dot 1.5s ease-in-out infinite;
+  display: inline-block;
+}
+
+@keyframes pulse-dot {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.4; transform: scale(0.7); }
+}
+
+.market-card {
+  background: var(--bg-elev-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 14px;
+  transition: border-color 0.2s;
+}
+.market-card:hover {
+  border-color: var(--gold-dim);
+}
+
+.market-card-header {
+  font-weight: 700;
+  font-size: 14px;
+  margin-bottom: 10px;
+  color: var(--text-dim);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.market-card-row {
+  display: flex;
+  justify-content: space-between;
+  font-size: 12px;
+  padding: 3px 0;
+}
+.market-card-row > span:first-child {
+  opacity: 0.6;
+}
+
+.mono.green { color: var(--green); }
+.mono.red { color: var(--red); }
+
+.opp-row {
+  padding: 10px 0;
+  border-bottom: 1px solid var(--border-soft);
+  font-size: 13px;
+  transition: background 0.15s;
+}
+.opp-row:last-child { border-bottom: none; }
+.opp-row:hover { background: rgba(255,255,255,0.02); margin: 0 -8px; padding: 10px 8px; border-radius: 6px; }
+
+.opp-row-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.opp-time {
+  font-size: 11px;
+  opacity: 0.6;
+  direction: ltr;
+  display: inline-block;
+}
+
+.opp-row-detail {
+  margin-top: 5px;
+  color: var(--text-dim);
+  font-size: 12px;
+}
+
+.chart-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+.chart-filters .field {
+  margin-bottom: 0;
+}
+.chart-filters input[type="number"] {
+  width: 90px;
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 6px 8px;
+  color: inherit;
+  font-family: inherit;
+}
+.chart-filters select {
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 6px 8px;
+  color: inherit;
+  font-family: inherit;
+}
 .ob-table {
   border: 1px solid var(--border);
   border-radius: 8px;

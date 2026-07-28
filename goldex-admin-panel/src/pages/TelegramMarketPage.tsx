@@ -31,13 +31,13 @@ export default function TelegramMarketPage() {
   const market = useQuery({
     queryKey: ["tg-market"],
     queryFn: telegramApi.getMarket,
-    refetchInterval: 10_000,
+    refetchInterval: 2_000,
   });
 
   const opportunities = useQuery({
     queryKey: ["tg-opportunities"],
     queryFn: () => telegramApi.getOpportunities(),
-    refetchInterval: 15_000,
+    refetchInterval: 5_000,
   });
 
   const filters = useQuery({
@@ -56,6 +56,7 @@ export default function TelegramMarketPage() {
         limit: chartLimit || undefined,
       }),
     enabled: tab === "chart",
+    refetchInterval: tab === "chart" ? 5_000 : undefined,
   });
 
   const formatChartData = () => {
@@ -72,18 +73,21 @@ export default function TelegramMarketPage() {
 
   return (
     <div>
-      <div style={{ display: "flex", gap: 4, marginBottom: 16 }}>
+      <div style={{ display: "flex", gap: 8, marginBottom: 16 }}>
         <button
-          className={"btn" + (tab === "market" ? " btn-primary" : " btn-outline")}
+          className={"tab-btn" + (tab === "market" ? " active" : "")}
           onClick={() => setTab("market")}
         >
-          بازار طلا
+          <span>📊</span> بازار طلا
+          {market.data && (
+            <span className="live-dot" title="بروزرسانی لحظه‌ای" />
+          )}
         </button>
         <button
-          className={"btn" + (tab === "chart" ? " btn-primary" : " btn-outline")}
+          className={"tab-btn" + (tab === "chart" ? " active" : "")}
           onClick={() => setTab("chart")}
         >
-          نمودار قیمت
+          <span>📈</span> نمودار قیمت
         </button>
       </div>
 
@@ -92,7 +96,10 @@ export default function TelegramMarketPage() {
           <div className="card" style={{ marginBottom: 16 }}>
             <div className="card-title">
               <span>بازار</span>
-              {market.isLoading && <Loading label="" />}
+              <div className="row">
+                {market.isFetching && <span className="spin" style={{ width: 14, height: 14, borderWidth: 2 }} />}
+                <span style={{ fontSize: 11, opacity: 0.6 }}>{market.data?.length ?? 0} نوع</span>
+              </div>
             </div>
             {market.isError ? (
               <ErrorState message="خطا در دریافت اطلاعات بازار" />
@@ -103,42 +110,37 @@ export default function TelegramMarketPage() {
                 {(market.data ?? []).map((m) => (
                   <div
                     key={m.deliveryType}
-                    style={{
-                      background: "var(--bg-elev-2)",
-                      border: "1px solid var(--border)",
-                      borderRadius: "var(--radius-sm)",
-                      padding: 12,
-                    }}
+                    className="market-card"
                   >
-                    <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 6, color: "var(--text-dim)" }}>
-                      {m.deliveryType} {DIRECTION_ICON[m.direction] ?? ""}
+                    <div className="market-card-header">
+                      {m.deliveryType} <span>{DIRECTION_ICON[m.direction] ?? ""}</span>
                     </div>
-                    <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11, padding: "2px 0" }}>
-                      <span style={{ opacity: 0.6 }}>بهترین خرید ما</span>
-                      <span className="mono" style={{ color: "var(--green)" }}>{m.bestBid !== null ? fmtNum(m.bestBid) : "—"}</span>
+                    <div className="market-card-row">
+                      <span>بهترین خرید ما</span>
+                      <span className="mono green">{m.bestBid !== null ? fmtNum(m.bestBid) : "—"}</span>
                     </div>
-                    <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11, padding: "2px 0" }}>
-                      <span style={{ opacity: 0.6 }}>بهترین فروش ما</span>
-                      <span className="mono" style={{ color: "var(--red)" }}>{m.bestAsk !== null ? fmtNum(m.bestAsk) : "—"}</span>
+                    <div className="market-card-row">
+                      <span>بهترین فروش ما</span>
+                      <span className="mono red">{m.bestAsk !== null ? fmtNum(m.bestAsk) : "—"}</span>
                     </div>
-                    <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11, padding: "2px 0" }}>
-                      <span style={{ opacity: 0.6 }}>اسپرد</span>
+                    <div className="market-card-row">
+                      <span>اسپرد</span>
                       <span className="mono">{m.spread !== null ? fmtNum(m.spread) : "—"}</span>
                     </div>
-                    <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11, padding: "2px 0" }}>
-                      <span style={{ opacity: 0.6 }}>آخرین قیمت</span>
-                      <span className={`mono ${DIRECTION_CLASS[m.direction] ? "c-" + DIRECTION_CLASS[m.direction] : ""}`}>
+                    <div className="market-card-row">
+                      <span>آخرین قیمت</span>
+                      <span className={`mono ${DIRECTION_CLASS[m.direction]}`}>
                         {fmtNum(m.lastPrice)}
                       </span>
                     </div>
-                    <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11, padding: "2px 0" }}>
-                      <span style={{ opacity: 0.6 }}>تغییر</span>
-                      <span className={`mono ${DIRECTION_CLASS[m.direction] ? "c-" + DIRECTION_CLASS[m.direction] : ""}`}>
+                    <div className="market-card-row">
+                      <span>تغییر</span>
+                      <span className={`mono ${DIRECTION_CLASS[m.direction]}`}>
                         {priceChangeText(m.priceChangePercent)}
                       </span>
                     </div>
-                    <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11, padding: "2px 0" }}>
-                      <span style={{ opacity: 0.6 }}>حجم</span>
+                    <div className="market-card-row">
+                      <span>حجم</span>
                       <span className="mono">{m.volume}</span>
                     </div>
                   </div>
@@ -157,24 +159,17 @@ export default function TelegramMarketPage() {
             ) : (
               <div>
                 {[...opportunities.data].reverse().slice(0, 50).map((o) => (
-                  <div
-                    key={o.id}
-                    style={{
-                      padding: "8px 0",
-                      borderBottom: "1px solid var(--border-soft)",
-                      fontSize: 12,
-                    }}
-                  >
-                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                  <div key={o.id} className="opp-row">
+                    <div className="opp-row-top">
                       <div>
                         <span className={OPP_TYPE_CLASS[o.type] ?? "badge"} style={{ marginInlineEnd: 6 }}>
                           {OPP_TYPE_LABEL[o.type] ?? o.type}
                         </span>
                         <strong>{o.deliveryType}</strong> {DIRECTION_ICON[o.direction] ?? ""}
                       </div>
-                      <span style={{ fontSize: 10, opacity: 0.6 }}>{epochToFa(o.date)}</span>
+                      <span className="opp-time">{epochToFa(o.date)}</span>
                     </div>
-                    <div style={{ marginTop: 4, color: "var(--text-dim)" }}>
+                    <div className="opp-row-detail">
                       قیمت: {fmtNum(o.price)} | قبلی: {fmtNum(o.previousPrice)} | تغییر: {priceChangeText(o.changePercent)} | تعداد: {o.quantity}
                     </div>
                   </div>
@@ -187,9 +182,9 @@ export default function TelegramMarketPage() {
 
       {tab === "chart" && (
         <Card title="نمودار قیمت">
-          <div style={{ display: "flex", flexWrap: "wrap", gap: 10, marginBottom: 14 }}>
+          <div className="chart-filters">
             <div className="field">
-              <label style={{ fontSize: 11, display: "block", marginBottom: 2 }}>دسته</label>
+              <label>دسته</label>
               <select value={chartSubType} onChange={(e) => setChartSubType(e.target.value)}>
                 <option value="">همه</option>
                 {(filters.data?.subTypes ?? []).map((s) => (
@@ -198,7 +193,7 @@ export default function TelegramMarketPage() {
               </select>
             </div>
             <div className="field">
-              <label style={{ fontSize: 11, display: "block", marginBottom: 2 }}>نوع تحویل</label>
+              <label>نوع تحویل</label>
               <select value={chartDeliveryType} onChange={(e) => setChartDeliveryType(e.target.value)}>
                 <option value="">همه</option>
                 {(filters.data?.deliveryTypes ?? []).map((d) => (
@@ -207,7 +202,7 @@ export default function TelegramMarketPage() {
               </select>
             </div>
             <div className="field">
-              <label style={{ fontSize: 11, display: "block", marginBottom: 2 }}>سمت</label>
+              <label>سمت</label>
               <select value={chartAction} onChange={(e) => setChartAction(e.target.value)}>
                 <option value="">خرید و فروش</option>
                 <option value="WE_BUY">فقط خرید ما</option>
@@ -215,12 +210,11 @@ export default function TelegramMarketPage() {
               </select>
             </div>
             <div className="field">
-              <label style={{ fontSize: 11, display: "block", marginBottom: 2 }}>حداکثر نقاط</label>
+              <label>حداکثر نقاط</label>
               <input
                 type="number"
                 value={chartLimit}
                 onChange={(e) => setChartLimit(Number(e.target.value) || 500)}
-                style={{ width: 90, background: "var(--bg-elev)", border: "1px solid var(--border)", borderRadius: "var(--radius-sm)", padding: "4px 6px", color: "inherit" }}
               />
             </div>
           </div>
@@ -239,6 +233,7 @@ export default function TelegramMarketPage() {
                   responsive: true,
                   maintainAspectRatio: false,
                   parsing: false,
+                  animation: { duration: 300 },
                   interaction: { mode: "nearest", intersect: false },
                   scales: {
                     x: {
