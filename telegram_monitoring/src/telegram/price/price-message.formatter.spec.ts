@@ -1,68 +1,66 @@
-import { formatArbitrageMessage } from './price-message.formatter';
-import { ArbitrageOpportunity, PriceSnapshot } from './price.types';
+import { formatPriceMovementAlert, formatBestPriceAlert } from './price-message.formatter';
+import { MarketOpportunity } from './price.types';
 
-function snapshot(overrides: Partial<PriceSnapshot>): PriceSnapshot {
-  return {
-    price: 0,
-    sideLabel: 'فروش',
-    ourAction: 'WE_BUY',
-    subType: 'normal',
-    deliveryType: 'با حواله',
-    quantity: 1,
-    raw: '',
-    messageId: 0,
-    date: 0,
-    categoryKey: 'normal',
-    chatId: '-1003944865897',
-    ...overrides,
-  };
-}
-
-describe('formatArbitrageMessage', () => {
-  const opportunity: ArbitrageOpportunity = {
-    categoryKey: 'normal',
-    subType: 'normal',
-    deliveryType: 'با حواله',
-    buy: snapshot({
-      price: 73500000,
-      quantity: 3,
-      messageId: 565930,
-      orderButton: { text: '1', data: 'grp|ord|574929|602|1' },
-      description: '۲۰۰ گرم',
-    }),
-    sell: snapshot({
-      sideLabel: 'خرید',
-      ourAction: 'WE_SELL',
-      price: 73600000,
-      quantity: 2,
-      messageId: 565962,
-      orderButton: { text: '1', data: 'grp|ord|574931|487|1' },
-    }),
-    spread: 100000,
+describe('formatPriceMovementAlert', () => {
+  const opp: MarketOpportunity = {
+    type: 'PRICE_MOVEMENT',
+    deliveryType: 'آبشده',
+    direction: 'UP',
+    price: 75500000,
+    previousPrice: 74000000,
+    changePercent: 2.03,
+    messageId: 100,
+    date: 1000,
     quantity: 2,
-    totalProfit: 200000,
+    description: '۲۰۰ گرم',
   };
 
-  it('includes both order details, profit, and source-message links', () => {
-    const msg = formatArbitrageMessage(opportunity);
-
-    expect(msg).toContain('💰 قیمت: 73,500,000');
-    expect(msg).toContain('💰 قیمت: 73,600,000');
-    expect(msg).toContain('🧾 سفارش: 574929'); // order id parsed from callback
-    expect(msg).toContain('🧾 سفارش: 574931');
-    expect(msg).toContain('📝 ۲۰۰ گرم'); // description preserved
-    expect(msg).toContain('سود کل: 200,000');
-    // Tap-to-open links to the source messages (private channel /c/ form).
-    expect(msg).toContain('https://t.me/c/3944865897/565930');
-    expect(msg).toContain('https://t.me/c/3944865897/565962');
+  it('includes delivery type, price change, and percentage', () => {
+    const msg = formatPriceMovementAlert(opp);
+    expect(msg).toContain('آبشده');
+    expect(msg).toContain('74,000,000');
+    expect(msg).toContain('75,500,000');
+    expect(msg).toContain('+2.03%');
+    expect(msg).toContain('۲');
   });
 
-  it('omits links when the chat id is unavailable', () => {
-    const noChat: ArbitrageOpportunity = {
-      ...opportunity,
-      buy: snapshot({ ...opportunity.buy, chatId: undefined }),
-      sell: snapshot({ ...opportunity.sell, chatId: undefined }),
-    };
-    expect(formatArbitrageMessage(noChat)).not.toContain('https://t.me/');
+  it('omits description when not present', () => {
+    const noDesc = { ...opp, description: undefined };
+    const msg = formatPriceMovementAlert(noDesc);
+    expect(msg).not.toContain('گرم');
+  });
+
+  it('shows DOWN direction with minus sign', () => {
+    const down: MarketOpportunity = { ...opp, direction: 'DOWN', changePercent: -1.5, price: 73000000, previousPrice: 74110000 };
+    const msg = formatPriceMovementAlert(down);
+    expect(msg).toContain('کاهش');
+    expect(msg).toContain('-1.5%');
+  });
+});
+
+describe('formatBestPriceAlert', () => {
+  const opp: MarketOpportunity = {
+    type: 'BEST_PRICE',
+    deliveryType: 'با حواله',
+    direction: 'UP',
+    price: 76200000,
+    previousPrice: 75800000,
+    changePercent: 0.53,
+    messageId: 200,
+    date: 2000,
+    quantity: 3,
+  };
+
+  it('includes delivery type, price, and change', () => {
+    const msg = formatBestPriceAlert(opp);
+    expect(msg).toContain('با حواله');
+    expect(msg).toContain('76,200,000');
+    expect(msg).toContain('+0.53%');
+    expect(msg).toContain('3');
+  });
+
+  it('shows lowest price label for DOWN direction', () => {
+    const down: MarketOpportunity = { ...opp, direction: 'DOWN' };
+    expect(formatBestPriceAlert(down)).toContain('پایین‌ترین');
   });
 });

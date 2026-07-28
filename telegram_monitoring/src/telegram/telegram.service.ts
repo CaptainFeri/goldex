@@ -19,10 +19,10 @@ import { SessionManagerService } from './session-manager.service';
 import { StructuredLogger } from '../logger/structured-logger';
 import { CustomFile } from 'telegram/client/uploads';
 import { PriceHistoryService } from './price/price-history.service';
-import { ChartImageService } from './price/chart-image.service';
+import { MarketMakerService } from './price/market-maker.service';
 import { parsePriceMessage } from './price/price-message.parser';
-import { formatArbitrageMessage } from './price/price-message.formatter';
-import type { ArbitrageOpportunity, OrderButton } from './price/price.types';
+import { formatPriceMovementAlert, formatBestPriceAlert } from './price/price-message.formatter';
+import type { MarketOpportunity, OrderButton } from './price/price.types';
 
 type Entity = Api.User | Api.Chat | Api.Channel;
 
@@ -58,7 +58,7 @@ export class TelegramService implements OnModuleInit, OnModuleDestroy {
     private readonly options: TelegramOptions,
     private readonly eventEmitter: EventEmitter2,
     private readonly priceHistory: PriceHistoryService,
-    private readonly chartImage: ChartImageService,
+    private readonly marketMaker: MarketMakerService,
     private readonly sessionManager: SessionManagerService,
   ) {
     this.sessionManager.setSessionFolder(this.options.sessionFolder || 'sessions');
@@ -316,7 +316,11 @@ export class TelegramService implements OnModuleInit, OnModuleDestroy {
       new CallbackQuery({}),
     );
 
-    this.logger.log('Message and callback query event handlers registered');
+    this.eventEmitter.on('market.opportunity', (opportunity: MarketOpportunity) => {
+      this.onMarketOpportunity(opportunity);
+    });
+
+    this.logger.log('Message, callback query, and market opportunity event handlers registered');
   }
 
   private async handleNewMessage(event: NewMessageEvent): Promise<void> {
@@ -383,35 +387,17 @@ export class TelegramService implements OnModuleInit, OnModuleDestroy {
 
     this.eventEmitter.emit('telegram.price', { snapshot });
 
-    const opportunity = this.priceHistory.detectArbitrage(parsed, message.date);
-    if (opportunity && this.priceHistory.markReportedIfNew(opportunity)) {
-      this.eventEmitter.emit('telegram.arbitrage', opportunity);
-      await this.sendArbitrageAlert(
-        opportunity,
-        parsed.subType,
-        parsed.deliveryType,
-      );
-    }
+    this.marketMaker.onPrice(parsed, snapshot);
   }
 
-  private async sendArbitrageAlert(
-    opportunity: ArbitrageOpportunity,
-    subType: string,
-    deliveryType: string,
-  ): Promise<void> {
-    const caption = formatArbitrageMessage(opportunity);
-    const bucket = this.priceHistory.getBucketHistory(subType, deliveryType);
+  private onMarketOpportunity(opportunity: MarketOpportunity): void {
+    const caption = opportunity.type === 'BEST_PRICE'
+      ? formatBestPriceAlert(opportunity)
+      : formatPriceMovementAlert(opportunity);
 
-    try {
-      const image = await this.chartImage.render(opportunity, bucket);
-      await this.sendPhotoToTarget(image, caption);
-      this.logger.log('Sent arbitrage alert with chart image');
-    } catch (error) {
-      this.logger.warn(
-        `Chart image failed, sending text-only alert: ${String(error)}`,
-      );
-      await this.shareToTarget(caption);
-    }
+    this.shareToTarget(caption).catch((error) =>
+      this.logger.error('Failed to send market alert', error),
+    );
   }
 
   private async sendPhotoToTarget(

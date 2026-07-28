@@ -1,17 +1,6 @@
-/**
- * Renders a sample arbitrage chart to ./chart-preview.png via QuickChart so the
- * styling can be eyeballed without waiting for a live alert.
- *
- *   npm run chart:preview
- *
- * Honors QUICKCHART_URL (e.g. a self-hosted instance).
- */
 import * as fs from 'node:fs';
 import { ChartImageService } from '../telegram/price/chart-image.service';
-import {
-  ArbitrageOpportunity,
-  PriceSnapshot,
-} from '../telegram/price/price.types';
+import { PriceSnapshot } from '../telegram/price/price.types';
 
 function snap(over: Partial<PriceSnapshot>): PriceSnapshot {
   return {
@@ -29,7 +18,6 @@ function snap(over: Partial<PriceSnapshot>): PriceSnapshot {
   };
 }
 
-// A spread of buy/sell points over ~5 minutes, then the chosen opportunity.
 const base = Math.floor(Date.now() / 1000) - 300;
 const snapshots: PriceSnapshot[] = [];
 for (let i = 0; i < 12; i++) {
@@ -53,26 +41,9 @@ for (let i = 0; i < 12; i++) {
   );
 }
 
-const buy = snapshots.find((s) => s.messageId === 104);
-const sell = snapshots.find((s) => s.messageId === 211);
-if (!buy || !sell) {
-  console.error('Could not find sample buy/sell snapshots');
-  process.exit(1);
-}
-const opportunity: ArbitrageOpportunity = {
-  categoryKey: 'shena',
-  subType: 'shena',
-  deliveryType: 'با حواله',
-  buy,
-  sell,
-  spread: sell.price - buy.price,
-  quantity: 1,
-  totalProfit: sell.price - buy.price,
-};
-
 async function main() {
   const service = new ChartImageService();
-  const png = await service.render(opportunity, snapshots);
+  const png = await service.render(snapshots, 'Preview: Buy/Sell prices');
   fs.writeFileSync('chart-preview.png', png);
   console.log(`Wrote chart-preview.png (${png.length} bytes)`);
 }

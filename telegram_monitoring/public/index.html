@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>نمودار قیمت و آربیتراژ</title>
+    <title>بازار طلا</title>
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
     <style>
       :root { color-scheme: light dark; font-family: Tahoma, 'Segoe UI', sans-serif; }
@@ -17,51 +17,66 @@
       label.inline { flex-direction: row; align-items: center; gap: 6px; }
       .chart-wrap { background: #151922; border: 1px solid #232a36; border-radius: 10px; padding: 12px; height: 70vh; }
       .meta { font-size: 12px; opacity: 0.7; margin-top: 8px; }
-      .wallet-card { background: #151922; border: 1px solid #232a36; border-radius: 10px; padding: 14px; margin-bottom: 12px; }
-      .wallet-card .wallet-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; padding-bottom: 8px; border-bottom: 1px solid #232a36; font-size: 14px; }
-      .wallet-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 10px; }
-      .wallet-stat .wl { font-size: 11px; opacity: 0.6; }
-      .wallet-stat .wv { font-weight: 700; font-size: 13px; }
-      .wallet-stat .wv.green { color: #3ddc84; }
-      .wallet-stat .wv.red { color: #e0524a; }
       .empty { text-align: center; padding: 40px; opacity: 0.5; }
       .table-wrap { width: 100%; overflow-x: auto; margin-top: 8px; }
       table { width: 100%; border-collapse: collapse; font-size: 11px; }
       th { position: sticky; top: 0; background: #1b1f27; padding: 8px 6px; text-align: center; border-bottom: 2px solid #2c3240; white-space: nowrap; }
-      td { padding: 5px 6px; text-align: center; border-bottom: 1px solid #1f2632; vertical-align: top; }
+      td { padding: 5px 6px; text-align: center; border-bottom: 1px solid #1f2632; vertical-align: middle; }
       tr:hover td { background: #1a1f2a; }
-      .t-badge { display: inline-block; padding: 1px 6px; border-radius: 3px; font-size: 10px; font-weight: 700; }
-      .t-buy-first { background: #1a4a2a; color: #3ddc84; }
-      .t-sell-first { background: #4a1a1a; color: #e0524a; }
-      .t-buy-cell { color: #3ddc84; font-size: 11px; text-align: right; direction: ltr; }
-      .t-sell-cell { color: #e0524a; font-size: 11px; text-align: right; direction: ltr; }
-      .t-side-label { font-size: 10px; font-weight: 700; }
-      .t-raw { font-size: 10px; color: #8a9aaa; word-break: break-all; max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; display: block; }
-      .t-raw:hover { overflow: visible; white-space: normal; background: #0a0d12; position: relative; z-index: 1; padding: 2px 4px; border-radius: 3px; }
-      .t-profit { color: #3ddc84; font-weight: 700; text-align: center; }
-      .t-order-link { color: #3a6df0; text-decoration: none; font-size: 11px; display: inline-block; margin: 1px 0; }
-      .t-order-link:hover { text-decoration: underline; }
-      .t-tr-buy-first { border-right: 3px solid #3ddc84; }
-      .t-tr-sell-first { border-right: 3px solid #e0524a; }
       .tabs { display: flex; gap: 4px; margin-bottom: 12px; }
       .tab { padding: 6px 16px; border: 1px solid #2c3240; border-radius: 6px; cursor: pointer; font-size: 13px; background: transparent; color: #9aa4b2; }
       .tab.active { background: #3a6df0; border-color: #3a6df0; color: #fff; }
       .tab-content { display: none; }
       .tab-content.active { display: block; }
+      .price-up { color: #3ddc84; }
+      .price-down { color: #e0524a; }
+      .price-flat { color: #9aa4b2; }
+      .trend-up { color: #3ddc84; }
+      .trend-down { color: #e0524a; }
+      .card { background: #151922; border: 1px solid #232a36; border-radius: 10px; padding: 12px; margin-bottom: 12px; }
+      .card-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; font-size: 13px; font-weight: 700; color: #cbd3df; }
+      .market-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 10px; }
+      .market-cell { background: #1b1f27; border: 1px solid #2c3240; border-radius: 8px; padding: 10px; }
+      .market-cell .symbol { font-weight: 700; font-size: 13px; margin-bottom: 6px; color: #cbd3df; }
+      .market-cell .row { display: flex; justify-content: space-between; font-size: 11px; padding: 2px 0; }
+      .market-cell .row .label { opacity: 0.6; }
+      .market-cell .row .value { font-weight: 600; direction: ltr; }
+      .opp-item { padding: 8px 10px; border-bottom: 1px solid #1f2632; font-size: 11px; }
+      .opp-item:last-child { border-bottom: none; }
+      .opp-item .opp-header { display: flex; justify-content: space-between; align-items: center; }
+      .opp-item .opp-type { display: inline-block; padding: 1px 6px; border-radius: 3px; font-size: 10px; font-weight: 700; }
+      .opp-type.movement { background: #1a3a4a; color: #4db8e0; }
+      .opp-type.best-price { background: #1a4a2a; color: #3ddc84; }
+      .live-dot { width: 9px; height: 9px; border-radius: 50%; display: inline-block; }
+      .live-dot.green { background: #3ddc84; }
+      .live-dot.red { background: #e0524a; }
+      .live-dot.gray { background: #888; }
     </style>
   </head>
   <body>
-    <h1>نمودار قیمت خرید و فروش</h1>
+    <h1>بازار طلا — قیمت‌های لحظه‌ای</h1>
     <p class="meta" style="margin-top: -6px">
       از دید ما: «خرید بازار» یعنی ما می‌فروشیم و «فروش بازار» یعنی ما می‌خریم.
     </p>
 
     <div class="tabs">
-      <div class="tab active" data-tab="chart">نمودار قیمت</div>
-      <div class="tab" data-tab="arbitrage">آربیتراژ</div>
+      <div class="tab active" data-tab="market">بازار</div>
+      <div class="tab" data-tab="chart">نمودار قیمت</div>
     </div>
 
-    <div id="tab-chart" class="tab-content active">
+    <div id="tab-market" class="tab-content active">
+      <div id="marketOverview" class="market-grid"></div>
+
+      <div class="card" style="margin-top: 16px">
+        <div class="card-header">
+          <span>فرصت‌ها</span>
+          <span id="oppCount" style="font-size: 11px; opacity: 0.6"></span>
+        </div>
+        <div id="opportunityList"></div>
+      </div>
+    </div>
+
+    <div id="tab-chart" class="tab-content">
       <div class="filters">
         <div class="field">
           <span>دسته</span>
@@ -93,46 +108,13 @@
         </div>
         <button id="apply">اعمال فیلتر</button>
         <span class="field inline" id="live">
-          <span id="liveDot" style="width:9px;height:9px;border-radius:50%;background:#888;display:inline-block"></span>
+          <span class="live-dot gray" id="liveDot"></span>
           <span id="liveText">در حال اتصال…</span>
         </span>
       </div>
 
       <div class="chart-wrap"><canvas id="chart"></canvas></div>
       <div class="meta" id="meta"></div>
-    </div>
-
-    <div id="tab-arbitrage" class="tab-content">
-      <div class="filters">
-        <div class="field">
-          <span>از تاریخ</span>
-          <input type="datetime-local" id="aFrom" />
-        </div>
-        <div class="field">
-          <span>تا تاریخ</span>
-          <input type="datetime-local" id="aTo" />
-        </div>
-        <div class="field">
-          <span>دسته</span>
-          <select id="aSubType"><option value="">همه</option></select>
-        </div>
-        <button id="aApply">بارگیری</button>
-        <span class="meta" id="aCount" style="font-size:13px"></span>
-      </div>
-
-      <div id="walletCard" class="wallet-card" style="display:none">
-        <div class="wallet-header"><span>کیف پول</span></div>
-        <div class="wallet-grid">
-          <div class="wallet-stat"><div class="wl">طلا خرید</div><div class="wv green" id="wGoldBought">0</div></div>
-          <div class="wallet-stat"><div class="wl">طلا فروش</div><div class="wv red" id="wGoldSold">0</div></div>
-          <div class="wallet-stat"><div class="wl">موجودی طلا</div><div class="wv" id="wNetGold">0</div></div>
-          <div class="wallet-stat"><div class="wl">هزینه خرید</div><div class="wv" id="wCashSpent">0</div></div>
-          <div class="wallet-stat"><div class="wl">درآمد فروش</div><div class="wv" id="wCashReceived">0</div></div>
-          <div class="wallet-stat"><div class="wl">موجودی نقد</div><div class="wv green" id="wNetCash">0</div></div>
-        </div>
-      </div>
-
-      <div id="arbitrageList"></div>
     </div>
 
     <script>
@@ -143,6 +125,11 @@
       let chart;
       let pointCount = 0;
 
+      const DIRECTION_LABELS = { UP: '📈', DOWN: '📉', FLAT: '➡️' };
+      const DIRECTION_CLASS = { UP: 'price-up', DOWN: 'price-down', FLAT: 'price-flat' };
+      const TYPE_LABELS = { PRICE_MOVEMENT: 'تغییر قیمت', BEST_PRICE: 'بهترین قیمت' };
+      const TYPE_CLASS = { PRICE_MOVEMENT: 'movement', BEST_PRICE: 'best-price' };
+
       // ---- tabs ----
       document.querySelectorAll('.tab').forEach((tab) => {
         tab.addEventListener('click', () => {
@@ -150,7 +137,7 @@
           document.querySelectorAll('.tab-content').forEach((c) => c.classList.remove('active'));
           tab.classList.add('active');
           document.getElementById('tab-' + tab.dataset.tab).classList.add('active');
-          if (tab.dataset.tab === 'arbitrage') { loadWallet(); loadArbitrageList(); }
+          if (tab.dataset.tab === 'market') { loadMarket(); loadOpportunities(); }
         });
       });
 
@@ -158,10 +145,72 @@
       function toEpochSeconds(v) { return v ? Math.floor(new Date(v).getTime() / 1000) : undefined; }
       function epochToLocal(sec) { return new Date(sec * 1000).toLocaleString('fa-IR'); }
       function fmtPrice(v) { return v.toLocaleString('en-US'); }
-      function msgLink(chatId, msgId) {
-        if (!chatId || !msgId) return null;
-        const m = /^-?100(\d+)$/.exec(chatId);
-        return m ? `https://t.me/c/${m[1]}/${msgId}` : null;
+
+      // ---- market board ----
+      function renderMarketCell(m) {
+        const direction = m.direction || 'FLAT';
+        const dirIcon = DIRECTION_LABELS[direction] || '';
+        const dirClass = DIRECTION_CLASS[direction] || '';
+        const spread = m.spread !== null ? fmtPrice(m.spread) : '—';
+        const bestBid = m.bestBid !== null ? fmtPrice(m.bestBid) : '—';
+        const bestAsk = m.bestAsk !== null ? fmtPrice(m.bestAsk) : '—';
+        const change = m.priceChangePercent !== 0 ? `${m.priceChangePercent > 0 ? '+' : ''}${m.priceChangePercent}%` : '—';
+
+        return `<div class="market-cell">
+          <div class="symbol">${m.deliveryType} ${dirIcon}</div>
+          <div class="row"><span class="label">بهترین خرید ما</span><span class="value price-up">${bestBid}</span></div>
+          <div class="row"><span class="label">بهترین فروش ما</span><span class="value price-down">${bestAsk}</span></div>
+          <div class="row"><span class="label">اسپرد</span><span class="value">${spread}</span></div>
+          <div class="row"><span class="label">آخرین قیمت</span><span class="value ${dirClass}">${fmtPrice(m.lastPrice)}</span></div>
+          <div class="row"><span class="label">تغییر</span><span class="value ${dirClass}">${change}</span></div>
+          <div class="row"><span class="label">حجم</span><span class="value">${m.volume}</span></div>
+        </div>`;
+      }
+
+      async function loadMarket() {
+        try {
+          const r = await fetch('/api/market');
+          const markets = await r.json();
+          const container = document.getElementById('marketOverview');
+          if (markets.length === 0) {
+            container.innerHTML = '<div class="empty">هنوز قیمتی ثبت نشده است</div>';
+            return;
+          }
+          container.innerHTML = markets.map(renderMarketCell).join('');
+        } catch {}
+      }
+
+      // ---- opportunities ----
+      function renderOppItem(o) {
+        const dirIcon = DIRECTION_LABELS[o.direction] || '';
+        const typeLabel = TYPE_LABELS[o.type] || o.type;
+        const typeCls = TYPE_CLASS[o.type] || '';
+        const change = o.changePercent !== 0 ? `${o.changePercent > 0 ? '+' : ''}${o.changePercent}%` : '—';
+
+        return `<div class="opp-item">
+          <div class="opp-header">
+            <span><span class="opp-type ${typeCls}">${typeLabel}</span> ${o.deliveryType} ${dirIcon}</span>
+            <span style="font-size:10px;opacity:0.6">${epochToLocal(o.date)}</span>
+          </div>
+          <div style="margin-top:4px">
+            قیمت: ${fmtPrice(o.price)} | قبلی: ${fmtPrice(o.previousPrice)} | تغییر: ${change} | تعداد: ${o.quantity}
+          </div>
+        </div>`;
+      }
+
+      async function loadOpportunities() {
+        try {
+          const r = await fetch('/api/opportunities');
+          const opps = await r.json();
+          const container = document.getElementById('opportunityList');
+          document.getElementById('oppCount').textContent = opps.length + ' فرصت';
+
+          if (opps.length === 0) {
+            container.innerHTML = '<div class="empty">فرصتی یافت نشد</div>';
+            return;
+          }
+          container.innerHTML = opps.slice(-50).reverse().map(renderOppItem).join('');
+        } catch {}
       }
 
       // ---- price chart ----
@@ -193,7 +242,7 @@
       async function loadFilters() {
         const r = await fetch('/api/prices/filters');
         const { subTypes, deliveryTypes } = await r.json();
-        for (const id of ['subType', 'aSubType', 'pSubType']) {
+        for (const id of ['subType']) {
           const sel = document.getElementById(id);
           if (!sel) continue;
           for (const s of subTypes) {
@@ -244,7 +293,7 @@
       }
 
       function setLive(ok) {
-        document.getElementById('liveDot').style.background = ok ? '#3ddc84' : '#e0524a';
+        document.getElementById('liveDot').className = 'live-dot ' + (ok ? 'green' : 'red');
         document.getElementById('liveText').textContent = ok ? 'زنده' : 'قطع شد — اتصال مجدد…';
       }
 
@@ -278,116 +327,17 @@
         });
       }
 
-      // ---- profit summary (kept for backward compat) ----
-      async function loadProfit() {
-        const p = new URLSearchParams();
-        const from = toEpochSeconds(document.getElementById('pFrom')?.value);
-        const to = toEpochSeconds(document.getElementById('pTo')?.value);
-        const subType = document.getElementById('pSubType')?.value;
-        if (from) p.set('from', from); if (to) p.set('to', to); if (subType) p.set('subType', subType);
-        const r = await fetch('/api/arbitrages/summary?' + p.toString());
-        const s = await r.json();
-        const el = document.getElementById('profitTotal');
-        if (el) el.textContent = s.totalProfit.toLocaleString('en-US') + ' تومان — ' + s.count + ' آربیتراژ';
-        const bd = document.getElementById('profitBreakdown');
-        if (bd) bd.textContent = s.byCategory.map(c => c.label + ': ' + c.totalProfit.toLocaleString('en-US') + ' (' + c.count + ')').join('  •  ');
-      }
-
-      // ---- wallet ----
-      function fmtGold(grams) {
-        const kg = grams / 1000;
-        return kg.toLocaleString('fa-IR', { maximumFractionDigits: 3 }) + ' کیلوگرم (' + grams.toLocaleString('en-US') + ' گرم)';
-      }
-      function fmtCash(v) {
-        return v.toLocaleString('en-US') + ' تومان';
-      }
-      async function loadWallet() {
-        const r = await fetch('/api/arbitrages/wallet');
-        const w = await r.json();
-        const card = document.getElementById('walletCard');
-        card.style.display = 'block';
-        document.getElementById('wGoldBought').textContent = fmtGold(w.totalGoldBought);
-        document.getElementById('wGoldSold').textContent = fmtGold(w.totalGoldSold);
-        document.getElementById('wNetGold').textContent = fmtGold(w.netGold);
-        document.getElementById('wCashSpent').textContent = fmtCash(w.totalCashSpent);
-        document.getElementById('wCashReceived').textContent = fmtCash(w.totalCashReceived);
-        document.getElementById('wNetCash').textContent = fmtCash(w.netCash);
-      }
-
-      // ---- arbitrage table ----
-      const SUBTYPE_NAMES = { normal: 'عادی', shena: 'شنا', makus: 'معکوس' };
-
-      function esc(str) { return (str || '').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
-
-      function renderSide(r, side) {
-        const d = r[side];
-        const label = d.ourAction === 'WE_BUY' ? 'خرید ما' : 'فروش ما';
-        const link = msgLink(d.chatId, d.messageId);
-        const orderInfo = d.orderButtonData ? '🧾 ' + esc(d.orderButtonData) : '';
-        const cls = d.ourAction === 'WE_BUY' ? 't-buy-cell' : 't-sell-cell';
-        return `<div class="${cls}">
-          <span class="t-side-label">${label}</span>
-          <div>${fmtPrice(d.price)} × ${d.quantity}</div>
-          <div style="font-size:10px;opacity:0.6">${epochToLocal(d.date)} — ${d.sideLabel}</div>
-          ${orderInfo ? '<div style="font-size:10px;color:#6a7a8a">' + orderInfo + '</div>' : ''}
-          ${link ? '<a class="t-order-link" href="' + link + '" target="_blank">🔗 پیام</a>' : ''}
-          ${d.raw ? '<span class="t-raw" title="' + esc(d.raw) + '">' + esc(d.raw) + '</span>' : ''}
-        </div>`;
-      }
-
-      function renderArbitrageRow(r) {
-        const bf = r.buyFirst;
-        const badgeCls = bf ? 't-buy-first' : 't-sell-first';
-        const badgeTxt = bf ? 'خرید اول' : 'فروش اول';
-        const direction = bf ? 'خرید→فروش' : 'فروش→خرید';
-        const desc = r.buy.description || r.sell.description;
-
-        return `<tr class="${bf ? 't-tr-buy-first' : 't-tr-sell-first'}">
-          <td style="white-space:nowrap">${epochToLocal(r.date)}<br><span class="t-badge ${badgeCls}">${badgeTxt}</span><br><span style="font-size:10px;opacity:0.6">${direction}</span></td>
-          <td>${renderSide(r, 'buy')}</td>
-          <td>${renderSide(r, 'sell')}</td>
-          <td class="t-profit">${fmtPrice(r.totalProfit)}<br><span style="font-size:10px;opacity:0.6;color:#e6e6e6">سود/واحد: ${fmtPrice(r.spread)}</span></td>
-          <td style="font-size:10px;color:#8a9aaa;max-width:140px;text-align:right">${desc ? '<div title="' + esc(desc) + '">📝 ' + esc(desc) + '</div>' : ''}</td>
-        </tr>`;
-      }
-
-      async function loadArbitrageList() {
-        const p = new URLSearchParams();
-        const from = toEpochSeconds(document.getElementById('aFrom').value);
-        const to = toEpochSeconds(document.getElementById('aTo').value);
-        const subType = document.getElementById('aSubType').value;
-        if (from) p.set('from', from); if (to) p.set('to', to); if (subType) p.set('subType', subType);
-
-        const [r, _w] = await Promise.all([
-          fetch('/api/arbitrages?' + p.toString()),
-          loadWallet(),
-        ]);
-        const records = await r.json();
-        const container = document.getElementById('arbitrageList');
-        document.getElementById('aCount').textContent = records.length + ' فرصت';
-
-        if (records.length === 0) {
-          container.innerHTML = '<div class="empty">هیچ فرصت آربیتراژی یافت نشد</div>';
-          return;
-        }
-
-        container.innerHTML = `<div class="table-wrap"><table>
-          <thead><tr>
-            <th>تاریخ / نوع</th><th>خرید</th><th>فروش</th><th>سود کل</th><th>توضیحات</th>
-          </tr></thead>
-          <tbody>${records.reverse().map(renderArbitrageRow).join('')}</tbody>
-        </table></div>`;
-      }
-
       document.getElementById('apply').addEventListener('click', loadBaseline);
-      document.getElementById('aApply').addEventListener('click', loadArbitrageList);
 
       (async function start() {
         initChart();
         await loadFilters();
         await loadBaseline();
-        await loadProfit();
+        await loadMarket();
+        await loadOpportunities();
         openStream();
+        setInterval(loadMarket, 10000);
+        setInterval(loadOpportunities, 15000);
       })();
     </script>
   </body>

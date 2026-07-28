@@ -6,9 +6,9 @@ import { TELEGRAM_OPTIONS } from './telegram.constants';
 import { TelegramOptions } from './interfaces';
 import { PriceHistoryService } from './price/price-history.service';
 import { PricePersistenceService } from './price/price-persistence.service';
-import { ArbitragePersistenceService } from './price/arbitrage-persistence.service';
+import { MarketMakerService } from './price/market-maker.service';
 import { ChartImageService } from './price/chart-image.service';
-import { PriceController, ArbitrageController } from './price/price.controller';
+import { PriceController, MarketMakerController, OpportunityController } from './price/price.controller';
 import { AuthController } from './auth/auth.controller';
 
 @Global()
@@ -17,7 +17,7 @@ export class TelegramModule {
   static forRoot(options: TelegramOptions): DynamicModule {
     return {
       module: TelegramModule,
-      controllers: [PriceController, ArbitrageController, AuthController],
+      controllers: [PriceController, MarketMakerController, OpportunityController, AuthController],
       providers: [
         {
           provide: TELEGRAM_OPTIONS,
@@ -26,7 +26,7 @@ export class TelegramModule {
         SessionManagerService,
         PriceHistoryService,
         PricePersistenceService,
-        ArbitragePersistenceService,
+        MarketMakerService,
         ChartImageService,
         TelegramService,
       ],
@@ -38,7 +38,7 @@ export class TelegramModule {
     return {
       module: TelegramModule,
       imports: [ConfigModule],
-      controllers: [PriceController, ArbitrageController, AuthController],
+      controllers: [PriceController, MarketMakerController, OpportunityController, AuthController],
       providers: [
         {
           provide: TELEGRAM_OPTIONS,
@@ -60,7 +60,7 @@ export class TelegramModule {
         SessionManagerService,
         PriceHistoryService,
         PricePersistenceService,
-        ArbitragePersistenceService,
+        MarketMakerService,
         ChartImageService,
         TelegramService,
       ],
