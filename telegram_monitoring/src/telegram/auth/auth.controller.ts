@@ -55,4 +55,11 @@ export class AuthController {
     }
     return { success: true, sentViaApp: result.sentViaApp, phoneCodeHash: result.phoneCodeHash };
   }
+
+  @Post('retry')
+  @HttpCode(200)
+  async retry() {
+    const result = await this.telegram.retryConnection();
+    return { success: result };
+  }
 }

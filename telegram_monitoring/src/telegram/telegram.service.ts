@@ -74,10 +74,20 @@ export class TelegramService implements OnModuleInit, OnModuleDestroy {
       this.options.apiHash,
       {
         connectionRetries: 5,
+        timeout: 15_000,
+        retryDelay: 2_000,
+        useWSS: true,
+        autoReconnect: true,
       },
     );
 
-    await this.client.connect();
+    const connected = await this.connectWithRetry();
+    if (!connected) {
+      this.logger.warn(
+        'Could not connect to Telegram. Run POST /api/auth/retry once network is available.',
+      );
+      return;
+    }
 
     const isAuthorized = await this.client.isUserAuthorized();
 
@@ -165,6 +175,28 @@ export class TelegramService implements OnModuleInit, OnModuleDestroy {
     }
   }
 
+  private async connectWithRetry(): Promise<boolean> {
+    const maxAttempts = 3;
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+      try {
+        this.logger.log(`Connecting to Telegram (attempt ${attempt}/${maxAttempts})...`);
+        await this.client.connect();
+        this.logger.log('Connected to Telegram successfully');
+        return true;
+      } catch (error) {
+        this.logger.error(
+          `Connection attempt ${attempt}/${maxAttempts} failed: ${error instanceof Error ? error.message : String(error)}`,
+        );
+        if (attempt < maxAttempts) {
+          const delay = attempt * 5_000;
+          this.logger.log(`Retrying in ${delay / 1000}s...`);
+          await new Promise((resolve) => setTimeout(resolve, delay));
+        }
+      }
+    }
+    return false;
+  }
+
   private async persistSession(): Promise<void> {
     try {
       const savedSession = this.client.session.save() as unknown as string;
@@ -180,16 +212,15 @@ export class TelegramService implements OnModuleInit, OnModuleDestroy {
     const INTERVAL_MS = 60_000;
     this.healthCheckTimer = setInterval(async () => {
       try {
+        if (!this.client.connected) {
+          this.logger.warn('Connection lost. Attempting reconnect...');
+          await this.connectWithRetry();
+          return;
+        }
         const authorized = await this.client.isUserAuthorized();
         if (!authorized) {
           this.logger.warn('Session expired. Attempting reconnection...');
-          await this.client.connect();
-          const reauthorized = await this.client.isUserAuthorized();
-          if (!reauthorized) {
-            this.logger.error('Reconnection failed - session is invalid');
-          } else {
-            this.logger.log('Reconnection successful');
-          }
+          await this.connectWithRetry();
         }
       } catch (error) {
         this.logger.error('Health check failed', error);
@@ -539,6 +570,34 @@ export class TelegramService implements OnModuleInit, OnModuleDestroy {
     if (this.authPasswordResolver)
       return { ready: false, waitingFor: 'password' };
     return { ready: true, waitingFor: null };
+  }
+
+  async retryConnection(): Promise<boolean> {
+    try {
+      if (this.client?.connected) {
+        await this.disconnect();
+      }
+      const connected = await this.connectWithRetry();
+      if (!connected) return false;
+
+      const authorized = await this.client.isUserAuthorized();
+
+      if (authorized) {
+        this.logger.log('Reconnected and authorized');
+        await this.finalizeInitialization();
+        this.startHealthCheck();
+        return true;
+      }
+
+      this.logger.log(
+        'Connected but not authorized. Submit code via POST /api/auth/code...',
+      );
+      this.startDeferredAuth();
+      return true;
+    } catch (error) {
+      this.logger.error('Retry connection failed', error);
+      return false;
+    }
   }
 
   submitCode(code: string): void {
