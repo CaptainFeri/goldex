@@ -8,6 +8,8 @@ services:
     environment:
       - BACKEND_HOST=${BACKEND_HOST:-goldex-service}
       - BACKEND_PORT=${BACKEND_PORT:-3003}
+      - TELEGRAM_HOST=${TELEGRAM_HOST:-telegram-monitoring}
+      - TELEGRAM_PORT=${TELEGRAM_PORT:-3000}
     ports:
       - "${ADMIN_PANEL_PORT:-5190}:80"
     networks:
