@@ -37,7 +37,7 @@
                 android:layout_height="wrap_content"
                 android:hint="Pricing Engine URL"
                 app:endIconMode="clear_text"
-                style="@style/Widget.Material3.TextInputLayout.OutlinedBox">
+                app:boxStrokeWidth="1.5dp">
 
                 <com.google.android.material.textfield.TextInputEditText
                     android:id="@+id/pricingEngineUrlEditText"
@@ -54,7 +54,7 @@
                 android:layout_height="wrap_content"
                 android:layout_marginTop="8dp"
                 android:text="Load Providers"
-                style="@style/Widget.Material3.Button.TonalButton" />
+                style="@style/Widget.Material3.Button" />
 
         </LinearLayout>
 
@@ -133,7 +133,7 @@
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
                         android:hint="Provider Phone Number"
-                        style="@style/Widget.Material3.TextInputLayout.OutlinedBox">
+                        app:boxStrokeWidth="1.5dp">
 
                         <com.google.android.material.textfield.TextInputEditText
                             android:id="@+id/phoneEditText"
@@ -149,7 +149,7 @@
                         android:layout_height="wrap_content"
                         android:layout_marginTop="12dp"
                         android:hint="Provider Name (e.g. \u0645\u06CC\u0631\u0631\u06A9\u0646\u06CC)"
-                        style="@style/Widget.Material3.TextInputLayout.OutlinedBox">
+                        app:boxStrokeWidth="1.5dp">
 
                         <com.google.android.material.textfield.TextInputEditText
                             android:id="@+id/providerNameEditText"
@@ -173,7 +173,7 @@
                         android:layout_height="wrap_content"
                         android:layout_marginTop="12dp"
                         android:hint="Provider Panel Login URL"
-                        style="@style/Widget.Material3.TextInputLayout.OutlinedBox">
+                        app:boxStrokeWidth="1.5dp">
 
                         <com.google.android.material.textfield.TextInputEditText
                             android:id="@+id/loginUrlEditText"
@@ -189,7 +189,7 @@
                         android:layout_height="wrap_content"
                         android:layout_marginTop="12dp"
                         android:hint="Backend URL (where auth data is forwarded)"
-                        style="@style/Widget.Material3.TextInputLayout.OutlinedBox">
+                        app:boxStrokeWidth="1.5dp">
 
                         <com.google.android.material.textfield.TextInputEditText
                             android:id="@+id/backendUrlEditText"
@@ -238,7 +238,7 @@
                         android:layout_marginTop="24dp"
                         android:text="Launch Provider Panel"
                         android:icon="@android:drawable/ic_menu_compass"
-                        style="@style/Widget.Material3.Button.Filled" />
+                        style="@style/Widget.Material3.Button" />
 
                     <TextView
                         android:id="@+id/authStatusLog"
