@@ -5,6 +5,7 @@ import { NotificationService } from "./notification.service";
 import { NotificationTypeEnum } from "./enum/notification-type.enum";
 import { NotificationChannelEnum } from "./enum/notification-channel.enum";
 import { NotificationCategoryEnum } from "./enum/notification-category.enum";
+import { NotificationStatusEnum } from "./enum/notification-status.enum";
 
 class AdminSendNotificationDto {
   userId: string;
@@ -21,6 +22,27 @@ class AdminSendNotificationDto {
 @ApiTags("Admin-Notifications")
 export class AdminNotificationController {
   constructor(private readonly notificationService: NotificationService) {}
+
+  @Get()
+  @UseGuards(AdminAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: "List all notifications (admin)" })
+  @ApiQuery({ name: "pageNumber", required: false, type: Number })
+  @ApiQuery({ name: "pageSize", required: false, type: Number })
+  @ApiQuery({ name: "userId", required: false, type: String })
+  @ApiQuery({ name: "type", required: false, enum: NotificationTypeEnum })
+  @ApiQuery({ name: "channel", required: false, enum: NotificationChannelEnum })
+  @ApiQuery({ name: "status", required: false, enum: NotificationStatusEnum })
+  async listNotifications(
+    @Query("pageNumber", new DefaultValuePipe(1), ParseIntPipe) page: number = 1,
+    @Query("pageSize", new DefaultValuePipe(50), ParseIntPipe) limit: number = 50,
+    @Query("userId") userId?: string,
+    @Query("type") type?: string,
+    @Query("channel") channel?: string,
+    @Query("status") status?: string,
+  ) {
+    return { data: await this.notificationService.findAll({ page, limit, userId, type, channel, status }) };
+  }
 
   @Get("stats")
   @UseGuards(AdminAuthGuard)

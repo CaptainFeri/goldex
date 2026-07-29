@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import { useAuth } from '../context/AuthContext'
 import { useNavigate, useLocation } from 'react-router-dom'
 import { BrandHeader, ThemeToggle } from './UI'
-import { levelApi } from '../services/api'
+import { levelApi, notificationApi } from '../services/api'
 
 function WarehouseIcon() {
   return (
@@ -136,9 +136,18 @@ export default function Sidebar({ user }) {
   const location = useLocation()
   const [loggingOut, setLoggingOut] = useState(false)
   const [level, setLevel] = useState(null)
+  const [unreadNotifs, setUnreadNotifs] = useState(0)
 
   useEffect(() => {
     levelApi.getMyLevel().then(setLevel).catch(() => {})
+  }, [])
+
+  useEffect(() => {
+    notificationApi.getUnreadCount().then((d) => setUnreadNotifs(d.count || 0)).catch(() => {})
+    const interval = setInterval(() => {
+      notificationApi.getUnreadCount().then((d) => setUnreadNotifs(d.count || 0)).catch(() => {})
+    }, 30000)
+    return () => clearInterval(interval)
   }, [])
 
   const initials = user
@@ -180,9 +189,20 @@ export default function Sidebar({ user }) {
             key={path}
             className={`nav-item ${location.pathname === path ? 'active' : ''}`}
             onClick={() => navigate(path)}
+            style={{ position: 'relative' }}
           >
             <Icon />
             {label}
+            {path === '/notifications' && unreadNotifs > 0 && (
+              <span style={{
+                position: 'absolute', left: '1.75rem', top: '0.4rem',
+                background: 'var(--danger, #ef4444)', color: '#fff',
+                fontSize: '0.6rem', fontWeight: 700,
+                minWidth: 16, height: 16, borderRadius: 8,
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                padding: '0 3px',
+              }}>{unreadNotifs > 99 ? '99+' : unreadNotifs}</span>
+            )}
           </button>
         ))}
       </nav>

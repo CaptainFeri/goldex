@@ -131,6 +131,31 @@ export class NotificationService {
     await this.notificationRepository.update(id, update);
   }
 
+  async findAll(query: {
+    page?: number;
+    limit?: number;
+    userId?: string;
+    type?: string;
+    channel?: string;
+    status?: string;
+  }): Promise<{ data: NotificationEntity[]; total: number }> {
+    const qb = this.notificationRepository.createQueryBuilder("n")
+      .leftJoinAndSelect("n.user", "user")
+      .orderBy("n.createAt", "DESC");
+
+    if (query.userId) qb.andWhere("n.userId = :userId", { userId: query.userId });
+    if (query.type) qb.andWhere("n.type = :type", { type: query.type });
+    if (query.channel) qb.andWhere("n.channel = :channel", { channel: query.channel });
+    if (query.status) qb.andWhere("n.status = :status", { status: query.status });
+
+    const page = query.page || 1;
+    const limit = query.limit || 50;
+    qb.skip((page - 1) * limit).take(limit);
+
+    const [data, total] = await qb.getManyAndCount();
+    return { data, total };
+  }
+
   async getAdminStats(): Promise<any> {
     const total = await this.notificationRepository.count();
     const byChannel = await this.notificationRepository

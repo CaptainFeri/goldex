@@ -6,6 +6,7 @@ import { NotificationPreferenceEntity } from "./entity/notification-preference.e
 import { NotificationService } from "./notification.service";
 import { NotificationDispatcher } from "./notification-dispatcher.service";
 import { NotificationController } from "./notification.controller";
+import { NotificationPreferenceController } from "./notification-preference.controller";
 import { AdminNotificationController } from "./admin-notification.controller";
 import { InAppChannelService } from "./channels/in-app.channel.service";
 import { EmailChannelService } from "./channels/email.channel.service";
@@ -45,7 +46,7 @@ import { ConfigModule, ConfigService } from "@nestjs/config";
       inject: [ConfigService],
     }),
   ],
-  controllers: [NotificationController, AdminNotificationController],
+  controllers: [NotificationController, NotificationPreferenceController, AdminNotificationController],
   providers: [
     NotificationService,
     NotificationDispatcher,
