@@ -1,4 +1,5 @@
 import { Module } from "@nestjs/common";
+import { EventEmitterModule } from "@nestjs/event-emitter";
 import { PublicFileController } from "./shared/controller/public-file.controller";
 import { AcceptLanguageResolver, I18nModule } from "nestjs-i18n";
 import { join } from "path";
@@ -44,9 +45,12 @@ import { UserLevelModule } from "./user-level/user-level.module";
 import { DepositModule } from "./deposit/deposit.module";
 import { WithdrawModule } from "./withdraw/withdraw.module";
 import { AdminTelegramMonitoringModule } from "./admin-telegram-monitoring/admin-telegram-monitoring.module";
+import { NotificationModule } from "./notification/notification.module";
+import { CrmModule } from "./crm/crm.module";
 
 @Module({
   imports: [
+    EventEmitterModule.forRoot(),
     ServeStaticModule.forRoot(
       {
         rootPath: path.join(process.cwd(), "public"),
@@ -134,6 +138,8 @@ import { AdminTelegramMonitoringModule } from "./admin-telegram-monitoring/admin
     DepositModule,
     WithdrawModule,
     AdminTelegramMonitoringModule,
+    NotificationModule,
+    CrmModule,
   ],
   providers: [WinstonLoggerService],
   controllers: [PublicFileController],

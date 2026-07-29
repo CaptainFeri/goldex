@@ -11,6 +11,12 @@ const PRIMARY_NAV: { to: string; label: string; icon: string; end?: boolean }[] 
 
 const SECONDARY_NAV: { to: string; label: string; icon: string; end?: boolean }[] = [
   { to: "/compare", label: "مقایسه تأمین‌کنندگان", icon: "📈" },
+  { to: "/crm", label: "داشبورد CRM", icon: "📊" },
+  { to: "/crm/users", label: "مشتریان", icon: "👥" },
+  { to: "/crm/tickets", label: "تیکت‌ها", icon: "🎫" },
+  { to: "/crm/tags", label: "برچسب‌ها", icon: "🏷️" },
+  { to: "/crm/segments", label: "بخش‌بندی", icon: "📋" },
+  { to: "/notifications", label: "اعلان‌ها", icon: "🔔" },
   { to: "/kyc", label: "احراز هویت", icon: "🪪" },
   { to: "/warehouse", label: "انبار", icon: "🏭" },
   { to: "/provider-finance", label: "مالی تأمین‌کنندگان", icon: "🏦" },

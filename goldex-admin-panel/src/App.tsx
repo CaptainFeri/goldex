@@ -25,6 +25,14 @@ import DepositsPage from "./pages/DepositsPage";
 import WithdrawsPage from "./pages/WithdrawsPage";
 import OcrAdminPage from "./pages/OcrAdminPage";
 import TelegramMarketPage from "./pages/TelegramMarketPage";
+import NotificationsPage from "./pages/NotificationsPage";
+import CrmDashboardPage from "./pages/crm/CrmDashboardPage";
+import CrmTicketsPage from "./pages/crm/CrmTicketsPage";
+import CrmTicketDetailPage from "./pages/crm/CrmTicketDetailPage";
+import CrmTagsPage from "./pages/crm/CrmTagsPage";
+import CrmSegmentsPage from "./pages/crm/CrmSegmentsPage";
+import CrmUsersPage from "./pages/crm/CrmUsersPage";
+import CrmUser360Page from "./pages/crm/CrmUser360Page";
 
 function RequireAuth({ children }: { children: JSX.Element }) {
   const { token, checkSession } = useAuth();
@@ -73,6 +81,14 @@ export default function App() {
         <Route path="/withdraws" element={<WithdrawsPage />} />
         <Route path="/ocr" element={<OcrAdminPage />} />
         <Route path="/telegram-market" element={<TelegramMarketPage />} />
+        <Route path="/notifications" element={<NotificationsPage />} />
+        <Route path="/crm" element={<CrmDashboardPage />} />
+        <Route path="/crm/users" element={<CrmUsersPage />} />
+        <Route path="/crm/users/:userId" element={<CrmUser360Page />} />
+        <Route path="/crm/tickets" element={<CrmTicketsPage />} />
+        <Route path="/crm/tickets/:id" element={<CrmTicketDetailPage />} />
+        <Route path="/crm/tags" element={<CrmTagsPage />} />
+        <Route path="/crm/segments" element={<CrmSegmentsPage />} />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>

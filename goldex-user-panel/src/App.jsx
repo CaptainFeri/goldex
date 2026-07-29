@@ -15,6 +15,8 @@ import SettingsPage from './pages/SettingsPage'
 import EliteTradePage from './pages/EliteTradePage'
 import CreditPage from './pages/CreditPage'
 import LevelPage from './pages/LevelPage'
+import NotificationPage from './pages/NotificationPage'
+import SupportPage from './pages/SupportPage'
 
 export default function App() {
   return (
@@ -42,6 +44,8 @@ export default function App() {
           <Route path="/settings" element={<SettingsPage />} />
           <Route path="/credit" element={<CreditPage />} />
           <Route path="/level" element={<LevelPage />} />
+          <Route path="/notifications" element={<NotificationPage />} />
+          <Route path="/support" element={<SupportPage />} />
         </Route>
 
         <Route path="*" element={<Navigate to="/login" replace />} />

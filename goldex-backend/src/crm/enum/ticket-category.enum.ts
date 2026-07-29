@@ -1,0 +1,9 @@
+export enum TicketCategoryEnum {
+  TRADING = "TRADING",
+  KYC = "KYC",
+  WITHDRAWAL = "WITHDRAWAL",
+  DEPOSIT = "DEPOSIT",
+  ACCOUNT = "ACCOUNT",
+  TECHNICAL = "TECHNICAL",
+  OTHER = "OTHER",
+}

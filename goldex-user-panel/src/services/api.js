@@ -253,3 +253,34 @@ export const levelApi = {
   getMyFeatures: async () =>
     unwrap(await http.get('/user-level/me/features')),
 }
+
+export const notificationApi = {
+  getNotifications: async (pageNumber = 1, pageSize = 50) =>
+    unwrap(await http.get(`/notifications?pageNumber=${pageNumber}&pageSize=${pageSize}`)),
+
+  getUnreadCount: async () =>
+    unwrap(await http.get('/notifications/unread-count')),
+
+  markAsRead: async (id) =>
+    unwrap(await http.patch(`/notifications/${id}/read`)),
+
+  markAllAsRead: async () =>
+    unwrap(await http.patch('/notifications/read-all')),
+}
+
+export const ticketApi = {
+  create: async (payload) =>
+    unwrap(await http.post('/tickets', payload)),
+
+  getMyTickets: async (pageNumber = 1, pageSize = 20) =>
+    unwrap(await http.get(`/tickets?pageNumber=${pageNumber}&pageSize=${pageSize}`)),
+
+  getById: async (id) =>
+    unwrap(await http.get(`/tickets/${id}`)),
+
+  addMessage: async (id, payload) =>
+    unwrap(await http.post(`/tickets/${id}/messages`, payload)),
+
+  setSatisfaction: async (id, score) =>
+    unwrap(await http.post(`/tickets/${id}/satisfaction`, { score })),
+}
