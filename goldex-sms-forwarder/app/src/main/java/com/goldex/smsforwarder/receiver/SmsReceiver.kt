@@ -3,6 +3,7 @@ package com.goldex.smsforwarder.receiver
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
+import android.os.Build
 import android.provider.Telephony
 import android.util.Log
 import com.goldex.smsforwarder.data.local.PreferencesManager
@@ -12,6 +13,14 @@ class SmsReceiver : BroadcastReceiver() {
 
     override fun onReceive(context: Context, intent: Intent) {
         if (intent.action != Telephony.Sms.Intents.SMS_RECEIVED_ACTION) return
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            val defaultSms = Telephony.Sms.getDefaultSmsPackage(context)
+            if (defaultSms != context.packageName) {
+                Log.w(TAG, "Android 13+: not default SMS app — SMS broadcasts may not arrive")
+                return
+            }
+        }
 
         val prefs = PreferencesManager(context)
         if (!prefs.isEnabled) return
