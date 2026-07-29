@@ -1,11 +1,24 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <color name="primary">#1565C0</color>
-    <color name="primary_variant">#0D47A1</color>
-    <color name="on_primary">#FFFFFF</color>
-    <color name="secondary">#42A5F5</color>
-    <color name="secondary_variant">#1E88E5</color>
-    <color name="on_secondary">#FFFFFF</color>
-    <color name="background">#FAFAFA</color>
-    <color name="on_background">#212121</color>
+    <color name="md_theme_primary">#1A6B52</color>
+    <color name="md_theme_primary_container">#A7F5D8</color>
+    <color name="md_theme_on_primary_container">#002114</color>
+    <color name="md_theme_secondary">#4C5C50</color>
+    <color name="md_theme_secondary_container">#CFE0D2</color>
+    <color name="md_theme_on_secondary_container">#0A1F12</color>
+    <color name="md_theme_surface">#FBFDF8</color>
+    <color name="md_theme_on_surface">#191C1A</color>
+    <color name="md_theme_surface_variant">#DCE5DA</color>
+    <color name="md_theme_on_surface_variant">#414941</color>
+    <color name="md_theme_background">#FBFDF8</color>
+    <color name="md_theme_on_background">#191C1A</color>
+    <color name="md_theme_error">#BA1A1A</color>
+    <color name="md_theme_error_container">#FFDAD6</color>
+    <color name="md_theme_on_error_container">#410002</color>
+    <color name="md_theme_outline">#717971</color>
+
+    <color name="active_green">#2E7D32</color>
+    <color name="inactive_gray">#9E9E9E</color>
+    <color name="card_background">#FFFFFF</color>
+    <color name="status_log_bg">#F5F5F5</color>
 </resources>

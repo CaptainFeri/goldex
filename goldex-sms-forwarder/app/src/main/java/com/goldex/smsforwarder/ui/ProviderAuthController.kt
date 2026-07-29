@@ -12,10 +12,15 @@ import android.widget.TextView
 import com.goldex.smsforwarder.data.local.PreferencesManager
 import com.goldex.smsforwarder.data.model.ProviderAuthResult
 import com.goldex.smsforwarder.data.model.ProviderType
+import com.goldex.smsforwarder.data.model.UpdateProviderRequest
+import com.goldex.smsforwarder.data.network.RetrofitClient
 import com.goldex.smsforwarder.receiver.OtpNotificationListener
 import com.goldex.smsforwarder.service.AuthForwardService
 import com.google.gson.Gson
 import com.google.gson.JsonParser
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 
 class ProviderAuthController(
     private val context: Context,
@@ -25,8 +30,11 @@ class ProviderAuthController(
 
     private val prefs = PreferencesManager(context)
     private val gson = Gson()
+    private val scope = CoroutineScope(Dispatchers.IO)
     private var providerType: ProviderType = ProviderType.ZARYAR
     private var providerName: String = ""
+    private var selectedProviderId: String = ""
+    private var pricingEngineUrl: String = ""
 
     private val otpReceiver = object : android.content.BroadcastReceiver() {
         override fun onReceive(ctx: Context, intent: Intent) {
@@ -38,7 +46,7 @@ class ProviderAuthController(
             val name = providerName.trim()
 
             if (name.isNotBlank() && !content.contains(name, ignoreCase = true)) {
-                Log.d(TAG, "OTP notification ignored — provider name '$name' not found in: $content")
+                Log.d(TAG, "OTP notification ignored — provider name '$name' not found")
                 return
             }
 
@@ -51,16 +59,21 @@ class ProviderAuthController(
         providerName: String,
         loginUrl: String,
         phone: String,
-        backendUrl: String
+        backendUrl: String,
+        providerId: String = "",
+        engineUrl: String = ""
     ) {
         this.providerType = providerType
         this.providerName = providerName
+        this.selectedProviderId = providerId
+        this.pricingEngineUrl = engineUrl
 
         prefs.providerType = providerType.name
         prefs.providerName = providerName
         prefs.phone = phone
         prefs.loginUrl = loginUrl
         prefs.backendUrl = backendUrl
+        prefs.selectedProviderId = providerId
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             context.registerReceiver(otpReceiver, OtpNotificationListener.createOtpCapturedFilter(),
@@ -156,7 +169,55 @@ class ProviderAuthController(
             ProviderType.TALAAB -> parseTalaabAuth(jsonBody)
         }
         log("Parsed auth: token=${result.token.take(20)}... uId=${result.uId}")
+
+        updateProviderCredentials(result)
         forwardToBackend(result)
+    }
+
+    private fun updateProviderCredentials(result: ProviderAuthResult) {
+        if (selectedProviderId.isBlank() || pricingEngineUrl.isBlank()) {
+            log("No provider selected or engine URL — skipping credentials update")
+            return
+        }
+
+        scope.launch {
+            try {
+                val authMap = mutableMapOf(
+                    "token" to result.token,
+                    "uId" to result.uId,
+                    "sessionId" to result.sessionId,
+                    "shopkeeperId" to result.shopkeeperId,
+                    "roleType" to result.roleType
+                )
+
+                val request = UpdateProviderRequest(auth = authMap, active = true)
+                val response = RetrofitClient.pricingEngineApi(engineUrl = pricingEngineUrl)
+                    .updateProvider(selectedProviderId, request)
+
+                val msg = if (response.isSuccessful) {
+                    "✓ Credentials updated on pricing engine"
+                } else {
+                    "✗ Failed to update credentials: ${response.code()}"
+                }
+                webView.post { log(msg) }
+            } catch (e: Exception) {
+                webView.post { log("✗ Error updating credentials: ${e.message}") }
+            }
+        }
+    }
+
+    private fun forwardToBackend(result: ProviderAuthResult) {
+        val backendUrl = prefs.backendUrl
+        if (backendUrl.isBlank()) {
+            log("No backend URL configured — skipping forward")
+            return
+        }
+        log("Forwarding auth data to: $backendUrl")
+        val intent = Intent(context, AuthForwardService::class.java).apply {
+            putExtra(AuthForwardService.EXTRA_AUTH_JSON, gson.toJson(result))
+            putExtra(AuthForwardService.EXTRA_BACKEND_URL, backendUrl)
+        }
+        context.startForegroundService(intent)
     }
 
     private fun parseZaryarAuth(jsonBody: String): ProviderAuthResult {
@@ -197,20 +258,6 @@ class ProviderAuthController(
         } catch (e: Exception) {
             ProviderAuthResult(rawResponse = jsonBody)
         }
-    }
-
-    private fun forwardToBackend(result: ProviderAuthResult) {
-        val backendUrl = prefs.backendUrl
-        if (backendUrl.isBlank()) {
-            log("No backend URL configured — auth result saved locally")
-            return
-        }
-        log("Forwarding auth data to: $backendUrl")
-        val intent = Intent(context, AuthForwardService::class.java).apply {
-            putExtra(AuthForwardService.EXTRA_AUTH_JSON, gson.toJson(result))
-            putExtra(AuthForwardService.EXTRA_BACKEND_URL, backendUrl)
-        }
-        context.startForegroundService(intent)
     }
 
     inner class WebViewBridge {

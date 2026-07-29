@@ -34,4 +34,14 @@ object RetrofitClient {
     val authForwardApi: AuthForwardApi by lazy {
         retrofit.create(AuthForwardApi::class.java)
     }
+
+    fun pricingEngineApi(engineUrl: String): PricingEngineApi {
+        val normalizedUrl = if (engineUrl.endsWith("/")) engineUrl else "$engineUrl/"
+        return Retrofit.Builder()
+            .baseUrl(normalizedUrl)
+            .client(okHttpClient)
+            .addConverterFactory(GsonConverterFactory.create())
+            .build()
+            .create(PricingEngineApi::class.java)
+    }
 }

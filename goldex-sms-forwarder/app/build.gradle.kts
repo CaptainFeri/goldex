@@ -47,6 +47,8 @@ dependencies {
     implementation("androidx.activity:activity-ktx:1.9.0")
     implementation("androidx.lifecycle:lifecycle-viewmodel-ktx:2.8.3")
     implementation("androidx.webkit:webkit:1.12.1")
+    implementation("androidx.recyclerview:recyclerview:1.3.2")
+    implementation("androidx.swiperefreshlayout:swiperefreshlayout:1.1.0")
 
     implementation("com.squareup.retrofit2:retrofit:2.11.0")
     implementation("com.squareup.retrofit2:converter-gson:2.11.0")
