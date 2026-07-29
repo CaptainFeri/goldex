@@ -169,9 +169,8 @@ class MainActivity : AppCompatActivity() {
         binding.configToolbar.title = provider.key
 
         binding.phoneEditText.setText(provider.phone ?: "")
-        binding.providerNameEditText.setText(provider.key)
-        binding.loginUrlEditText.setText(provider.apiBaseUrl ?: provider.baseUrl ?: "")
-        binding.backendUrlEditText.setText(prefs.backendUrl)
+        binding.providerNameEditText.setText(provider.persianName ?: provider.key)
+        binding.loginUrlEditText.setText(provider.webPanelUrl ?: provider.apiBaseUrl ?: provider.baseUrl ?: "")
 
         val type = if (provider.category == "talaab") ProviderType.TALAAB else ProviderType.ZARYAR
         when (type) {
@@ -188,7 +187,6 @@ class MainActivity : AppCompatActivity() {
         val phone = binding.phoneEditText.text.toString().trim()
         val providerName = binding.providerNameEditText.text.toString().trim()
         val loginUrl = binding.loginUrlEditText.text.toString().trim()
-        val backendUrl = binding.backendUrlEditText.text.toString().trim()
 
         if (phone.isBlank()) {
             Toast.makeText(this, "Please enter a phone number", Toast.LENGTH_SHORT).show()
@@ -220,7 +218,6 @@ class MainActivity : AppCompatActivity() {
             providerName = providerName,
             loginUrl = loginUrl,
             phone = phone,
-            backendUrl = backendUrl,
             providerId = selectedProviderId,
             engineUrl = engineUrl
         )

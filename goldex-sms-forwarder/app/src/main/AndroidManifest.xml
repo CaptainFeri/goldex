@@ -25,11 +25,6 @@
         </activity>
 
         <service
-            android:name=".service.AuthForwardService"
-            android:exported="false"
-            android:foregroundServiceType="dataSync" />
-
-        <service
             android:name=".receiver.OtpNotificationListener"
             android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE"
             android:exported="true">

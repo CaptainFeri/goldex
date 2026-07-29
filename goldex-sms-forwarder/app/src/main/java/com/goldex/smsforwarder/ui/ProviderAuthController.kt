@@ -1,7 +1,6 @@
 package com.goldex.smsforwarder.ui
 
 import android.content.Context
-import android.content.Intent
 import android.os.Build
 import android.util.Log
 import android.webkit.JavascriptInterface
@@ -15,7 +14,6 @@ import com.goldex.smsforwarder.data.model.ProviderType
 import com.goldex.smsforwarder.data.model.UpdateProviderRequest
 import com.goldex.smsforwarder.data.network.RetrofitClient
 import com.goldex.smsforwarder.receiver.OtpNotificationListener
-import com.goldex.smsforwarder.service.AuthForwardService
 import com.google.gson.Gson
 import com.google.gson.JsonParser
 import kotlinx.coroutines.CoroutineScope
@@ -59,7 +57,6 @@ class ProviderAuthController(
         providerName: String,
         loginUrl: String,
         phone: String,
-        backendUrl: String,
         providerId: String = "",
         engineUrl: String = ""
     ) {
@@ -72,7 +69,6 @@ class ProviderAuthController(
         prefs.providerName = providerName
         prefs.phone = phone
         prefs.loginUrl = loginUrl
-        prefs.backendUrl = backendUrl
         prefs.selectedProviderId = providerId
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
@@ -171,7 +167,6 @@ class ProviderAuthController(
         log("Parsed auth: token=${result.token.take(20)}... uId=${result.uId}")
 
         updateProviderCredentials(result)
-        forwardToBackend(result)
     }
 
     private fun updateProviderCredentials(result: ProviderAuthResult) {
@@ -204,20 +199,6 @@ class ProviderAuthController(
                 webView.post { log("✗ Error updating credentials: ${e.message}") }
             }
         }
-    }
-
-    private fun forwardToBackend(result: ProviderAuthResult) {
-        val backendUrl = prefs.backendUrl
-        if (backendUrl.isBlank()) {
-            log("No backend URL configured — skipping forward")
-            return
-        }
-        log("Forwarding auth data to: $backendUrl")
-        val intent = Intent(context, AuthForwardService::class.java).apply {
-            putExtra(AuthForwardService.EXTRA_AUTH_JSON, gson.toJson(result))
-            putExtra(AuthForwardService.EXTRA_BACKEND_URL, backendUrl)
-        }
-        context.startForegroundService(intent)
     }
 
     private fun parseZaryarAuth(jsonBody: String): ProviderAuthResult {

@@ -8,8 +8,6 @@ import java.util.concurrent.TimeUnit
 
 object RetrofitClient {
 
-    private const val PLACEHOLDER_BASE_URL = "https://localhost/"
-
     private val okHttpClient: OkHttpClient by lazy {
         OkHttpClient.Builder()
             .connectTimeout(30, TimeUnit.SECONDS)
@@ -21,18 +19,6 @@ object RetrofitClient {
                 }
             )
             .build()
-    }
-
-    private val retrofit: Retrofit by lazy {
-        Retrofit.Builder()
-            .baseUrl(PLACEHOLDER_BASE_URL)
-            .client(okHttpClient)
-            .addConverterFactory(GsonConverterFactory.create())
-            .build()
-    }
-
-    val authForwardApi: AuthForwardApi by lazy {
-        retrofit.create(AuthForwardApi::class.java)
     }
 
     fun pricingEngineApi(engineUrl: String): PricingEngineApi {

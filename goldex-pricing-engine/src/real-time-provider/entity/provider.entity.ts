@@ -24,6 +24,12 @@ export class ProviderEntity {
   apiBaseUrl?: string;
 
   @Column({ type: 'varchar', nullable: true })
+  persianName?: string;
+
+  @Column({ type: 'text', nullable: true })
+  webPanelUrl?: string;
+
+  @Column({ type: 'varchar', nullable: true })
   phone?: string;
 
   @Column({ type: 'text', nullable: true })

@@ -9,6 +9,8 @@ data class ProviderDto(
     val baseUrl: String? = null,
     val apiBaseUrl: String? = null,
     val phone: String? = null,
+    val persianName: String? = null,
+    val webPanelUrl: String? = null,
     val sendOtpUrl: String? = null,
     val verifyCodeUrl: String? = null,
     val active: Boolean = false,

@@ -29,6 +29,22 @@ export class CreateProviderDto {
   apiBaseUrl?: string;
 
   @ApiPropertyOptional({
+    description: 'Persian name for display in OTP SMS matching',
+    example: 'میررکنی',
+  })
+  @IsString()
+  @IsOptional()
+  persianName?: string;
+
+  @ApiPropertyOptional({
+    description: 'Web panel login URL',
+    example: 'https://panel.mirrokni.ir',
+  })
+  @IsString()
+  @IsOptional()
+  webPanelUrl?: string;
+
+  @ApiPropertyOptional({
     description: 'Send OTP endpoint URL (overrides default per category)',
     example: 'https://pnlapi.mirrokni.ir/api/User/SendConfirmCode',
   })

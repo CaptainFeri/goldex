@@ -31,6 +31,14 @@ class ProviderListAdapter(
 
         fun bind(provider: ProviderDto, onClick: (ProviderDto) -> Unit) {
             card.findViewById<TextView>(R.id.providerKey).text = provider.key
+            card.findViewById<TextView>(R.id.providerPersianName).apply {
+                if (!provider.persianName.isNullOrBlank()) {
+                    text = provider.persianName
+                    visibility = android.view.View.VISIBLE
+                } else {
+                    visibility = android.view.View.GONE
+                }
+            }
             card.findViewById<Chip>(R.id.categoryChip).apply {
                 text = provider.category.replaceFirstChar { it.uppercase() }
                 setChipBackgroundColorResource(

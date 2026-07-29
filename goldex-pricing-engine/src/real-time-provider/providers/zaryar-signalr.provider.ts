@@ -42,12 +42,31 @@ export class ZaryarSignalRProvider extends BaseRealtimeProvider {
       const response = await firstValueFrom(
         this.httpService.post(url, { filter: 'all' }, { headers: this.buildHeaders() }),
       );
-      const items = response.data.Data?.flatMap((g: any) => g.Items) || [];
-      const item = items.find((i: any) => i.ItemId === itemId);
-      if (item) {
-        const priceData = this.mapToPriceData(item);
-        await this.redisService.setCurrentPrice(this.config.key, itemId, priceData);
-        return priceData;
+      const groups = response.data.Data || [];
+      for (const group of groups) {
+        const rawItems = group.Items || [];
+        const item = rawItems.find((i: any) => i.Id === itemId);
+        if (item) {
+          const priceData = this.mapToPriceData({
+            ItemId: item.Id,
+            FeeBuy: item.FeeBuy,
+            FeeSell: item.FeeSell,
+            FeeBuyStr: item.FeeBuyStr,
+            FeeSellStr: item.FeeSellStr,
+            BuyCanDeal: item.BuyCanDeal,
+            SellCanDeal: item.SellCanDeal,
+            BuyRange: item.BuyRange,
+            SellRange: item.SellRange,
+            MaxBuyCount: item.MaxBuyCount,
+            MaxSellCount: item.MaxSellCount,
+            UpdatedTimeStr: item.UpdatedTimeStr,
+            IBuy: item.IBuy,
+            ISell: item.ISell,
+            IsShow: item.IsShow,
+          });
+          await this.redisService.setCurrentPrice(this.config.key, itemId, priceData);
+          return priceData;
+        }
       }
       return null;
     } catch {
@@ -94,20 +113,13 @@ export class ZaryarSignalRProvider extends BaseRealtimeProvider {
   private async fetchMetadataFromApi(): Promise<ItemMetadata[]> {
     try {
       const url = `${this.config.baseUrl.replace('/signalr', '')}/api/Home/ShopkeeperItemsList`;
-      const headers = {
-        Accept: 'application/json, text/plain, */*',
-        Authorization: `Bearer ${this.config.auth['token']}`,
-        'Content-Type': 'application/json;charset=UTF-8',
-        SessionId: this.config.auth['sessionId'],
-        ShopkeeperId: this.config.auth['shopkeeperId'],
-      };
       const response = await firstValueFrom(
-        this.httpService.post(url, { filter: 'all' }, { headers }),
+        this.httpService.post(url, { filter: 'all' }, { headers: this.buildHeaders() }),
       );
       const groups = response.data?.Data || [];
       const items: ItemMetadata[] = [];
       for (const group of groups) {
-        const groupName = group.GroupName;
+        const groupName = group.GroupName || '';
         let groupId = 0;
         let unit = '';
 
@@ -222,16 +234,10 @@ export class ZaryarSignalRProvider extends BaseRealtimeProvider {
 
     try {
       const url = `${this.config.baseUrl.replace('/signalr', '')}/api/Home/ShopkeeperItemsList`;
-      const headers = {
-        Accept: 'application/json, text/plain, */*',
-        Authorization: `Bearer ${this.config.auth['token']}`,
-        'Content-Type': 'application/json;charset=UTF-8',
-        SessionId: this.config.auth['sessionId'],
-        ShopkeeperId: this.config.auth['shopkeeperId'],
-      };
-      const body = { filter: 'all' };
 
-      const response = await firstValueFrom(this.httpService.post(url, body, { headers }));
+      const response = await firstValueFrom(
+        this.httpService.post(url, { filter: 'all' }, { headers: this.buildHeaders() }),
+      );
 
       const groups = response.data?.Data || [];
       for (const group of groups) {

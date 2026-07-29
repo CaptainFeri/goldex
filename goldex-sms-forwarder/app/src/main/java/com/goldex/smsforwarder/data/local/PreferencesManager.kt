@@ -28,10 +28,6 @@ class PreferencesManager(context: Context) {
         get() = prefs.getString(KEY_LOGIN_URL, "") ?: ""
         set(value) = prefs.edit().putString(KEY_LOGIN_URL, value).apply()
 
-    var backendUrl: String
-        get() = prefs.getString(KEY_BACKEND_URL, "") ?: ""
-        set(value) = prefs.edit().putString(KEY_BACKEND_URL, value).apply()
-
     var selectedProviderId: String
         get() = prefs.getString(KEY_SELECTED_PROVIDER_ID, "") ?: ""
         set(value) = prefs.edit().putString(KEY_SELECTED_PROVIDER_ID, value).apply()
@@ -43,7 +39,6 @@ class PreferencesManager(context: Context) {
         private const val KEY_PHONE = "phone"
         private const val KEY_PROVIDER_NAME = "provider_name"
         private const val KEY_LOGIN_URL = "login_url"
-        private const val KEY_BACKEND_URL = "backend_url"
         private const val KEY_SELECTED_PROVIDER_ID = "selected_provider_id"
     }
 }
