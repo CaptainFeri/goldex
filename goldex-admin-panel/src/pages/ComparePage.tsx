@@ -66,6 +66,12 @@ function CompareTab() {
     queryFn: async () => unwrap<PricePair[]>((await api.get("/admin/pair")).data),
   });
 
+  const activeProviders = useQuery({
+    queryKey: ["mon-providers"],
+    queryFn: async () => unwrap<string[]>((await api.get("/admin/monitoring/providers")).data),
+    refetchInterval: 30_000,
+  });
+
   const effectivePairId = pairId || pairs.data?.[0]?.id || "";
 
   const compare = useQuery({
@@ -109,6 +115,8 @@ function CompareTab() {
 
   const series = compare.data?.series ?? [];
 
+  const seriesKeys = new Set(series.map((s) => s.providerKey));
+
   return (
     <>
       <div className="toolbar" style={{ marginBottom: 4 }}>
@@ -149,6 +157,25 @@ function CompareTab() {
           {compare.isFetching ? <Badge kind="gray">به‌روزرسانی…</Badge> : <Badge kind="green">زنده</Badge>}
         </div>
       </div>
+
+      {activeProviders.data && activeProviders.data.length > 0 && (
+        <div className="toolbar" style={{ marginTop: 8, marginBottom: 4, flexWrap: "wrap", gap: 6 }}>
+          <label style={{ fontSize: 12, color: "var(--muted)" }}>تأمین‌کنندگان فعال:</label>
+          {activeProviders.data.map((p) => {
+            const hasData = seriesKeys.has(p);
+            return (
+              <span
+                key={p}
+                className={`badge ${hasData ? "green" : "gray"}`}
+                style={{ opacity: hasData ? 1 : 0.5, cursor: "default" }}
+                title={hasData ? "داده در این جفت‌ارز دارد" : "در این جفت‌ارز نگاشت نشده"}
+              >
+                {hasData ? "●" : "○"} {p}
+              </span>
+            );
+          })}
+        </div>
+      )}
 
       <div style={{ marginTop: 16 }}>
         {pairs.isLoading || compare.isLoading ? (

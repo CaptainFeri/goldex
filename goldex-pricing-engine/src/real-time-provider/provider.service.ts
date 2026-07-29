@@ -57,7 +57,10 @@ export class ProviderService {
     Object.assign(provider, data);
     const saved = await this.providerRepo.save(provider);
 
-    if (data.active === false && isRunning) {
+    if (data.auth !== undefined && isRunning) {
+      this.formatter.log('ProviderService', `restart-${provider.key} (auth changed)`);
+      await this.providerManager.restartProvider(saved.key);
+    } else if (data.active === false && isRunning) {
       this.formatter.log('ProviderService', `stop-${provider.key}`);
       await this.providerManager.stopProvider(saved.key);
     } else if (data.active === true && !isRunning) {
