@@ -259,6 +259,24 @@ export class AdminCrmController {
     return { data: { success: true } };
   }
 
+  @Post("users/:userId/segments/:segmentId")
+  @UseGuards(AdminAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: "Assign user to segment" })
+  async assignUserToSegment(@Param("userId") userId: string, @Param("segmentId") segmentId: string) {
+    await this.segmentService.assignUsersManually(segmentId, [userId]);
+    return { data: { success: true } };
+  }
+
+  @Delete("users/:userId/segments/:segmentId")
+  @UseGuards(AdminAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: "Unassign user from segment" })
+  async unassignUserFromSegment(@Param("userId") userId: string, @Param("segmentId") segmentId: string) {
+    await this.segmentService.unassignUser(segmentId, userId);
+    return { data: { success: true } };
+  }
+
   // ---- Communication Logs ----
 
   @Get("users/:userId/communications")

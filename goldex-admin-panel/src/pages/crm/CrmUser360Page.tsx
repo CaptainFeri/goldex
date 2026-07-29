@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { api, unwrap, apiError } from "../../api/client";
 import { Loading, Card, Badge } from "../../components/ui";
@@ -12,22 +12,35 @@ export default function CrmUser360Page() {
   const [data, setData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+
   const [noteText, setNoteText] = useState("");
   const [addingNote, setAddingNote] = useState(false);
 
-  useEffect(() => {
-    const load = async () => {
-      try {
-        const res = await api.get(`/admin/crm/users/${userId}/360`);
-        setData(unwrap(res.data));
-      } catch (err: any) {
-        setError(apiError(err));
-      } finally {
-        setLoading(false);
-      }
-    };
-    load();
+  const [allTags, setAllTags] = useState<any[]>([]);
+  const [allSegments, setAllSegments] = useState<any[]>([]);
+  const [selectedTagId, setSelectedTagId] = useState("");
+  const [selectedSegmentId, setSelectedSegmentId] = useState("");
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    try {
+      const res = await api.get(`/admin/crm/users/${userId}/360`);
+      setData(unwrap(res.data));
+    } catch (err: any) {
+      setError(apiError(err));
+    } finally {
+      setLoading(false);
+    }
   }, [userId]);
+
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  useEffect(() => {
+    api.get("/admin/crm/tags").then((res) => setAllTags(unwrap(res.data) || [])).catch(() => {});
+    api.get("/admin/crm/segments").then((res) => setAllSegments(unwrap(res.data) || [])).catch(() => {});
+  }, []);
 
   const addNote = async () => {
     if (!noteText.trim()) return;
@@ -35,12 +48,51 @@ export default function CrmUser360Page() {
     try {
       await api.post(`/admin/crm/users/${userId}/notes`, { content: noteText });
       setNoteText("");
-      const res = await api.get(`/admin/crm/users/${userId}/360`);
-      setData(unwrap(res.data));
+      load();
     } catch (err: any) {
       alert(apiError(err));
     } finally {
       setAddingNote(false);
+    }
+  };
+
+  const assignTag = async () => {
+    if (!selectedTagId) return;
+    try {
+      await api.post(`/admin/crm/users/${userId}/tags/${selectedTagId}`);
+      setSelectedTagId("");
+      load();
+    } catch (err: any) {
+      alert(apiError(err));
+    }
+  };
+
+  const unassignTag = async (tagId: string) => {
+    try {
+      await api.delete(`/admin/crm/users/${userId}/tags/${tagId}`);
+      load();
+    } catch (err: any) {
+      alert(apiError(err));
+    }
+  };
+
+  const assignSegment = async () => {
+    if (!selectedSegmentId) return;
+    try {
+      await api.post(`/admin/crm/users/${userId}/segments/${selectedSegmentId}`);
+      setSelectedSegmentId("");
+      load();
+    } catch (err: any) {
+      alert(apiError(err));
+    }
+  };
+
+  const unassignSegment = async (segmentId: string) => {
+    try {
+      await api.delete(`/admin/crm/users/${userId}/segments/${segmentId}`);
+      load();
+    } catch (err: any) {
+      alert(apiError(err));
     }
   };
 
@@ -114,6 +166,69 @@ export default function CrmUser360Page() {
               ))}
             </div>
           )}
+        </Card>
+      </div>
+
+      <div className="row" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1rem", marginBottom: "1rem" }}>
+        <Card title="برچسب‌ها">
+          <div style={{ display: "flex", flexWrap: "wrap", gap: "0.5rem", marginBottom: "1rem" }}>
+            {data.tags?.length === 0 ? (
+              <div className="empty-state">بدون برچسب</div>
+            ) : (
+              data.tags?.map((t: any) => (
+                <span key={t.id} style={{
+                  display: "inline-flex", alignItems: "center", gap: "0.25rem",
+                  background: t.color, color: "#fff", padding: "0.25rem 0.5rem", borderRadius: 4, fontSize: "0.85rem",
+                }}>
+                  {t.name}
+                  <button onClick={() => unassignTag(t.id)} style={{
+                    background: "none", border: "none", color: "#fff", cursor: "pointer", fontSize: "1rem", lineHeight: 1, padding: 0,
+                  }} title="حذف برچسب">×</button>
+                </span>
+              ))
+            )}
+          </div>
+          <div style={{ display: "flex", gap: "0.5rem" }}>
+            <select className="input" value={selectedTagId} onChange={(e) => setSelectedTagId(e.target.value)} style={{ flex: 1 }}>
+              <option value="">انتخاب برچسب...</option>
+              {allTags.filter((t: any) => !data.tags?.some((ut: any) => ut.id === t.id)).map((t: any) => (
+                <option key={t.id} value={t.id}>{t.name}</option>
+              ))}
+            </select>
+            <button className="btn" onClick={assignTag} disabled={!selectedTagId}>افزودن</button>
+          </div>
+        </Card>
+
+        <Card title="بخش‌بندی‌ها">
+          <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem", marginBottom: "1rem" }}>
+            {data.segments?.length === 0 ? (
+              <div className="empty-state">بدون بخش‌بندی</div>
+            ) : (
+              data.segments?.map((s: any) => (
+                <div key={s.id} style={{
+                  display: "flex", justifyContent: "space-between", alignItems: "center",
+                  padding: "0.5rem", background: "var(--bg-active)", borderRadius: 4, fontSize: "0.85rem",
+                }}>
+                  <div>
+                    <strong>{s.name}</strong>
+                    {s.description && <span style={{ color: "var(--text-faint)", marginRight: "0.5rem" }}>— {s.description}</span>}
+                  </div>
+                  <button onClick={() => unassignSegment(s.id)} style={{
+                    background: "none", border: "none", color: "var(--text-danger, red)", cursor: "pointer", fontSize: "1.2rem", lineHeight: 1, padding: "0 0.25rem",
+                  }} title="حذف از بخش">×</button>
+                </div>
+              ))
+            )}
+          </div>
+          <div style={{ display: "flex", gap: "0.5rem" }}>
+            <select className="input" value={selectedSegmentId} onChange={(e) => setSelectedSegmentId(e.target.value)} style={{ flex: 1 }}>
+              <option value="">انتخاب بخش...</option>
+              {allSegments.filter((s: any) => !data.segments?.some((us: any) => us.id === s.id)).map((s: any) => (
+                <option key={s.id} value={s.id}>{s.name}</option>
+              ))}
+            </select>
+            <button className="btn" onClick={assignSegment} disabled={!selectedSegmentId}>افزودن</button>
+          </div>
         </Card>
       </div>
 

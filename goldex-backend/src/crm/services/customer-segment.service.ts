@@ -104,4 +104,16 @@ export class CustomerSegmentService {
     const assignments = await this.assignmentRepository.find({ where: { segmentId } });
     return assignments.map((a) => a.userId);
   }
+
+  async getUserSegments(userId: string): Promise<CustomerSegmentEntity[]> {
+    const assignments = await this.assignmentRepository.find({
+      where: { userId },
+      relations: { segment: true },
+    });
+    return assignments.map((a) => a.segment);
+  }
+
+  async unassignUser(segmentId: string, userId: string): Promise<void> {
+    await this.assignmentRepository.delete({ segmentId, userId });
+  }
 }

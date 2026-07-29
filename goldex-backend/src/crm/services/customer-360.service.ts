@@ -37,6 +37,7 @@ export class Customer360Service {
     const wallets = await this.walletRepository.find({ where: { userId }, relations: { symbol: true } });
     const notes = await this.noteService.findByUser(userId);
     const tags = await this.tagService.getUserTags(userId);
+    const segments = await this.segmentService.getUserSegments(userId);
     const tickets = await this.ticketService.findUserTickets(userId, 1, 10);
     const communications = await this.communicationLogService.findByUser(userId, 1, 20);
 
@@ -73,6 +74,7 @@ export class Customer360Service {
       } : null,
       wallets: walletSummary,
       tags,
+      segments,
       notes,
       tickets: tickets.data,
       communications: communications.data,

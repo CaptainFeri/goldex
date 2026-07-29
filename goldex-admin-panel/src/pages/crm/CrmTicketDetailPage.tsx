@@ -151,6 +151,7 @@ export default function CrmTicketDetailPage() {
               <div><strong>ایجاد:</strong> {fmtDate(ticket.createAt)}</div>
               {ticket.resolvedAt && <div><strong>حل شده:</strong> {fmtDate(ticket.resolvedAt)}</div>}
               {ticket.satisfactionScore && <div><strong>رضایت:</strong> {ticket.satisfactionScore}/5</div>}
+              {ticket.description && <div><strong>توضیحات:</strong><p style={{ margin: "0.25rem 0 0 0", whiteSpace: "pre-wrap", background: "var(--bg)", padding: "0.5rem", borderRadius: 6, fontSize: "0.85rem" }}>{ticket.description}</p></div>}
             </div>
           </Card>
 
