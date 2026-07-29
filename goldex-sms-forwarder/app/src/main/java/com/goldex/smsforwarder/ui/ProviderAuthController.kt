@@ -1,6 +1,7 @@
 package com.goldex.smsforwarder.ui
 
 import android.content.Context
+import android.content.Intent
 import android.os.Build
 import android.util.Log
 import android.webkit.JavascriptInterface
