@@ -12,7 +12,6 @@ import androidx.core.content.ContextCompat
 import com.goldex.smsforwarder.data.local.PreferencesManager
 import com.goldex.smsforwarder.data.model.ProviderType
 import com.goldex.smsforwarder.databinding.ActivityMainBinding
-import com.google.android.material.tabs.TabLayout
 
 class MainActivity : AppCompatActivity() {
 
@@ -35,12 +34,8 @@ class MainActivity : AppCompatActivity() {
 
         prefs = PreferencesManager(this)
 
-        setupSmsForwarderTab()
-        setupProviderAuthTab()
-        setupTabs()
-
-        loadSmsSettings()
-        loadProviderAuthSettings()
+        setupProviderAuth()
+        loadSettings()
 
         requestNotificationPermission()
     }
@@ -58,66 +53,7 @@ class MainActivity : AppCompatActivity() {
         super.onBackPressed()
     }
 
-    private fun setupTabs() {
-        binding.tabLayout.addOnTabSelectedListener(object : TabLayout.OnTabSelectedListener {
-            override fun onTabSelected(tab: TabLayout.Tab) {
-                when (tab.position) {
-                    0 -> {
-                        binding.smsForwarderPage.visibility = View.VISIBLE
-                        binding.providerAuthPage.visibility = View.GONE
-                        providerAuthController?.stop()
-                        closeProviderPanel()
-                    }
-                    1 -> {
-                        binding.smsForwarderPage.visibility = View.GONE
-                        binding.providerAuthPage.visibility = View.VISIBLE
-                    }
-                }
-            }
-
-            override fun onTabUnselected(tab: TabLayout.Tab) {}
-            override fun onTabReselected(tab: TabLayout.Tab) {}
-        })
-    }
-
-    private fun setupSmsForwarderTab() {
-        binding.saveButton.setOnClickListener { saveSmsSettings() }
-    }
-
-    private fun loadSmsSettings() {
-        binding.targetUrlEditText.setText(prefs.targetUrl)
-        binding.keywordEditText.setText(prefs.keyword)
-        binding.enabledSwitch.isChecked = prefs.isEnabled
-        updateSmsStatus()
-    }
-
-    private fun saveSmsSettings() {
-        val url = binding.targetUrlEditText.text.toString().trim()
-        val keyword = binding.keywordEditText.text.toString().trim()
-
-        if (url.isBlank()) {
-            Toast.makeText(this, "Please enter a target URL", Toast.LENGTH_SHORT).show()
-            return
-        }
-
-        prefs.targetUrl = url
-        prefs.keyword = keyword
-        prefs.isEnabled = binding.enabledSwitch.isChecked
-
-        Toast.makeText(this, "Settings saved", Toast.LENGTH_SHORT).show()
-        updateSmsStatus()
-    }
-
-    private fun updateSmsStatus() {
-        binding.statusText.text = if (prefs.isEnabled && prefs.targetUrl.isNotBlank()) {
-            val kw = prefs.keyword.ifBlank { "all messages" }
-            "Active — forwarding messages containing \"$kw\""
-        } else {
-            "Inactive — enable and configure above"
-        }
-    }
-
-    private fun setupProviderAuthTab() {
+    private fun setupProviderAuth() {
         binding.providerTypeRadioGroup.setOnCheckedChangeListener { _, checkedId ->
             val type = if (checkedId == binding.providerTypeTalaab.id) {
                 ProviderType.TALAAB
@@ -130,8 +66,9 @@ class MainActivity : AppCompatActivity() {
         binding.launchPanelButton.setOnClickListener { launchProviderPanel() }
     }
 
-    private fun loadProviderAuthSettings() {
+    private fun loadSettings() {
         binding.phoneEditText.setText(prefs.phone)
+        binding.providerNameEditText.setText(prefs.providerName)
         binding.loginUrlEditText.setText(prefs.loginUrl)
         binding.backendUrlEditText.setText(prefs.backendUrl)
 
@@ -145,11 +82,12 @@ class MainActivity : AppCompatActivity() {
             ProviderType.TALAAB -> binding.providerTypeTalaab.isChecked = true
         }
 
-        updateAuthStatus("Ready")
+        updateStatus("Ready")
     }
 
     private fun launchProviderPanel() {
         val phone = binding.phoneEditText.text.toString().trim()
+        val providerName = binding.providerNameEditText.text.toString().trim()
         val loginUrl = binding.loginUrlEditText.text.toString().trim()
         val backendUrl = binding.backendUrlEditText.text.toString().trim()
 
@@ -173,10 +111,10 @@ class MainActivity : AppCompatActivity() {
             webView = binding.providerWebView,
             statusLog = binding.authStatusLog
         )
-        providerAuthController!!.start(type, loginUrl, phone, backendUrl)
+        providerAuthController!!.start(type, providerName, loginUrl, phone, backendUrl)
 
         Toast.makeText(this, "Notification: enable access in Settings → Notification access", Toast.LENGTH_LONG).show()
-        updateAuthStatus("Panel launched — complete login in the WebView")
+        updateStatus("Panel launched — complete login in the WebView")
     }
 
     private fun closeProviderPanel() {
@@ -185,9 +123,10 @@ class MainActivity : AppCompatActivity() {
         binding.providerWebView.visibility = View.GONE
         binding.providerAuthConfigForm.visibility = View.VISIBLE
         binding.launchPanelButton.text = "Launch Provider Panel"
+        updateStatus("Ready")
     }
 
-    private fun updateAuthStatus(message: String) {
+    private fun updateStatus(message: String) {
         binding.authStatusLog.text = message
     }
 

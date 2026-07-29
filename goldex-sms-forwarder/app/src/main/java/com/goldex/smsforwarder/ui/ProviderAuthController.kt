@@ -2,7 +2,6 @@ package com.goldex.smsforwarder.ui
 
 import android.content.Context
 import android.content.Intent
-import android.content.IntentFilter
 import android.os.Build
 import android.util.Log
 import android.webkit.JavascriptInterface
@@ -27,20 +26,38 @@ class ProviderAuthController(
     private val prefs = PreferencesManager(context)
     private val gson = Gson()
     private var providerType: ProviderType = ProviderType.ZARYAR
+    private var providerName: String = ""
 
     private val otpReceiver = object : android.content.BroadcastReceiver() {
         override fun onReceive(ctx: Context, intent: Intent) {
-            val otp = OtpNotificationListener.getOtpFromIntent(intent)
-            if (otp != null) {
-                onOtpCaptured(otp)
+            val otp = OtpNotificationListener.getOtpFromIntent(intent) ?: return
+            val title = OtpNotificationListener.getNotificationTitle(intent) ?: ""
+            val text = OtpNotificationListener.getNotificationText(intent) ?: ""
+
+            val content = "$title $text"
+            val name = providerName.trim()
+
+            if (name.isNotBlank() && !content.contains(name, ignoreCase = true)) {
+                Log.d(TAG, "OTP notification ignored — provider name '$name' not found in: $content")
+                return
             }
+
+            onOtpCaptured(otp)
         }
     }
 
-    fun start(providerType: ProviderType, loginUrl: String, phone: String, backendUrl: String) {
+    fun start(
+        providerType: ProviderType,
+        providerName: String,
+        loginUrl: String,
+        phone: String,
+        backendUrl: String
+    ) {
         this.providerType = providerType
+        this.providerName = providerName
 
         prefs.providerType = providerType.name
+        prefs.providerName = providerName
         prefs.phone = phone
         prefs.loginUrl = loginUrl
         prefs.backendUrl = backendUrl
@@ -128,7 +145,7 @@ class ProviderAuthController(
     private fun log(message: String) {
         Log.d(TAG, message)
         val current = statusLog.text.toString()
-        val newLog = if (current.isEmpty()) message else "$current\n$message"
+        val newLog = if (current.isEmpty() || current == "Ready") message else "$current\n$message"
         statusLog.text = newLog
     }
 
