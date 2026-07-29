@@ -27,6 +27,16 @@ export class ProviderDto {
   @IsString()
   phone!: string;
 
+  @ApiPropertyOptional({ description: 'Persian name for display' })
+  @IsString()
+  @IsOptional()
+  persianName?: string;
+
+  @ApiPropertyOptional({ description: 'Web panel login URL' })
+  @IsString()
+  @IsOptional()
+  webPanelUrl?: string;
+
   @ApiPropertyOptional({ description: 'Send OTP endpoint URL' })
   @IsString()
   @IsOptional()
