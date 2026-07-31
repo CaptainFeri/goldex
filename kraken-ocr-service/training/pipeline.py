@@ -35,13 +35,20 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import time
 from pathlib import Path
+
+from rich.console import Console
+from rich.panel import Panel
+from rich.table import Table
 
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s %(levelname)s %(message)s",
 )
 logger = logging.getLogger("training")
+
+console = Console()
 
 
 def _find_images(data_dir: Path) -> list[Path]:
@@ -89,14 +96,39 @@ def _split_data(data_dir: Path, val_split: float):
     return train_list, val_list
 
 
-def cmd(*args: str) -> None:
+def _print_config(table_title: str, rows: list[tuple[str, str]]) -> None:
+    table = Table(
+        title=table_title,
+        show_header=False,
+        pad_edge=False,
+        title_justify="left",
+    )
+    table.add_column(style="cyan", no_wrap=True)
+    table.add_column()
+    for key, value in rows:
+        table.add_row(key, value)
+    console.print(table)
+
+
+def cmd(*args: str) -> subprocess.CompletedProcess:
     logger.info("Running: %s", " ".join(args))
-    result = subprocess.run(args, capture_output=True, text=True)
+    console.print(f"[bold cyan]▶[/] [white]{' '.join(args)}[/]")
+    with console.status("[cyan]Running...[/]", spinner="dots"):
+        result = subprocess.run(args, capture_output=True, text=True)
     if result.returncode != 0:
         logger.error("STDERR:\n%s", result.stderr)
+        console.print(
+            Panel(
+                result.stderr.strip(),
+                title="[bold red]Command failed[/]",
+                border_style="red",
+                title_align="left",
+            )
+        )
         raise RuntimeError(f"Command failed: {' '.join(args)}")
     if result.stdout:
         logger.info("STDOUT:\n%s", result.stdout.strip())
+    return result
 
 
 def train(
@@ -109,20 +141,38 @@ def train(
     device: str = "cpu",
 ) -> None:
     logger.info("=== Training Pipeline ===")
-    logger.info("Data: %s", data_dir)
-    logger.info("Base model: %s", base_model)
-    logger.info("Output: %s", output)
-    logger.info("Epochs: %d, Batch: %d, Device: %s", epochs, batch_size, device)
+    _print_config(
+        "[bold]Training configuration[/]",
+        [
+            ("Data", str(data_dir)),
+            ("Base model", str(base_model)),
+            ("Output", str(output)),
+            ("Epochs", str(epochs)),
+            ("Batch size", str(batch_size)),
+            ("Val split", f"{val_split:.0%}"),
+            ("Device", device),
+        ],
+    )
 
-    valid = _check_ground_truth(data_dir)
+    start = time.monotonic()
+
+    with console.status("[cyan]Checking ground truth files...[/]", spinner="dots"):
+        valid = _check_ground_truth(data_dir)
     if valid == 0:
         raise SystemExit(
             "No valid ground truth found. "
             "Place .gt.txt files beside each image."
         )
     logger.info("Valid ground truth pairs: %d", valid)
+    console.print(f"[green]✓[/] Valid ground truth pairs: [bold]{valid}[/]")
 
-    train_list, val_list = _split_data(data_dir, val_split)
+    with console.status("[cyan]Splitting train/validation...[/]", spinner="dots"):
+        train_list, val_list = _split_data(data_dir, val_split)
+    train_count = len(train_list.read_text(encoding="utf-8").splitlines())
+    val_count = len(val_list.read_text(encoding="utf-8").splitlines())
+    console.print(
+        f"[green]✓[/] Split: [bold]{train_count}[/] train / [bold]{val_count}[/] val"
+    )
 
     train_base = output.with_suffix("")
 
@@ -146,6 +196,19 @@ def train(
 
     _write_metadata(output, base_model, epochs, batch_size, device)
     logger.info("=== Training complete: %s ===", output)
+
+    elapsed = time.monotonic() - start
+    size_mb = output.stat().st_size / 1e6
+    console.print(
+        Panel(
+            f"[green]✓[/] Model saved: [bold]{output}[/]\n"
+            f"    Size: [bold]{size_mb:.1f} MB[/]\n"
+            f"    Duration: [bold]{elapsed:.0f}s[/]",
+            title="[bold green]Training complete[/]",
+            border_style="green",
+            title_align="left",
+        )
+    )
 
 
 def _write_metadata(
@@ -184,17 +247,27 @@ def _write_metadata(
 
 def evaluate(model: Path, data_dir: Path) -> None:
     logger.info("=== Evaluation ===")
+    _print_config(
+        "[bold]Evaluation configuration[/]",
+        [
+            ("Model", str(model)),
+            ("Data", str(data_dir)),
+        ],
+    )
     images = _find_images(data_dir)
     if not images:
         logger.error("No images found in %s", data_dir)
+        console.print(f"[red]✗[/] No images found in [bold]{data_dir}[/]")
         return
 
     test_list = data_dir.parent / "test_set.list"
     test_list.write_text(
         "\n".join(str(p.resolve()) for p in images), encoding="utf-8"
     )
+    console.print(f"[green]✓[/] Test images: [bold]{len(images)}[/]")
 
     cmd("ketos", "-v", "test", "-m", str(model), "-e", str(test_list))
+    console.print("[bold green]Evaluation complete[/]")
 
 
 def main() -> None:
