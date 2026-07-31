@@ -46,7 +46,7 @@ RUN groupadd -r ocr --gid 1001 && \
 COPY --chown=ocr:ocr app/ ./app/
 COPY --chown=ocr:ocr training/ ./training/
 COPY --chown=ocr:ocr data_model/ ./data_model/
-COPY --chown=ocr:ocr docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
+COPY --chown=ocr:ocr --chmod=+x docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
 
 USER ocr
 
