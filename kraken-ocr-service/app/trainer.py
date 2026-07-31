@@ -90,16 +90,18 @@ class SelfTrainer:
         out_dir = Path(tempfile.mkdtemp(prefix="kraken_train_"))
         try:
             train_list = self._prepare_training_data(samples, out_dir)
-            output_path = out_dir / "trained.mlmodel"
+            output_base = out_dir / "trained"
+            output_path = Path(f"{output_base}_best.mlmodel")
 
             cmd = [
-                "ketos", "train",
-                "-f", str(train_list),
+                "ketos", "-v", "train",
+                "-t", str(train_list),
                 "-i", str(self._settings.model_path),
-                "-o", str(output_path),
-                "--epochs", str(self._settings.train_epochs),
-                "--batch-size", str(self._settings.train_batch_size),
-                "--device", self._settings.train_device,
+                "-o", str(output_base),
+                "-N", str(self._settings.train_epochs),
+                "-B", str(self._settings.train_batch_size),
+                "-d", self._settings.train_device,
+                "--resize", "union",
             ]
             logger.info("Running: %s", " ".join(cmd))
             result = subprocess.run(
@@ -107,6 +109,10 @@ class SelfTrainer:
             )
             if result.returncode != 0:
                 raise RuntimeError(f"Training failed:\n{result.stderr}")
+            if not output_path.exists():
+                raise RuntimeError(
+                    f"Training finished but no model produced at {output_path}"
+                )
 
             trained_path = self._settings.model_dir / "trained.mlmodel"
             shutil.copy2(output_path, trained_path)
