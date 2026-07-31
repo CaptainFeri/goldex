@@ -103,8 +103,17 @@ services:
         condition: service_started
     ports:
       - "${OCR_WORKER_PORT:-8000}:8000"
+    environment:
+      OCR_TRAIN_ON_START: ${OCR_TRAIN_ON_START:-1}
+      OCR_MODEL_PATH: ${OCR_MODEL_PATH:-/models/persian_best.mlmodel}
+      OCR_BASE_MODEL: ${OCR_BASE_MODEL:-/app/data_model/arabic_best.mlmodel}
+      OCR_TRAIN_DATA_DIR: ${OCR_TRAIN_DATA_DIR:-/app/data_model/training/data}
+      OCR_TRAIN_EPOCHS: ${OCR_TRAIN_EPOCHS:-10}
+      OCR_TRAIN_BATCH_SIZE: ${OCR_TRAIN_BATCH_SIZE:-8}
+      OCR_TRAIN_DEVICE: ${OCR_TRAIN_DEVICE:-cpu}
     volumes:
       - kraken_models:/models
+      - ocr_feedback:/data/feedback
     networks:
       - goldex-network
   monitor:
@@ -325,6 +334,7 @@ volumes:
   backend_logs:
   pricing_engine_logs:
   kraken_models:
+  ocr_feedback:
 
 # ════════════════════════════════════════════
 # NETWORKS

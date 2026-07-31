@@ -23,7 +23,14 @@ ENV OMP_NUM_THREADS=1 \
     MKL_NUM_THREADS=1 \
     DNNL_PRIMITIVE_CACHE_CAPACITY=0 \
     PYTHONUNBUFFERED=1 \
-    PYTHONDONTWRITEBYTECODE=1
+    PYTHONDONTWRITEBYTECODE=1 \
+    OCR_TRAIN_ON_START=0 \
+    OCR_MODEL_PATH=/models/persian_best.mlmodel \
+    OCR_BASE_MODEL=/app/data_model/arabic_best.mlmodel \
+    OCR_TRAIN_DATA_DIR=/app/data_model/training/data \
+    OCR_TRAIN_EPOCHS=10 \
+    OCR_TRAIN_BATCH_SIZE=8 \
+    OCR_TRAIN_DEVICE=cpu
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     libgomp1 \
@@ -37,13 +44,16 @@ RUN groupadd -r ocr --gid 1001 && \
     chown -R ocr:ocr /app /models /data
 
 COPY --chown=ocr:ocr app/ ./app/
+COPY --chown=ocr:ocr training/ ./training/
 COPY --chown=ocr:ocr data_model/ ./data_model/
+COPY --chown=ocr:ocr docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
 
 USER ocr
 
-HEALTHCHECK --interval=15s --timeout=5s --start-period=30s --retries=3 \
+# start-period covers the one-time bootstrap training on first boot
+HEALTHCHECK --interval=15s --timeout=5s --start-period=21600s --retries=3 \
     CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')" || exit 1
 
 EXPOSE 8000
 
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+ENTRYPOINT ["/usr/local/bin/docker-entrypoint.sh"]

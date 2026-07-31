@@ -46,6 +46,11 @@ lerna-debug.log*
 .temp
 .tmp
 
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+
 # Runtime data
 pids
 *.pid
