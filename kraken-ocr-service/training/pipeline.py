@@ -124,17 +124,24 @@ def train(
 
     train_list, val_list = _split_data(data_dir, val_split)
 
+    train_base = output.with_suffix("")
+
     cmd(
         "ketos",
         "train",
-        "-f", str(train_list),
+        "-t", str(train_list),
+        "-e", str(val_list),
         "-i", str(base_model),
-        "-o", str(output),
-        "--val-files", str(val_list),
-        "--epochs", str(epochs),
-        "--batch-size", str(batch_size),
-        "--device", device,
+        "-o", str(train_base),
+        "-N", str(epochs),
+        "-B", str(batch_size),
+        "-d", device,
+        "--resize", "union",
     )
+
+    best_model = Path(f"{train_base}_best.mlmodel")
+    if best_model.exists() and best_model != output:
+        shutil.move(str(best_model), str(output))
 
     _write_metadata(output, base_model, epochs, batch_size, device)
     logger.info("=== Training complete: %s ===", output)
@@ -186,7 +193,7 @@ def evaluate(model: Path, data_dir: Path) -> None:
         "\n".join(str(p.resolve()) for p in images), encoding="utf-8"
     )
 
-    cmd("ketos", "test", "-m", str(model), "-f", str(test_list))
+    cmd("ketos", "test", "-m", str(model), "-e", str(test_list))
 
 
 def main() -> None:
