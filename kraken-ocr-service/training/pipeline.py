@@ -128,6 +128,7 @@ def train(
 
     cmd(
         "ketos",
+        "-v",
         "train",
         "-t", str(train_list),
         "-e", str(val_list),
@@ -193,7 +194,7 @@ def evaluate(model: Path, data_dir: Path) -> None:
         "\n".join(str(p.resolve()) for p in images), encoding="utf-8"
     )
 
-    cmd("ketos", "test", "-m", str(model), "-e", str(test_list))
+    cmd("ketos", "-v", "test", "-m", str(model), "-e", str(test_list))
 
 
 def main() -> None:
