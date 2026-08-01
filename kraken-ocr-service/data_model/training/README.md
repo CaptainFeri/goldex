@@ -37,6 +37,10 @@ Persian model automatically if the trained model is missing:
   `OCR_TRAIN_BATCH_SIZE` (default 8), `OCR_TRAIN_DEVICE` (default cpu),
   `OCR_TRAIN_THREADS` (default: all available CPU cores; pass e.g. `4` to cap
   OpenMP threads/data workers).
+- Multi-worker training needs shared memory: the compose file sets
+  `shm_size: 1g` on `ocr-worker`. With Docker's default 64MB `/dev/shm`,
+  PyTorch DataLoader workers crash with `Bus error` /
+  `No space left on device`.
 - Set `OCR_TRAIN_ON_START=0` to never bootstrap (falls back to downloading
   the base Arabic model).
 

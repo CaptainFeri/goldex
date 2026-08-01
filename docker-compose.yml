@@ -98,6 +98,7 @@ services:
     build: ./kraken-ocr-service
     container_name: goldex-ocr-worker
     restart: unless-stopped
+    shm_size: ${OCR_WORKER_SHM_SIZE:-1g}
     depends_on:
       rabbitmq:
         condition: service_started
