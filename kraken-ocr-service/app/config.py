@@ -30,6 +30,7 @@ class Settings(BaseSettings):
     train_epochs: int = 20
     train_batch_size: int = 4
     train_device: str = "cpu"
+    train_threads: int = 4
     train_timeout: int = 3600
     train_min_samples: int = 5
     train_auto: bool = False

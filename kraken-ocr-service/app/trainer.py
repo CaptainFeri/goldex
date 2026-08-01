@@ -5,6 +5,7 @@ import os
 import shutil
 import subprocess
 import tempfile
+import threading
 import time
 import uuid
 from pathlib import Path
@@ -101,14 +102,49 @@ class SelfTrainer:
                 "-N", str(self._settings.train_epochs),
                 "-B", str(self._settings.train_batch_size),
                 "-d", self._settings.train_device,
+                "--workers", str(self._settings.train_threads),
                 "--resize", "union",
             ]
             logger.info("Running: %s", " ".join(cmd))
-            result = subprocess.run(
-                cmd, capture_output=True, text=True, timeout=self._settings.train_timeout
+            env = os.environ.copy()
+            env["OMP_NUM_THREADS"] = str(self._settings.train_threads)
+            env["MKL_NUM_THREADS"] = str(self._settings.train_threads)
+            env["TORCH_NUM_THREADS"] = str(self._settings.train_threads)
+            process = subprocess.Popen(
+                cmd,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                text=True,
+                bufsize=1,
+                encoding="utf-8",
+                errors="replace",
+                env=env,
             )
-            if result.returncode != 0:
-                raise RuntimeError(f"Training failed:\n{result.stderr}")
+            assert process.stdout is not None
+            lines: list[str] = []
+
+            def _drain() -> None:
+                for line in process.stdout:
+                    line = line.rstrip()
+                    if line:
+                        logger.info("%s", line)
+                        lines.append(line)
+
+            drain = threading.Thread(target=_drain, daemon=True)
+            drain.start()
+            try:
+                returncode = process.wait(timeout=self._settings.train_timeout)
+            except subprocess.TimeoutExpired:
+                process.kill()
+                process.wait()
+                raise RuntimeError(
+                    f"Training timed out after {self._settings.train_timeout}s"
+                )
+            drain.join()
+            if returncode != 0:
+                raise RuntimeError(
+                    f"Training failed (exit {returncode}):\n{chr(10).join(lines[-50:])}"
+                )
             if not output_path.exists():
                 raise RuntimeError(
                     f"Training finished but no model produced at {output_path}"
@@ -123,7 +159,7 @@ class SelfTrainer:
             return {
                 "samples": len(samples),
                 "output": str(trained_path),
-                "stdout": result.stdout[-500:] if result.stdout else "",
+                "stdout": "\n".join(lines[-20:]),
             }
         finally:
             shutil.rmtree(out_dir, ignore_errors=True)

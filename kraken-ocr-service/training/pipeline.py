@@ -31,6 +31,7 @@ Usage:
 import argparse
 import json
 import logging
+import os
 import shutil
 import subprocess
 import sys
@@ -110,25 +111,44 @@ def _print_config(table_title: str, rows: list[tuple[str, str]]) -> None:
     console.print(table)
 
 
-def cmd(*args: str) -> subprocess.CompletedProcess:
+def cmd(*args: str, threads: int | None = None) -> subprocess.CompletedProcess:
     logger.info("Running: %s", " ".join(args))
     console.print(f"[bold cyan]▶[/] [white]{' '.join(args)}[/]")
-    with console.status("[cyan]Running...[/]", spinner="dots"):
-        result = subprocess.run(args, capture_output=True, text=True)
-    if result.returncode != 0:
-        logger.error("STDERR:\n%s", result.stderr)
+
+    env = os.environ.copy()
+    if threads:
+        env["OMP_NUM_THREADS"] = str(threads)
+        env["MKL_NUM_THREADS"] = str(threads)
+        env["TORCH_NUM_THREADS"] = str(threads)
+
+    process = subprocess.Popen(
+        args,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+        bufsize=1,
+        encoding="utf-8",
+        errors="replace",
+        env=env,
+    )
+    assert process.stdout is not None
+    for line in process.stdout:
+        line = line.rstrip()
+        if line:
+            logger.info("%s", line)
+    returncode = process.wait()
+    if returncode != 0:
+        logger.error("Command exited with code %d: %s", returncode, " ".join(args))
         console.print(
             Panel(
-                result.stderr.strip(),
+                f"Command exited with code {returncode}: {' '.join(args)}",
                 title="[bold red]Command failed[/]",
                 border_style="red",
                 title_align="left",
             )
         )
         raise RuntimeError(f"Command failed: {' '.join(args)}")
-    if result.stdout:
-        logger.info("STDOUT:\n%s", result.stdout.strip())
-    return result
+    return subprocess.CompletedProcess(args, returncode)
 
 
 def train(
@@ -139,7 +159,10 @@ def train(
     batch_size: int = 8,
     val_split: float = 0.1,
     device: str = "cpu",
+    threads: int | None = None,
 ) -> None:
+    if threads is None:
+        threads = os.cpu_count() or 1
     logger.info("=== Training Pipeline ===")
     _print_config(
         "[bold]Training configuration[/]",
@@ -151,6 +174,7 @@ def train(
             ("Batch size", str(batch_size)),
             ("Val split", f"{val_split:.0%}"),
             ("Device", device),
+            ("Threads/workers", str(threads)),
         ],
     )
 
@@ -187,7 +211,9 @@ def train(
         "-N", str(epochs),
         "-B", str(batch_size),
         "-d", device,
+        "--workers", str(threads),
         "--resize", "union",
+        threads=threads,
     )
 
     best_model = Path(f"{train_base}_best.mlmodel")
@@ -282,6 +308,13 @@ def main() -> None:
     parser.add_argument("--batch-size", type=int, default=8)
     parser.add_argument("--val-split", type=float, default=0.1)
     parser.add_argument("--device", default="cpu", choices=["cpu", "cuda"])
+    parser.add_argument(
+        "--threads",
+        type=int,
+        default=None,
+        help="Number of OpenMP threads/data workers for CPU training "
+        "(default: all available cores)",
+    )
     parser.add_argument("--test-only", action="store_true")
 
     args = parser.parse_args()
@@ -301,6 +334,7 @@ def main() -> None:
             batch_size=args.batch_size,
             val_split=args.val_split,
             device=args.device,
+            threads=args.threads,
         )
 
 

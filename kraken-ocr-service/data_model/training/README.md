@@ -34,7 +34,9 @@ Persian model automatically if the trained model is missing:
 - On subsequent starts the trained model already exists and training is
   skipped, so the service boots immediately.
 - Tune with env vars: `OCR_TRAIN_EPOCHS` (default 10),
-  `OCR_TRAIN_BATCH_SIZE` (default 8), `OCR_TRAIN_DEVICE` (default cpu).
+  `OCR_TRAIN_BATCH_SIZE` (default 8), `OCR_TRAIN_DEVICE` (default cpu),
+  `OCR_TRAIN_THREADS` (default: all available CPU cores; pass e.g. `4` to cap
+  OpenMP threads/data workers).
 - Set `OCR_TRAIN_ON_START=0` to never bootstrap (falls back to downloading
   the base Arabic model).
 
