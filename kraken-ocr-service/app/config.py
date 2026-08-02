@@ -28,10 +28,17 @@ class Settings(BaseSettings):
 
     train_enabled: bool = True
     train_epochs: int = 20
+    train_min_epochs: int = 3
+    train_lag: int = 5
+    train_min_delta: float = 0.005
+    train_quit: str = "early"  # "early" or "fixed"; forced to "fixed" automatically when there's no usable validation split
     train_batch_size: int = 4
     train_device: str = "cpu"
     train_threads: int = 4
-    train_timeout: int = 3600
+    train_freeze_backbone: int = 5  # epochs to freeze all but the final layer when fine-tuning from a base model; 0 disables
+    train_warmup: int = 600  # learning-rate warmup steps; 0 disables
+    train_timeout: int = 3600  # hard wall-clock cap on a single training run, in seconds; now actually enforced
+    train_stall_timeout: int = 900  # abort if no training progress is logged for this many seconds
     train_min_samples: int = 5
     train_auto: bool = False
     train_auto_interval_min: int = 60
