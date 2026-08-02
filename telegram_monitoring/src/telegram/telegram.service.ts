@@ -22,8 +22,8 @@ import { PriceHistoryService } from './price/price-history.service';
 import { MarketMakerService } from './price/market-maker.service';
 import { ChartImageService } from './price/chart-image.service';
 import { parsePriceMessage } from './price/price-message.parser';
-import { formatArbitrageMessage } from './price/price-message.formatter';
-import type { ArbitrageOpportunity, OrderButton } from './price/price.types';
+import { formatPriceMovementAlert, formatBestPriceAlert, formatArbitrageMessage } from './price/price-message.formatter';
+import type { ArbitrageOpportunity, MarketOpportunity, OrderButton } from './price/price.types';
 
 type Entity = Api.User | Api.Chat | Api.Channel;
 
@@ -364,7 +364,12 @@ export class TelegramService implements OnModuleInit, OnModuleDestroy {
       new CallbackQuery({}),
     );
 
-    this.logger.log('Message and callback query event handlers registered');
+    this.eventEmitter.removeAllListeners('market.opportunity');
+    this.eventEmitter.on('market.opportunity', (opportunity: MarketOpportunity) => {
+      this.onMarketOpportunity(opportunity);
+    });
+
+    this.logger.log('Message, callback query, and market opportunity event handlers registered');
   }
 
   private async handleNewMessage(event: NewMessageEvent): Promise<void> {
@@ -466,6 +471,16 @@ export class TelegramService implements OnModuleInit, OnModuleDestroy {
       );
       await this.shareToTarget(caption);
     }
+  }
+
+  private onMarketOpportunity(opportunity: MarketOpportunity): void {
+    const caption = opportunity.type === 'BEST_PRICE'
+      ? formatBestPriceAlert(opportunity)
+      : formatPriceMovementAlert(opportunity);
+
+    this.shareToTarget(caption).catch((error) =>
+      this.logger.error('Failed to send market alert', error),
+    );
   }
 
   private async sendPhotoToTarget(

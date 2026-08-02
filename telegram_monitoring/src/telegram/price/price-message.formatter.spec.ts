@@ -6,6 +6,7 @@ describe('formatPriceMovementAlert', () => {
     type: 'PRICE_MOVEMENT',
     deliveryType: 'آبشده',
     direction: 'UP',
+    ourAction: 'WE_SELL',
     price: 75500000,
     previousPrice: 74000000,
     changePercent: 2.03,
@@ -36,6 +37,20 @@ describe('formatPriceMovementAlert', () => {
     expect(msg).toContain('کاهش');
     expect(msg).toContain('-1.5%');
   });
+
+  it('shows the side and profit info for WE_SELL', () => {
+    const msg = formatPriceMovementAlert(opp);
+    expect(msg).toContain('سمت: خرید');
+    expect(msg).toContain('ما میفروشیم');
+    expect(msg).toContain('سمت سود ما');
+  });
+
+  it('shows the side and cost info for WE_BUY', () => {
+    const msg = formatPriceMovementAlert({ ...opp, ourAction: 'WE_BUY' });
+    expect(msg).toContain('سمت: فروش');
+    expect(msg).toContain('ما میخریم');
+    expect(msg).toContain('سمت هزینه ما');
+  });
 });
 
 describe('formatBestPriceAlert', () => {
@@ -43,6 +58,7 @@ describe('formatBestPriceAlert', () => {
     type: 'BEST_PRICE',
     deliveryType: 'با حواله',
     direction: 'UP',
+    ourAction: 'WE_SELL',
     price: 76200000,
     previousPrice: 75800000,
     changePercent: 0.53,
@@ -51,16 +67,22 @@ describe('formatBestPriceAlert', () => {
     quantity: 3,
   };
 
-  it('includes delivery type, price, and change', () => {
+  it('includes delivery type, price, change, and side', () => {
     const msg = formatBestPriceAlert(opp);
     expect(msg).toContain('با حواله');
     expect(msg).toContain('76,200,000');
     expect(msg).toContain('+0.53%');
     expect(msg).toContain('3');
+    expect(msg).toContain('بالاترین قیمت فروش');
+    expect(msg).toContain('سمت سود ما');
+    expect(msg).toContain('سود ما');
   });
 
-  it('shows lowest price label for DOWN direction', () => {
-    const down: MarketOpportunity = { ...opp, direction: 'DOWN' };
-    expect(formatBestPriceAlert(down)).toContain('پایین‌ترین');
+  it('shows lowest buy price label and savings for WE_BUY', () => {
+    const buy: MarketOpportunity = { ...opp, direction: 'DOWN', ourAction: 'WE_BUY', price: 75500000, previousPrice: 75800000, changePercent: -0.4 };
+    const msg = formatBestPriceAlert(buy);
+    expect(msg).toContain('پایینترین قیمت خرید');
+    expect(msg).toContain('سمت هزینه ما');
+    expect(msg).toContain('صرفهجویی ما');
   });
 });

@@ -93,6 +93,8 @@ export interface MarketOpportunity {
   type: MarketOpportunityType;
   deliveryType: string;
   direction: TrendDirection;
+  /** Which side we act on: WE_SELL (خرید — our profit side) or WE_BUY (فروش — our cost side). */
+  ourAction: OurAction;
   price: number;
   previousPrice: number;
   changePercent: number;

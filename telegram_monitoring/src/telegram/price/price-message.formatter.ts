@@ -1,6 +1,7 @@
 import {
   ArbitrageOpportunity,
   MarketOpportunity,
+  OurAction,
   PriceSnapshot,
   SUBTYPE_LABELS,
 } from './price.types';
@@ -20,6 +21,16 @@ const TYPE_LABELS: Record<string, string> = {
   BEST_PRICE: 'بهترین قیمت',
 };
 
+/**
+ * Side of the trade from our perspective. Semantics: خرید (source label) = WE
+ * SELL to them = our profit side; فروش (source label) = WE BUY from them =
+ * our cost side.
+ */
+const SIDE_LABELS: Record<OurAction, string> = {
+  WE_SELL: '🟢 سمت: خرید — ما میفروشیم (سمت سود ما)',
+  WE_BUY: '🔴 سمت: فروش — ما میخریم (سمت هزینه ما)',
+};
+
 export function formatPriceMovementAlert(
   opportunity: MarketOpportunity,
 ): string {
@@ -30,6 +41,7 @@ export function formatPriceMovementAlert(
   const lines = [
     `⚡️ ${TYPE_LABELS[opportunity.type]}`,
     `🏷 ${opportunity.deliveryType}`,
+    SIDE_LABELS[opportunity.ourAction],
     `${direction}: ${formatPrice(opportunity.previousPrice)} → ${formatPrice(opportunity.price)}`,
     `📊 تغییر: ${changeSign}${opportunity.changePercent}%`,
     `📦 تعداد: ${opportunity.quantity}`,
@@ -43,13 +55,22 @@ export function formatPriceMovementAlert(
 }
 
 export function formatBestPriceAlert(opportunity: MarketOpportunity): string {
-  const direction = opportunity.direction === 'UP' ? 'بالاترین' : 'پایین‌ترین';
+  const isSellSide = opportunity.ourAction === 'WE_SELL';
 
   const lines = [
-    `🏆 ${direction} قیمت در ${opportunity.deliveryType}`,
+    `🏆 ${isSellSide ? 'بالاترین قیمت فروش' : 'پایینترین قیمت خرید'} در ${opportunity.deliveryType}`,
+    SIDE_LABELS[opportunity.ourAction],
     `💰 قیمت: ${formatPrice(opportunity.price)}`,
     `📦 تعداد: ${opportunity.quantity}`,
   ];
+
+  const gainPerUnit = opportunity.price - opportunity.previousPrice;
+  if (isSellSide && gainPerUnit > 0) {
+    lines.push(`📈 سود ما: +${formatPrice(gainPerUnit)} نسبت به قبلی`);
+  }
+  if (!isSellSide && gainPerUnit < 0) {
+    lines.push(`📉 صرفهجویی ما: ${formatPrice(-gainPerUnit)} نسبت به قبلی`);
+  }
 
   if (opportunity.changePercent !== 0) {
     const changeSign = opportunity.changePercent > 0 ? '+' : '';

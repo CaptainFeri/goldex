@@ -184,6 +184,7 @@ export class MarketMakerService implements OnModuleInit {
       type: 'PRICE_MOVEMENT',
       deliveryType: dt,
       direction: state.direction,
+      ourAction: parsed.ourAction,
       price: parsed.price,
       previousPrice: parsed.price - state.priceChange,
       changePercent: state.priceChangePercent,
@@ -213,6 +214,7 @@ export class MarketMakerService implements OnModuleInit {
         type: 'BEST_PRICE',
         deliveryType: dt,
         direction: 'DOWN',
+        ourAction: 'WE_BUY',
         price: parsed.price,
         previousPrice: prevBest,
         changePercent: prevBest
@@ -235,6 +237,7 @@ export class MarketMakerService implements OnModuleInit {
         type: 'BEST_PRICE',
         deliveryType: dt,
         direction: 'UP',
+        ourAction: 'WE_SELL',
         price: parsed.price,
         previousPrice: prevBest,
         changePercent: prevBest

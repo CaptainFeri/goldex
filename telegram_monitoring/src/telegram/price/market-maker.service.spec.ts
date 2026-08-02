@@ -68,6 +68,7 @@ describe('MarketMakerService', () => {
     expect(opps[0]).toMatchObject({
       type: 'BEST_PRICE',
       direction: 'DOWN',
+      ourAction: 'WE_BUY',
       price: 73_800_000,
       previousPrice: 74_000_000,
     });
@@ -85,6 +86,7 @@ describe('MarketMakerService', () => {
     expect(opps[0]).toMatchObject({
       type: 'BEST_PRICE',
       direction: 'UP',
+      ourAction: 'WE_SELL',
       price: 74_100_000,
       previousPrice: 74_000_000,
     });
@@ -125,6 +127,7 @@ describe('MarketMakerService', () => {
       expect.objectContaining({
         type: 'PRICE_MOVEMENT',
         direction: 'UP',
+        ourAction: 'WE_SELL',
         changePercent: expect.any(Number),
       }),
     );
