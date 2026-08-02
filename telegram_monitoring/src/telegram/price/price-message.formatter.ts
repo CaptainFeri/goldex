@@ -40,7 +40,7 @@ export function formatPriceMovementAlert(
 
   const lines = [
     `⚡️ ${TYPE_LABELS[opportunity.type]}`,
-    `🏷 ${opportunity.deliveryType}`,
+    `🏷 دسته: ${SUBTYPE_LABELS[opportunity.subType]} / ${opportunity.deliveryType}`,
     SIDE_LABELS[opportunity.ourAction],
     `${direction}: ${formatPrice(opportunity.previousPrice)} → ${formatPrice(opportunity.price)}`,
     `📊 تغییر: ${changeSign}${opportunity.changePercent}%`,
@@ -58,7 +58,7 @@ export function formatBestPriceAlert(opportunity: MarketOpportunity): string {
   const isSellSide = opportunity.ourAction === 'WE_SELL';
 
   const lines = [
-    `🏆 ${isSellSide ? 'بالاترین قیمت فروش' : 'پایینترین قیمت خرید'} در ${opportunity.deliveryType}`,
+    `🏆 ${isSellSide ? 'بالاترین قیمت فروش' : 'پایینترین قیمت خرید'} در ${SUBTYPE_LABELS[opportunity.subType]} / ${opportunity.deliveryType}`,
     SIDE_LABELS[opportunity.ourAction],
     `💰 قیمت: ${formatPrice(opportunity.price)}`,
     `📦 تعداد: ${opportunity.quantity}`,

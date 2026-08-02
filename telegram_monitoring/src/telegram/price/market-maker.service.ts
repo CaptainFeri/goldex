@@ -10,6 +10,7 @@ import {
   OpportunityRecord,
   ParsedPrice,
   PriceSnapshot,
+  PriceSubType,
 } from './price.types';
 
 const PRICE_MOVEMENT_THRESHOLD_PCT = 0.5;
@@ -35,10 +36,13 @@ export class MarketMakerService implements OnModuleInit {
   }
 
   onPrice(parsed: ParsedPrice, snapshot: PriceSnapshot): void {
-    const dt = parsed.deliveryType;
-    this.updateMarketState(parsed, snapshot, dt);
-    this.detectPriceMovement(parsed, snapshot, dt);
-    this.detectBestPrice(parsed, snapshot, dt);
+    // Only track normal (عادی) opportunities — ignore معکوس and شنا.
+    if (parsed.subType !== 'normal') return;
+
+    const key = `${parsed.subType}::${parsed.deliveryType}`;
+    this.updateMarketState(parsed, snapshot, key);
+    this.detectPriceMovement(parsed, snapshot, key);
+    this.detectBestPrice(parsed, snapshot, key);
   }
 
   getMarketOverview(): MarketState[] {
@@ -61,12 +65,14 @@ export class MarketMakerService implements OnModuleInit {
 
   getOpportunities(filter?: {
     type?: MarketOpportunityType;
+    subType?: PriceSubType;
     deliveryType?: string;
     from?: number;
     to?: number;
   }): OpportunityRecord[] {
     let result = this.records;
     if (filter?.type) result = result.filter((r) => r.type === filter.type);
+    if (filter?.subType) result = result.filter((r) => r.subType === filter.subType);
     if (filter?.deliveryType) result = result.filter((r) => r.deliveryType === filter.deliveryType);
     if (filter?.from) result = result.filter((r) => r.date >= filter.from!);
     if (filter?.to) result = result.filter((r) => r.date <= filter.to!);
@@ -109,11 +115,12 @@ export class MarketMakerService implements OnModuleInit {
     };
   }
 
-  private updateMarketState(parsed: ParsedPrice, snapshot: PriceSnapshot, dt: string): void {
-    let state = this.markets.get(dt);
+  private updateMarketState(parsed: ParsedPrice, snapshot: PriceSnapshot, key: string): void {
+    let state = this.markets.get(key);
     if (!state) {
       state = {
-        deliveryType: dt,
+        subType: parsed.subType,
+        deliveryType: parsed.deliveryType,
         bestBid: null,
         bestAsk: null,
         spread: null,
@@ -125,10 +132,10 @@ export class MarketMakerService implements OnModuleInit {
         volume: 0,
         lastUpdate: snapshot.date,
       };
-      this.markets.set(dt, state);
+      this.markets.set(key, state);
     }
 
-    const prev = this.previousPrices.get(dt);
+    const prev = this.previousPrices.get(key);
     const priceChange = prev ? parsed.price - prev.price : 0;
     const priceChangePercent = prev && prev.price
       ? Math.round((priceChange / prev.price) * 10000) / 100
@@ -162,7 +169,7 @@ export class MarketMakerService implements OnModuleInit {
       state.spread = state.bestAsk - state.bestBid;
     }
 
-    this.previousPrices.set(dt, { price: parsed.price, ourAction: parsed.ourAction });
+    this.previousPrices.set(key, { price: parsed.price, ourAction: parsed.ourAction });
 
     this.rmq.publish('telegram.market.snapshot', {
       markets: Array.from(this.markets.values()),
@@ -172,9 +179,9 @@ export class MarketMakerService implements OnModuleInit {
   private detectPriceMovement(
     parsed: ParsedPrice,
     snapshot: PriceSnapshot,
-    dt: string,
+    key: string,
   ): void {
-    const state = this.markets.get(dt);
+    const state = this.markets.get(key);
     if (!state) return;
 
     const absChange = Math.abs(state.priceChangePercent);
@@ -182,7 +189,8 @@ export class MarketMakerService implements OnModuleInit {
 
     const opportunity: MarketOpportunity = {
       type: 'PRICE_MOVEMENT',
-      deliveryType: dt,
+      subType: parsed.subType,
+      deliveryType: parsed.deliveryType,
       direction: state.direction,
       ourAction: parsed.ourAction,
       price: parsed.price,
@@ -201,9 +209,9 @@ export class MarketMakerService implements OnModuleInit {
   private detectBestPrice(
     parsed: ParsedPrice,
     snapshot: PriceSnapshot,
-    dt: string,
+    key: string,
   ): void {
-    const state = this.markets.get(dt);
+    const state = this.markets.get(key);
     if (!state) return;
 
     if (parsed.ourAction === 'WE_BUY' && state.bestBid === parsed.price) {
@@ -212,7 +220,8 @@ export class MarketMakerService implements OnModuleInit {
 
       const opportunity: MarketOpportunity = {
         type: 'BEST_PRICE',
-        deliveryType: dt,
+        subType: parsed.subType,
+        deliveryType: parsed.deliveryType,
         direction: 'DOWN',
         ourAction: 'WE_BUY',
         price: parsed.price,
@@ -235,7 +244,8 @@ export class MarketMakerService implements OnModuleInit {
 
       const opportunity: MarketOpportunity = {
         type: 'BEST_PRICE',
-        deliveryType: dt,
+        subType: parsed.subType,
+        deliveryType: parsed.deliveryType,
         direction: 'UP',
         ourAction: 'WE_SELL',
         price: parsed.price,
@@ -256,6 +266,7 @@ export class MarketMakerService implements OnModuleInit {
   private emitAndPersist(opportunity: MarketOpportunity): void {
     this.logger.logStructured('MARKET_OPPORTUNITY', {
       type: opportunity.type,
+      subType: opportunity.subType,
       deliveryType: opportunity.deliveryType,
       direction: opportunity.direction,
       price: opportunity.price,
@@ -266,6 +277,7 @@ export class MarketMakerService implements OnModuleInit {
       id: ++this.idCounter,
       date: opportunity.date,
       type: opportunity.type,
+      subType: opportunity.subType,
       deliveryType: opportunity.deliveryType,
       direction: opportunity.direction,
       price: opportunity.price,

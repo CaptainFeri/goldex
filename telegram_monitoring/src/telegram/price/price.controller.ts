@@ -105,8 +105,10 @@ export class MarketMakerController {
   constructor(private readonly market: MarketMakerService) {}
 
   @Get()
-  overview(): MarketState[] {
-    return this.market.getMarketOverview();
+  overview(@Query('subType') subType?: string): MarketState[] {
+    const states = this.market.getMarketOverview();
+    if (!subType) return states;
+    return states.filter((s) => s.subType === subType);
   }
 
   @Get('best-buys')
@@ -127,12 +129,14 @@ export class OpportunityController {
   @Get()
   list(
     @Query('type') type?: string,
+    @Query('subType') subType?: string,
     @Query('deliveryType') deliveryType?: string,
     @Query('from') from?: string,
     @Query('to') to?: string,
   ): OpportunityRecord[] {
     return this.market.getOpportunities({
       type: type as MarketOpportunityType | undefined,
+      subType: subType as PriceSubType | undefined,
       deliveryType: deliveryType || undefined,
       from: from ? Number(from) : undefined,
       to: to ? Number(to) : undefined,

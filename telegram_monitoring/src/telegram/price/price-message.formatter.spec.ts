@@ -4,6 +4,7 @@ import { MarketOpportunity } from './price.types';
 describe('formatPriceMovementAlert', () => {
   const opp: MarketOpportunity = {
     type: 'PRICE_MOVEMENT',
+    subType: 'normal',
     deliveryType: 'آبشده',
     direction: 'UP',
     ourAction: 'WE_SELL',
@@ -56,6 +57,7 @@ describe('formatPriceMovementAlert', () => {
 describe('formatBestPriceAlert', () => {
   const opp: MarketOpportunity = {
     type: 'BEST_PRICE',
+    subType: 'normal',
     deliveryType: 'با حواله',
     direction: 'UP',
     ourAction: 'WE_SELL',

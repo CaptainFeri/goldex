@@ -73,6 +73,8 @@ export type MarketOpportunityType = 'PRICE_MOVEMENT' | 'BEST_PRICE';
 export type TrendDirection = 'UP' | 'DOWN' | 'FLAT';
 
 export interface MarketState {
+  /** Symbol sub-type (عادی / شنا / معکوس) — buckets are kept separate. */
+  subType: PriceSubType;
   deliveryType: string;
   bestBid: number | null;
   bestAsk: number | null;
@@ -91,6 +93,8 @@ export interface MarketState {
 
 export interface MarketOpportunity {
   type: MarketOpportunityType;
+  /** Symbol sub-type (عادی / شنا / معکوس) the alert belongs to. */
+  subType: PriceSubType;
   deliveryType: string;
   direction: TrendDirection;
   /** Which side we act on: WE_SELL (خرید — our profit side) or WE_BUY (فروش — our cost side). */
@@ -109,6 +113,7 @@ export interface OpportunityRecord {
   id: number;
   date: number;
   type: MarketOpportunityType;
+  subType: PriceSubType;
   deliveryType: string;
   direction: TrendDirection;
   price: number;

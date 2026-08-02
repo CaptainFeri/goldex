@@ -11,7 +11,7 @@ import {
 /** Max snapshots kept per category bucket (in-memory ring). */
 const MAX_PER_CATEGORY = 1000;
 /** Only compare prices seen within this window (seconds) for arbitrage. */
-const ARBITRAGE_WINDOW_SECONDS = 120;
+const DEFAULT_ARBITRAGE_WINDOW_SECONDS = 600;
 /** Default minimum per-unit profit (spread) to alert on. */
 const DEFAULT_MIN_PROFIT = 80_000;
 
@@ -31,6 +31,11 @@ export class PriceHistoryService {
   /** Only opportunities with a per-unit spread above this are reported. */
   private readonly minProfit =
     Number(process.env.ARBITRAGE_MIN_PROFIT) || DEFAULT_MIN_PROFIT;
+
+  /** How far back (seconds) prices may be compared for arbitrage. */
+  private readonly windowSeconds =
+    Number(process.env.ARBITRAGE_WINDOW_SECONDS) ||
+    DEFAULT_ARBITRAGE_WINDOW_SECONDS;
 
   /** categoryKey (sub-type) -> snapshots, oldest first. */
   private readonly history = new Map<string, PriceSnapshot[]>();
@@ -98,7 +103,8 @@ export class PriceHistoryService {
    *
    * Semantics: خرید = a price we can SELL at, فروش = a price we can BUY at.
    * Profit exists when the highest خرید (our sell) exceeds the lowest فروش
-   * (our buy) for the same product.
+   * (our buy) for the same product. Buckets are per sub-type (عادی/شنا/معکوس)
+   * + delivery type, so only like-for-like products are compared.
    */
   detectArbitrage(
     parsed: ParsedPrice,
@@ -108,7 +114,7 @@ export class PriceHistoryService {
     if (parsed.subType !== 'normal') return null;
 
     const arbKey = this.arbitrageKeyFor(parsed);
-    const since = asOf - ARBITRAGE_WINDOW_SECONDS;
+    const since = asOf - this.windowSeconds;
 
     const recent = this.getHistory(this.categoryKeyFor(parsed)).filter(
       (s) => `${s.subType}::${s.deliveryType}` === arbKey && s.date >= since,

@@ -67,6 +67,7 @@ describe('MarketMakerService', () => {
     expect(opps).toHaveLength(1);
     expect(opps[0]).toMatchObject({
       type: 'BEST_PRICE',
+      subType: 'normal',
       direction: 'DOWN',
       ourAction: 'WE_BUY',
       price: 73_800_000,
@@ -85,6 +86,7 @@ describe('MarketMakerService', () => {
     expect(opps).toHaveLength(1);
     expect(opps[0]).toMatchObject({
       type: 'BEST_PRICE',
+      subType: 'normal',
       direction: 'UP',
       ourAction: 'WE_SELL',
       price: 74_100_000,
@@ -126,10 +128,28 @@ describe('MarketMakerService', () => {
     expect(opps).toContainEqual(
       expect.objectContaining({
         type: 'PRICE_MOVEMENT',
+        subType: 'normal',
         direction: 'UP',
         ourAction: 'WE_SELL',
         changePercent: expect.any(Number),
       }),
     );
+  });
+
+  it('ignores non-normal sub-types entirely', () => {
+    const emitter = mockEmitter();
+    const service = new MarketMakerService(emitter, mockRedis(), mockRmq());
+
+    service.onPrice(
+      { ...parsed(74_000_000, 'WE_SELL'), subType: 'shena' },
+      snapshot(74_000_000, 'WE_SELL', 1),
+    );
+    service.onPrice(
+      { ...parsed(79_000_000, 'WE_SELL'), subType: 'shena' },
+      snapshot(79_000_000, 'WE_SELL', 2),
+    );
+
+    expect(emitted(emitter)).toHaveLength(0);
+    expect(service.getMarketOverview()).toHaveLength(0);
   });
 });
