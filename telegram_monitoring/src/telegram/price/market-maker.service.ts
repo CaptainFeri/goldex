@@ -38,6 +38,8 @@ export class MarketMakerService implements OnModuleInit {
   onPrice(parsed: ParsedPrice, snapshot: PriceSnapshot): void {
     // Only track normal (عادی) opportunities — ignore معکوس and شنا.
     if (parsed.subType !== 'normal') return;
+    // Ignore special orders with a description (custom deals, not market prices).
+    if (parsed.description) return;
 
     const key = `${parsed.subType}::${parsed.deliveryType}`;
     this.updateMarketState(parsed, snapshot, key);

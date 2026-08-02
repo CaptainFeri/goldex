@@ -115,7 +115,9 @@ export class ChartImageService {
 }
 
 function timeLabel(unixSeconds: number): string {
-  return new Date(unixSeconds * 1000).toLocaleTimeString('en-GB');
+  return new Date(unixSeconds * 1000).toLocaleTimeString('en-GB', {
+    timeZone: 'Asia/Tehran',
+  });
 }
 
 function fmt(value: number): string {

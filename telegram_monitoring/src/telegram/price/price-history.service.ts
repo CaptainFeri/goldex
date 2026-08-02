@@ -12,8 +12,14 @@ import {
 const MAX_PER_CATEGORY = 1000;
 /** Only compare prices seen within this window (seconds) for arbitrage. */
 const DEFAULT_ARBITRAGE_WINDOW_SECONDS = 600;
-/** Default minimum per-unit profit (spread) to alert on. */
-const DEFAULT_MIN_PROFIT = 80_000;
+  /** Default minimum per-unit profit (spread) to alert on. */
+  const DEFAULT_MIN_PROFIT = 80_000;
+
+  /**
+   * A reported (buyAt, sellAt) pair is remembered for this long before the
+   * same pair may alert again — matches the detection window by default.
+   */
+  const DEFAULT_REPORT_TTL_SECONDS = 600;
 
 /**
  * In-memory store of parsed price snapshots, grouped by category, plus a
@@ -36,6 +42,11 @@ export class PriceHistoryService {
   private readonly windowSeconds =
     Number(process.env.ARBITRAGE_WINDOW_SECONDS) ||
     DEFAULT_ARBITRAGE_WINDOW_SECONDS;
+
+  /** How long a reported pair is remembered (seconds) before it can re-alert. */
+  private readonly reportTtlSeconds =
+    Number(process.env.ARBITRAGE_REPORT_TTL_SECONDS) ||
+    this.windowSeconds;
 
   /** categoryKey (sub-type) -> snapshots, oldest first. */
   private readonly history = new Map<string, PriceSnapshot[]>();
@@ -170,13 +181,20 @@ export class PriceHistoryService {
   /**
    * Returns true the first time a given (buyAt, sellAt) pair is seen for a
    * bucket, and remembers it so repeated detections of the *same* spread don't
-   * spam the target channel. A changed price pair reports again.
+   * spam the target channel. A changed price pair reports again, and a pair
+   * older than the report TTL may report again (market returned to it).
    */
   markReportedIfNew(opportunity: ArbitrageOpportunity): boolean {
     const key = `${opportunity.subType}::${opportunity.deliveryType}`;
     const signature = `${opportunity.buy.price}|${opportunity.sell.price}`;
-    if (this.lastReported.get(key) === signature) return false;
-    this.lastReported.set(key, signature);
+    const last = this.lastReported.get(key);
+    if (last) {
+      const [seenSignature, seenAt] = last.split('@');
+      if (seenSignature === signature && Date.now() - Number(seenAt) < this.reportTtlSeconds * 1000) {
+        return false;
+      }
+    }
+    this.lastReported.set(key, `${signature}@${Date.now()}`);
     return true;
   }
 }

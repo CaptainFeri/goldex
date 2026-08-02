@@ -114,11 +114,19 @@ function formatOrder(title: string, snapshot: PriceSnapshot): string[] {
     `   💰 قیمت: ${formatPrice(snapshot.price)}`,
     `   📦 تعداد: ${snapshot.quantity}`,
     `   🚚 تحویل: ${snapshot.deliveryType}`,
+    `   🕐 زمان: ${formatDateTime(snapshot.date)}`,
   ];
   const id = orderId(snapshot);
   if (id) lines.push(`   🧾 سفارش: ${id}`);
   if (snapshot.description) lines.push(`   📝 ${snapshot.description}`);
   return lines;
+}
+
+/** Tehran (Asia/Tehran) time — the market's local zone. */
+function formatDateTime(unixSeconds: number): string {
+  return new Date(unixSeconds * 1000).toLocaleString('fa-IR', {
+    timeZone: 'Asia/Tehran',
+  });
 }
 
 /**

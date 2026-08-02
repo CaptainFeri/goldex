@@ -136,6 +136,23 @@ describe('MarketMakerService', () => {
     );
   });
 
+  it('ignores messages that carry a description', () => {
+    const emitter = mockEmitter();
+    const service = new MarketMakerService(emitter, mockRedis(), mockRmq());
+
+    service.onPrice(
+      { ...parsed(74_000_000, 'WE_BUY'), description: 'پایه ۲۴' },
+      snapshot(74_000_000, 'WE_BUY', 1),
+    );
+    service.onPrice(
+      { ...parsed(74_000_000, 'WE_BUY'), description: 'پایه ۲۴' },
+      snapshot(74_000_000, 'WE_BUY', 2),
+    );
+
+    expect(emitted(emitter)).toHaveLength(0);
+    expect(service.getMarketOverview()).toHaveLength(0);
+  });
+
   it('ignores non-normal sub-types entirely', () => {
     const emitter = mockEmitter();
     const service = new MarketMakerService(emitter, mockRedis(), mockRmq());
