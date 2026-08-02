@@ -264,6 +264,7 @@ export class PaymentsService {
       payment.rawResponse = res;
       payment.stan = res?._stan ?? payment.identifier;
       payment.ipgReference = res?.ipgReference;
+      payment.gatewayUrl = res?.payUrl;
       payment.metadata = {
         ...(input.metadata ?? {}),
         ...(res?._localDate ? { localDate: res._localDate } : {}),
@@ -394,6 +395,7 @@ export class PaymentsService {
       payment.rawResponse = res;
       payment.stan = res?._stan ?? payment.identifier;
       payment.ipgReference = res?.ipgReference;
+      payment.gatewayUrl = res?.payUrl;
       payment.metadata = {
         ...(payment.metadata ?? {}),
         ...(res?._localDate ? { localDate: res._localDate } : {}),

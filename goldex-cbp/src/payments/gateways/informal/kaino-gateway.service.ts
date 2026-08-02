@@ -70,7 +70,27 @@ export class KainoGatewayService implements IPaymentGateway {
       validCards: params.meta?.validCards,
       description: params.meta?.description,
     });
-    return { ...res, _localDate: localDate, _stan: params.reference };
+    return {
+      ...res,
+      _localDate: localDate,
+      _stan: params.reference,
+      payUrl: this.buildPayUrl(res, params.reference),
+    };
+  }
+
+  /** IPG payment page the payer must be redirected to (fiat gateway). */
+  private buildPayUrl(res: any, fallbackReference: string): string | undefined {
+    const ipgReference =
+      res?.ipgReference ??
+      res?.result?.ipgReference ??
+      res?.reference ??
+      fallbackReference;
+    if (!ipgReference) return undefined;
+    const base = this.config.get("app", { infer: true }).kaino;
+    if (res?.payUrl || res?.result?.payUrl || res?.paymentUrl) {
+      return res?.payUrl ?? res?.result?.payUrl ?? res?.paymentUrl;
+    }
+    return `${base.baseUrl}${base.ipgPayPath}?reference=${encodeURIComponent(ipgReference)}`;
   }
 
   async withdraw(params: WithdrawParams): Promise<any> {

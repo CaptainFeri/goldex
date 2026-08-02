@@ -104,6 +104,7 @@ function DepositModal({ symbolId, symbolSlug, depositTypes: allowedDepositTypes,
   const [warehouseId, setWarehouseId] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState('')
+  const [gatewayMsg, setGatewayMsg] = useState('')
   const isWarehouse = type === 'warehouse'
   const isGateway = type === 'payment-gateway'
 
@@ -112,6 +113,26 @@ function DepositModal({ symbolId, symbolSlug, depositTypes: allowedDepositTypes,
       warehouseApi.getWarehouses().then(setWarehouses).catch(() => {})
     }
   }, [allowedDepositTypes])
+
+  // Waits for goldex-cbp to run the gateway (async via RabbitMQ) and then
+  // opens the Kaino IPG payment page in a new tab.
+  const openGatewayAfterCreate = async (depositId) => {
+    const deadline = Date.now() + 60_000
+    while (Date.now() < deadline) {
+      setGatewayMsg('Connecting to the payment gateway…')
+      await new Promise((r) => setTimeout(r, 2000))
+      const d = await depositApi.get(depositId)
+      const pay = d?.metadata?.payment
+      if (pay?.gatewayUrl) {
+        window.open(pay.gatewayUrl, '_blank', 'noopener')
+        return
+      }
+      if (d.status === 'FAILED' || d.status === 'CANCELLED') {
+        throw new Error(pay?.error || `Deposit was ${d.status.toLowerCase()}`)
+      }
+    }
+    throw new Error('The payment gateway did not respond. You can open it from the deposit list below.')
+  }
 
   const handleFileChange = async (e) => {
     const f = e.target.files?.[0] || null
@@ -184,7 +205,10 @@ function DepositModal({ symbolId, symbolSlug, depositTypes: allowedDepositTypes,
             }
           }
         }
-        await depositApi.create(payload)
+        const created = await depositApi.create(payload)
+        if (isGateway && created?.id) {
+          await openGatewayAfterCreate(created.id)
+        }
       }
       onDone()
       onClose()
@@ -203,6 +227,7 @@ function DepositModal({ symbolId, symbolSlug, depositTypes: allowedDepositTypes,
           <button className="btn btn-ghost" onClick={onClose} style={{ fontSize: '1.2rem', lineHeight: 1, padding: '0.25rem 0.5rem' }}>✕</button>
         </div>
         {error && <Alert type="error">{error}</Alert>}
+        {gatewayMsg && !error && <Alert type="success">{gatewayMsg}</Alert>}
         <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '1rem', marginTop: '1rem' }}>
           {allowedDepositTypes?.length > 1 && (
             <div className="field">
@@ -609,6 +634,11 @@ export default function WalletPage() {
                       <td><span className={`badge ${DWT_BADGE[d.status] || 'badge-warning'}`}>{d.status}</span></td>
                       <td>{formatDateTime(d.createAt)}</td>
                       <td>
+                        {d.metadata?.payment?.gatewayUrl && (
+                          <button className="btn" style={{ marginRight: 6 }} onClick={() => window.open(d.metadata.payment.gatewayUrl, '_blank', 'noopener')}>
+                            Open Gateway
+                          </button>
+                        )}
                         {d.status === 'PENDING' && (
                           <button className="btn btn-danger" onClick={() => cancelReq(depositApi, d.id, load)}>Cancel</button>
                         )}

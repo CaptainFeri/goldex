@@ -61,6 +61,10 @@ export class PaymentEntity extends myBaseEntity {
   @Column({ nullable: true, name: "ipg_reference" })
   ipgReference?: string;
 
+  /** Payment page URL the user must open to complete the gateway charge. */
+  @Column({ nullable: true, name: "gateway_url" })
+  gatewayUrl?: string;
+
   @Column({ nullable: true, name: "callback_url" })
   callbackUrl?: string;
 

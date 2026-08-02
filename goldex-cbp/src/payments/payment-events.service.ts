@@ -33,6 +33,8 @@ export class PaymentEventsService {
       currency: payment.currency,
       gatewayCode: payment.gatewayCode,
       identifier: payment.identifier,
+      ipgReference: payment.ipgReference,
+      gatewayUrl: payment.gatewayUrl,
       error,
     };
   }

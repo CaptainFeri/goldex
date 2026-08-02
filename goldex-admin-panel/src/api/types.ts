@@ -375,6 +375,7 @@ export interface DepositRequest {
   adminId: string | null;
   notes: string | null;
   picturePath: string | null;
+  gatewayCode?: string | null;
   metadata: any;
   completedAt: string | null;
   createAt: string;

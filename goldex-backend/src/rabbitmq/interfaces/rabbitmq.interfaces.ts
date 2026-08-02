@@ -161,5 +161,7 @@ export interface PaymentEventMessage {
   currency?: string;
   gatewayCode?: string;
   identifier?: string;
+  ipgReference?: string;
+  gatewayUrl?: string;
   error?: string;
 }

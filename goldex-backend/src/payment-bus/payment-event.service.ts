@@ -64,6 +64,7 @@ export class PaymentEventService {
       case "processing":
         if (deposit.status === DepositStatusEnum.PENDING) {
           deposit.status = DepositStatusEnum.PROCESSING;
+          this.mergePaymentMeta(deposit, event);
           await this.depositRepo.save(deposit);
         }
         break;
@@ -105,6 +106,7 @@ export class PaymentEventService {
       case "processing":
         if (withdraw.status === WithdrawStatusEnum.PENDING) {
           withdraw.status = WithdrawStatusEnum.PROCESSING;
+          this.mergePaymentMeta(withdraw, event);
           await this.withdrawRepo.save(withdraw);
         }
         break;
@@ -150,6 +152,8 @@ export class PaymentEventService {
         paymentId: event.paymentId,
         identifier: event.identifier,
         gatewayCode: event.gatewayCode,
+        ...(event.ipgReference ? { ipgReference: event.ipgReference } : {}),
+        ...(event.gatewayUrl ? { gatewayUrl: event.gatewayUrl } : {}),
         ...(event.error ? { error: event.error } : {}),
       },
     };

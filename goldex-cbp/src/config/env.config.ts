@@ -27,5 +27,8 @@ export default registerAs("app", () => ({
     tenant: process.env.KAINO_TENANT ?? "",
     secret: process.env.KAINO_SECRET ?? "",
     payerMobile: process.env.KAINO_PAYER_MOBILE ?? "",
+    ipgPayPath:
+      process.env.KAINO_IPG_PAY_PATH ??
+      "/rest/channel/wallet/v1/chargeWallet/pay",
   },
 }));

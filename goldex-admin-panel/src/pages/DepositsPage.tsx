@@ -70,6 +70,7 @@ export default function DepositsPage() {
                 <th>کاربر</th>
                 <th>نماد</th>
                 <th>نوع واریز</th>
+                <th>درگاه</th>
                 <th>مبلغ</th>
                 <th>وضعیت</th>
                 <th>تاریخ</th>
@@ -89,6 +90,7 @@ export default function DepositsPage() {
                   </td>
                   <td>{d.symbol?.slug || d.symbol?.name || d.symbolId}</td>
                   <td>{typeLabel(d.type)}</td>
+                  <td>{d.gatewayCode || (d.metadata?.payment?.gatewayCode ? <Badge kind="gold">{d.metadata.payment.gatewayCode}</Badge> : "—")}</td>
                   <td className="mono">{fmtNum(d.amount)}</td>
                   <td><Badge kind={(STATUS_KINDS[d.status] as "green" | "red" | "gold" | "gray")}>{STATUS_LABELS[d.status]}</Badge></td>
                   <td>{fmtDate(d.createAt)}</td>
@@ -161,6 +163,23 @@ function ProcessDepositModal({
         {deposit.picturePath && <div><strong>تصویر:</strong> <img src={picUrl(deposit.picturePath)} alt="deposit-pic" style={{ maxWidth: "100%", maxHeight: 300, borderRadius: 6, marginTop: 4, cursor: "pointer" }} onClick={() => window.open(picUrl(deposit.picturePath), "_blank")} /></div>}
         {deposit.notes && <div><strong>توضیحات کاربر:</strong> {deposit.notes}</div>}
         {deposit.adminNotes && <div><strong>توضیحات ادمین:</strong> {deposit.adminNotes}</div>}
+        {deposit.metadata?.payment && (
+          <div style={{ background: 'var(--surface)', padding: 12, borderRadius: 8, marginTop: 8 }}>
+            <div style={{ fontWeight: 600, marginBottom: 4 }}>💳 پرداخت درگاهی</div>
+            <div><strong>درگاه:</strong> {deposit.metadata.payment.gatewayCode || "—"}</div>
+            <div><strong>شناسه پرداخت:</strong> <code>{deposit.metadata.payment.paymentId || "—"}</code></div>
+            <div><strong>شناسه تراکنش:</strong> <code>{deposit.metadata.payment.identifier || "—"}</code></div>
+            {deposit.metadata.payment.ipgReference && <div><strong>IPG Reference:</strong> <code>{deposit.metadata.payment.ipgReference}</code></div>}
+            {deposit.metadata.payment.error && <div style={{ color: "var(--danger)" }}><strong>خطا:</strong> {deposit.metadata.payment.error}</div>}
+            {deposit.metadata.payment.gatewayUrl && (
+              <div style={{ marginTop: 8 }}>
+                <button type="button" className="btn sm" onClick={() => window.open(deposit.metadata.payment.gatewayUrl, "_blank", "noopener")}>
+                  باز کردن درگاه پرداخت
+                </button>
+              </div>
+            )}
+          </div>
+        )}
         {ocrData && (
           <div style={{ background: 'var(--surface)', padding: 12, borderRadius: 8, marginTop: 8 }}>
             <div style={{ fontWeight: 600, marginBottom: 4, display: 'flex', justifyContent: 'space-between' }}>
