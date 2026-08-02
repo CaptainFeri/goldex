@@ -56,6 +56,7 @@ export class KainoGatewayService implements IPaymentGateway {
     const localDate = this.now();
     const res = await this.wallet.chargeWallet({
       identifier: params.reference,
+      bankDepositIdentifier: params.meta?.bankDepositIdentifier,
       tenant: kaino.tenant,
       amount: this.plainAmount(params.amount),
       username: params.userId,
@@ -64,6 +65,7 @@ export class KainoGatewayService implements IPaymentGateway {
       accountNumber: params.meta?.accountNumber,
       localDate,
       callBackUrl: params.callbackUrl,
+      voucherReference: params.meta?.voucherReference,
       autoVerify: params.meta?.autoVerify,
       validCards: params.meta?.validCards,
       description: params.meta?.description,

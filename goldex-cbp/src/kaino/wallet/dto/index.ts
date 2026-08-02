@@ -1,5 +1,6 @@
 export class ChargeWalletDto {
   identifier: string;
+  bankDepositIdentifier?: string;
   tenant: string;
   amount: string | number;
   username?: string;
@@ -7,6 +8,7 @@ export class ChargeWalletDto {
   accountNumber?: string;
   localDate: string;
   callBackUrl: string;
+  voucherReference?: string;
   autoVerify?: boolean;
   validCards?: string[];
   description?: string;

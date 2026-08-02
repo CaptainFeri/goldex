@@ -247,7 +247,7 @@ services:
       PAYMENT_DB_PORT: 5432
       PAYMENT_DB_NAME: ${PAYMENT_DB_NAME:-payment-db}
       PAYMENT_DB_SYNC: ${PAYMENT_DB_SYNC:-true}
-      PAYMENT_CALLBACK_BASE_URL: http://goldex-cbp:4100
+      PAYMENT_CALLBACK_BASE_URL: ${PAYMENT_CALLBACK_BASE_URL:-http://goldex-backend:3000}
       CBP_RABBITMQ_HOST: rabbitmq
       CBP_RABBITMQ_PORT: 5672
       NODE_ENV: production

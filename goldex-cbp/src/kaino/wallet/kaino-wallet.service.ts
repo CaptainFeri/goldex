@@ -71,12 +71,19 @@ export class KainoWalletService {
 
   async chargeWallet(dto: ChargeWalletDto) {
     const keys = [
+      "identifier",
+      "bankDepositIdentifier",
       "tenant",
       "amount",
+      "username",
       "payerMobileNumber",
       "accountNumber",
       "localDate",
       "callBackUrl",
+      "voucherReference",
+      "autoVerify",
+      "validCards",
+      "description",
     ];
     return this.signPost<any>("/rest/channel/wallet/v1/chargeWallet", dto as any, keys);
   }

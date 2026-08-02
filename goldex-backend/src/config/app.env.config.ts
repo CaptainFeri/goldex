@@ -51,6 +51,11 @@ export default () => ({
     // (and drop) each other's messages — orders would never resolve.
     queue: process.env.GOLDEX_RABBITMQ_QUEUE || 'goldex.backend.queue',
   },
+  cbp: {
+    // Internal goldex-cbp (payment gateway aggregation) service — used to
+    // forward payment-provider callbacks for verification.
+    url: process.env.GOLDEX_CBP_URL || 'http://goldex-cbp:4100',
+  },
   mailProviders: {
     mailgun: {
       key: process.env.MAILGUN_API_KEY,
