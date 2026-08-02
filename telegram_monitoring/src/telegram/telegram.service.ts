@@ -20,9 +20,10 @@ import { StructuredLogger } from '../logger/structured-logger';
 import { CustomFile } from 'telegram/client/uploads';
 import { PriceHistoryService } from './price/price-history.service';
 import { MarketMakerService } from './price/market-maker.service';
+import { ChartImageService } from './price/chart-image.service';
 import { parsePriceMessage } from './price/price-message.parser';
-import { formatPriceMovementAlert, formatBestPriceAlert } from './price/price-message.formatter';
-import type { MarketOpportunity, OrderButton } from './price/price.types';
+import { formatPriceMovementAlert, formatBestPriceAlert, formatArbitrageMessage } from './price/price-message.formatter';
+import type { ArbitrageOpportunity, MarketOpportunity, OrderButton } from './price/price.types';
 
 type Entity = Api.User | Api.Chat | Api.Channel;
 
@@ -61,6 +62,7 @@ export class TelegramService implements OnModuleInit, OnModuleDestroy {
     private readonly eventEmitter: EventEmitter2,
     private readonly priceHistory: PriceHistoryService,
     private readonly marketMaker: MarketMakerService,
+    private readonly chartImage: ChartImageService,
     private readonly sessionManager: SessionManagerService,
   ) {
     this.sessionManager.setSessionFolder(this.options.sessionFolder || 'sessions');
@@ -408,6 +410,40 @@ export class TelegramService implements OnModuleInit, OnModuleDestroy {
     this.eventEmitter.emit('telegram.price', { snapshot });
 
     this.marketMaker.onPrice(parsed, snapshot);
+
+    const opportunity = this.priceHistory.detectArbitrage(parsed, message.date);
+    if (opportunity && this.priceHistory.markReportedIfNew(opportunity)) {
+      this.eventEmitter.emit('telegram.arbitrage', opportunity);
+      await this.sendArbitrageAlert(
+        opportunity,
+        parsed.subType,
+        parsed.deliveryType,
+      );
+    }
+  }
+
+  private async sendArbitrageAlert(
+    opportunity: ArbitrageOpportunity,
+    subType: string,
+    deliveryType: string,
+  ): Promise<void> {
+    const caption = formatArbitrageMessage(opportunity);
+    const bucket = this.priceHistory.getBucketHistory(subType, deliveryType);
+
+    try {
+      const image = await this.chartImage.render(
+        bucket,
+        undefined,
+        opportunity,
+      );
+      await this.sendPhotoToTarget(image, caption);
+      this.logger.log('Sent arbitrage alert with chart image');
+    } catch (error) {
+      this.logger.warn(
+        `Chart image failed, sending text-only alert: ${String(error)}`,
+      );
+      await this.shareToTarget(caption);
+    }
   }
 
   private onMarketOpportunity(opportunity: MarketOpportunity): void {

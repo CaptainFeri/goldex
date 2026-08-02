@@ -1,8 +1,12 @@
 import { Controller, Get, MessageEvent, Query, Sse } from '@nestjs/common';
 import { Observable, map } from 'rxjs';
 import { PricePersistenceService } from './price-persistence.service';
+import { ArbitragePersistenceService } from './arbitrage-persistence.service';
 import { MarketMakerService } from './market-maker.service';
 import type {
+  ArbitrageQuery,
+  ArbitrageRecord,
+  ArbitrageSummary,
   MarketOpportunityType,
   MarketState,
   OpportunityRecord,
@@ -10,6 +14,7 @@ import type {
   PricePoint,
   PriceQuery,
   PriceSubType,
+  WalletState,
 } from './price.types';
 
 @Controller('api/prices')
@@ -44,6 +49,54 @@ export class PriceController {
   @Sse('stream')
   stream(): Observable<MessageEvent> {
     return this.persistence.stream.pipe(map((point) => ({ data: point })));
+  }
+}
+
+@Controller('api/arbitrages')
+export class ArbitrageController {
+  constructor(private readonly arbitrages: ArbitragePersistenceService) {}
+
+  @Get()
+  list(
+    @Query('subType') subType?: string,
+    @Query('deliveryType') deliveryType?: string,
+    @Query('from') from?: string,
+    @Query('to') to?: string,
+  ): ArbitrageRecord[] {
+    return this.arbitrages.query(
+      this.toFilter(subType, deliveryType, from, to),
+    );
+  }
+
+  @Get('wallet')
+  wallet(): WalletState {
+    return this.arbitrages.wallet();
+  }
+
+  @Get('summary')
+  summary(
+    @Query('subType') subType?: string,
+    @Query('deliveryType') deliveryType?: string,
+    @Query('from') from?: string,
+    @Query('to') to?: string,
+  ): ArbitrageSummary {
+    return this.arbitrages.summary(
+      this.toFilter(subType, deliveryType, from, to),
+    );
+  }
+
+  private toFilter(
+    subType?: string,
+    deliveryType?: string,
+    from?: string,
+    to?: string,
+  ): ArbitrageQuery {
+    return {
+      subType: subType as PriceSubType | undefined,
+      deliveryType: deliveryType || undefined,
+      from: from ? Number(from) : undefined,
+      to: to ? Number(to) : undefined,
+    };
   }
 }
 
@@ -87,10 +140,7 @@ export class OpportunityController {
   }
 
   @Get('summary')
-  summary(
-    @Query('from') from?: string,
-    @Query('to') to?: string,
-  ) {
+  summary(@Query('from') from?: string, @Query('to') to?: string) {
     return this.market.getSummary({
       from: from ? Number(from) : undefined,
       to: to ? Number(to) : undefined,

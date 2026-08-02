@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { StructuredLogger } from '../../logger/structured-logger';
-import { PriceSnapshot } from './price.types';
+import { ArbitrageOpportunity, PriceSnapshot } from './price.types';
 
 @Injectable()
 export class ChartImageService {
@@ -12,6 +12,7 @@ export class ChartImageService {
   buildPayload(
     snapshots: readonly PriceSnapshot[],
     title?: string,
+    opportunity?: ArbitrageOpportunity,
   ): Record<string, unknown> {
     const sorted = [...snapshots].sort((a, b) => a.date - b.date);
     const labels = sorted.map((s) => timeLabel(s.date));
@@ -36,6 +37,32 @@ export class ChartImageService {
       line('WE_SELL', 'We Sell', '#e0524a'),
     ];
 
+    let chartTitle = title;
+    if (opportunity) {
+      const mark = (snapshot: PriceSnapshot, label: string, color: string) => {
+        const idx = sorted.findIndex((s) => s.messageId === snapshot.messageId);
+        if (idx < 0) return undefined;
+        return {
+          label,
+          data: sorted.map((_, i) => (i === idx ? snapshot.price : null)),
+          borderColor: color,
+          backgroundColor: color,
+          pointRadius: 7,
+          pointStyle: 'rectRot',
+          showLine: false,
+        };
+      };
+
+      const buyMark = mark(opportunity.buy, 'Buy ▲', '#1f9d57');
+      const sellMark = mark(opportunity.sell, 'Sell ▼', '#b23a33');
+      if (buyMark) datasets.push(buyMark);
+      if (sellMark) datasets.push(sellMark);
+
+      chartTitle =
+        `Buy ${fmt(opportunity.buy.price)} -> Sell ${fmt(opportunity.sell.price)}` +
+        `  (+${fmt(opportunity.spread)})`;
+    }
+
     return {
       width: 760,
       height: 380,
@@ -48,7 +75,9 @@ export class ChartImageService {
         data: { labels, datasets },
         options: {
           plugins: {
-            title: title ? { display: true, text: title, color: '#e6e6e6' } : undefined,
+            title: chartTitle
+              ? { display: true, text: chartTitle, color: '#e6e6e6' }
+              : undefined,
             legend: { labels: { color: '#cbd3df' } },
           },
           scales: {
@@ -63,8 +92,9 @@ export class ChartImageService {
   async render(
     snapshots: readonly PriceSnapshot[],
     title?: string,
+    opportunity?: ArbitrageOpportunity,
   ): Promise<Buffer> {
-    const payload = this.buildPayload(snapshots, title);
+    const payload = this.buildPayload(snapshots, title, opportunity);
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 10_000);
     try {
@@ -86,4 +116,8 @@ export class ChartImageService {
 
 function timeLabel(unixSeconds: number): string {
   return new Date(unixSeconds * 1000).toLocaleTimeString('en-GB');
+}
+
+function fmt(value: number): string {
+  return value.toLocaleString('en-US');
 }

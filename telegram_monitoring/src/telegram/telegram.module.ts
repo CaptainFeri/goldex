@@ -6,9 +6,15 @@ import { TELEGRAM_OPTIONS } from './telegram.constants';
 import { TelegramOptions } from './interfaces';
 import { PriceHistoryService } from './price/price-history.service';
 import { PricePersistenceService } from './price/price-persistence.service';
+import { ArbitragePersistenceService } from './price/arbitrage-persistence.service';
 import { MarketMakerService } from './price/market-maker.service';
 import { ChartImageService } from './price/chart-image.service';
-import { PriceController, MarketMakerController, OpportunityController } from './price/price.controller';
+import {
+  PriceController,
+  ArbitrageController,
+  MarketMakerController,
+  OpportunityController,
+} from './price/price.controller';
 import { AuthController } from './auth/auth.controller';
 import { RabbitMQPublisherService } from './rabbitmq-publisher.service';
 
@@ -18,7 +24,13 @@ export class TelegramModule {
   static forRoot(options: TelegramOptions): DynamicModule {
     return {
       module: TelegramModule,
-      controllers: [PriceController, MarketMakerController, OpportunityController, AuthController],
+      controllers: [
+        PriceController,
+        ArbitrageController,
+        MarketMakerController,
+        OpportunityController,
+        AuthController,
+      ],
       providers: [
         {
           provide: TELEGRAM_OPTIONS,
@@ -27,6 +39,7 @@ export class TelegramModule {
         SessionManagerService,
         PriceHistoryService,
         PricePersistenceService,
+        ArbitragePersistenceService,
         MarketMakerService,
         ChartImageService,
         RabbitMQPublisherService,
@@ -40,7 +53,13 @@ export class TelegramModule {
     return {
       module: TelegramModule,
       imports: [ConfigModule],
-      controllers: [PriceController, MarketMakerController, OpportunityController, AuthController],
+      controllers: [
+        PriceController,
+        ArbitrageController,
+        MarketMakerController,
+        OpportunityController,
+        AuthController,
+      ],
       providers: [
         {
           provide: TELEGRAM_OPTIONS,
@@ -62,6 +81,7 @@ export class TelegramModule {
         SessionManagerService,
         PriceHistoryService,
         PricePersistenceService,
+        ArbitragePersistenceService,
         MarketMakerService,
         ChartImageService,
         RabbitMQPublisherService,

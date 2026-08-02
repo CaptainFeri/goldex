@@ -43,13 +43,14 @@ services:
       redis:
         condition: service_healthy
     volumes:
-      - ./sessions:/app/sessions
+      - telegram_monitoring_sessions:/app/sessions
     networks:
       - telegram-monitoring-network
 
 volumes:
   redis_data:
   redis_insight_data:
+  telegram_monitoring_sessions:
 
 networks:
   telegram-monitoring-network:

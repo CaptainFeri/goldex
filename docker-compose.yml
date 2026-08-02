@@ -267,7 +267,7 @@ services:
     ports:
       - "${TELEGRAM_MONITORING_EXTERNAL_PORT:-3002}:3000"
     volumes:
-      - ./telegram_monitoring/sessions:/app/sessions
+      - telegram_monitoring_sessions:/app/sessions
     networks:
       - goldex-network
 
@@ -336,6 +336,7 @@ volumes:
   pricing_engine_logs:
   kraken_models:
   ocr_feedback:
+  telegram_monitoring_sessions:
 
 # ════════════════════════════════════════════
 # NETWORKS

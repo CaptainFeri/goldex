@@ -1,5 +1,5 @@
 import { ChartImageService } from './chart-image.service';
-import { PriceSnapshot } from './price.types';
+import { ArbitrageOpportunity, PriceSnapshot } from './price.types';
 
 function snap(over: Partial<PriceSnapshot>): PriceSnapshot {
   return {
@@ -55,5 +55,30 @@ describe('ChartImageService.buildPayload', () => {
   it('omits title when not provided', () => {
     const payload: any = service.buildPayload([buy, sell]);
     expect(payload.chart.options.plugins.title).toBeUndefined();
+  });
+
+  it('adds buy/sell opportunity marks and a summarizing title when given an arbitrage opportunity', () => {
+    const opportunity: ArbitrageOpportunity = {
+      categoryKey: 'shena',
+      subType: 'shena',
+      deliveryType: 'با حواله',
+      buy,
+      sell,
+      spread: 100000,
+      quantity: 1,
+      totalProfit: 100000,
+    };
+
+    const payload: any = service.buildPayload(
+      [buy, sell],
+      undefined,
+      opportunity,
+    );
+
+    const labels = payload.chart.data.datasets.map((d: any) => d.label);
+    expect(labels).toEqual(['We Buy', 'We Sell', 'Buy ▲', 'Sell ▼']);
+
+    expect(payload.chart.options.plugins.title.text).toContain('73,900,000');
+    expect(payload.chart.options.plugins.title.text).toContain('74,000,000');
   });
 });

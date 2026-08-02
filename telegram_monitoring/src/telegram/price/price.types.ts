@@ -133,3 +133,92 @@ export interface OpportunitySummary {
     count: number;
   }[];
 }
+
+/** Side details for an arbitrage opportunity (buy or sell). */
+export interface ArbitrageSideDetail {
+  price: number;
+  messageId: number;
+  date: number;
+  quantity: number;
+  sideLabel: PriceSideLabel;
+  ourAction: OurAction;
+  description?: string;
+  raw?: string;
+  chatId?: string;
+  orderButtonData?: string;
+  orderButtonText?: string;
+}
+
+/** Compact, persisted record of an alerted arbitrage (for the profit report). */
+export interface ArbitrageRecord {
+  /** Unix seconds — the later of the two source messages. */
+  date: number;
+  subType: PriceSubType;
+  deliveryType: string;
+  buyAt: number;
+  sellAt: number;
+  spread: number;
+  quantity: number;
+  /** spread * quantity, in Toman. */
+  totalProfit: number;
+  /** Whether the buy order came before the sell order chronologically. */
+  buyFirst: boolean;
+  /** Verbose buy-side details. */
+  buy: ArbitrageSideDetail;
+  /** Verbose sell-side details. */
+  sell: ArbitrageSideDetail;
+}
+
+/** Wallet state computed from all arbitrage records. */
+export interface WalletState {
+  /** Total gold bought (grams). */
+  totalGoldBought: number;
+  /** Total gold sold (grams). */
+  totalGoldSold: number;
+  /** Net gold position (grams). */
+  netGold: number;
+  /** Total cash spent on buys (Toman). */
+  totalCashSpent: number;
+  /** Total cash received from sells (Toman). */
+  totalCashReceived: number;
+  /** Net cash balance = received - spent (Toman). */
+  netCash: number;
+}
+
+/** Date/category filters for the profit report. */
+export interface ArbitrageQuery {
+  subType?: PriceSubType;
+  deliveryType?: string;
+  /** Unix seconds, inclusive. */
+  from?: number;
+  to?: number;
+}
+
+/** Aggregated profit across the filtered arbitrages. */
+export interface ArbitrageSummary {
+  count: number;
+  totalProfit: number;
+  byCategory: {
+    subType: PriceSubType;
+    label: string;
+    count: number;
+    totalProfit: number;
+  }[];
+}
+
+/** Result of an arbitrage check within one comparable bucket. */
+export interface ArbitrageOpportunity {
+  categoryKey: string;
+  subType: PriceSubType;
+  deliveryType: string;
+  /** The فروش order we buy from (lowest فروش price). */
+  buy: PriceSnapshot;
+  /** The خرید order we sell to (highest خرید price). */
+  sell: PriceSnapshot;
+  /** sell.price - buy.price; per-unit profit (positive). */
+  spread: number;
+  /** Executable size = min(buy.quantity, sell.quantity). */
+  quantity: number;
+  /** spread * quantity. */
+  totalProfit: number;
+}
