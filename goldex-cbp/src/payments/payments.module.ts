@@ -4,7 +4,6 @@ import { SymbolsModule } from "../symbols/symbols.module";
 import { KainoCallbackController } from "./callbacks/kaino-callback.controller";
 import { PaymentEntity } from "./entity/payment.entity";
 import { GatewaysModule } from "./gateways/gateways.module";
-import { PaymentBusModule } from "./payment-bus/payment-bus.module";
 import { PaymentEventsService } from "./payment-events.service";
 import { PaymentsService } from "./payments.service";
 
@@ -18,7 +17,6 @@ import { PaymentsService } from "./payments.service";
     TypeOrmModule.forFeature([PaymentEntity]),
     SymbolsModule,
     GatewaysModule,
-    PaymentBusModule,
   ],
   providers: [PaymentsService, PaymentEventsService],
   controllers: [KainoCallbackController],

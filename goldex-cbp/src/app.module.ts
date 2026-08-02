@@ -3,6 +3,7 @@ import { ConfigModule, ConfigService } from "@nestjs/config";
 import { TypeOrmModule } from "@nestjs/typeorm";
 import appEnvConfig from "./config/env.config";
 import { PaymentsModule } from "./payments/payments.module";
+import { PaymentBusModule } from "./payments/payment-bus/payment-bus.module";
 import { RabbitMQModule } from "./rabbitmq/rabbitmq.module";
 import { SymbolsModule } from "./symbols/symbols.module";
 
@@ -32,6 +33,7 @@ import { SymbolsModule } from "./symbols/symbols.module";
     RabbitMQModule,
     SymbolsModule,
     PaymentsModule,
+    PaymentBusModule,
   ],
 })
 export class AppModule {}
