@@ -411,41 +411,45 @@ export class TelegramService implements OnModuleInit, OnModuleDestroy {
   }
 
   private async processPriceMessage(message: Api.Message): Promise<void> {
-    const parsed = parsePriceMessage(message.message);
-    if (!parsed) return;
+    try {
+      const parsed = parsePriceMessage(message.message);
+      if (!parsed) return;
 
-    const orderButton = this.firstOrderButton(message.replyMarkup);
-    const snapshot = this.priceHistory.record(
-      parsed,
-      message.id,
-      message.date,
-      orderButton,
-      message.chatId?.toString(),
-    );
-
-    this.logger.logStructured('PRICE_PARSED', {
-      messageId: message.id,
-      category: snapshot.categoryKey,
-      side: parsed.sideLabel,
-      ourAction: parsed.ourAction,
-      price: parsed.price,
-      deliveryType: parsed.deliveryType,
-      quantity: parsed.quantity,
-      description: parsed.description,
-    });
-
-    this.eventEmitter.emit('telegram.price', { snapshot });
-
-    this.marketMaker.onPrice(parsed, snapshot);
-
-    const opportunity = this.priceHistory.detectArbitrage(parsed, message.date);
-    if (opportunity && this.priceHistory.markReportedIfNew(opportunity)) {
-      this.eventEmitter.emit('telegram.arbitrage', opportunity);
-      await this.sendArbitrageAlert(
-        opportunity,
-        parsed.subType,
-        parsed.deliveryType,
+      const orderButton = this.firstOrderButton(message.replyMarkup);
+      const snapshot = this.priceHistory.record(
+        parsed,
+        message.id,
+        message.date,
+        orderButton,
+        message.chatId?.toString(),
       );
+
+      this.logger.logStructured('PRICE_PARSED', {
+        messageId: message.id,
+        category: snapshot.categoryKey,
+        side: parsed.sideLabel,
+        ourAction: parsed.ourAction,
+        price: parsed.price,
+        deliveryType: parsed.deliveryType,
+        quantity: parsed.quantity,
+        description: parsed.description,
+      });
+
+      this.eventEmitter.emit('telegram.price', { snapshot });
+
+      this.marketMaker.onPrice(parsed, snapshot);
+
+      const opportunity = this.priceHistory.detectArbitrage(parsed, message.date);
+      if (opportunity && this.priceHistory.markReportedIfNew(opportunity)) {
+        await this.sendArbitrageAlert(
+          opportunity,
+          parsed.subType,
+          parsed.deliveryType,
+        );
+        this.eventEmitter.emit('telegram.arbitrage', opportunity);
+      }
+    } catch (error) {
+      this.logger.error('processPriceMessage failed', error);
     }
   }
 

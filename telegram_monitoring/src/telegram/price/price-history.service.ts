@@ -133,21 +133,49 @@ export class PriceHistoryService {
 
     let bestSell: PriceSnapshot | undefined; // highest خرید (we sell)
     let bestBuy: PriceSnapshot | undefined; // lowest فروش (we buy)
+    let buyCount = 0;
+    let sellCount = 0;
 
     for (const s of recent) {
       if (s.description) continue;
       if (s.ourAction === 'WE_SELL') {
+        sellCount++;
         if (!bestSell || s.price > bestSell.price) bestSell = s;
       } else {
+        buyCount++;
         if (!bestBuy || s.price < bestBuy.price) bestBuy = s;
       }
     }
 
-    if (!bestSell || !bestBuy) return null;
+    if (!bestSell || !bestBuy) {
+      this.logger.logStructured('ARBITRAGE_SKIP', {
+        reason: 'missing-side',
+        bucket: arbKey,
+        recent: recent.length,
+        buyCount,
+        sellCount,
+        subType: parsed.subType,
+        deliveryType: parsed.deliveryType,
+      });
+      return null;
+    }
 
     const spread = bestSell.price - bestBuy.price;
     // Only alert on a meaningful margin (default > 80,000 per unit).
-    if (spread <= this.minProfit) return null;
+    if (spread <= this.minProfit) {
+      this.logger.logStructured('ARBITRAGE_SKIP', {
+        reason: 'below-threshold',
+        bucket: arbKey,
+        recent: recent.length,
+        buyCount,
+        sellCount,
+        bestBuy: bestBuy.price,
+        bestSell: bestSell.price,
+        spread,
+        minProfit: this.minProfit,
+      });
+      return null;
+    }
 
     const quantity = Math.min(bestBuy.quantity, bestSell.quantity);
     // Price is per mesqal, quantity is in kg. Convert mesqal → gram → kg profit.
