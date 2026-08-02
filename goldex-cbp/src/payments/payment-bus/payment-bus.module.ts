@@ -3,7 +3,6 @@ import { PaymentsModule } from "../payments.module";
 import { SymbolsModule } from "../../symbols/symbols.module";
 import { PaymentRequestConsumer } from "./payment-request.consumer";
 import { SymbolSyncConsumer } from "./symbol-sync.consumer";
-import { PaymentsService } from "../payments.service";
 
 /**
  * Wires cbp's RabbitMQ consumers against the shared PaymentsModule and
@@ -11,6 +10,6 @@ import { PaymentsService } from "../payments.service";
  */
 @Module({
   imports: [PaymentsModule, SymbolsModule],
-  providers: [PaymentRequestConsumer, PaymentsService, SymbolSyncConsumer],
+  providers: [PaymentRequestConsumer, SymbolSyncConsumer],
 })
 export class PaymentBusModule {}
