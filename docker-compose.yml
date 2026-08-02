@@ -11,7 +11,7 @@ services:
       POSTGRES_USER: ${GOLDEX_AUTH_POSTGRES_USERNAME:-postgres}
       POSTGRES_PASSWORD: ${GOLDEX_AUTH_POSTGRES_PASSWORD:-postgres}
       POSTGRES_DB: ${GOLDEX_AUTH_POSTGRES_DBNAME:-GOLDEX-DB}
-      POSTGRES_MULTIPLE_DATABASES: ${POSTGRES_MULTIPLE_DATABASES:-gold_price_db,goldex_telegram_bot_db}
+      POSTGRES_MULTIPLE_DATABASES: ${POSTGRES_MULTIPLE_DATABASES:-gold_price_db,goldex_telegram_bot_db,payment-db}
     ports:
       - "${POSTGRES_EXTERNAL_PORT:-5434}:5432"
     volumes:
