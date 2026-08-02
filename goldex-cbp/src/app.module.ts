@@ -1,0 +1,37 @@
+import { Module } from "@nestjs/common";
+import { ConfigModule, ConfigService } from "@nestjs/config";
+import { TypeOrmModule } from "@nestjs/typeorm";
+import appEnvConfig from "./config/env.config";
+import { PaymentsModule } from "./payments/payments.module";
+import { RabbitMQModule } from "./rabbitmq/rabbitmq.module";
+import { SymbolsModule } from "./symbols/symbols.module";
+
+@Module({
+  imports: [
+    ConfigModule.forRoot({
+      isGlobal: true,
+      load: [appEnvConfig],
+    }),
+    TypeOrmModule.forRootAsync({
+      inject: [ConfigService],
+      useFactory: (configService: ConfigService) => {
+        const app = configService.get("app") ?? {};
+        const pg = app.postgres ?? {};
+        return {
+          type: "postgres",
+          host: pg.host,
+          port: pg.port,
+          username: pg.username,
+          password: pg.password,
+          database: pg.database,
+          autoLoadEntities: true,
+          synchronize: pg.synchronize,
+        };
+      },
+    }),
+    RabbitMQModule,
+    SymbolsModule,
+    PaymentsModule,
+  ],
+})
+export class AppModule {}

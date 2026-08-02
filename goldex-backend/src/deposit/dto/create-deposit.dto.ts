@@ -28,4 +28,9 @@ export class CreateDepositDto {
   @IsObject()
   @ApiProperty({ required: false })
   metadata?: Record<string, any>;
+
+  @IsOptional()
+  @IsString()
+  @ApiProperty({ required: false, description: "Gateway provider code for payment-gateway deposits" })
+  gatewayCode?: string;
 }

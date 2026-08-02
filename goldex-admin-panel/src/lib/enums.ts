@@ -21,6 +21,12 @@ export const PAYMENT_GATEWAYS = [
   { value: "custom", label: "سفارشی (غیررسمی)" },
 ];
 
+// Gateway provider codes registered in goldex-cbp. When adding a provider
+// to cbp's registry, add it here so admins can select it on symbols.
+export const GATEWAY_PROVIDERS = [
+  { value: "kaino-informal", label: "کاینو (غیررسمی)" },
+];
+
 export const MARKET_TYPES_ENUM = [
   { value: "formal", label: "رسمی" },
   { value: "informal", label: "غیررسمی" },

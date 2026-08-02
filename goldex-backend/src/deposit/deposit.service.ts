@@ -12,7 +12,8 @@ import { TransactionEntity } from "../wallet/entities/transaction.entity";
 import { TransactionTypeEnum } from "../wallet/enum/transaction.type.enum";
 import { TransactionStatusEnum } from "../wallet/enum/transaction.status.enum";
 import { WalletStatusEnum } from "../wallet/enum/wallet-status.enum";
-import { getDefaultDepositTypes } from "../admin-symbol/constants/symbol-type-type-map";
+import { getDefaultDepositTypes, GATEWAY_BOUND_TYPES } from "../admin-symbol/constants/symbol-type-type-map";
+import { PaymentBusService } from "../payment-bus/payment-bus.service";
 
 @Injectable()
 export class DepositService {
@@ -28,6 +29,7 @@ export class DepositService {
     @InjectRepository(TransactionEntity)
     private transactionRepo: Repository<TransactionEntity>,
     private dataSource: DataSource,
+    private readonly paymentBus: PaymentBusService,
   ) {}
 
   async create(userId: string, dto: CreateDepositDto): Promise<DepositEntity> {
@@ -44,6 +46,28 @@ export class DepositService {
       );
     }
 
+    const gatewayBound = GATEWAY_BOUND_TYPES.has(dto.type);
+    let gatewayCode: string | undefined;
+    if (gatewayBound) {
+      if (!symbol.hasPaymentGateway) {
+        throw new BadRequestException(
+          `Deposit type "${dto.type}" requires a payment gateway but symbol "${symbol.slug}" has none configured`,
+        );
+      }
+      gatewayCode = dto.gatewayCode ?? symbol.defaultDepositGateway;
+      if (!gatewayCode) {
+        throw new BadRequestException(
+          `No deposit gateway configured for symbol "${symbol.slug}". Choose one of: ${(symbol.depositGateways ?? []).join(", ")}`,
+        );
+      }
+      const available = symbol.depositGateways ?? [];
+      if (available.length && !available.includes(gatewayCode)) {
+        throw new BadRequestException(
+          `Gateway "${gatewayCode}" is not allowed for symbol "${symbol.slug}". Allowed: ${available.join(", ")}`,
+        );
+      }
+    }
+
     const deposit = this.depositRepo.create({
       userId,
       symbolId: dto.symbolId,
@@ -52,10 +76,32 @@ export class DepositService {
       notes: dto.notes,
       picturePath: dto.picturePath,
       metadata: dto.metadata,
+      gatewayCode,
       status: DepositStatusEnum.PENDING,
     });
 
-    return this.depositRepo.save(deposit);
+    const saved = await this.depositRepo.save(deposit);
+
+    if (gatewayBound) {
+      this.paymentBus.requestDeposit({
+        externalReference: saved.id,
+        userId: saved.userId,
+        symbolSlug: symbol.slug,
+        symbolType: symbol.symbolType,
+        type: saved.type,
+        amount: saved.amount,
+        currency: symbol.name,
+        gatewayCode,
+        picturePath: saved.picturePath,
+        notes: saved.notes,
+        metadata: saved.metadata,
+      });
+      this.logger.log(
+        `Gateway deposit ${saved.id} created, payment.request.deposit published (gateway: ${gatewayCode})`,
+      );
+    }
+
+    return saved;
   }
 
   async findByUser(userId: string, query: DepositQueryDto) {

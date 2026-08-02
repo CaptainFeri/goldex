@@ -28,4 +28,24 @@ export class CreateWithdrawDto {
   @IsObject()
   @ApiProperty({ required: false })
   metadata?: Record<string, any>;
+
+  @IsOptional()
+  @IsString()
+  @ApiProperty({ required: false, description: "Gateway provider code for auto withdrawals" })
+  gatewayCode?: string;
+
+  @IsOptional()
+  @IsString()
+  @ApiProperty({ required: false, description: "Beneficiary IBAN (required for gateway withdrawals)" })
+  beneficiaryIban?: string;
+
+  @IsOptional()
+  @IsString()
+  @ApiProperty({ required: false, description: "Beneficiary name (required for gateway withdrawals)" })
+  beneficiaryName?: string;
+
+  @IsOptional()
+  @IsString()
+  @ApiProperty({ required: false, description: "Beneficiary id (required for gateway withdrawals)" })
+  beneficiaryId?: string;
 }

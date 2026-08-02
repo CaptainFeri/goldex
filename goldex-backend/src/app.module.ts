@@ -47,6 +47,7 @@ import { WithdrawModule } from "./withdraw/withdraw.module";
 import { AdminTelegramMonitoringModule } from "./admin-telegram-monitoring/admin-telegram-monitoring.module";
 import { NotificationModule } from "./notification/notification.module";
 import { CrmModule } from "./crm/crm.module";
+import { PaymentBusModule } from "./payment-bus/payment-bus.module";
 
 @Module({
   imports: [
@@ -140,6 +141,7 @@ import { CrmModule } from "./crm/crm.module";
     AdminTelegramMonitoringModule,
     NotificationModule,
     CrmModule,
+    PaymentBusModule,
   ],
   providers: [WinstonLoggerService],
   controllers: [PublicFileController],

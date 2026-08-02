@@ -21,6 +21,16 @@ export enum MessagePatterns {
   TELEGRAM_PRICE = 'telegram.price',
   TELEGRAM_OPPORTUNITY = 'telegram.opportunity',
   TELEGRAM_MARKET_SNAPSHOT = 'telegram.market.snapshot',
+
+  // Payments (goldex-cbp)
+  PAYMENT_REQUEST_DEPOSIT = 'payment.request.deposit',
+  PAYMENT_REQUEST_WITHDRAW = 'payment.request.withdraw',
+  PAYMENT_REQUEST_WITHDRAW_APPROVE = 'payment.request.withdraw.approve',
+  SYMBOL_SYNC = 'symbol.sync',
+  PAYMENT_PROCESSING = 'payment.processing',
+  PAYMENT_SUCCEEDED = 'payment.succeeded',
+  PAYMENT_FAILED = 'payment.failed',
+  PAYMENT_REJECTED = 'payment.rejected',
 }
 
 export interface RabbitMQMessage {
@@ -95,4 +105,61 @@ export interface PriceSnapshotMessage {
     sellPrice: number;
   }>;
   timestamp: string;
+}
+
+/**
+ * Command sent to goldex-cbp when a deposit/withdraw is created in the
+ * backend. `externalReference` is the backend deposit/withdraw entity id.
+ */
+export interface PaymentRequestMessage {
+  externalReference: string;
+  userId: string;
+  symbolSlug: string;
+  symbolType: string;
+  type: string;
+  amount: number | string;
+  currency?: string;
+  gatewayCode?: string;
+  picturePath?: string;
+  notes?: string;
+  metadata?: Record<string, any>;
+  // withdraw only
+  beneficiaryIban?: string;
+  beneficiaryName?: string;
+  beneficiaryId?: string;
+}
+
+/** Sent to goldex-cbp when an admin approves a gateway-bound withdrawal. */
+export interface WithdrawApproveMessage {
+  externalReference: string;
+  adminId: string;
+}
+
+/** Symbol config synced to goldex-cbp after admin edits. */
+export interface SymbolSyncMessage {
+  slug: string;
+  name: string;
+  symbolType: string;
+  hasPaymentGateway: boolean;
+  isActive: boolean;
+  depositTypes: string[];
+  withdrawTypes: string[];
+  depositGateways: string[];
+  withdrawGateways: string[];
+  defaultDepositGateway?: string;
+  defaultWithdrawGateway?: string;
+}
+
+/** Lifecycle event published by goldex-cbp back to the backend. */
+export interface PaymentEventMessage {
+  paymentId: string;
+  externalReference: string;
+  userId: string;
+  operation: 'deposit' | 'withdraw';
+  status: string;
+  amount: number | string;
+  currency?: string;
+  gatewayCode?: string;
+  identifier?: string;
+  error?: string;
 }

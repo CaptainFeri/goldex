@@ -11,7 +11,8 @@ import { WalletEntity } from "../wallet/entities/wallet.entity";
 import { TransactionEntity } from "../wallet/entities/transaction.entity";
 import { TransactionTypeEnum } from "../wallet/enum/transaction.type.enum";
 import { TransactionStatusEnum } from "../wallet/enum/transaction.status.enum";
-import { getDefaultWithdrawTypes } from "../admin-symbol/constants/symbol-type-type-map";
+import { getDefaultWithdrawTypes, GATEWAY_BOUND_TYPES } from "../admin-symbol/constants/symbol-type-type-map";
+import { PaymentBusService } from "../payment-bus/payment-bus.service";
 
 @Injectable()
 export class WithdrawService {
@@ -27,6 +28,7 @@ export class WithdrawService {
     @InjectRepository(TransactionEntity)
     private transactionRepo: Repository<TransactionEntity>,
     private dataSource: DataSource,
+    private readonly paymentBus: PaymentBusService,
   ) {}
 
   async create(userId: string, dto: CreateWithdrawDto): Promise<WithdrawEntity> {
@@ -43,6 +45,33 @@ export class WithdrawService {
       );
     }
 
+    const gatewayBound = GATEWAY_BOUND_TYPES.has(dto.type);
+    let gatewayCode: string | undefined;
+    if (gatewayBound) {
+      if (!symbol.hasPaymentGateway) {
+        throw new BadRequestException(
+          `Withdraw type "${dto.type}" requires a payment gateway but symbol "${symbol.slug}" has none configured`,
+        );
+      }
+      if (!dto.beneficiaryIban || !dto.beneficiaryName || !dto.beneficiaryId) {
+        throw new BadRequestException(
+          "beneficiaryIban, beneficiaryName and beneficiaryId are required for gateway withdrawals",
+        );
+      }
+      gatewayCode = dto.gatewayCode ?? symbol.defaultWithdrawGateway;
+      if (!gatewayCode) {
+        throw new BadRequestException(
+          `No withdraw gateway configured for symbol "${symbol.slug}". Choose one of: ${(symbol.withdrawGateways ?? []).join(", ")}`,
+        );
+      }
+      const available = symbol.withdrawGateways ?? [];
+      if (available.length && !available.includes(gatewayCode)) {
+        throw new BadRequestException(
+          `Gateway "${gatewayCode}" is not allowed for symbol "${symbol.slug}". Allowed: ${available.join(", ")}`,
+        );
+      }
+    }
+
     const withdraw = this.withdrawRepo.create({
       userId,
       symbolId: dto.symbolId,
@@ -50,11 +79,67 @@ export class WithdrawService {
       amount: dto.amount,
       notes: dto.notes,
       picturePath: dto.picturePath,
-      metadata: dto.metadata,
+      metadata: {
+        ...(dto.metadata ?? {}),
+        ...(gatewayBound
+          ? {
+              beneficiaryIban: dto.beneficiaryIban,
+              beneficiaryName: dto.beneficiaryName,
+              beneficiaryId: dto.beneficiaryId,
+            }
+          : {}),
+      },
+      gatewayCode,
       status: WithdrawStatusEnum.PENDING,
     });
 
-    return this.withdrawRepo.save(withdraw);
+    const saved = await this.withdrawRepo.save(withdraw);
+
+    if (gatewayBound) {
+      this.paymentBus.requestWithdraw({
+        externalReference: saved.id,
+        userId: saved.userId,
+        symbolSlug: symbol.slug,
+        symbolType: symbol.symbolType,
+        type: saved.type,
+        amount: saved.amount,
+        currency: symbol.name,
+        gatewayCode,
+        picturePath: saved.picturePath,
+        notes: saved.notes,
+        metadata: saved.metadata,
+        beneficiaryIban: dto.beneficiaryIban,
+        beneficiaryName: dto.beneficiaryName,
+        beneficiaryId: dto.beneficiaryId,
+      });
+      this.logger.log(
+        `Gateway withdraw ${saved.id} created, payment.request.withdraw published (gateway: ${gatewayCode})`,
+      );
+    }
+
+    return saved;
+  }
+
+  /**
+   * Publishes the approval of a gateway-bound withdrawal to goldex-cbp,
+   * which then executes the provider transfer. Status is driven by
+   * `payment.*` events afterwards.
+   */
+  async approveGatewayWithdraw(adminId: string, id: string): Promise<WithdrawEntity> {
+    const withdraw = await this.findById(id);
+    if (!GATEWAY_BOUND_TYPES.has(withdraw.type)) {
+      throw new BadRequestException("Only gateway-bound withdrawals can be approved");
+    }
+    if (withdraw.status !== WithdrawStatusEnum.PENDING) {
+      throw new BadRequestException("Withdrawal is not in an approvable state");
+    }
+    if (!withdraw.metadata?.beneficiaryIban) {
+      throw new BadRequestException("Withdrawal is missing beneficiary information");
+    }
+
+    this.paymentBus.approveWithdraw(withdraw.id, adminId);
+    this.logger.log(`Gateway withdraw ${withdraw.id} approval published by admin ${adminId}`);
+    return withdraw;
   }
 
   async findByUser(userId: string, query: WithdrawQueryDto) {

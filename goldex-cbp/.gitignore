@@ -1,0 +1,19 @@
+# compiled output
+/dist
+/node_modules
+/build
+
+# logs
+logs
+*.log
+npm-debug.log*
+
+# env
+.env
+
+# uploads
+/public/uploads
+
+# tests
+/coverage
+/.nyc_output

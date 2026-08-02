@@ -92,6 +92,34 @@ export class SymbolEntity extends myBaseEntity {
   })
   withdrawTypes: string[];
 
+  /** Gateway provider codes selectable for deposits (e.g. "kaino-informal"). */
+  @Column("jsonb", {
+    nullable: true,
+    default: [],
+    name: "deposit_gateways",
+  })
+  depositGateways: string[];
+
+  /** Gateway provider codes selectable for withdrawals. */
+  @Column("jsonb", {
+    nullable: true,
+    default: [],
+    name: "withdraw_gateways",
+  })
+  withdrawGateways: string[];
+
+  @Column({
+    nullable: true,
+    name: "default_deposit_gateway",
+  })
+  defaultDepositGateway?: string;
+
+  @Column({
+    nullable: true,
+    name: "default_withdraw_gateway",
+  })
+  defaultWithdrawGateway?: string;
+
   @OneToMany(() => PricePairEntity, (pair) => pair.quoteSymbol)
   quotePairs: PricePairEntity[];
 

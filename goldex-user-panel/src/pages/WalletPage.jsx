@@ -88,8 +88,9 @@ function OcrPreviewBox({ ocr, ocrLoading, ocrEdits, setOcrEdits, imageBase64 }) 
   )
 }
 
-function DepositModal({ symbolId, symbolSlug, depositTypes: allowedDepositTypes, onClose, onDone }) {
+function DepositModal({ symbolId, symbolSlug, depositTypes: allowedDepositTypes, depositGateways, defaultDepositGateway, onClose, onDone }) {
   const [type, setType] = useState(allowedDepositTypes?.[0] || 'manual')
+  const [gatewayCode, setGatewayCode] = useState(defaultDepositGateway || '')
   const [amount, setAmount] = useState('')
   const [notes, setNotes] = useState('')
   const [pictureFile, setPictureFile] = useState(null)
@@ -104,6 +105,7 @@ function DepositModal({ symbolId, symbolSlug, depositTypes: allowedDepositTypes,
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState('')
   const isWarehouse = type === 'warehouse'
+  const isGateway = type === 'payment-gateway'
 
   useEffect(() => {
     if (allowedDepositTypes?.includes('warehouse')) {
@@ -162,6 +164,9 @@ function DepositModal({ symbolId, symbolSlug, depositTypes: allowedDepositTypes,
         await warehouseApi.createDeposit({ warehouseId, weight: Number(amount), symbolId, notes: notes || undefined })
       } else {
         const payload = { symbolId, type, amount: Number(amount), notes: notes || undefined }
+        if (isGateway) {
+          payload.gatewayCode = gatewayCode || undefined
+        }
         if (type === 'manual') {
           payload.picturePath = picturePath || undefined
           if (ocrData) {
@@ -233,6 +238,17 @@ function DepositModal({ symbolId, symbolSlug, depositTypes: allowedDepositTypes,
                 <input className="form-input" type="number" step="0.00000001" min="0.00000001"
                   value={amount} onChange={(e) => setAmount(e.target.value)} required placeholder="e.g. 10" />
               </div>
+              {isGateway && depositGateways?.length > 0 && (
+                <div className="field">
+                  <label>Payment Gateway</label>
+                  <select className="form-input" value={gatewayCode} onChange={(e) => setGatewayCode(e.target.value)} required>
+                    <option value="">— Select Gateway —</option>
+                    {depositGateways.map((g) => (
+                      <option key={g} value={g}>{g}</option>
+                    ))}
+                  </select>
+                </div>
+              )}
               {type === 'manual' && (
                 <div className="field">
                   <label>Receipt Picture</label>
@@ -258,8 +274,12 @@ function DepositModal({ symbolId, symbolSlug, depositTypes: allowedDepositTypes,
   )
 }
 
-function WithdrawModal({ symbolId, symbolSlug, withdrawTypes: allowedWithdrawTypes, onClose, onDone }) {
+function WithdrawModal({ symbolId, symbolSlug, withdrawTypes: allowedWithdrawTypes, withdrawGateways, defaultWithdrawGateway, onClose, onDone }) {
   const [type, setType] = useState(allowedWithdrawTypes?.[0] || 'manual')
+  const [gatewayCode, setGatewayCode] = useState(defaultWithdrawGateway || '')
+  const [beneficiaryIban, setBeneficiaryIban] = useState('')
+  const [beneficiaryName, setBeneficiaryName] = useState('')
+  const [beneficiaryId, setBeneficiaryId] = useState('')
   const [amount, setAmount] = useState('')
   const [notes, setNotes] = useState('')
   const [warehouses, setWarehouses] = useState([])
@@ -267,6 +287,7 @@ function WithdrawModal({ symbolId, symbolSlug, withdrawTypes: allowedWithdrawTyp
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState('')
   const isWarehouse = type === 'warehouse'
+  const isGateway = type === 'auto'
 
   useEffect(() => {
     if (allowedWithdrawTypes?.includes('warehouse')) {
@@ -288,6 +309,12 @@ function WithdrawModal({ symbolId, symbolSlug, withdrawTypes: allowedWithdrawTyp
         await warehouseApi.createWithdraw({ warehouseId, weight: Number(amount), symbolId, notes: notes || undefined })
       } else {
         const payload = { symbolId, type, amount: Number(amount), notes: notes || undefined }
+        if (isGateway) {
+          payload.gatewayCode = gatewayCode || undefined
+          payload.beneficiaryIban = beneficiaryIban || undefined
+          payload.beneficiaryName = beneficiaryName || undefined
+          payload.beneficiaryId = beneficiaryId || undefined
+        }
         await withdrawApi.create(payload)
       }
       onDone()
@@ -342,6 +369,33 @@ function WithdrawModal({ symbolId, symbolSlug, withdrawTypes: allowedWithdrawTyp
                 <input className="form-input" type="number" step="0.00000001" min="0.00000001"
                   value={amount} onChange={(e) => setAmount(e.target.value)} required placeholder="e.g. 10" />
               </div>
+              {isGateway && withdrawGateways?.length > 0 && (
+                <div className="field">
+                  <label>Payment Gateway</label>
+                  <select className="form-input" value={gatewayCode} onChange={(e) => setGatewayCode(e.target.value)} required>
+                    <option value="">— Select Gateway —</option>
+                    {withdrawGateways.map((g) => (
+                      <option key={g} value={g}>{g}</option>
+                    ))}
+                  </select>
+                </div>
+              )}
+              {isGateway && (
+                <>
+                  <div className="field">
+                    <label>Beneficiary IBAN</label>
+                    <input className="form-input" value={beneficiaryIban} onChange={(e) => setBeneficiaryIban(e.target.value)} placeholder="IRxxxxxxxxxxxxxxxxxxxxxxxx" dir="ltr" required />
+                  </div>
+                  <div className="field">
+                    <label>Beneficiary Name</label>
+                    <input className="form-input" value={beneficiaryName} onChange={(e) => setBeneficiaryName(e.target.value)} placeholder="Full name as registered" required />
+                  </div>
+                  <div className="field">
+                    <label>Beneficiary ID (National Code / Passport)</label>
+                    <input className="form-input" value={beneficiaryId} onChange={(e) => setBeneficiaryId(e.target.value)} placeholder="National code or passport number" required />
+                  </div>
+                </>
+              )}
             </>
           )}
           <div className="field">
@@ -606,6 +660,8 @@ export default function WalletPage() {
           symbolId={modal.wallet.symbol?.id}
           symbolSlug={modal.wallet.symbol?.slug || modal.wallet.symbol?.name}
           depositTypes={modal.wallet.symbol?.depositTypes}
+          depositGateways={modal.wallet.symbol?.depositGateways}
+          defaultDepositGateway={modal.wallet.symbol?.defaultDepositGateway}
           onClose={() => setModal(null)}
           onDone={load}
         />
@@ -615,6 +671,8 @@ export default function WalletPage() {
           symbolId={modal.wallet.symbol?.id}
           symbolSlug={modal.wallet.symbol?.slug || modal.wallet.symbol?.name}
           withdrawTypes={modal.wallet.symbol?.withdrawTypes}
+          withdrawGateways={modal.wallet.symbol?.withdrawGateways}
+          defaultWithdrawGateway={modal.wallet.symbol?.defaultWithdrawGateway}
           onClose={() => setModal(null)}
           onDone={load}
         />

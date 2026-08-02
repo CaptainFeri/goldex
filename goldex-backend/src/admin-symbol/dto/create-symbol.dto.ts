@@ -67,4 +67,26 @@ export class CreateSymbolDto {
   @ArrayMinSize(1)
   @ApiProperty({ enum: WithdrawTypeEnum, isArray: true, required: false })
   withdrawTypes?: WithdrawTypeEnum[];
+
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  @ApiProperty({ isArray: true, required: false, description: "Gateway provider codes selectable for deposits" })
+  depositGateways?: string[];
+
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  @ApiProperty({ isArray: true, required: false, description: "Gateway provider codes selectable for withdrawals" })
+  withdrawGateways?: string[];
+
+  @IsOptional()
+  @IsString()
+  @ApiProperty({ required: false })
+  defaultDepositGateway?: string;
+
+  @IsOptional()
+  @IsString()
+  @ApiProperty({ required: false })
+  defaultWithdrawGateway?: string;
 }

@@ -80,6 +80,15 @@ export class WithdrawAdminController {
     }
   }
 
+  @Post(":id/approve")
+  @AdminRoles(AdminRole.ADMIN, AdminRole.SUPER_ADMIN, AdminRole.FINANCE)
+  @ApiOperation({ summary: "Approve a gateway-bound withdrawal (executed by goldex-cbp)" })
+  async approve(@Req() req: AdminExpressRequest, @Param("id") id: string) {
+    const adminId = req.admin?.id || "system";
+    const result = await this.withdrawService.approveGatewayWithdraw(adminId, id);
+    return { data: result };
+  }
+
   @Patch(":id/process")
   @AdminRoles(AdminRole.ADMIN, AdminRole.SUPER_ADMIN, AdminRole.FINANCE)
   @ApiOperation({ summary: "Approve or reject a withdrawal" })

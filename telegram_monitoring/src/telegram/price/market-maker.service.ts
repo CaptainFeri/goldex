@@ -142,6 +142,9 @@ export class MarketMakerService implements OnModuleInit {
     state.lastUpdate = snapshot.date;
     state.volume += parsed.quantity;
 
+    const prevBestBid = state.bestBid;
+    const prevBestAsk = state.bestAsk;
+
     if (parsed.ourAction === 'WE_BUY') {
       if (state.bestBid === null || parsed.price < state.bestBid) {
         state.bestBid = parsed.price;
@@ -151,6 +154,9 @@ export class MarketMakerService implements OnModuleInit {
         state.bestAsk = parsed.price;
       }
     }
+
+    state.prevBestBid = prevBestBid;
+    state.prevBestAsk = prevBestAsk;
 
     if (state.bestBid !== null && state.bestAsk !== null) {
       state.spread = state.bestAsk - state.bestBid;
@@ -200,8 +206,7 @@ export class MarketMakerService implements OnModuleInit {
     if (!state) return;
 
     if (parsed.ourAction === 'WE_BUY' && state.bestBid === parsed.price) {
-      const prev = this.previousPrices.get(dt);
-      const prevBest = prev?.price ?? parsed.price;
+      const prevBest = state.prevBestBid ?? parsed.price;
       if (prevBest === parsed.price) return;
 
       const opportunity: MarketOpportunity = {
@@ -223,8 +228,7 @@ export class MarketMakerService implements OnModuleInit {
     }
 
     if (parsed.ourAction === 'WE_SELL' && state.bestAsk === parsed.price) {
-      const prev = this.previousPrices.get(dt);
-      const prevBest = prev?.price ?? parsed.price;
+      const prevBest = state.prevBestAsk ?? parsed.price;
       if (prevBest === parsed.price) return;
 
       const opportunity: MarketOpportunity = {

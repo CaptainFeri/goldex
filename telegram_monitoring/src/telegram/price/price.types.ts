@@ -84,6 +84,9 @@ export interface MarketState {
   direction: TrendDirection;
   volume: number;
   lastUpdate: number;
+  /** Best bid/ask before the latest update (basis for best-price alerts). */
+  prevBestBid?: number | null;
+  prevBestAsk?: number | null;
 }
 
 export interface MarketOpportunity {

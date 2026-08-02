@@ -20,6 +20,9 @@ const STATUS_KINDS: Record<string, string> = {
   CANCELLED: "gray",
 };
 
+const GATEWAY_TYPES = new Set(["auto"]);
+const gatewayLabel = (code?: string) => code ?? "—";
+
 const fmtNum = (n: any) => (n ?? 0).toLocaleString("fa-IR");
 const fmtDate = (d: string | null) =>
   d ? new Date(d).toLocaleDateString("fa-IR", { year: "numeric", month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }) : "—";
@@ -43,6 +46,11 @@ export default function WithdrawsPage() {
 
   const process = useMutation({
     mutationFn: ({ id, ...body }: any) => api.patch(`/admin/withdraw/${id}/process`, body),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["admin-withdraws"] }); setModal(null); setSelected(null); },
+  });
+
+  const approve = useMutation({
+    mutationFn: (id: string) => api.post(`/admin/withdraw/${id}/approve`),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ["admin-withdraws"] }); setModal(null); setSelected(null); },
   });
 
@@ -87,7 +95,24 @@ export default function WithdrawsPage() {
                   <td><Badge kind={(STATUS_KINDS[w.status] as "green" | "red" | "gold" | "gray")}>{STATUS_LABELS[w.status]}</Badge></td>
                   <td>{fmtDate(w.createAt)}</td>
                   <td>
-                    {w.status === "PENDING" ? (
+                    {w.status === "PENDING" && GATEWAY_TYPES.has(w.type) ? (
+                      <>
+                        <button
+                          className="btn sm"
+                          onClick={() => {
+                            if (window.confirm("برداشت از طریق درگاه پرداخت تأیید و پرداخت شود؟")) {
+                              approve.mutate(w.id);
+                            }
+                          }}
+                          disabled={approve.isPending}
+                        >
+                          تأیید و پرداخت
+                        </button>
+                        <button className="btn sm ghost" onClick={() => { setSelected(w); setModal("detail"); }}>
+                          جزئیات
+                        </button>
+                      </>
+                    ) : w.status === "PENDING" ? (
                       <button className="btn sm" onClick={() => { setSelected(w); setModal("process"); }}>
                         بررسی
                       </button>
@@ -174,6 +199,14 @@ function ProcessWithdrawModal({
         <div><strong>کاربر:</strong> {withdraw.user ? `${withdraw.user.firstName ?? ""} ${withdraw.user.lastName ?? ""}`.trim() || withdraw.user.phone || withdraw.user.email : withdraw.userId}</div>
         <div><strong>نماد:</strong> {withdraw.symbol?.slug || withdraw.symbol?.name}</div>
         <div><strong>نوع:</strong> {typeLabel(withdraw.type)}</div>
+        {withdraw.gatewayCode && <div><strong>درگاه:</strong> {gatewayLabel(withdraw.gatewayCode)}</div>}
+        {withdraw.metadata?.beneficiaryIban && (
+          <>
+            <div><strong>شبا مقصد:</strong> <span dir="ltr">{withdraw.metadata.beneficiaryIban}</span></div>
+            <div><strong>نام ذینفع:</strong> {withdraw.metadata.beneficiaryName}</div>
+            <div><strong>کد ملی ذینفع:</strong> {withdraw.metadata.beneficiaryId}</div>
+          </>
+        )}
         <div><strong>مبلغ:</strong> {fmtNum(withdraw.amount)}</div>
         <div><strong>وضعیت:</strong> {STATUS_LABELS[withdraw.status] ?? withdraw.status}</div>
         {withdraw.notes && <div><strong>توضیحات کاربر:</strong> {withdraw.notes}</div>}

@@ -14,6 +14,15 @@ export const SYMBOL_TYPE_WITHDRAW_MAP: Record<SymbolTypeEnum, string[]> = {
   [SymbolTypeEnum.MATERIAL]: ["warehouse", "borrow"],
 };
 
+/**
+ * Types that are bound to a payment gateway provider (goldex-cbp) instead
+ * of the manual (image proof) flow.
+ */
+export const GATEWAY_BOUND_TYPES: ReadonlySet<string> = new Set([
+  "payment-gateway",
+  "auto",
+]);
+
 export function getDefaultDepositTypes(symbolType: SymbolTypeEnum): string[] {
   return [...(SYMBOL_TYPE_DEPOSIT_MAP[symbolType] ?? [])];
 }

@@ -229,6 +229,33 @@ services:
     networks:
       - goldex-network
 
+  goldex-cbp:
+    build:
+      context: ./goldex-cbp
+      dockerfile: Dockerfile
+    container_name: goldex-cbp
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_started
+      rabbitmq:
+        condition: service_started
+    env_file:
+      - .env
+    environment:
+      PAYMENT_DB_HOST: postgres
+      PAYMENT_DB_PORT: 5432
+      PAYMENT_DB_NAME: ${PAYMENT_DB_NAME:-payment-db}
+      PAYMENT_DB_SYNC: ${PAYMENT_DB_SYNC:-true}
+      PAYMENT_CALLBACK_BASE_URL: http://goldex-cbp:4100
+      CBP_RABBITMQ_HOST: rabbitmq
+      CBP_RABBITMQ_PORT: 5672
+      NODE_ENV: production
+    ports:
+      - "${CBP_EXTERNAL_PORT:-4100}:4100"
+    networks:
+      - goldex-network
+
   goldex-telegram-bot:
     build:
       context: ./goldex-telegram-bot

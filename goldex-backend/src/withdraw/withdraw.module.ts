@@ -9,12 +9,14 @@ import { WalletEntity } from "../wallet/entities/wallet.entity";
 import { TransactionEntity } from "../wallet/entities/transaction.entity";
 import { MinioModule } from "../minio/minio.module";
 import { OcrModule } from "../ocr/ocr.module";
+import { PaymentBusModule } from "../payment-bus/payment-bus.module";
 
 @Module({
   imports: [
     TypeOrmModule.forFeature([WithdrawEntity, SymbolEntity, WalletEntity, TransactionEntity]),
     MinioModule,
     OcrModule,
+    PaymentBusModule,
   ],
   providers: [WithdrawService],
   controllers: [WithdrawController, WithdrawAdminController],

@@ -46,6 +46,9 @@ export class DepositEntity extends myBaseEntity {
   @Column("jsonb", { nullable: true })
   metadata: Record<string, any>;
 
+  @Column({ name: "gateway_code", nullable: true })
+  gatewayCode: string;
+
   @Column({ name: "completed_at", nullable: true })
   completedAt: Date;
 }

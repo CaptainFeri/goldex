@@ -239,6 +239,9 @@ export class TelegramService implements OnModuleInit, OnModuleDestroy {
     const INTERVAL_MS = 60_000;
     this.healthCheckTimer = setInterval(async () => {
       try {
+        if (!this.targetPeerId && this.options.targetChannel) {
+          await this.resolveTargetChannel();
+        }
         if (!this.client.connected) {
           this.logger.warn('Connection lost. Attempting reconnect...');
           await this.connectWithRetry();
@@ -318,6 +321,30 @@ export class TelegramService implements OnModuleInit, OnModuleDestroy {
       } catch {
         // try next
       }
+    }
+
+    // The entity cache may be empty right after a session restore, so fall
+    // back to searching the account's dialogs (membership only).
+    const wanted = /^-?\d+$/.test(target)
+      ? target.replace(/^-100/, '')
+      : target.replace(/^@/, '');
+    try {
+      const dialogs = await this.client.getDialogs({});
+      const match = dialogs.find((d) =>
+        wanted
+          ? d.id?.toString() === wanted ||
+            d.id?.toString() === `-100${wanted}`
+          : (d.title || d.name) === wanted,
+      );
+      if (match) {
+        this.targetPeerId = match.id?.toString() ?? null;
+        this.logger.log(
+          `Target channel resolved via dialogs: ${match.title || match.name || match.id}`,
+        );
+        return;
+      }
+    } catch (error) {
+      this.logger.error('Failed to search dialogs for target channel', error);
     }
 
     this.logger.error(
@@ -460,7 +487,13 @@ export class TelegramService implements OnModuleInit, OnModuleDestroy {
     image: Buffer,
     caption: string,
   ): Promise<void> {
-    if (!this.targetPeerId) return;
+    if (!this.targetPeerId) {
+      this.logger.warn(
+        'Target channel not resolved — skipping photo alert: ' +
+          caption.split('\n')[0],
+      );
+      return;
+    }
     const entity = await this.client.getInputEntity(this.targetPeerId);
     const file = new CustomFile('chart.png', image.length, 'chart.png', image);
     await this.client.sendFile(entity, { file, caption });
@@ -495,7 +528,14 @@ export class TelegramService implements OnModuleInit, OnModuleDestroy {
     text: string,
     replyMarkup?: Api.TypeReplyMarkup,
   ): Promise<void> {
-    if (!this.targetPeerId || !text) return;
+    if (!text) return;
+    if (!this.targetPeerId) {
+      this.logger.warn(
+        'Target channel not resolved — skipping share: ' +
+          text.split('\n')[0],
+      );
+      return;
+    }
 
     const entity = await this.client.getInputEntity(this.targetPeerId);
 

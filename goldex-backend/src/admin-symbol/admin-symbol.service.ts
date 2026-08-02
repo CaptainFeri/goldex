@@ -10,6 +10,7 @@ import { UserMarketTypeEntity } from "../user/entity/user.market.type.entity";
 import { UserEntity } from "../user/entity/user.entity";
 import { WalletEntity } from "../wallet/entities/wallet.entity";
 import { getDefaultDepositTypes, getDefaultWithdrawTypes, validateDepositTypes, validateWithdrawTypes } from "./constants/symbol-type-type-map";
+import { PaymentBusService } from "../payment-bus/payment-bus.service";
 
 @Injectable()
 export class AdminSymbolService {
@@ -24,6 +25,7 @@ export class AdminSymbolService {
     private readonly userRepo: Repository<UserEntity>,
     @InjectRepository(WalletEntity)
     private readonly walletRepo: Repository<WalletEntity>,
+    private readonly paymentBus: PaymentBusService,
   ) {}
 
   private resolveTypes(dto: CreateSymbolDto | UpdateSymbolDto): Partial<SymbolEntity> {
@@ -90,6 +92,7 @@ export class AdminSymbolService {
       this.logger.error(`Failed to auto-create wallets for symbol ${saved.slug}: ${(err as Error).message}`);
     }
 
+    this.paymentBus.syncSymbol(saved);
     return saved;
   }
 
@@ -139,7 +142,9 @@ export class AdminSymbolService {
     }
 
     Object.assign(symbol, updateSymbolDto);
-    return await this.symbolRepository.save(symbol);
+    const saved = await this.symbolRepository.save(symbol);
+    this.paymentBus.syncSymbol(saved);
+    return saved;
   }
 
   async remove(id: string): Promise<void> {
@@ -165,6 +170,8 @@ export class AdminSymbolService {
   async updateStatus(id: string, isActive: boolean): Promise<SymbolEntity> {
     const symbol = await this.findOne(id);
     symbol.isActive = isActive;
-    return await this.symbolRepository.save(symbol);
+    const saved = await this.symbolRepository.save(symbol);
+    this.paymentBus.syncSymbol(saved);
+    return saved;
   }
 }

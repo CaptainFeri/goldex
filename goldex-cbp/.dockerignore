@@ -1,0 +1,10 @@
+node_modules
+dist
+# Stale incremental build cache copied into the image makes `nest build` skip
+# emit after deleteOutDir (dist/main.js never produced). Always build fresh.
+*.tsbuildinfo
+npm-debug.log
+.git
+.env
+logs
+certs
