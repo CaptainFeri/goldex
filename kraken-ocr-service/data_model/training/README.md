@@ -20,33 +20,37 @@ and augmentation params.
 The generator is intentionally **not** part of this repository; regenerate a
 dataset elsewhere with the same naming convention if you need more samples.
 
-## One-time bootstrap training (Docker)
+## Bootstrap training (Docker)
 
-The ocr-worker image bundles these samples and, on first start, trains the
-Persian model automatically if the trained model is missing:
+Bootstrap training is **disabled by default** (`OCR_TRAIN_ON_START=0`). On
+startup the entrypoint uses an existing trained model at `$OCR_MODEL_PATH`, and
+if none exists it falls back to the **bundled Arabic base model**
+(`arabic_best.mlmodel`, copied into the `kraken_models` volume) so the service
+always boots with a usable OCR model.
 
-- The compose file sets `OCR_TRAIN_ON_START=1` and
-  `OCR_MODEL_PATH=/models/persian_best.mlmodel` (persisted in the
-  `kraken_models` volume).
-- On first `docker compose up`, the entrypoint (`docker-entrypoint.sh`)
-  checks `$OCR_MODEL_PATH`; if the file is absent it runs
-  `training.pipeline` against `data/`, then starts uvicorn.
-- On subsequent starts the trained model already exists and training is
-  skipped, so the service boots immediately.
-- Tune with env vars: `OCR_TRAIN_EPOCHS` (default 10),
-  `OCR_TRAIN_BATCH_SIZE` (default 8), `OCR_TRAIN_DEVICE` (default cpu),
-  `OCR_TRAIN_THREADS` (default: all available CPU cores; pass e.g. `4` to cap
-  OpenMP threads/data workers).
+Why disabled by default: the bundled model architecture (a PAW-style 3-layer
+bidirectional LSTM, 4.1M params) is designed for GPUs. On a CPU host every
+training step costs ~40s (a full epoch over the 4,499-line training set takes
+many hours), so an on-boot fine-tune never finishes within the 1h timeout and
+the container restarts in an endless retrain loop.
+
+To opt in (only on a machine where you accept the cost, ideally with a GPU):
+
+- `OCR_TRAIN_ON_START=1` trains on first start when no model exists yet
+  (tune with `OCR_TRAIN_EPOCHS` default 10, `OCR_TRAIN_BATCH_SIZE` default 8,
+  `OCR_TRAIN_DEVICE` default cpu, `OCR_TRAIN_THREADS` to cap OpenMP
+  threads/data workers).
 - Multi-worker training needs shared memory: the compose file sets
   `shm_size: 1g` on `ocr-worker`. With Docker's default 64MB `/dev/shm`,
   PyTorch DataLoader workers crash with `Bus error` /
   `No space left on device`.
-- Set `OCR_TRAIN_ON_START=0` to never bootstrap (falls back to downloading
-  the base Arabic model).
+- Once a trained `persian_best.mlmodel` exists in the volume, startup skips
+  training and the service boots immediately.
 
 ## Training manually (outside Docker)
 
-From the `kraken-ocr-service` directory:
+From the `kraken-ocr-service` directory (budget accordingly: on CPU this
+architecture takes hours per epoch — prefer a GPU host or a few epochs max):
 
 ```bash
 # Fine-tune from the bundled Arabic base model
@@ -54,7 +58,7 @@ python -m training.pipeline \
     --data-dir data_model/training/data \
     --base-model data_model/arabic_best.mlmodel \
     --output data_model/persian_best.mlmodel \
-    --epochs 50 \
+    --epochs 3 \
     --batch-size 8 \
     --val-split 0.1 \
     --device cpu

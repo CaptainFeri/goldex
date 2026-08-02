@@ -24,6 +24,7 @@ if [ "$train_on_start" = "1" ]; then
     else
         echo "[bootstrap] model not found at $model_path"
         echo "[bootstrap] training with bundled samples from $data_dir (epochs<=$epochs, timeout=${timeout_sec}s, stall_timeout=${stall_timeout}s, device=$device, threads=${threads:-auto})..."
+        echo "[bootstrap] WARNING: this architecture is very slow on CPU (hours per epoch); prefer a GPU host or keep this disabled"
         threads_args=""
         if [ -n "$threads" ]; then
             threads_args="--threads $threads"
@@ -50,6 +51,15 @@ if [ "$train_on_start" = "1" ]; then
     fi
 else
     echo "[bootstrap] OCR_TRAIN_ON_START=0, skipping bootstrap training"
+fi
+
+if [ ! -f "$model_path" ]; then
+    if [ -f "$base_model" ]; then
+        echo "[bootstrap] no trained model at $model_path; falling back to the bundled base model $base_model"
+        cp "$base_model" "$model_path"
+    else
+        echo "[bootstrap] WARNING: no model at $model_path and bundled base model $base_model is missing; the service will try to download its default model"
+    fi
 fi
 
 exec uvicorn app.main:app --host 0.0.0.0 --port 8000
