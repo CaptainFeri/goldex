@@ -88,6 +88,17 @@ import { PaymentCallbackModule } from "./payment-callback/payment-callback.modul
           synchronize: false,
           migrationsRun: true,
           logging: ["warn", "error"],
+          retryAttempts: 30,
+          retryDelay: 5000,
+          keepConnectionAlive: true,
+          extra: {
+            max: 10,
+            min: 1,
+            idleTimeoutMillis: 30000,
+            connectionTimeoutMillis: 10000,
+            keepAlive: true,
+            application_name: "goldex-backend",
+          },
         };
       },
       inject: [ConfigService],

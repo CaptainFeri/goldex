@@ -1,12 +1,14 @@
 import {
   Injectable,
   Inject,
+  Logger,
   OnModuleInit,
   OnApplicationBootstrap,
   OnModuleDestroy,
-  Logger,
 } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { Channel, ChannelModel, ConsumeMessage } from 'amqplib';
+import * as amqp from 'amqplib';
 import {
   RABBITMQ_EXCHANGE,
   RABBITMQ_EXCHANGE_TYPE,
@@ -33,25 +35,74 @@ export class RabbitMQService implements OnModuleInit, OnApplicationBootstrap, On
   private consuming = false;
   /** Ensures the "messaging unavailable" hint is logged once, not on every publish. */
   private unavailableHinted = false;
+  private reconnectTimer: NodeJS.Timeout | null = null;
+  private reconnectAttempt = 0;
+  private shouldRetry = true;
+  private readonly maxRetryDelay = 30000;
+  private readonly initialRetryDelay = 1000;
 
-  constructor(@Inject('RABBITMQ_CONNECTION') model: ChannelModel | null) {
+  constructor(
+    @Inject('RABBITMQ_CONNECTION') model: ChannelModel | null,
+    private readonly configService: ConfigService,
+  ) {
     this.model = model;
+  }
+
+  private buildUrl(): string {
+    return (
+      this.configService.get<string>('RABBITMQ_URL') ||
+      `amqp://${this.configService.get<string>('RABBITMQ_USER', 'guest')}:${this.configService.get<string>('RABBITMQ_PASS', 'guest')}@${this.configService.get<string>('RABBITMQ_HOST', 'localhost')}:${this.configService.get<string>('RABBITMQ_PORT', '5672')}`
+    );
   }
 
   async onModuleInit(): Promise<void> {
     if (!this.model) return;
     await this.setupChannel();
+    this.registerModelHandlers(this.model);
+  }
 
-    this.model.on('error', (err) => {
+  private registerModelHandlers(model: ChannelModel): void {
+    model.on('error', (err) => {
       this.logger.warn(`RabbitMQ connection issue: ${err.message}`);
     });
 
-    this.model.on('close', () => {
-      this.logger.warn('RabbitMQ connection closed; messaging paused');
+    model.on('close', () => {
+      this.logger.warn('RabbitMQ connection closed; scheduling reconnection');
       this.channel = null;
       this.consumerTag = null;
       this.consuming = false;
+      this.unavailableHinted = false;
+      if (this.shouldRetry) this.scheduleReconnect();
     });
+  }
+
+  private scheduleReconnect(): void {
+    if (this.reconnectTimer) return;
+    this.reconnectAttempt++;
+    const delay = Math.min(
+      this.initialRetryDelay * Math.pow(2, this.reconnectAttempt - 1),
+      this.maxRetryDelay,
+    );
+    this.logger.warn(`RabbitMQ reconnect attempt ${this.reconnectAttempt} in ${delay}ms...`);
+    this.reconnectTimer = setTimeout(() => {
+      this.reconnectTimer = null;
+      this.reconnect().catch((err) => {
+        this.logger.error(`Reconnect failed: ${err instanceof Error ? err.message : String(err)}`);
+        this.scheduleReconnect();
+      });
+    }, delay);
+  }
+
+  private async reconnect(): Promise<void> {
+    const url = this.buildUrl();
+    this.logger.log(`Connecting to RabbitMQ at ${url.replace(/:\/\/.*@/, '://***@')}`);
+    const model = await amqp.connect(url);
+    this.model = model;
+    this.registerModelHandlers(model);
+    await this.setupChannel();
+    if (this.consumers.size > 0) await this.startConsuming();
+    this.reconnectAttempt = 0;
+    this.logger.log('RabbitMQ reconnected');
   }
 
   private async setupChannel(): Promise<void> {
@@ -181,6 +232,11 @@ export class RabbitMQService implements OnModuleInit, OnApplicationBootstrap, On
   }
 
   async onModuleDestroy(): Promise<void> {
+    this.shouldRetry = false;
+    if (this.reconnectTimer) {
+      clearTimeout(this.reconnectTimer);
+      this.reconnectTimer = null;
+    }
     try {
       if (this.consumerTag && this.channel) {
         await this.channel.cancel(this.consumerTag);
@@ -188,6 +244,7 @@ export class RabbitMQService implements OnModuleInit, OnApplicationBootstrap, On
       if (this.channel) {
         await this.channel.close();
       }
+      await this.model?.close();
     } catch {
       // ignore close errors
     }

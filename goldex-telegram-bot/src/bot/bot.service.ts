@@ -29,6 +29,9 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
     { chatId: number; messageId: number }
   >();
 
+  private pollingRetryTimer: NodeJS.Timeout | null = null;
+  private pollingRetryAttempt = 0;
+
   /** Tracks orders across all users for local matching. */
   private readonly activeOrders = new Map<
     string,
@@ -63,14 +66,49 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
     }
     this.bot = new TelegramBot(token, { polling: true });
     this.logger.log('Bot started with long-polling');
+    this.bot.on('polling_error', (err) => this.handlePollingError(err));
     this.registerHandlers();
     this.startOrderMonitor();
   }
 
   onModuleDestroy() {
+    if (this.pollingRetryTimer) {
+      clearTimeout(this.pollingRetryTimer);
+      this.pollingRetryTimer = null;
+    }
     if (this.bot) {
       this.bot.stopPolling();
     }
+  }
+
+  /**
+   * Long-polling dies on transient network failures (DNS/EAI_AGAIN,
+   * ECONNRESET). Restart it with exponential backoff instead of staying dead.
+   */
+  private handlePollingError(error: Error): void {
+    const message = error?.message ?? String(error);
+    this.logger.error(`Telegram polling error: ${message}`);
+    if (this.pollingRetryTimer) return;
+    this.pollingRetryAttempt++;
+    const delay = Math.min(
+      1000 * Math.pow(2, this.pollingRetryAttempt - 1),
+      30000,
+    );
+    this.logger.warn(
+      `Restarting polling in ${delay}ms (attempt ${this.pollingRetryAttempt})`,
+    );
+    this.pollingRetryTimer = setTimeout(async () => {
+      this.pollingRetryTimer = null;
+      try {
+        await this.bot.startPolling();
+        this.pollingRetryAttempt = 0;
+        this.logger.log('Telegram polling restarted');
+      } catch (restartErr) {
+        this.logger.error(
+          `Failed to restart polling: ${(restartErr as Error).message}`,
+        );
+      }
+    }, delay);
   }
 
   private registerHandlers() {

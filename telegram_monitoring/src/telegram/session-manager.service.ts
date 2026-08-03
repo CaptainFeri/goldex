@@ -1,6 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { StringSession, StoreSession } from 'telegram/sessions';
-import { readFile, writeFile, mkdir } from 'node:fs/promises';
+import { readFile, writeFile, mkdir, unlink, readdir } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 
@@ -51,6 +51,24 @@ export class SessionManagerService {
       return data.trim();
     } catch {
       return null;
+    }
+  }
+
+  /**
+   * Clears every persisted session file (session.string + folder auth keys).
+   * Used when Telegram revokes the auth key (AUTH_KEY_UNREGISTERED) so the
+   * client stops reconnecting with a dead key and a fresh login can start.
+   */
+  async clearPersistedSessions(): Promise<void> {
+    try {
+      const dir = join(process.cwd(), this.sessionFolder);
+      if (!existsSync(dir)) return;
+      for (const file of await readdir(dir)) {
+        await unlink(join(dir, file));
+      }
+      this.logger.warn('Saved Telegram sessions cleared');
+    } catch (error) {
+      this.logger.error('Failed to clear saved sessions', error);
     }
   }
 }

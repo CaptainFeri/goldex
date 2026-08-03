@@ -27,6 +27,17 @@ import { SymbolsModule } from "./symbols/symbols.module";
           database: pg.database,
           autoLoadEntities: true,
           synchronize: pg.synchronize,
+          retryAttempts: 30,
+          retryDelay: 5000,
+          keepConnectionAlive: true,
+          extra: {
+            max: 10,
+            min: 1,
+            idleTimeoutMillis: 30000,
+            connectionTimeoutMillis: 10000,
+            keepAlive: true,
+            application_name: "goldex-cbp",
+          },
         };
       },
     }),

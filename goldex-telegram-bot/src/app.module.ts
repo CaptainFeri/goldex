@@ -26,6 +26,17 @@ import { ChannelModule } from './channel/channel.module';
           entities: ['dist/**/*.entity{.ts,.js}'],
           synchronize: true,
           logging: ['warn', 'error'],
+          retryAttempts: 30,
+          retryDelay: 5000,
+          keepConnectionAlive: true,
+          extra: {
+            max: 10,
+            min: 1,
+            idleTimeoutMillis: 30000,
+            connectionTimeoutMillis: 10000,
+            keepAlive: true,
+            application_name: "goldex-telegram-bot",
+          },
         };
       },
       inject: [ConfigService],

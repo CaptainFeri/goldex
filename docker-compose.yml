@@ -1,3 +1,13 @@
+x-logging: &default-logging
+  driver: "json-file"
+  options:
+    max-size: "10m"
+    max-file: "3"
+
+x-dns: &default-dns
+  - 1.1.1.1
+  - 8.8.8.8
+
 services:
   # ════════════════════════════════════════════
   # INFRASTRUCTURE
@@ -12,6 +22,12 @@ services:
       POSTGRES_PASSWORD: ${GOLDEX_AUTH_POSTGRES_PASSWORD:-postgres}
       POSTGRES_DB: ${GOLDEX_AUTH_POSTGRES_DBNAME:-GOLDEX-DB}
       POSTGRES_MULTIPLE_DATABASES: ${POSTGRES_MULTIPLE_DATABASES:-gold_price_db,goldex_telegram_bot_db,payment-db}
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d GOLDEX-DB"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 20s
     ports:
       - "${POSTGRES_EXTERNAL_PORT:-5434}:5432"
     volumes:
@@ -19,6 +35,7 @@ services:
       - ./postgres-init:/docker-entrypoint-initdb.d
     networks:
       - goldex-network
+    logging: *default-logging
 
   pgadmin:
     image: dpage/pgadmin4:latest
@@ -33,21 +50,28 @@ services:
       - pgadmin_data:/var/lib/pgadmin
     networks:
       - goldex-network
+    logging: *default-logging
     depends_on:
       postgres:
-        condition: service_started
+        condition: service_healthy
 
   redis:
     image: redis:7-alpine
     container_name: goldex-redis
     restart: unless-stopped
     command: redis-server --appendonly yes
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli ping | grep PONG"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
     ports:
       - "${REDIS_EXTERNAL_PORT:-6381}:6379"
     volumes:
       - redis_data:/data
     networks:
       - goldex-network
+    logging: *default-logging
 
   redis-insight:
     image: redis/redisinsight:latest
@@ -59,9 +83,10 @@ services:
       - redis_insight_data:/db
     networks:
       - goldex-network
+    logging: *default-logging
     depends_on:
       redis:
-        condition: service_started
+        condition: service_healthy
 
   minio:
     image: minio/minio:RELEASE.2025-04-03T14-56-28Z-cpuv1
@@ -78,6 +103,7 @@ services:
       - minio_data:/data
     networks:
       - goldex-network
+    logging: *default-logging
 
   rabbitmq:
     image: rabbitmq:4-management-alpine
@@ -86,6 +112,11 @@ services:
     environment:
       RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:-guest}
       RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASS:-guest}
+    healthcheck:
+      test: ["CMD-SHELL", "rabbitmq-diagnostics -q ping"]
+      interval: 10s
+      timeout: 10s
+      retries: 5
     ports:
       - "${RABBITMQ_PORT:-5672}:5672"
       - "${RABBITMQ_MGMT_PORT:-15672}:15672"
@@ -93,6 +124,7 @@ services:
       - rabbitmq_data:/var/lib/rabbitmq
     networks:
       - goldex-network
+    logging: *default-logging
 
   ocr-worker:
     build: ./kraken-ocr-service
@@ -101,7 +133,7 @@ services:
     shm_size: ${OCR_WORKER_SHM_SIZE:-1g}
     depends_on:
       rabbitmq:
-        condition: service_started
+        condition: service_healthy
     ports:
       - "${OCR_WORKER_PORT:-8000}:8000"
     environment:
@@ -117,6 +149,7 @@ services:
       - ocr_feedback:/data/feedback
     networks:
       - goldex-network
+    logging: *default-logging
   monitor:
     build:
       context: ./monitor
@@ -131,6 +164,7 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock
     networks:
       - goldex-network
+    logging: *default-logging
 
   # ════════════════════════════════════════════
   # APP SERVICES
@@ -144,11 +178,11 @@ services:
     restart: unless-stopped
     depends_on:
       postgres:
-        condition: service_started
+        condition: service_healthy
       redis:
-        condition: service_started
+        condition: service_healthy
       rabbitmq:
-        condition: service_started
+        condition: service_healthy
       minio:
         condition: service_started
       ocr-worker:
@@ -168,12 +202,14 @@ services:
       OCR_SERVICE_URL: http://ocr-worker:8000/ocr
       OCR_TIMEOUT: ${OCR_TIMEOUT:-120000}
       NODE_ENV: production
+    dns: *default-dns
     ports:
       - "${BACKEND_EXTERNAL_PORT:-4040}:${GOLDEX_APP_INTERNAL_PORT:-3000}"
     volumes:
       - backend_logs:/app/logs
     networks:
       - goldex-network
+    logging: *default-logging
 
   goldex-pricing-engine:
     build:
@@ -184,11 +220,11 @@ services:
     restart: unless-stopped
     depends_on:
       postgres:
-        condition: service_started
+        condition: service_healthy
       redis:
-        condition: service_started
+        condition: service_healthy
       rabbitmq:
-        condition: service_started
+        condition: service_healthy
     env_file:
       - .env
     environment:
@@ -205,12 +241,14 @@ services:
       MOCK_PORT: 5000
       PORT: 3000
       NODE_ENV: production
+    dns: *default-dns
     ports:
       - "${PRICING_ENGINE_EXTERNAL_PORT:-4000}:3000"
     volumes:
       - pricing_engine_logs:/app/logs
     networks:
       - goldex-network
+    logging: *default-logging
 
   goldex-pricing-engine-mock:
     build:
@@ -237,9 +275,9 @@ services:
     restart: unless-stopped
     depends_on:
       postgres:
-        condition: service_started
+        condition: service_healthy
       rabbitmq:
-        condition: service_started
+        condition: service_healthy
     env_file:
       - .env
     environment:
@@ -251,10 +289,12 @@ services:
       CBP_RABBITMQ_HOST: rabbitmq
       CBP_RABBITMQ_PORT: 5672
       NODE_ENV: production
+    dns: *default-dns
     ports:
       - "${CBP_EXTERNAL_PORT:-4100}:4100"
     networks:
       - goldex-network
+    logging: *default-logging
 
   goldex-telegram-bot:
     build:
@@ -264,17 +304,19 @@ services:
     restart: unless-stopped
     depends_on:
       postgres:
-        condition: service_started
+        condition: service_healthy
     env_file:
       - .env
     environment:
       TELEGRAM_BOT_POSTGRES_URL: postgres
       TELEGRAM_BOT_POSTGRES_PORT: 5432
       GOLDEX_BACKEND_URL: http://goldex-backend:3000
+    dns: *default-dns
     ports:
       - "${TELEGRAM_BOT_EXTERNAL_PORT:-3001}:${TELEGRAM_BOT_PORT:-4000}"
     networks:
       - goldex-network
+    logging: *default-logging
 
   telegram-monitoring:
     build:
@@ -284,19 +326,21 @@ services:
     restart: unless-stopped
     depends_on:
       redis:
-        condition: service_started
+        condition: service_healthy
     env_file:
       - .env
     environment:
       REDIS_HOST: redis
       REDIS_PORT: 6379
       PORT: 3000
+    dns: *default-dns
     ports:
       - "${TELEGRAM_MONITORING_EXTERNAL_PORT:-3002}:3000"
     volumes:
       - telegram_monitoring_sessions:/app/sessions
     networks:
       - goldex-network
+    logging: *default-logging
 
   admin-panel:
     build:
@@ -318,11 +362,7 @@ services:
       - "${ADMIN_PANEL_PORT:-5190}:80"
     networks:
       - goldex-network
-    logging:
-      driver: "json-file"
-      options:
-        max-size: "10m"
-        max-file: "3"
+    logging: *default-logging
 
   user-panel:
     build:
@@ -342,11 +382,7 @@ services:
       - "${USER_PANEL_PORT:-5173}:80"
     networks:
       - goldex-network
-    logging:
-      driver: "json-file"
-      options:
-        max-size: "10m"
-        max-file: "3"
+    logging: *default-logging
 
 # ════════════════════════════════════════════
 # VOLUMES

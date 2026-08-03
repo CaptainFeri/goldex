@@ -56,6 +56,8 @@ export class TelegramService implements OnModuleInit, OnModuleDestroy {
 
   private healthCheckTimer: ReturnType<typeof setInterval> | null = null;
 
+  private sessionInvalidated = false;
+
   constructor(
     @Inject(TELEGRAM_OPTIONS)
     private readonly options: TelegramOptions,
@@ -239,6 +241,7 @@ export class TelegramService implements OnModuleInit, OnModuleDestroy {
     const INTERVAL_MS = 60_000;
     this.healthCheckTimer = setInterval(async () => {
       try {
+        await this.probeAuthKey();
         if (!this.targetPeerId && this.options.targetChannel) {
           await this.resolveTargetChannel();
         }
@@ -256,6 +259,45 @@ export class TelegramService implements OnModuleInit, OnModuleDestroy {
         this.logger.error('Health check failed', error);
       }
     }, INTERVAL_MS);
+  }
+
+  private isAuthKeyUnregistered(err: unknown): boolean {
+    const e = err as { code?: unknown; errorMessage?: unknown };
+    return (
+      e?.code === 401 &&
+      String(e?.errorMessage ?? '').includes('AUTH_KEY_UNREGISTERED')
+    );
+  }
+
+  /**
+   * Detects a revoked Telegram session (AUTH_KEY_UNREGISTERED). The library
+   * retries forever with the dead key, so once detected we clear the persisted
+   * session and restart in deferred-auth mode (POST /api/auth/code) or prompt
+   * for a new session via POST /api/auth/session.
+   */
+  private async handleAuthKeyInvalid(): Promise<void> {
+    if (this.sessionInvalidated) return;
+    this.sessionInvalidated = true;
+    this.logger.error(
+      'Telegram session revoked (AUTH_KEY_UNREGISTERED). Clearing persisted sessions ' +
+        'and re-entering login flow. Complete login via POST /api/auth/code or import ' +
+        'a fresh session via POST /api/auth/session.',
+    );
+    await this.sessionManager.clearPersistedSessions();
+    await this.retryConnection();
+  }
+
+  private async probeAuthKey(): Promise<void> {
+    if (!this.client || !this.client.connected) return;
+    try {
+      await this.client.getMe();
+    } catch (err) {
+      if (this.isAuthKeyUnregistered(err)) {
+        await this.handleAuthKeyInvalid();
+      } else if (err instanceof Error) {
+        this.logger.warn(`Auth key probe failed: ${err.message}`);
+      }
+    }
   }
 
   private async resolveMonitoredChannels(): Promise<void> {
