@@ -12,4 +12,5 @@ export interface TelegramOptions {
   sessionFolder?: string;
   monitoredChannels?: ChannelTarget[];
   targetChannel?: string;
+  walletReportChannel?: string;
 }

@@ -333,6 +333,11 @@ services:
       REDIS_HOST: redis
       REDIS_PORT: 6379
       PORT: 3000
+      # Robot wallet (paper trading): report channel + wallet balances
+      TELEGRAM_WALLET_REPORT_CHANNEL: ${TELEGRAM_WALLET_REPORT_CHANNEL:-}
+      WALLET_INITIAL_IRR: ${WALLET_INITIAL_IRR:-20000000000}
+      WALLET_INITIAL_GOLD_KG: ${WALLET_INITIAL_GOLD_KG:-1}
+      WALLET_TTL: ${WALLET_TTL:-604800}
     dns: *default-dns
     ports:
       - "${TELEGRAM_MONITORING_EXTERNAL_PORT:-3002}:3000"

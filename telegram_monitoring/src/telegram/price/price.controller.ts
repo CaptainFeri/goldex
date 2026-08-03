@@ -3,6 +3,14 @@ import { Observable, map } from 'rxjs';
 import { PricePersistenceService } from './price-persistence.service';
 import { ArbitragePersistenceService } from './arbitrage-persistence.service';
 import { MarketMakerService } from './market-maker.service';
+import { WalletService } from '../wallet/wallet.service';
+import type {
+  SymbolWallet,
+  TradeRecord,
+  TradeSource,
+  WalletQuery,
+  WalletSnapshot,
+} from '../wallet/wallet.types';
 import type {
   ArbitrageQuery,
   ArbitrageRecord,
@@ -16,6 +24,39 @@ import type {
   PriceSubType,
   WalletState,
 } from './price.types';
+
+@Controller('api/wallet')
+export class WalletController {
+  constructor(private readonly wallet: WalletService) {}
+
+  @Get()
+  snapshot(): WalletSnapshot {
+    return this.wallet.getSnapshot();
+  }
+
+  @Get('symbols')
+  symbols(): SymbolWallet[] {
+    return this.wallet.getSymbols();
+  }
+
+  @Get('trades')
+  trades(
+    @Query('source') source?: string,
+    @Query('symbol') symbol?: string,
+    @Query('from') from?: string,
+    @Query('to') to?: string,
+    @Query('executed') executed?: string,
+  ): TradeRecord[] {
+    const filter: WalletQuery = {
+      source: source as TradeSource | undefined,
+      symbol: symbol || undefined,
+      from: from ? Number(from) : undefined,
+      to: to ? Number(to) : undefined,
+      executed: executed === undefined ? undefined : executed === 'true',
+    };
+    return this.wallet.getTrades(filter);
+  }
+}
 
 @Controller('api/prices')
 export class PriceController {

@@ -14,9 +14,11 @@ import {
   ArbitrageController,
   MarketMakerController,
   OpportunityController,
+  WalletController,
 } from './price/price.controller';
 import { AuthController } from './auth/auth.controller';
 import { RabbitMQPublisherService } from './rabbitmq-publisher.service';
+import { WalletService } from './wallet/wallet.service';
 
 @Global()
 @Module({})
@@ -29,6 +31,7 @@ export class TelegramModule {
         ArbitrageController,
         MarketMakerController,
         OpportunityController,
+        WalletController,
         AuthController,
       ],
       providers: [
@@ -43,6 +46,7 @@ export class TelegramModule {
         MarketMakerService,
         ChartImageService,
         RabbitMQPublisherService,
+        WalletService,
         TelegramService,
       ],
       exports: [TelegramService, PriceHistoryService],
@@ -58,6 +62,7 @@ export class TelegramModule {
         ArbitrageController,
         MarketMakerController,
         OpportunityController,
+        WalletController,
         AuthController,
       ],
       providers: [
@@ -76,6 +81,10 @@ export class TelegramModule {
             ),
             monitoredChannels: config.get('telegram.monitoredChannels'),
             targetChannel: config.get<string>('telegram.targetChannel', ''),
+            walletReportChannel: config.get<string>(
+              'telegram.walletReportChannel',
+              '',
+            ),
           }),
         },
         SessionManagerService,
@@ -85,6 +94,7 @@ export class TelegramModule {
         MarketMakerService,
         ChartImageService,
         RabbitMQPublisherService,
+        WalletService,
         TelegramService,
       ],
       exports: [TelegramService, PriceHistoryService],

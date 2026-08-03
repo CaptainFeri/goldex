@@ -22,14 +22,23 @@ import { PriceHistoryService } from './price/price-history.service';
 import { MarketMakerService } from './price/market-maker.service';
 import { ChartImageService } from './price/chart-image.service';
 import { parsePriceMessage } from './price/price-message.parser';
-import { formatPriceMovementAlert, formatBestPriceAlert, formatArbitrageMessage } from './price/price-message.formatter';
-import type { ArbitrageOpportunity, MarketOpportunity, OrderButton } from './price/price.types';
+import {
+  formatPriceMovementAlert,
+  formatBestPriceAlert,
+  formatArbitrageMessage,
+} from './price/price-message.formatter';
+import type {
+  ArbitrageOpportunity,
+  MarketOpportunity,
+  OrderButton,
+} from './price/price.types';
 
 type Entity = Api.User | Api.Chat | Api.Channel;
 
 function entityDisplayName(entity: Entity): string {
-  if ('title' in entity) return (entity as Api.Chat | Api.Channel).title;
-  if ('firstName' in entity) return (entity as Api.User).firstName ?? (entity as Api.User).username ?? 'unknown';
+  if ('title' in entity) return entity.title;
+  if ('firstName' in entity)
+    return entity.firstName ?? entity.username ?? 'unknown';
   return 'unknown';
 }
 
@@ -48,6 +57,7 @@ export class TelegramService implements OnModuleInit, OnModuleDestroy {
   private client!: TelegramClient;
   private monitoredPeerIds: string[] = [];
   private targetPeerId: string | null = null;
+  private walletReportPeerId: string | null = null;
 
   private authCodeResolver: ((code: string) => void) | null = null;
   private authPasswordResolver: ((password: string) => void) | null = null;
@@ -67,7 +77,9 @@ export class TelegramService implements OnModuleInit, OnModuleDestroy {
     private readonly chartImage: ChartImageService,
     private readonly sessionManager: SessionManagerService,
   ) {
-    this.sessionManager.setSessionFolder(this.options.sessionFolder || 'sessions');
+    this.sessionManager.setSessionFolder(
+      this.options.sessionFolder || 'sessions',
+    );
   }
 
   async onModuleInit(): Promise<void> {
@@ -75,8 +87,10 @@ export class TelegramService implements OnModuleInit, OnModuleDestroy {
   }
 
   private async initClient(sessionString?: string): Promise<boolean> {
-    const ss = sessionString || this.options.sessionString
-      || await this.sessionManager.loadSessionString();
+    const ss =
+      sessionString ||
+      this.options.sessionString ||
+      (await this.sessionManager.loadSessionString());
     const session = this.sessionManager.createSession(ss || undefined);
 
     this.client = new TelegramClient(
@@ -128,13 +142,16 @@ export class TelegramService implements OnModuleInit, OnModuleDestroy {
     this.logger.log('Telegram client initialized');
     await this.resolveMonitoredChannels();
     await this.resolveTargetChannel();
+    await this.resolveWalletReportChannel();
     this.registerEventHandlers();
   }
 
   private startDeferredAuth(): void {
     if (this.floodedUntil && Date.now() < this.floodedUntil) {
       const remaining = Math.ceil((this.floodedUntil - Date.now()) / 1000);
-      this.logger.warn(`Flooded — skipping auth start (${remaining}s remaining)`);
+      this.logger.warn(
+        `Flooded — skipping auth start (${remaining}s remaining)`,
+      );
       return;
     }
 
@@ -157,13 +174,16 @@ export class TelegramService implements OnModuleInit, OnModuleDestroy {
           this.logger.error('Auth error', err);
           const e = err as { code?: unknown; errorMessage?: unknown };
           if (e.code) this.logger.error(`Error code: ${String(e.code)}`);
-          if (e.errorMessage) this.logger.error(`Error message: ${String(e.errorMessage)}`);
+          if (e.errorMessage)
+            this.logger.error(`Error message: ${String(e.errorMessage)}`);
 
           if (e.code === 420) {
             const floodErr = err as { seconds?: number; errorMessage?: string };
             const wait = floodErr.seconds ?? 300;
             this.floodedUntil = Date.now() + wait * 1000;
-            this.logger.error(`FLOOD detected — waiting ${wait}s before next auth attempt`);
+            this.logger.error(
+              `FLOOD detected — waiting ${wait}s before next auth attempt`,
+            );
             this.authCodeResolver = null;
             this.authPasswordResolver = null;
             throw err;
@@ -180,17 +200,23 @@ export class TelegramService implements OnModuleInit, OnModuleDestroy {
         this.logger.error('Auth failed', err);
         const e = err as { code?: unknown; errorMessage?: unknown };
         if (e.code) this.logger.error(`Error code: ${String(e.code)}`);
-        if (e.errorMessage) this.logger.error(`Error message: ${String(e.errorMessage)}`);
+        if (e.errorMessage)
+          this.logger.error(`Error message: ${String(e.errorMessage)}`);
       });
   }
 
-  async resendCode(): Promise<{ sentViaApp: boolean; phoneCodeHash: string } | null> {
+  async resendCode(): Promise<{
+    sentViaApp: boolean;
+    phoneCodeHash: string;
+  } | null> {
     try {
       const result = await this.client.sendCode(
         { apiId: this.options.apiId, apiHash: this.options.apiHash },
         this.options.phoneNumber,
       );
-      this.logger.log(`Verification code resent (via app: ${result.isCodeViaApp})`);
+      this.logger.log(
+        `Verification code resent (via app: ${result.isCodeViaApp})`,
+      );
       return {
         sentViaApp: result.isCodeViaApp,
         phoneCodeHash: result.phoneCodeHash,
@@ -199,7 +225,8 @@ export class TelegramService implements OnModuleInit, OnModuleDestroy {
       this.logger.error('Failed to resend code', err);
       const e = err as { code?: unknown; errorMessage?: unknown };
       if (e.code) this.logger.error(`Error code: ${String(e.code)}`);
-      if (e.errorMessage) this.logger.error(`Error message: ${String(e.errorMessage)}`);
+      if (e.errorMessage)
+        this.logger.error(`Error message: ${String(e.errorMessage)}`);
       return null;
     }
   }
@@ -208,7 +235,9 @@ export class TelegramService implements OnModuleInit, OnModuleDestroy {
     const maxAttempts = 3;
     for (let attempt = 1; attempt <= maxAttempts; attempt++) {
       try {
-        this.logger.log(`Connecting to Telegram (attempt ${attempt}/${maxAttempts})...`);
+        this.logger.log(
+          `Connecting to Telegram (attempt ${attempt}/${maxAttempts})...`,
+        );
         await this.client.connect();
         this.logger.log('Connected to Telegram successfully');
         return true;
@@ -244,6 +273,9 @@ export class TelegramService implements OnModuleInit, OnModuleDestroy {
         await this.probeAuthKey();
         if (!this.targetPeerId && this.options.targetChannel) {
           await this.resolveTargetChannel();
+        }
+        if (!this.walletReportPeerId && this.options.walletReportChannel) {
+          await this.resolveWalletReportChannel();
         }
         if (!this.client.connected) {
           this.logger.warn('Connection lost. Attempting reconnect...');
@@ -318,11 +350,9 @@ export class TelegramService implements OnModuleInit, OnModuleDestroy {
       let resolved = false;
       for (const id of candidates) {
         try {
-          const entity = await this.client.getEntity(id) as Entity;
+          const entity = (await this.client.getEntity(id)) as Entity;
           this.monitoredPeerIds.push(entityIdStr(entity));
-          this.logger.log(
-            `Monitoring: ${entityDisplayName(entity)}`,
-          );
+          this.logger.log(`Monitoring: ${entityDisplayName(entity)}`);
           resolved = true;
           break;
         } catch {
@@ -347,19 +377,37 @@ export class TelegramService implements OnModuleInit, OnModuleDestroy {
       );
       return;
     }
+    this.targetPeerId = await this.resolvePeer(target, 'Target channel');
+  }
 
+  private async resolveWalletReportChannel(): Promise<void> {
+    const target = this.options.walletReportChannel;
+    if (!target) {
+      this.logger.log(
+        'No wallet report channel configured, wallet reports will not be shared',
+      );
+      return;
+    }
+    this.walletReportPeerId = await this.resolvePeer(
+      target,
+      'Wallet report channel',
+    );
+  }
+
+  /** Resolves a channel id/username to a peer id, with dialog fallback. */
+  private async resolvePeer(
+    target: string,
+    label: string,
+  ): Promise<string | null> {
     const candidates = /^-?\d+$/.test(target)
       ? [target, `-100${target.replace(/^-100/, '')}`]
       : [target];
 
     for (const id of candidates) {
       try {
-        const entity = await this.client.getEntity(id) as Entity;
-        this.targetPeerId = entityIdStr(entity);
-        this.logger.log(
-          `Target channel resolved: ${entityDisplayName(entity)}`,
-        );
-        return;
+        const entity = (await this.client.getEntity(id)) as Entity;
+        this.logger.log(`${label} resolved: ${entityDisplayName(entity)}`);
+        return entityIdStr(entity);
       } catch {
         // try next
       }
@@ -374,25 +422,25 @@ export class TelegramService implements OnModuleInit, OnModuleDestroy {
       const dialogs = await this.client.getDialogs({});
       const match = dialogs.find((d) =>
         wanted
-          ? d.id?.toString() === wanted ||
-            d.id?.toString() === `-100${wanted}`
+          ? d.id?.toString() === wanted || d.id?.toString() === `-100${wanted}`
           : (d.title || d.name) === wanted,
       );
       if (match) {
-        this.targetPeerId = match.id?.toString() ?? null;
+        const peerId = match.id?.toString() ?? null;
         this.logger.log(
-          `Target channel resolved via dialogs: ${match.title || match.name || match.id}`,
+          `${label} resolved via dialogs: ${match.title || match.name || match.id}`,
         );
-        return;
+        return peerId;
       }
     } catch (error) {
-      this.logger.error('Failed to search dialogs for target channel', error);
+      this.logger.error(`Failed to search dialogs for ${label}`, error);
     }
 
     this.logger.error(
-      `Could not resolve target channel "${target}". Make sure the account is a member. ` +
+      `Could not resolve ${label} "${target}". Make sure the account is a member. ` +
         `Use @username or full numeric ID with -100 prefix.`,
     );
+    return null;
   }
 
   private registerEventHandlers(): void {
@@ -407,11 +455,16 @@ export class TelegramService implements OnModuleInit, OnModuleDestroy {
     );
 
     this.eventEmitter.removeAllListeners('market.opportunity');
-    this.eventEmitter.on('market.opportunity', (opportunity: MarketOpportunity) => {
-      this.onMarketOpportunity(opportunity);
-    });
+    this.eventEmitter.on(
+      'market.opportunity',
+      (opportunity: MarketOpportunity) => {
+        this.onMarketOpportunity(opportunity);
+      },
+    );
 
-    this.logger.log('Message, callback query, and market opportunity event handlers registered');
+    this.logger.log(
+      'Message, callback query, and market opportunity event handlers registered',
+    );
   }
 
   private async handleNewMessage(event: NewMessageEvent): Promise<void> {
@@ -427,8 +480,8 @@ export class TelegramService implements OnModuleInit, OnModuleDestroy {
     });
 
     const chatId = message.chatId?.toString();
-    const chat = await message.getChat() as Entity | undefined;
-    const sender = await message.getSender() as Entity | undefined;
+    const chat = (await message.getChat()) as Entity | undefined;
+    const sender = (await message.getSender()) as Entity | undefined;
     const chatTitle = chat ? entityDisplayName(chat) : chatId;
     const senderName = sender ? entityDisplayName(sender) : 'unknown';
 
@@ -481,7 +534,10 @@ export class TelegramService implements OnModuleInit, OnModuleDestroy {
 
       this.marketMaker.onPrice(parsed, snapshot);
 
-      const opportunity = this.priceHistory.detectArbitrage(parsed, message.date);
+      const opportunity = this.priceHistory.detectArbitrage(
+        parsed,
+        message.date,
+      );
       if (opportunity && this.priceHistory.markReportedIfNew(opportunity)) {
         await this.sendArbitrageAlert(
           opportunity,
@@ -520,9 +576,10 @@ export class TelegramService implements OnModuleInit, OnModuleDestroy {
   }
 
   private onMarketOpportunity(opportunity: MarketOpportunity): void {
-    const caption = opportunity.type === 'BEST_PRICE'
-      ? formatBestPriceAlert(opportunity)
-      : formatPriceMovementAlert(opportunity);
+    const caption =
+      opportunity.type === 'BEST_PRICE'
+        ? formatBestPriceAlert(opportunity)
+        : formatPriceMovementAlert(opportunity);
 
     this.shareToTarget(caption).catch((error) =>
       this.logger.error('Failed to send market alert', error),
@@ -558,9 +615,12 @@ export class TelegramService implements OnModuleInit, OnModuleDestroy {
     if (!('rows' in replyMarkup)) return [];
     return replyMarkup.rows.map((row: { buttons: Api.TypeKeyboardButton[] }) =>
       (row.buttons ?? []).map((btn) => {
-        const data = 'data' in btn
-          ? (btn.data instanceof Buffer ? btn.data.toString('utf-8') : String(btn.data))
-          : undefined;
+        const data =
+          'data' in btn
+            ? btn.data instanceof Buffer
+              ? btn.data.toString('utf-8')
+              : String(btn.data)
+            : undefined;
         return {
           text: btn.text,
           url: 'url' in btn ? btn.url : undefined,
@@ -577,8 +637,7 @@ export class TelegramService implements OnModuleInit, OnModuleDestroy {
     if (!text) return;
     if (!this.targetPeerId) {
       this.logger.warn(
-        'Target channel not resolved — skipping share: ' +
-          text.split('\n')[0],
+        'Target channel not resolved — skipping share: ' + text.split('\n')[0],
       );
       return;
     }
@@ -600,6 +659,39 @@ export class TelegramService implements OnModuleInit, OnModuleDestroy {
     }
   }
 
+  /**
+   * Sends a text report (orders / wallet status / profits) to the configured
+   * wallet report channel. No-op when the channel is not configured/resolved.
+   */
+  async sendWalletReport(text: string): Promise<void> {
+    if (!text) return;
+    if (!this.walletReportPeerId) {
+      this.logger.warn(
+        'Wallet report channel not resolved — skipping report: ' +
+          text.split('\n')[0],
+      );
+      return;
+    }
+
+    const entity = await this.client.getInputEntity(this.walletReportPeerId);
+
+    try {
+      await this.client.invoke(
+        new Api.messages.SendMessage({
+          peer: entity,
+          message: text,
+          noWebpage: true,
+        }),
+      );
+      this.logger.log(`Shared wallet report to report channel`);
+    } catch (error) {
+      this.logger.error(
+        'Failed to share wallet report to report channel',
+        error,
+      );
+    }
+  }
+
   private async handleCallbackQuery(event: CallbackQueryEvent): Promise<void> {
     const query = event.query;
     const data = event.data;
@@ -607,7 +699,7 @@ export class TelegramService implements OnModuleInit, OnModuleDestroy {
     const parts = dataStr.split('|');
 
     const sender = event.sender as Entity | undefined;
-    const chat = await event.getChat() as Entity | undefined;
+    const chat = (await event.getChat()) as Entity | undefined;
 
     this.logger.logStructured('CALLBACK_QUERY', {
       queryId: query.queryId?.toString(),
@@ -663,7 +755,8 @@ export class TelegramService implements OnModuleInit, OnModuleDestroy {
     const dialogs = await this.client.getDialogs({});
     return dialogs.map((dialog: Dialog) => ({
       id: dialog.id?.toString() ?? '',
-      title: dialog.title || dialog.name || dialog.entity?.className || 'unknown',
+      title:
+        dialog.title || dialog.name || dialog.entity?.className || 'unknown',
       type: dialog.isGroup
         ? 'group'
         : dialog.isChannel
@@ -704,17 +797,27 @@ export class TelegramService implements OnModuleInit, OnModuleDestroy {
     return this.client;
   }
 
-  getAuthState(): { ready: boolean; waitingFor: string | null; floodedUntil: number | null } {
-    if (!this.client) return { ready: false, waitingFor: null, floodedUntil: null };
+  getAuthState(): {
+    ready: boolean;
+    waitingFor: string | null;
+    floodedUntil: number | null;
+  } {
+    if (!this.client)
+      return { ready: false, waitingFor: null, floodedUntil: null };
 
     if (this.floodedUntil) {
       if (Date.now() < this.floodedUntil) {
-        return { ready: false, waitingFor: `flooded (${Math.ceil((this.floodedUntil - Date.now()) / 1000)}s)`, floodedUntil: this.floodedUntil };
+        return {
+          ready: false,
+          waitingFor: `flooded (${Math.ceil((this.floodedUntil - Date.now()) / 1000)}s)`,
+          floodedUntil: this.floodedUntil,
+        };
       }
       this.floodedUntil = null;
     }
 
-    if (this.authCodeResolver) return { ready: false, waitingFor: 'code', floodedUntil: null };
+    if (this.authCodeResolver)
+      return { ready: false, waitingFor: 'code', floodedUntil: null };
     if (this.authPasswordResolver)
       return { ready: false, waitingFor: 'password', floodedUntil: null };
     return { ready: true, waitingFor: null, floodedUntil: null };

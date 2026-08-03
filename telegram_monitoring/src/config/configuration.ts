@@ -36,5 +36,6 @@ export default () => ({
       process.env.TELEGRAM_MONITORED_CHANNELS,
     ),
     targetChannel: process.env.TELEGRAM_TARGET_CHANNEL || '',
+    walletReportChannel: process.env.TELEGRAM_WALLET_REPORT_CHANNEL || '',
   },
 });
