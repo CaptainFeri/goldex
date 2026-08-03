@@ -21,11 +21,16 @@ import type {
 } from './wallet.types';
 
 const WALLET_INITIAL_IRR =
-  Number(process.env.WALLET_INITIAL_IRR) || 20_000_000_000;
+  Number(process.env.WALLET_INITIAL_IRR) || 100_000_000_000;
 const WALLET_INITIAL_GOLD_KG = Number(process.env.WALLET_INITIAL_GOLD_KG) || 1;
 const WALLET_TTL = Number(process.env.WALLET_TTL) || 604800;
 const WALLET_STATUS_INTERVAL_SECONDS =
   Number(process.env.WALLET_STATUS_INTERVAL_SECONDS) || 60;
+/** Fraction of equity kept as cash — buys may never spend below this floor. */
+const WALLET_CASH_RESERVE_RATIO =
+  Number(process.env.WALLET_CASH_RESERVE_RATIO) || 0.2;
+/** Smallest position (kg) the wallet will open when sizing down a signal. */
+const WALLET_MIN_TRADE_KG = Number(process.env.WALLET_MIN_TRADE_KG) || 1;
 
 const STATE_KEY = 'wallet:state';
 const TRADE_IDS_KEY = 'wallet:trade:ids';
@@ -164,7 +169,9 @@ export class WalletService implements OnModuleInit, OnModuleDestroy {
   executeArbitrage(opportunity: ArbitrageOpportunity): TradeRecord[] {
     const symbol = opportunity.deliveryType;
     const wallet = this.ensureWallet(symbol);
-    const qtyKg = opportunity.quantity;
+    const signalQty = opportunity.quantity;
+    const costPerKg = Math.round(kgToMesqal(1) * opportunity.buy.price);
+    const qtyKg = this.affordableKg(signalQty, costPerKg);
     const cost = Math.round(kgToMesqal(qtyKg) * opportunity.buy.price);
     const proceeds = Math.round(kgToMesqal(qtyKg) * opportunity.sell.price);
     const date = Math.floor(Date.now() / 1000);
@@ -176,14 +183,14 @@ export class WalletService implements OnModuleInit, OnModuleDestroy {
       source: 'ARBITRAGE',
       symbol,
       subType: 'normal',
-      quantityKg: qtyKg,
+      quantityKg: signalQty,
       ourAction: opportunity.sell.ourAction,
       executed: false,
     };
 
     let reason: string | undefined;
-    if (cost > this.irrBalance) {
-      reason = `موجودی ریال کافی نیست (${cost.toLocaleString('en-US')} تومان لازم است)`;
+    if (qtyKg < WALLET_MIN_TRADE_KG) {
+      reason = this.insufficientCashReason(costPerKg);
     }
 
     if (reason) {
@@ -193,7 +200,7 @@ export class WalletService implements OnModuleInit, OnModuleDestroy {
           id: this.nextId(),
           side: 'BUY',
           price: opportunity.buy.price,
-          amount: cost,
+          amount: Math.round(kgToMesqal(signalQty) * opportunity.buy.price),
           profit: 0,
           reason,
         },
@@ -202,7 +209,7 @@ export class WalletService implements OnModuleInit, OnModuleDestroy {
           id: this.nextId(),
           side: 'SELL',
           price: opportunity.sell.price,
-          amount: proceeds,
+          amount: Math.round(kgToMesqal(signalQty) * opportunity.sell.price),
           profit: 0,
           reason,
         },
@@ -218,6 +225,7 @@ export class WalletService implements OnModuleInit, OnModuleDestroy {
       id: this.nextId(),
       side: 'BUY',
       price: opportunity.buy.price,
+      quantityKg: qtyKg,
       amount: cost,
       profit: 0,
       executed: true,
@@ -227,6 +235,7 @@ export class WalletService implements OnModuleInit, OnModuleDestroy {
       id: this.nextId(),
       side: 'SELL',
       price: opportunity.sell.price,
+      quantityKg: qtyKg,
       amount: proceeds,
       profit,
       executed: true,
@@ -259,20 +268,23 @@ export class WalletService implements OnModuleInit, OnModuleDestroy {
    * Market maker alert = a single leg. WE_BUY opens a position when the IRR
    * pool can afford it; WE_SELL closes gold FIFO (oldest lots first) when
    * there is enough inventory and the price beats the cost of the oldest lots
-   * (never realize a loss; free seed gold can always be sold at a profit).
+   * (never realize a loss). Free seed gold is charged at the sale price, so
+   * selling it books no profit — realized P/L only reflects real price moves.
    */
   executeMarketMaker(opportunity: MarketOpportunity): TradeRecord | null {
     const symbol = opportunity.deliveryType;
     const wallet = this.ensureWallet(symbol);
-    const qtyKg = opportunity.quantity;
+    const signalQty = opportunity.quantity;
     const date = Math.floor(Date.now() / 1000);
     const proceedsPerKg = opportunity.price * MITHQALS_PER_KILO;
 
     if (opportunity.ourAction === 'WE_BUY') {
+      const costPerKg = Math.round(kgToMesqal(1) * opportunity.price);
+      const qtyKg = this.affordableKg(signalQty, costPerKg);
       const cost = Math.round(kgToMesqal(qtyKg) * opportunity.price);
       let reason: string | undefined;
-      if (cost > this.irrBalance) {
-        reason = `موجودی ریال کافی نیست (${cost.toLocaleString('en-US')} تومان لازم است)`;
+      if (qtyKg < WALLET_MIN_TRADE_KG) {
+        reason = this.insufficientCashReason(costPerKg);
       }
 
       if (reason) {
@@ -285,8 +297,8 @@ export class WalletService implements OnModuleInit, OnModuleDestroy {
           side: 'BUY',
           ourAction: 'WE_BUY',
           price: opportunity.price,
-          quantityKg: qtyKg,
-          amount: cost,
+          quantityKg: signalQty,
+          amount: Math.round(kgToMesqal(signalQty) * opportunity.price),
           profit: 0,
           executed: false,
           reason,
@@ -330,6 +342,7 @@ export class WalletService implements OnModuleInit, OnModuleDestroy {
     }
 
     // WE_SELL
+    const qtyKg = signalQty;
     const proceeds = Math.round(kgToMesqal(qtyKg) * opportunity.price);
     const costBasisKg = this.costBasisKg(wallet, qtyKg);
 
@@ -358,7 +371,7 @@ export class WalletService implements OnModuleInit, OnModuleDestroy {
       };
     }
 
-    const costBasis = this.consumeLots(wallet, qtyKg);
+    const costBasis = this.consumeLots(wallet, qtyKg, proceedsPerKg);
     const profit = Math.round(proceedsPerKg * qtyKg) - costBasis;
     this.irrBalance += proceeds;
     this.totalRealizedProfit += profit;
@@ -391,6 +404,47 @@ export class WalletService implements OnModuleInit, OnModuleDestroy {
   }
 
   /**
+   * Total assets: cash plus the cost basis of every held gold lot. Cost basis
+   * is used (not mark-to-market) because the wallet only knows execution
+   * prices — a conservative floor for the equity behind the cash reserve.
+   */
+  private equity(): number {
+    let goldCostBasis = 0;
+    for (const w of this.symbols.values()) {
+      for (const lot of w.lots) {
+        goldCostBasis += lot.pricePerKg * lot.qtyKg;
+      }
+    }
+    return this.irrBalance + goldCostBasis;
+  }
+
+  /** Cash kept aside (reserveRatio × equity) and never spent on buys. */
+  private cashReserve(): number {
+    return Math.round(this.equity() * WALLET_CASH_RESERVE_RATIO);
+  }
+
+  /** Cash available for buys above the reserve. */
+  private buyingPower(): number {
+    return Math.max(0, this.irrBalance - this.cashReserve());
+  }
+
+  /**
+   * Position sizing: the largest whole kilogram quantity the wallet can open
+   * for the signal without touching the cash reserve. Returns 0 when even the
+   * minimum trade does not fit.
+   */
+  private affordableKg(signalKg: number, costPerKg: number): number {
+    if (costPerKg <= 0) return signalKg;
+    const affordable = Math.floor(this.buyingPower() / costPerKg);
+    return Math.max(0, Math.min(signalKg, affordable));
+  }
+
+  private insufficientCashReason(costPerKg: number): string {
+    const needed = Math.round(costPerKg * WALLET_MIN_TRADE_KG);
+    return `موجودی ریال کافی نیست (ذخیره نقدی حفظ میشود؛ حداقل ${WALLET_MIN_TRADE_KG} کیلوگرم ≈ ${needed.toLocaleString('en-US')} تومان لازم است)`;
+  }
+
+  /**
    * FIFO cost basis per kg of the oldest lots that would satisfy qtyKg.
    * Returns Infinity when there is not enough inventory.
    */
@@ -407,14 +461,25 @@ export class WalletService implements OnModuleInit, OnModuleDestroy {
     return basis / qtyKg;
   }
 
-  /** Consumes qtyKg from the oldest lots (FIFO) and returns the cost basis in Toman. */
-  private consumeLots(wallet: SymbolWallet, qtyKg: number): number {
+  /**
+   * Consumes qtyKg from the oldest lots (FIFO) and returns the cost basis in
+   * Toman. Free seed lots (pricePerKg = 0) are charged at the sale price of
+   * the material, so selling seed gold never books a profit or a loss — only
+   * gold actually bought at a real price contributes to realized P/L.
+   */
+  private consumeLots(
+    wallet: SymbolWallet,
+    qtyKg: number,
+    sellPricePerKg: number,
+  ): number {
     let remaining = qtyKg;
     let costBasis = 0;
     while (remaining > 0 && wallet.lots.length > 0) {
       const lot = wallet.lots[0];
       const take = Math.min(lot.qtyKg, remaining);
-      costBasis += lot.pricePerKg * take;
+      const lotPricePerKg =
+        lot.pricePerKg > 0 ? lot.pricePerKg : sellPricePerKg;
+      costBasis += lotPricePerKg * take;
       lot.qtyKg -= take;
       remaining -= take;
       if (lot.qtyKg <= 0) {
@@ -433,6 +498,9 @@ export class WalletService implements OnModuleInit, OnModuleDestroy {
       })),
       irrBalance: this.irrBalance,
       totalRealizedProfit: this.totalRealizedProfit,
+      equity: this.equity(),
+      cashReserve: this.cashReserve(),
+      buyingPower: this.buyingPower(),
       trades: [...this.trades],
     };
   }
@@ -507,6 +575,11 @@ export class WalletService implements OnModuleInit, OnModuleDestroy {
    */
   private migrateSymbolWallet(wallet: SymbolWallet): void {
     if (!Array.isArray(wallet.lots) || wallet.lots.length === 0) {
+      if (wallet.goldKg <= 0) {
+        wallet.lots = [];
+        delete (wallet as SymbolWallet & { avgCostKg?: number }).avgCostKg;
+        return;
+      }
       const legacy = wallet as SymbolWallet & { avgCostKg?: number };
       wallet.lots = [
         {

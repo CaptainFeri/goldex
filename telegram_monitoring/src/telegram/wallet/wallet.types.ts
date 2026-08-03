@@ -7,7 +7,10 @@ export type TradeSide = 'BUY' | 'SELL';
 /** One cost-basis lot of gold held in a symbol wallet (FIFO). */
 export interface GoldLot {
   id: number;
-  /** Cost basis per kilogram in Toman (0 = free seed gold). */
+  /**
+   * Cost basis per kilogram in Toman. 0 = free seed gold: charged at the
+   * sale price when consumed, so it never books a profit or a loss.
+   */
   pricePerKg: number;
   /** Remaining quantity in kilograms. */
   qtyKg: number;
@@ -49,6 +52,12 @@ export interface WalletSnapshot {
   symbols: SymbolWallet[];
   irrBalance: number;
   totalRealizedProfit: number;
+  /** Cash + cost basis of held gold — the asset base for the cash reserve. */
+  equity: number;
+  /** Cash kept aside (reserveRatio × equity) and never spent on buys. */
+  cashReserve: number;
+  /** Cash available for buys above the reserve: irrBalance − cashReserve. */
+  buyingPower: number;
   trades: TradeRecord[];
 }
 
