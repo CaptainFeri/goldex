@@ -388,10 +388,20 @@ export class TelegramService implements OnModuleInit, OnModuleDestroy {
       );
       return;
     }
-    this.walletReportPeerId = await this.resolvePeer(
-      target,
-      'Wallet report channel',
-    );
+    let peerId = await this.resolvePeer(target, 'Wallet report channel');
+    if (!peerId) {
+      // Not a member yet — try joining the channel, then resolve again.
+      const joined = await this.joinChannel(target);
+      if (joined) {
+        peerId = await this.resolvePeer(target, 'Wallet report channel');
+      } else {
+        this.logger.warn(
+          `Could not join wallet report channel "${target}". ` +
+            `Make sure the account is a member, or reports will not be shared.`,
+        );
+      }
+    }
+    this.walletReportPeerId = peerId;
   }
 
   /** Resolves a channel id/username to a peer id, with dialog fallback. */
@@ -443,6 +453,9 @@ export class TelegramService implements OnModuleInit, OnModuleDestroy {
     return null;
   }
 
+  private marketOpportunityHandler:
+    ((opportunity: MarketOpportunity) => void) | null = null;
+
   private registerEventHandlers(): void {
     this.client.addEventHandler(
       (event: NewMessageEvent) => this.handleNewMessage(event),
@@ -454,13 +467,18 @@ export class TelegramService implements OnModuleInit, OnModuleDestroy {
       new CallbackQuery({}),
     );
 
-    this.eventEmitter.removeAllListeners('market.opportunity');
-    this.eventEmitter.on(
-      'market.opportunity',
-      (opportunity: MarketOpportunity) => {
-        this.onMarketOpportunity(opportunity);
-      },
-    );
+    // Remove only our own previous registration (if any) so re-registration
+    // never duplicates or clobbers @OnEvent listeners from other services.
+    if (this.marketOpportunityHandler) {
+      this.eventEmitter.off(
+        'market.opportunity',
+        this.marketOpportunityHandler,
+      );
+    }
+    this.marketOpportunityHandler = (opportunity: MarketOpportunity) => {
+      this.onMarketOpportunity(opportunity);
+    };
+    this.eventEmitter.on('market.opportunity', this.marketOpportunityHandler);
 
     this.logger.log(
       'Message, callback query, and market opportunity event handlers registered',
@@ -738,10 +756,13 @@ export class TelegramService implements OnModuleInit, OnModuleDestroy {
 
   async joinChannel(channelUsername: string): Promise<boolean> {
     try {
+      const channel =
+        /^-?\d+$/.test(channelUsername) && !channelUsername.startsWith('-100')
+          ? `-100${channelUsername.replace(/^-100/, '')}`
+          : channelUsername.replace(/^@/, '');
+      const entity = await this.client.getInputEntity(channel);
       await this.client.invoke(
-        new Api.channels.JoinChannel({
-          channel: channelUsername,
-        }),
+        new Api.channels.JoinChannel({ channel: entity }),
       );
       this.logger.log(`Joined channel: ${channelUsername}`);
       return true;

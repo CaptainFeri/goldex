@@ -79,4 +79,37 @@ export function formatWalletTradeReport(
   return lines.join('\n');
 }
 
+export function formatWalletStatusReport(snapshot: WalletSnapshot): string {
+  const profit = snapshot.totalRealizedProfit;
+  const profitLabel =
+    profit >= 0
+      ? `💰 سود کل تحقق‌یافته: +${formatPrice(profit)} تومان`
+      : `📉 زیان کل تحقق‌یافته: ${formatPrice(profit)} تومان`;
+
+  const lines = [
+    '📊 گزارش وضعیت کیف پول ربات',
+    `🕐 زمان: ${formatDateTime(Math.floor(Date.now() / 1000))}`,
+    '',
+    `💵 موجودی ریال: ${formatPrice(snapshot.irrBalance)} تومان`,
+    profitLabel,
+    `🔢 تعداد معاملات اجراشده: ${snapshot.trades.filter((t) => t.executed).length}`,
+    '',
+    '🏷 نمادها (عادی):',
+  ];
+
+  if (snapshot.symbols.length === 0) {
+    lines.push('   (هنوز نمادی دیده نشده است)');
+  } else {
+    for (const s of snapshot.symbols) {
+      const costLabel =
+        s.avgCostKg > 0
+          ? ` — میانگین بها: ${formatPrice(s.avgCostKg)} تومان/کیلوگرم`
+          : '';
+      lines.push(`   • ${s.symbol}: ${formatKg(s.goldKg)}${costLabel}`);
+    }
+  }
+
+  return lines.join('\n');
+}
+
 export { kgToMesqal };

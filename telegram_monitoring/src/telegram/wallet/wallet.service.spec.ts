@@ -261,4 +261,49 @@ describe('WalletService', () => {
 
     expect(telegram.sendWalletReport).not.toHaveBeenCalled();
   });
+
+  it('publishes the overall wallet status report every minute', async () => {
+    jest.useFakeTimers();
+    try {
+      const telegram = mockTelegram();
+      const withTelegram = new WalletService(mockRedis(), telegram);
+      await withTelegram.onModuleInit();
+
+      withTelegram.handleMarketOpportunity(
+        marketOpportunity(73_500_000, 'WE_BUY'),
+      );
+      expect(telegram.sendWalletReport).toHaveBeenCalledTimes(1);
+
+      jest.advanceTimersByTime(60_000);
+      expect(telegram.sendWalletReport).toHaveBeenCalledTimes(2);
+      const status = (telegram.sendWalletReport as jest.Mock).mock
+        .calls[1][0] as string;
+      expect(status).toContain('وضعیت کیف پول ربات');
+      expect(status).toContain('موجودی ریال');
+      expect(status).toContain('با حواله');
+      expect(status).toContain('سود کل تحقق');
+
+      jest.advanceTimersByTime(60_000);
+      expect(telegram.sendWalletReport).toHaveBeenCalledTimes(3);
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  it('status report shows a zero-profit state before any trade', async () => {
+    jest.useFakeTimers();
+    try {
+      const telegram = mockTelegram();
+      const withTelegram = new WalletService(mockRedis(), telegram);
+      await withTelegram.onModuleInit();
+
+      jest.advanceTimersByTime(60_000);
+      const status = (telegram.sendWalletReport as jest.Mock).mock
+        .calls[0][0] as string;
+      expect(status).toContain('هنوز نمادی دیده نشده');
+      expect(status).toContain('0');
+    } finally {
+      jest.useRealTimers();
+    }
+  });
 });

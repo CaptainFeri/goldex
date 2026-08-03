@@ -1,4 +1,4 @@
-import { Injectable, OnModuleInit } from '@nestjs/common';
+import { Injectable, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
 import { OnEvent } from '@nestjs/event-emitter';
 import { StructuredLogger } from '../../logger/structured-logger';
 import { RedisService } from '../../redis/redis.service';
@@ -8,7 +8,11 @@ import type {
   ArbitrageOpportunity,
   MarketOpportunity,
 } from '../price/price.types';
-import { formatWalletTradeReport, kgToMesqal } from './wallet-report.formatter';
+import {
+  formatWalletStatusReport,
+  formatWalletTradeReport,
+  kgToMesqal,
+} from './wallet-report.formatter';
 import type {
   SymbolWallet,
   TradeRecord,
@@ -20,6 +24,8 @@ const WALLET_INITIAL_IRR =
   Number(process.env.WALLET_INITIAL_IRR) || 20_000_000_000;
 const WALLET_INITIAL_GOLD_KG = Number(process.env.WALLET_INITIAL_GOLD_KG) || 1;
 const WALLET_TTL = Number(process.env.WALLET_TTL) || 604800;
+const WALLET_STATUS_INTERVAL_SECONDS =
+  Number(process.env.WALLET_STATUS_INTERVAL_SECONDS) || 60;
 
 const STATE_KEY = 'wallet:state';
 const TRADE_IDS_KEY = 'wallet:trade:ids';
@@ -31,7 +37,7 @@ interface PersistedState {
 }
 
 @Injectable()
-export class WalletService implements OnModuleInit {
+export class WalletService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new StructuredLogger(WalletService.name);
 
   private readonly symbols = new Map<string, SymbolWallet>();
@@ -41,6 +47,8 @@ export class WalletService implements OnModuleInit {
   private irrBalance = WALLET_INITIAL_IRR;
   private totalRealizedProfit = 0;
 
+  private statusTimer: ReturnType<typeof setInterval> | null = null;
+
   constructor(
     private readonly redis: RedisService,
     private readonly telegram: TelegramService,
@@ -48,6 +56,38 @@ export class WalletService implements OnModuleInit {
 
   async onModuleInit(): Promise<void> {
     await this.load();
+    this.startStatusReporting();
+  }
+
+  onModuleDestroy(): void {
+    if (this.statusTimer) {
+      clearInterval(this.statusTimer);
+      this.statusTimer = null;
+    }
+  }
+
+  /**
+   * Publishes the overall wallet status (balances + realized P/L) to the
+   * report channel every minute.
+   */
+  private startStatusReporting(): void {
+    const intervalMs = WALLET_STATUS_INTERVAL_SECONDS * 1000;
+    this.statusTimer = setInterval(() => {
+      this.sendStatusReport();
+    }, intervalMs);
+    this.statusTimer.unref?.();
+    this.logger.log(
+      `Wallet status report scheduled every ${WALLET_STATUS_INTERVAL_SECONDS}s`,
+    );
+  }
+
+  private sendStatusReport(): void {
+    const text = formatWalletStatusReport(this.getSnapshot());
+    this.telegram
+      .sendWalletReport(text)
+      .catch((error) =>
+        this.logger.error('Failed to send wallet status report', error),
+      );
   }
 
   /** Symbol wallets are created on first sight of a deliveryType (normal only). */
