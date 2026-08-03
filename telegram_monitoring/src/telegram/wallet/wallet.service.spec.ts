@@ -7,6 +7,7 @@ import type {
   PriceSnapshot,
 } from '../price/price.types';
 import { WalletService } from './wallet.service';
+import { kgToMesqal } from './wallet-report.formatter';
 
 function mockRedis(): RedisService {
   const client = {
@@ -29,10 +30,13 @@ function mockTelegram(): TelegramService {
 }
 
 const amount = (price: number, kg: number) =>
+  Math.round(kgToMesqal(kg) * price);
+
+const sellAmount = (price: number, kg: number) =>
   Math.round(price * MITHQALS_PER_KILO * kg);
 
-const profit = (spread: number, kg: number) =>
-  Math.round(spread * MITHQALS_PER_KILO * kg);
+const arbitrageProfit = (buy: number, sell: number, kg: number) =>
+  amount(sell, kg) - amount(buy, kg);
 
 function snapshot(price: number, side: 'خرید' | 'فروش'): PriceSnapshot {
   return {
@@ -62,7 +66,7 @@ function arbitrageOpportunity(
     sell: snapshot(sellPrice, 'خرید'),
     spread: sellPrice - buyPrice,
     quantity,
-    totalProfit: profit(sellPrice - buyPrice, quantity),
+    totalProfit: arbitrageProfit(buyPrice, sellPrice, quantity),
   };
 }
 
@@ -118,12 +122,16 @@ describe('WalletService', () => {
     expect(trades[1]).toMatchObject({
       side: 'SELL',
       amount: amount(73_600_000, 1),
-      profit: profit(100_000, 1),
+      profit: arbitrageProfit(73_500_000, 73_600_000, 1),
     });
 
     const snapshot = service.getSnapshot();
-    expect(snapshot.irrBalance).toBe(20_000_000_000 + profit(100_000, 1));
-    expect(snapshot.totalRealizedProfit).toBe(profit(100_000, 1));
+    expect(snapshot.irrBalance).toBe(
+      20_000_000_000 + arbitrageProfit(73_500_000, 73_600_000, 1),
+    );
+    expect(snapshot.totalRealizedProfit).toBe(
+      arbitrageProfit(73_500_000, 73_600_000, 1),
+    );
     expect(snapshot.symbols[0]).toMatchObject({
       symbol: 'با حواله',
       goldKg: 1,
@@ -142,14 +150,28 @@ describe('WalletService', () => {
     expect(service.getTrades({ executed: true })).toHaveLength(0);
   });
 
-  it('skips an arbitrage when the gold balance cannot cover the sell leg', () => {
+  it('executes a cash-funded arbitrage even with zero gold inventory', () => {
+    const seedSell = service.executeMarketMaker(
+      marketOpportunity(40_000_000, 'WE_SELL', 1),
+    );
+    expect(seedSell?.executed).toBe(true);
+    expect(service.getSnapshot().symbols[0].goldKg).toBe(0);
+
     const trades = service.executeArbitrage(
-      arbitrageOpportunity(30_000_000, 30_100_000, 2),
+      arbitrageOpportunity(40_000_000, 40_100_000, 2),
     );
 
-    expect(trades.map((t) => t.executed)).toEqual([false, false]);
-    expect(trades[0].reason).toContain('طلا');
-    expect(service.getSnapshot().symbols[0].goldKg).toBe(1);
+    expect(trades.map((t) => t.executed)).toEqual([true, true]);
+    const snapshot = service.getSnapshot();
+    expect(snapshot.symbols[0].goldKg).toBe(0);
+    expect(snapshot.irrBalance).toBe(
+      20_000_000_000 +
+        sellAmount(40_000_000, 1) +
+        arbitrageProfit(40_000_000, 40_100_000, 2),
+    );
+    expect(snapshot.totalRealizedProfit).toBe(
+      sellAmount(40_000_000, 1) + arbitrageProfit(40_000_000, 40_100_000, 2),
+    );
   });
 
   it('buys gold on a WE_BUY market maker signal when affordable', () => {
@@ -167,11 +189,14 @@ describe('WalletService', () => {
     expect(snapshot.irrBalance).toBe(20_000_000_000 - amount(73_500_000, 1));
     expect(snapshot.symbols[0]).toMatchObject({
       goldKg: 2,
-      avgCostKg: amount(73_500_000, 1),
+      lots: [
+        { pricePerKg: 0, qtyKg: 1 },
+        { pricePerKg: amount(73_500_000, 1), qtyKg: 1 },
+      ],
     });
   });
 
-  it('sells gold and realizes profit on a WE_SELL signal above average cost', () => {
+  it('sells gold FIFO (oldest free seed lot first) and realizes the full proceeds as profit', () => {
     service.executeMarketMaker(marketOpportunity(73_500_000, 'WE_BUY'));
     const trade = service.executeMarketMaker(
       marketOpportunity(74_000_000, 'WE_SELL'),
@@ -180,26 +205,35 @@ describe('WalletService', () => {
     expect(trade).toMatchObject({
       executed: true,
       side: 'SELL',
-      profit: profit(500_000, 1),
+      profit: sellAmount(74_000_000, 1),
     });
 
     const snapshot = service.getSnapshot();
     expect(snapshot.symbols[0].goldKg).toBe(1);
-    expect(snapshot.irrBalance).toBe(20_000_000_000 + profit(500_000, 1));
-    expect(snapshot.totalRealizedProfit).toBe(profit(500_000, 1));
+    expect(snapshot.symbols[0].lots).toHaveLength(1);
+    expect(snapshot.symbols[0].lots[0].pricePerKg).toBe(amount(73_500_000, 1));
+    expect(snapshot.irrBalance).toBe(
+      20_000_000_000 + sellAmount(74_000_000, 1) - amount(73_500_000, 1),
+    );
+    expect(snapshot.totalRealizedProfit).toBe(sellAmount(74_000_000, 1));
   });
 
-  it('never sells at a loss (price below average cost)', () => {
+  it('never sells at a loss once the free seed lot is consumed (FIFO guard)', () => {
+    service.executeMarketMaker(marketOpportunity(75_000_000, 'WE_BUY'));
+    const seedSell = service.executeMarketMaker(
+      marketOpportunity(73_000_000, 'WE_SELL'),
+    );
+    expect(seedSell?.executed).toBe(true);
+
     service.executeMarketMaker(marketOpportunity(75_000_000, 'WE_BUY'));
     const trade = service.executeMarketMaker(
       marketOpportunity(73_000_000, 'WE_SELL'),
     );
 
     expect(trade?.executed).toBe(false);
-    expect(trade?.reason).toContain('میانگین');
+    expect(trade?.reason).toContain('بهای');
     const snapshot = service.getSnapshot();
     expect(snapshot.symbols[0].goldKg).toBe(2);
-    expect(snapshot.irrBalance).toBe(20_000_000_000 - amount(75_000_000, 1));
   });
 
   it('skips a WE_SELL when there is not enough gold inventory', () => {

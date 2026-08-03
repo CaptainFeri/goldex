@@ -43,6 +43,7 @@ export class WalletService implements OnModuleInit, OnModuleDestroy {
   private readonly symbols = new Map<string, SymbolWallet>();
   private readonly trades: TradeRecord[] = [];
   private idCounter = 0;
+  private lotIdCounter = 0;
 
   private irrBalance = WALLET_INITIAL_IRR;
   private totalRealizedProfit = 0;
@@ -82,6 +83,19 @@ export class WalletService implements OnModuleInit, OnModuleDestroy {
   }
 
   private sendStatusReport(): void {
+    const totalGoldKg = Array.from(this.symbols.values()).reduce(
+      (sum, s) => sum + s.goldKg,
+      0,
+    );
+    this.logger.logStructured('WALLET_STATUS_TICK', {
+      irrBalance: this.irrBalance,
+      totalGoldKg,
+      symbols: this.symbols.size,
+      executedTrades: this.trades.filter((t) => t.executed).length,
+      totalRealizedProfit: this.totalRealizedProfit,
+      posture: totalGoldKg <= 0 ? 'cash-only' : 'holding',
+    });
+
     const text = formatWalletStatusReport(this.getSnapshot());
     this.telegram
       .sendWalletReport(text)
@@ -97,7 +111,13 @@ export class WalletService implements OnModuleInit, OnModuleDestroy {
       wallet = {
         symbol,
         goldKg: WALLET_INITIAL_GOLD_KG,
-        avgCostKg: 0,
+        lots: [
+          {
+            id: ++this.lotIdCounter,
+            pricePerKg: 0,
+            qtyKg: WALLET_INITIAL_GOLD_KG,
+          },
+        ],
       };
       this.symbols.set(symbol, wallet);
       this.logger.log(`Created wallet for symbol "${symbol}"`);
@@ -136,8 +156,10 @@ export class WalletService implements OnModuleInit, OnModuleDestroy {
 
   /**
    * Arbitrage = a round trip: buy at the lowest فروش and sell at the highest
-   * خرید, both for the full signal quantity or nothing. Net gold is unchanged;
-   * the IRR pool grows by the spread profit.
+   * خرید, both for the full signal quantity or nothing. The round trip is
+   * funded entirely by the IRR pool — the buy leg provides the gold for the
+   * sell leg, so no pre-existing inventory is required. This lets a fully
+   * liquidated (cash-only) wallet keep hunting arbitrages with cash.
    */
   executeArbitrage(opportunity: ArbitrageOpportunity): TradeRecord[] {
     const symbol = opportunity.deliveryType;
@@ -162,8 +184,6 @@ export class WalletService implements OnModuleInit, OnModuleDestroy {
     let reason: string | undefined;
     if (cost > this.irrBalance) {
       reason = `موجودی ریال کافی نیست (${cost.toLocaleString('en-US')} تومان لازم است)`;
-    } else if (qtyKg > wallet.goldKg) {
-      reason = `موجودی طلا کافی نیست (${qtyKg} کیلوگرم لازم است)`;
     }
 
     if (reason) {
@@ -216,23 +236,30 @@ export class WalletService implements OnModuleInit, OnModuleDestroy {
     this.recordTrade(sellTrade);
     void this.persistState();
 
-    this.logger.logStructured('WALLET_ARBITRAGE_EXECUTED', {
-      symbol,
-      quantityKg: qtyKg,
-      buyAt: opportunity.buy.price,
-      sellAt: opportunity.sell.price,
-      cost,
-      proceeds,
-      profit,
-    });
+    this.logger.logStructured(
+      wallet.goldKg <= 0
+        ? 'WALLET_ARBITRAGE_CASH_FUNDED'
+        : 'WALLET_ARBITRAGE_EXECUTED',
+      {
+        symbol,
+        quantityKg: qtyKg,
+        buyAt: opportunity.buy.price,
+        sellAt: opportunity.sell.price,
+        cost,
+        proceeds,
+        profit,
+        goldKg: wallet.goldKg,
+      },
+    );
 
     return [buyTrade, sellTrade];
   }
 
   /**
    * Market maker alert = a single leg. WE_BUY opens a position when the IRR
-   * pool can afford it; WE_SELL closes gold when there is enough inventory and
-   * the price beats the average cost (never realize a loss).
+   * pool can afford it; WE_SELL closes gold FIFO (oldest lots first) when
+   * there is enough inventory and the price beats the cost of the oldest lots
+   * (never realize a loss; free seed gold can always be sold at a profit).
    */
   executeMarketMaker(opportunity: MarketOpportunity): TradeRecord | null {
     const symbol = opportunity.deliveryType;
@@ -268,13 +295,11 @@ export class WalletService implements OnModuleInit, OnModuleDestroy {
 
       const oldGoldKg = wallet.goldKg;
       const newGoldKg = oldGoldKg + qtyKg;
-      wallet.avgCostKg =
-        wallet.avgCostKg > 0
-          ? Math.round(
-              (wallet.avgCostKg * oldGoldKg + proceedsPerKg * qtyKg) /
-                newGoldKg,
-            )
-          : Math.round(proceedsPerKg);
+      wallet.lots.push({
+        id: ++this.lotIdCounter,
+        pricePerKg: Math.round(proceedsPerKg),
+        qtyKg,
+      });
       wallet.goldKg = newGoldKg;
       this.irrBalance -= cost;
 
@@ -305,14 +330,15 @@ export class WalletService implements OnModuleInit, OnModuleDestroy {
     }
 
     // WE_SELL
+    const proceeds = Math.round(kgToMesqal(qtyKg) * opportunity.price);
+    const costBasisKg = this.costBasisKg(wallet, qtyKg);
+
     let reason: string | undefined;
     if (qtyKg > wallet.goldKg) {
       reason = `موجودی طلا کافی نیست (${qtyKg} کیلوگرم لازم است)`;
-    } else if (wallet.avgCostKg > 0 && proceedsPerKg <= wallet.avgCostKg) {
-      reason = 'قیمت کمتر از میانگین بهای تمام‌شده است (فروش ضررده مجاز نیست)';
+    } else if (proceedsPerKg <= costBasisKg) {
+      reason = 'قیمت کمتر از بهای تمام‌شده است (فروش ضررده مجاز نیست)';
     }
-
-    const proceeds = Math.round(kgToMesqal(qtyKg) * opportunity.price);
 
     if (reason) {
       return {
@@ -332,8 +358,8 @@ export class WalletService implements OnModuleInit, OnModuleDestroy {
       };
     }
 
-    const profit = Math.round((proceedsPerKg - wallet.avgCostKg) * qtyKg);
-    wallet.goldKg -= qtyKg;
+    const costBasis = this.consumeLots(wallet, qtyKg);
+    const profit = Math.round(proceedsPerKg * qtyKg) - costBasis;
     this.irrBalance += proceeds;
     this.totalRealizedProfit += profit;
 
@@ -364,9 +390,47 @@ export class WalletService implements OnModuleInit, OnModuleDestroy {
     return trade;
   }
 
+  /**
+   * FIFO cost basis per kg of the oldest lots that would satisfy qtyKg.
+   * Returns Infinity when there is not enough inventory.
+   */
+  private costBasisKg(wallet: SymbolWallet, qtyKg: number): number {
+    let remaining = qtyKg;
+    let basis = 0;
+    for (const lot of wallet.lots) {
+      if (remaining <= 0) break;
+      const take = Math.min(lot.qtyKg, remaining);
+      basis += lot.pricePerKg * take;
+      remaining -= take;
+    }
+    if (remaining > 0) return Infinity;
+    return basis / qtyKg;
+  }
+
+  /** Consumes qtyKg from the oldest lots (FIFO) and returns the cost basis in Toman. */
+  private consumeLots(wallet: SymbolWallet, qtyKg: number): number {
+    let remaining = qtyKg;
+    let costBasis = 0;
+    while (remaining > 0 && wallet.lots.length > 0) {
+      const lot = wallet.lots[0];
+      const take = Math.min(lot.qtyKg, remaining);
+      costBasis += lot.pricePerKg * take;
+      lot.qtyKg -= take;
+      remaining -= take;
+      if (lot.qtyKg <= 0) {
+        wallet.lots.shift();
+      }
+    }
+    wallet.goldKg = wallet.lots.reduce((sum, lot) => sum + lot.qtyKg, 0);
+    return Math.round(costBasis);
+  }
+
   getSnapshot(): WalletSnapshot {
     return {
-      symbols: Array.from(this.symbols.values()).map((s) => ({ ...s })),
+      symbols: Array.from(this.symbols.values()).map((s) => ({
+        ...s,
+        lots: s.lots.map((lot) => ({ ...lot })),
+      })),
       irrBalance: this.irrBalance,
       totalRealizedProfit: this.totalRealizedProfit,
       trades: [...this.trades],
@@ -374,7 +438,10 @@ export class WalletService implements OnModuleInit, OnModuleDestroy {
   }
 
   getSymbols(): SymbolWallet[] {
-    return Array.from(this.symbols.values()).map((s) => ({ ...s }));
+    return Array.from(this.symbols.values()).map((s) => ({
+      ...s,
+      lots: s.lots.map((lot) => ({ ...lot })),
+    }));
   }
 
   getTrades(query: WalletQuery = {}): TradeRecord[] {
@@ -434,6 +501,29 @@ export class WalletService implements OnModuleInit, OnModuleDestroy {
     ]);
   }
 
+  /**
+   * Migrates a persisted wallet that predates lot accounting (avgCostKg-based)
+   * into a single legacy lot carrying the old average cost.
+   */
+  private migrateSymbolWallet(wallet: SymbolWallet): void {
+    if (!Array.isArray(wallet.lots) || wallet.lots.length === 0) {
+      const legacy = wallet as SymbolWallet & { avgCostKg?: number };
+      wallet.lots = [
+        {
+          id: ++this.lotIdCounter,
+          pricePerKg: Math.max(0, Math.round(legacy.avgCostKg ?? 0)),
+          qtyKg: wallet.goldKg,
+        },
+      ];
+      delete legacy.avgCostKg;
+    }
+    for (const lot of wallet.lots) {
+      if (lot.id > this.lotIdCounter) {
+        this.lotIdCounter = lot.id;
+      }
+    }
+  }
+
   private async load(): Promise<void> {
     try {
       const client = this.redis.getClient();
@@ -443,6 +533,7 @@ export class WalletService implements OnModuleInit, OnModuleDestroy {
         this.irrBalance = state.irrBalance;
         this.totalRealizedProfit = state.totalRealizedProfit;
         for (const w of state.symbols ?? []) {
+          this.migrateSymbolWallet(w);
           this.symbols.set(w.symbol, w);
         }
       }

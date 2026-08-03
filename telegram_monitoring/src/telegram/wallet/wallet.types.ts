@@ -4,14 +4,23 @@ export type TradeSource = 'ARBITRAGE' | 'MARKET_MAKER';
 
 export type TradeSide = 'BUY' | 'SELL';
 
-/** One symbol wallet: gold balance (kg) + average cost basis (Toman per kg). */
+/** One cost-basis lot of gold held in a symbol wallet (FIFO). */
+export interface GoldLot {
+  id: number;
+  /** Cost basis per kilogram in Toman (0 = free seed gold). */
+  pricePerKg: number;
+  /** Remaining quantity in kilograms. */
+  qtyKg: number;
+}
+
+/** One symbol wallet: gold inventory as FIFO lots (seed = free 0-cost lot). */
 export interface SymbolWallet {
   /** Delivery type within the normal sub-type — the symbol identity. */
   symbol: string;
-  /** Current gold balance in kilograms. */
+  /** Current gold balance in kilograms (sum of remaining lot quantities). */
   goldKg: number;
-  /** Average purchase cost per kilogram (Toman). */
-  avgCostKg: number;
+  /** Remaining lots, oldest first — sells consume the oldest lots. */
+  lots: GoldLot[];
 }
 
 /** A simulated (paper) trade executed against the wallet. */

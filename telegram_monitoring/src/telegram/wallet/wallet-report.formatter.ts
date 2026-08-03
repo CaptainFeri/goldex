@@ -102,9 +102,9 @@ export function formatWalletStatusReport(snapshot: WalletSnapshot): string {
   } else {
     for (const s of snapshot.symbols) {
       const costLabel =
-        s.avgCostKg > 0
-          ? ` — میانگین بها: ${formatPrice(s.avgCostKg)} تومان/کیلوگرم`
-          : '';
+        s.lots.length > 0
+          ? ` — تعداد سهم‌ها: ${s.lots.length}`
+          : ' — (بدون موجودی)';
       lines.push(`   • ${s.symbol}: ${formatKg(s.goldKg)}${costLabel}`);
     }
   }
