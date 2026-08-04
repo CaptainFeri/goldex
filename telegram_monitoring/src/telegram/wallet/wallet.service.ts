@@ -1,5 +1,8 @@
 import { Injectable, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
 import { OnEvent } from '@nestjs/event-emitter';
+import { mkdirSync } from 'node:fs';
+import { writeFile } from 'node:fs/promises';
+import { join } from 'node:path';
 import { StructuredLogger } from '../../logger/structured-logger';
 import { RedisService } from '../../redis/redis.service';
 import { TelegramService } from '../telegram.service';
@@ -27,7 +30,12 @@ const WALLET_INITIAL_IRR =
 const WALLET_INITIAL_GOLD_KG = Number(process.env.WALLET_INITIAL_GOLD_KG) || 1;
 const WALLET_TTL = Number(process.env.WALLET_TTL) || 604800;
 const WALLET_STATUS_INTERVAL_SECONDS =
-  Number(process.env.WALLET_STATUS_INTERVAL_SECONDS) || 60;
+  Number(process.env.WALLET_STATUS_INTERVAL_SECONDS) || 600;
+/** How often a daily report file is generated (default: once per day). */
+const WALLET_DAILY_REPORT_INTERVAL_SECONDS =
+  Number(process.env.WALLET_DAILY_REPORT_INTERVAL_SECONDS) || 86400;
+/** Directory (relative to cwd or absolute) for generated report files. */
+const WALLET_REPORTS_DIR = process.env.WALLET_REPORTS_DIR || 'reports';
 /** Fraction of equity kept as cash — buys may never spend below this floor. */
 const WALLET_CASH_RESERVE_RATIO =
   Number(process.env.WALLET_CASH_RESERVE_RATIO) || 0.2;
@@ -73,6 +81,7 @@ export class WalletService implements OnModuleInit, OnModuleDestroy {
 
   private statusTimer: ReturnType<typeof setInterval> | null = null;
   private rebalanceTimer: ReturnType<typeof setInterval> | null = null;
+  private dailyReportTimer: ReturnType<typeof setInterval> | null = null;
 
   constructor(
     private readonly redis: RedisService,
@@ -84,6 +93,7 @@ export class WalletService implements OnModuleInit, OnModuleDestroy {
     await this.load();
     this.startStatusReporting();
     this.startRebalanceReporting();
+    this.startDailyReporting();
   }
 
   onModuleDestroy(): void {
@@ -95,11 +105,15 @@ export class WalletService implements OnModuleInit, OnModuleDestroy {
       clearInterval(this.rebalanceTimer);
       this.rebalanceTimer = null;
     }
+    if (this.dailyReportTimer) {
+      clearInterval(this.dailyReportTimer);
+      this.dailyReportTimer = null;
+    }
   }
 
   /**
    * Publishes the overall wallet status (balances + realized P/L) to the
-   * report channel every minute.
+   * report channel at the configured interval.
    */
   private startStatusReporting(): void {
     const intervalMs = WALLET_STATUS_INTERVAL_SECONDS * 1000;
@@ -757,6 +771,57 @@ export class WalletService implements OnModuleInit, OnModuleDestroy {
       }
     } catch (error) {
       this.logger.error('Wallet rebalance failed', error);
+    }
+  }
+
+  /**
+   * Generates a JSON file with all wallet changes (executed trades, balances
+   * and symbol inventory) since the previous run — once per day.
+   */
+  private startDailyReporting(): void {
+    const intervalMs = WALLET_DAILY_REPORT_INTERVAL_SECONDS * 1000;
+    this.dailyReportTimer = setInterval(() => {
+      void this.generateDailyReport();
+    }, intervalMs);
+    this.dailyReportTimer.unref?.();
+    this.logger.log(
+      `Wallet daily report file scheduled every ${WALLET_DAILY_REPORT_INTERVAL_SECONDS}s`,
+    );
+  }
+
+  /** Writes the day's changes to reports/wallet-YYYY-MM-DD.json. */
+  async generateDailyReport(): Promise<void> {
+    try {
+      const to = Math.floor(Date.now() / 1000);
+      const from = to - WALLET_DAILY_REPORT_INTERVAL_SECONDS;
+      const trades = this.getTrades({ executed: true, from, to });
+      const snapshot = this.getSnapshot();
+      const report = {
+        generatedAt: to,
+        window: { from, to },
+        irrBalance: snapshot.irrBalance,
+        totalRealizedProfit: snapshot.totalRealizedProfit,
+        equity: snapshot.equity,
+        cashReserve: snapshot.cashReserve,
+        buyingPower: snapshot.buyingPower,
+        symbols: snapshot.symbols,
+        trades,
+      };
+
+      const dir = join(process.cwd(), WALLET_REPORTS_DIR);
+      mkdirSync(dir, { recursive: true });
+      const date = new Date(to * 1000).toISOString().slice(0, 10);
+      const file = join(dir, `wallet-${date}.json`);
+      await writeFile(file, JSON.stringify(report, null, 2));
+
+      this.logger.logStructured('WALLET_DAILY_REPORT', {
+        file,
+        trades: trades.length,
+        from,
+        to,
+      });
+    } catch (error) {
+      this.logger.error('Failed to generate daily wallet report', error);
     }
   }
 

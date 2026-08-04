@@ -400,7 +400,7 @@ describe('WalletService', () => {
     expect(telegram.sendWalletReport).not.toHaveBeenCalled();
   });
 
-  it('publishes the overall wallet status report every minute', async () => {
+  it('publishes the overall wallet status report every 10 minutes', async () => {
     jest.useFakeTimers();
     try {
       const telegram = mockTelegram();
@@ -417,17 +417,18 @@ describe('WalletService', () => {
       expect(telegram.sendWalletReport).toHaveBeenCalledTimes(1);
 
       // First status tick has a single history sample -> text-only report.
-      await jest.advanceTimersByTimeAsync(60_000);
-      expect(telegram.sendWalletReport).toHaveBeenCalledTimes(2);
-      const status = (telegram.sendWalletReport as jest.Mock).mock
-        .calls[1][0] as string;
-      expect(status).toContain('وضعیت کیف پول ربات');
-      expect(status).toContain('موجودی ریال');
+      await jest.advanceTimersByTimeAsync(600_000);
+      expect(telegram.sendWalletReport).toHaveBeenCalledWith(
+        expect.stringContaining('وضعیت کیف پول ربات'),
+      );
+      const status = (telegram.sendWalletReport as jest.Mock).mock.calls.find(
+        (call) => String(call[0]).includes('وضعیت کیف پول ربات'),
+      )?.[0] as string;
       expect(status).toContain('با حواله');
       expect(status).toContain('سود کل تحقق');
 
       // Second tick has two samples -> status sent with an assets chart.
-      await jest.advanceTimersByTimeAsync(60_000);
+      await jest.advanceTimersByTimeAsync(600_000);
       expect(telegram.sendWalletStatusReport).toHaveBeenCalledTimes(1);
       const [caption, image] = (telegram.sendWalletStatusReport as jest.Mock)
         .mock.calls[0];
@@ -450,8 +451,8 @@ describe('WalletService', () => {
       const withTelegram = new WalletService(mockRedis(), telegram, chart);
       await withTelegram.onModuleInit();
 
-      await jest.advanceTimersByTimeAsync(60_000);
-      await jest.advanceTimersByTimeAsync(60_000);
+      await jest.advanceTimersByTimeAsync(600_000);
+      await jest.advanceTimersByTimeAsync(600_000);
       expect(telegram.sendWalletStatusReport).not.toHaveBeenCalled();
       expect(telegram.sendWalletReport).toHaveBeenCalledTimes(2);
       const status = (telegram.sendWalletReport as jest.Mock).mock
@@ -473,13 +474,59 @@ describe('WalletService', () => {
       );
       await withTelegram.onModuleInit();
 
-      jest.advanceTimersByTime(60_000);
+      await jest.advanceTimersByTimeAsync(600_000);
       const status = (telegram.sendWalletReport as jest.Mock).mock
         .calls[0][0] as string;
       expect(status).toContain('هنوز نمادی دیده نشده');
       expect(status).toContain('0');
     } finally {
       jest.useRealTimers();
+    }
+  });
+
+  it('generates a daily report file with the changes of the day', async () => {
+    const fs = require('node:fs');
+    const fsPromises = require('node:fs/promises');
+    const writeFileSpy = jest
+      .spyOn(fsPromises, 'writeFile')
+      .mockResolvedValue(undefined);
+    const mkdirSpy = jest.spyOn(fs, 'mkdirSync').mockImplementation(() => '');
+    jest.useFakeTimers();
+    try {
+      const withTelegram = new WalletService(
+        mockRedis(),
+        mockTelegram(),
+        mockChartImage(),
+      );
+      await withTelegram.onModuleInit();
+      withTelegram.handleMarketOpportunity(
+        marketOpportunity(73_500_000, 'WE_BUY'),
+      );
+
+      await jest.advanceTimersByTimeAsync(86_400_000);
+
+      expect(writeFileSpy).toHaveBeenCalledTimes(1);
+      const [file, payload] = writeFileSpy.mock.calls[0];
+      expect(String(file)).toContain('reports');
+      expect(String(file)).toMatch(/wallet-\d{4}-\d{2}-\d{2}\.json$/);
+      const report = JSON.parse(String(payload));
+      expect(report.trades).toHaveLength(2);
+      expect(report.trades).toContainEqual(
+        expect.objectContaining({
+          source: 'MARKET_MAKER',
+          side: 'BUY',
+          executed: true,
+        }),
+      );
+      expect(report.trades).toContainEqual(
+        expect.objectContaining({ source: 'REBALANCE' }),
+      );
+      expect(report.irrBalance).toBeDefined();
+      expect(report.symbols).toBeDefined();
+    } finally {
+      jest.useRealTimers();
+      writeFileSpy.mockRestore();
+      mkdirSpy.mockRestore();
     }
   });
 
