@@ -27,6 +27,7 @@ const SIDE_LABELS: Record<TradeRecord['side'], string> = {
 const SOURCE_LABELS: Record<TradeRecord['source'], string> = {
   ARBITRAGE: 'آربیتراژ',
   MARKET_MAKER: 'مارکت میکر',
+  REBALANCE: 'تعادل دارایی',
 };
 
 function kgToMesqal(kg: number): number {

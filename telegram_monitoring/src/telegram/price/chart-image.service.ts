@@ -2,6 +2,16 @@ import { Injectable } from '@nestjs/common';
 import { StructuredLogger } from '../../logger/structured-logger';
 import { ArbitrageOpportunity, PriceSnapshot } from './price.types';
 
+/** One sample of the wallet's asset mix for the assets chart. */
+export interface WalletChartPoint {
+  /** Unix seconds. */
+  date: number;
+  /** Cash balance in Toman. */
+  cash: number;
+  /** Mark-to-market value of held gold in Toman. */
+  goldValue: number;
+}
+
 @Injectable()
 export class ChartImageService {
   private readonly logger = new StructuredLogger(ChartImageService.name);
@@ -89,12 +99,84 @@ export class ChartImageService {
     };
   }
 
+  /** Wallet assets chart: cash, gold value and equity over time. */
+  buildWalletPayload(
+    points: readonly WalletChartPoint[],
+    title: string,
+  ): Record<string, unknown> {
+    const sorted = [...points].sort((a, b) => a.date - b.date);
+    const labels = sorted.map((p) => timeLabel(p.date));
+
+    const line = (label: string, data: (number | null)[], color: string) => ({
+      label,
+      data,
+      borderColor: color,
+      backgroundColor: color,
+      spanGaps: true,
+      pointRadius: 1,
+      borderWidth: 2,
+      tension: 0.15,
+    });
+
+    const datasets = [
+      line(
+        'Cash',
+        sorted.map((p) => p.cash),
+        '#3ddc84',
+      ),
+      line(
+        'Gold Value',
+        sorted.map((p) => p.goldValue),
+        '#ffd34d',
+      ),
+      line(
+        'Equity',
+        sorted.map((p) => p.cash + p.goldValue),
+        '#4aa3ff',
+      ),
+    ];
+
+    return {
+      width: 760,
+      height: 380,
+      devicePixelRatio: 2,
+      format: 'png',
+      backgroundColor: '#11151c',
+      version: '4',
+      chart: {
+        type: 'line',
+        data: { labels, datasets },
+        options: {
+          plugins: {
+            title: { display: true, text: title, color: '#e6e6e6' },
+            legend: { labels: { color: '#cbd3df' } },
+          },
+          scales: {
+            x: { ticks: { color: '#9aa4b2' }, grid: { color: '#222a36' } },
+            y: { ticks: { color: '#9aa4b2' }, grid: { color: '#222a36' } },
+          },
+        },
+      },
+    };
+  }
+
+  /** Renders the wallet assets chart (Cash / Gold Value / Equity). */
+  async renderWalletChart(
+    points: readonly WalletChartPoint[],
+    title: string,
+  ): Promise<Buffer> {
+    return this.postChart(this.buildWalletPayload(points, title));
+  }
+
   async render(
     snapshots: readonly PriceSnapshot[],
     title?: string,
     opportunity?: ArbitrageOpportunity,
   ): Promise<Buffer> {
-    const payload = this.buildPayload(snapshots, title, opportunity);
+    return this.postChart(this.buildPayload(snapshots, title, opportunity));
+  }
+
+  private async postChart(payload: Record<string, unknown>): Promise<Buffer> {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 10_000);
     try {

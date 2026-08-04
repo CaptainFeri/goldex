@@ -35,6 +35,9 @@ import type {
 
 type Entity = Api.User | Api.Chat | Api.Channel;
 
+const CLEAR_CHANNELS_ON_START =
+  process.env.TELEGRAM_CLEAR_CHANNELS_ON_START !== 'false';
+
 function entityDisplayName(entity: Entity): string {
   if ('title' in entity) return entity.title;
   if ('firstName' in entity)
@@ -58,6 +61,7 @@ export class TelegramService implements OnModuleInit, OnModuleDestroy {
   private monitoredPeerIds: string[] = [];
   private targetPeerId: string | null = null;
   private walletReportPeerId: string | null = null;
+  private walletStatusMessageId: number | null = null;
 
   private authCodeResolver: ((code: string) => void) | null = null;
   private authPasswordResolver: ((password: string) => void) | null = null;
@@ -143,7 +147,60 @@ export class TelegramService implements OnModuleInit, OnModuleDestroy {
     await this.resolveMonitoredChannels();
     await this.resolveTargetChannel();
     await this.resolveWalletReportChannel();
+    await this.clearChannelsAtStart();
     this.registerEventHandlers();
+  }
+
+  /**
+   * Fresh-start cleanup: deletes every message from the alert and report
+   * channels so the monitored output starts clean (caches are cleared
+   * separately by RedisService). Enabled unless TELEGRAM_CLEAR_CHANNELS_ON_START
+   * is set to "false".
+   */
+  private async clearChannelsAtStart(): Promise<void> {
+    if (!CLEAR_CHANNELS_ON_START) return;
+    this.walletStatusMessageId = null;
+    await this.clearChannelMessages(this.targetPeerId, 'target channel');
+    await this.clearChannelMessages(
+      this.walletReportPeerId,
+      'wallet report channel',
+    );
+  }
+
+  /** Deletes all messages of a channel/group peer, in batches. */
+  private async clearChannelMessages(
+    peerId: string | null,
+    label: string,
+  ): Promise<void> {
+    if (!peerId) return;
+    try {
+      const entity = await this.client.getInputEntity(peerId);
+      const isChannel = entity.className === 'InputPeerChannel';
+      const maxBatch = 100;
+      let deleted = 0;
+      let batch = await this.client.getMessages(entity, { limit: maxBatch });
+      while (batch.length > 0) {
+        const ids = batch.map((m) => m.id);
+        if (isChannel) {
+          await this.client.invoke(
+            new Api.channels.DeleteMessages({ channel: entity, id: ids }),
+          );
+        } else {
+          await this.client.invoke(
+            new Api.messages.DeleteMessages({ id: ids, revoke: true }),
+          );
+        }
+        deleted += ids.length;
+        if (batch.length < maxBatch) break;
+        batch = await this.client.getMessages(entity, {
+          limit: maxBatch,
+          offsetId: ids[ids.length - 1],
+        });
+      }
+      this.logger.log(`Cleared ${deleted} messages from ${label}`);
+    } catch (error) {
+      this.logger.warn(`Failed to clear ${label} messages`, error);
+    }
   }
 
   private startDeferredAuth(): void {
@@ -705,6 +762,77 @@ export class TelegramService implements OnModuleInit, OnModuleDestroy {
     } catch (error) {
       this.logger.error(
         'Failed to share wallet report to report channel',
+        error,
+      );
+    }
+  }
+
+  /**
+   * Efficient status reporting: edits the previous status message (text or
+   * photo) in place so the report channel does not fill up. Falls back to
+   * sending a fresh message when the old one is gone (e.g. after a channel
+   * cleanup). No-op when the channel is not configured/resolved.
+   */
+  async sendWalletStatusReport(caption: string, photo?: Buffer): Promise<void> {
+    if (!caption && !photo) return;
+    if (!this.walletReportPeerId) {
+      this.logger.warn(
+        'Wallet report channel not resolved — skipping status report: ' +
+          caption.split('\n')[0],
+      );
+      return;
+    }
+
+    const entity = await this.client.getInputEntity(this.walletReportPeerId);
+
+    if (this.walletStatusMessageId !== null) {
+      try {
+        if (photo) {
+          const file = new CustomFile(
+            'status.png',
+            photo.length,
+            'status.png',
+            photo,
+          );
+          await this.client.editMessage(entity, {
+            message: this.walletStatusMessageId,
+            file,
+            text: caption,
+          });
+        } else {
+          await this.client.editMessage(entity, {
+            message: this.walletStatusMessageId,
+            text: caption,
+          });
+        }
+        this.logger.log('Edited wallet status report in place');
+        return;
+      } catch (error) {
+        this.logger.warn(
+          'Failed to edit wallet status report — sending a new one',
+          error,
+        );
+      }
+    }
+
+    try {
+      let sent;
+      if (photo) {
+        const file = new CustomFile(
+          'status.png',
+          photo.length,
+          'status.png',
+          photo,
+        );
+        sent = await this.client.sendFile(entity, { file, caption });
+      } else {
+        sent = await this.client.sendMessage(entity, { message: caption });
+      }
+      this.walletStatusMessageId = sent?.id ?? null;
+      this.logger.log(`Sent wallet status report to report channel`);
+    } catch (error) {
+      this.logger.error(
+        'Failed to send wallet status report to report channel',
         error,
       );
     }

@@ -81,4 +81,26 @@ describe('ChartImageService.buildPayload', () => {
     expect(payload.chart.options.plugins.title.text).toContain('73,900,000');
     expect(payload.chart.options.plugins.title.text).toContain('74,000,000');
   });
+
+  it('builds a wallet assets payload with cash, gold value and equity series', () => {
+    const payload: any = service.buildWalletPayload(
+      [
+        { date: 100, cash: 60_000_000_000, goldValue: 40_000_000_000 },
+        { date: 200, cash: 55_000_000_000, goldValue: 45_000_000_000 },
+      ],
+      'Wallet Assets',
+    );
+
+    expect(payload.format).toBe('png');
+    expect(payload.chart.type).toBe('line');
+
+    const labels = payload.chart.data.datasets.map((d: any) => d.label);
+    expect(labels).toEqual(['Cash', 'Gold Value', 'Equity']);
+
+    const datasets = payload.chart.data.datasets;
+    expect(datasets[0].data).toEqual([60_000_000_000, 55_000_000_000]);
+    expect(datasets[1].data).toEqual([40_000_000_000, 45_000_000_000]);
+    expect(datasets[2].data).toEqual([100_000_000_000, 100_000_000_000]);
+    expect(payload.chart.options.plugins.title.text).toBe('Wallet Assets');
+  });
 });

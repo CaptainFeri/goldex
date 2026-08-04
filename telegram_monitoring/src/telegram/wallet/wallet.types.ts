@@ -1,6 +1,6 @@
 import type { OurAction } from '../price/price.types';
 
-export type TradeSource = 'ARBITRAGE' | 'MARKET_MAKER';
+export type TradeSource = 'ARBITRAGE' | 'MARKET_MAKER' | 'REBALANCE';
 
 export type TradeSide = 'BUY' | 'SELL';
 

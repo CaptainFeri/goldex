@@ -3,6 +3,8 @@ import { OnEvent } from '@nestjs/event-emitter';
 import { StructuredLogger } from '../../logger/structured-logger';
 import { RedisService } from '../../redis/redis.service';
 import { TelegramService } from '../telegram.service';
+import { ChartImageService } from '../price/chart-image.service';
+import type { WalletChartPoint } from '../price/chart-image.service';
 import { MITHQALS_PER_KILO } from '../price/price.types';
 import type {
   ArbitrageOpportunity,
@@ -31,6 +33,18 @@ const WALLET_CASH_RESERVE_RATIO =
   Number(process.env.WALLET_CASH_RESERVE_RATIO) || 0.2;
 /** Smallest position (kg) the wallet will open when sizing down a signal. */
 const WALLET_MIN_TRADE_KG = Number(process.env.WALLET_MIN_TRADE_KG) || 1;
+/** Target share of total assets kept as cash (rest = gold inventory). */
+const WALLET_TARGET_CASH_RATIO =
+  Number(process.env.WALLET_TARGET_CASH_RATIO) || 0.5;
+/** How often the wallet rebalances its assets back to the target split. */
+const WALLET_REBALANCE_INTERVAL_SECONDS =
+  Number(process.env.WALLET_REBALANCE_INTERVAL_SECONDS) || 300;
+/** Deadband (fraction of equity): skip rebalancing when off-target by less. */
+const WALLET_REBALANCE_TOLERANCE =
+  Number(process.env.WALLET_REBALANCE_TOLERANCE) || 0.05;
+/** Keep at most this many asset-history samples for the status chart. */
+const WALLET_HISTORY_MAX_POINTS =
+  Number(process.env.WALLET_HISTORY_MAX_POINTS) || 1440;
 
 const STATE_KEY = 'wallet:state';
 const TRADE_IDS_KEY = 'wallet:trade:ids';
@@ -47,6 +61,10 @@ export class WalletService implements OnModuleInit, OnModuleDestroy {
 
   private readonly symbols = new Map<string, SymbolWallet>();
   private readonly trades: TradeRecord[] = [];
+  /** Latest known market price per symbol (Toman per mesqal). */
+  private readonly lastPrices = new Map<string, number>();
+  /** Asset mix history (mark-to-market) for the status chart. */
+  private readonly history: WalletChartPoint[] = [];
   private idCounter = 0;
   private lotIdCounter = 0;
 
@@ -54,21 +72,28 @@ export class WalletService implements OnModuleInit, OnModuleDestroy {
   private totalRealizedProfit = 0;
 
   private statusTimer: ReturnType<typeof setInterval> | null = null;
+  private rebalanceTimer: ReturnType<typeof setInterval> | null = null;
 
   constructor(
     private readonly redis: RedisService,
     private readonly telegram: TelegramService,
+    private readonly chartImage: ChartImageService,
   ) {}
 
   async onModuleInit(): Promise<void> {
     await this.load();
     this.startStatusReporting();
+    this.startRebalanceReporting();
   }
 
   onModuleDestroy(): void {
     if (this.statusTimer) {
       clearInterval(this.statusTimer);
       this.statusTimer = null;
+    }
+    if (this.rebalanceTimer) {
+      clearInterval(this.rebalanceTimer);
+      this.rebalanceTimer = null;
     }
   }
 
@@ -87,6 +112,21 @@ export class WalletService implements OnModuleInit, OnModuleDestroy {
     );
   }
 
+  /**
+   * Periodically brings the wallet back to the target cash/gold split.
+   */
+  private startRebalanceReporting(): void {
+    const intervalMs = WALLET_REBALANCE_INTERVAL_SECONDS * 1000;
+    this.rebalanceTimer = setInterval(() => {
+      void this.rebalance();
+    }, intervalMs);
+    this.rebalanceTimer.unref?.();
+    this.logger.log(
+      `Wallet rebalance scheduled every ${WALLET_REBALANCE_INTERVAL_SECONDS}s ` +
+        `(target cash ${Math.round(WALLET_TARGET_CASH_RATIO * 100)}%)`,
+    );
+  }
+
   private sendStatusReport(): void {
     const totalGoldKg = Array.from(this.symbols.values()).reduce(
       (sum, s) => sum + s.goldKg,
@@ -101,12 +141,46 @@ export class WalletService implements OnModuleInit, OnModuleDestroy {
       posture: totalGoldKg <= 0 ? 'cash-only' : 'holding',
     });
 
+    this.recordHistoryPoint();
     const text = formatWalletStatusReport(this.getSnapshot());
+    void this.sendStatusReportWithChart(text);
+  }
+
+  /** Sends the status report with an assets chart, falling back to text. */
+  private async sendStatusReportWithChart(text: string): Promise<void> {
+    if (this.history.length >= 2) {
+      try {
+        const image = await this.chartImage.renderWalletChart(
+          this.history,
+          'Wallet Assets',
+        );
+        await this.telegram.sendWalletStatusReport(text, image);
+        return;
+      } catch (error) {
+        this.logger.warn(
+          `Wallet status chart failed, sending text-only: ${String(error)}`,
+        );
+      }
+    }
     this.telegram
       .sendWalletReport(text)
       .catch((error) =>
         this.logger.error('Failed to send wallet status report', error),
       );
+  }
+
+  /** Records one mark-to-market asset sample (cash + gold value) for the chart. */
+  private recordHistoryPoint(): void {
+    const date = Math.floor(Date.now() / 1000);
+    let goldValue = 0;
+    for (const [symbol, wallet] of this.symbols) {
+      const price = this.lastPrices.get(symbol);
+      if (price) goldValue += wallet.goldKg * price * MITHQALS_PER_KILO;
+    }
+    this.history.push({ date, cash: this.irrBalance, goldValue });
+    if (this.history.length > WALLET_HISTORY_MAX_POINTS) {
+      this.history.shift();
+    }
   }
 
   /** Symbol wallets are created on first sight of a deliveryType (normal only). */
@@ -133,6 +207,10 @@ export class WalletService implements OnModuleInit, OnModuleDestroy {
   @OnEvent('telegram.arbitrage')
   handleArbitrage(opportunity: ArbitrageOpportunity): void {
     if (opportunity.subType !== 'normal') return;
+    this.lastPrices.set(
+      opportunity.deliveryType,
+      Math.round((opportunity.buy.price + opportunity.sell.price) / 2),
+    );
     const trades = this.executeArbitrage(opportunity);
     if (trades.some((t) => t.executed)) {
       this.report(trades);
@@ -147,6 +225,7 @@ export class WalletService implements OnModuleInit, OnModuleDestroy {
   @OnEvent('market.opportunity')
   handleMarketOpportunity(opportunity: MarketOpportunity): void {
     if (opportunity.subType !== 'normal') return;
+    this.lastPrices.set(opportunity.deliveryType, opportunity.price);
     const trade = this.executeMarketMaker(opportunity);
     if (trade?.executed) {
       this.report([trade]);
@@ -488,6 +567,197 @@ export class WalletService implements OnModuleInit, OnModuleDestroy {
     }
     wallet.goldKg = wallet.lots.reduce((sum, lot) => sum + lot.qtyKg, 0);
     return Math.round(costBasis);
+  }
+
+  /**
+   * Mark-to-market equity: cash plus gold valued at the latest observed price
+   * per symbol (Toman). Symbols without a price yet contribute zero.
+   */
+  private marketEquity(): number {
+    let goldValue = 0;
+    for (const [symbol, wallet] of this.symbols) {
+      const price = this.lastPrices.get(symbol);
+      if (price) goldValue += wallet.goldKg * price * MITHQALS_PER_KILO;
+    }
+    return this.irrBalance + goldValue;
+  }
+
+  /**
+   * Gold value (Toman) of one symbol at the latest known price; 0 when the
+   * symbol has no price yet.
+   */
+  private symbolMarketValueKg(symbol: string): number {
+    const wallet = this.symbols.get(symbol);
+    const price = this.lastPrices.get(symbol);
+    if (!wallet || !price) return 0;
+    return wallet.goldKg * price * MITHQALS_PER_KILO;
+  }
+
+  /**
+   * FIFO quantity that can be sold without realizing a loss at the given
+   * price. Seed lots (pricePerKg = 0) are always saleable (they are charged
+   * at the sale price, so they book no loss). Paid lots are saleable only
+   * while their cost is strictly below the sale price; the first loss-making
+   * lot stops the run to keep FIFO intact.
+   */
+  private saleableKg(wallet: SymbolWallet, pricePerMesqal: number): number {
+    const sellPricePerKg = pricePerMesqal * MITHQALS_PER_KILO;
+    let kg = 0;
+    for (const lot of wallet.lots) {
+      if (lot.pricePerKg > 0 && lot.pricePerKg >= sellPricePerKg) break;
+      kg += lot.qtyKg;
+    }
+    return kg;
+  }
+
+  /**
+   * Brings the wallet back to the target cash/gold split using the latest
+   * observed market prices. Never rebalances into the cash reserve, never
+   * realizes a loss, and skips when the imbalance is within tolerance or no
+   * priced symbol is known yet. Returns the executed rebalance trades.
+   */
+  private rebalanceTrades(): TradeRecord[] {
+    const markEquity = this.marketEquity();
+    if (markEquity <= 0) return [];
+
+    const targetCash = Math.max(
+      markEquity * WALLET_TARGET_CASH_RATIO,
+      markEquity * WALLET_CASH_RESERVE_RATIO,
+    );
+    const gap = this.irrBalance - targetCash;
+
+    if (Math.abs(gap) <= markEquity * WALLET_REBALANCE_TOLERANCE) {
+      this.logger.logStructured('WALLET_REBALANCE_SKIP', {
+        gap: Math.round(gap),
+        targetCash: Math.round(targetCash),
+        markEquity: Math.round(markEquity),
+        reason: 'within tolerance',
+      });
+      return [];
+    }
+
+    const pricedSymbols = Array.from(this.symbols.keys()).filter((s) =>
+      this.lastPrices.has(s),
+    );
+    if (pricedSymbols.length === 0) {
+      this.logger.logStructured('WALLET_REBALANCE_SKIP', {
+        gap: Math.round(gap),
+        reason: 'no priced symbols yet',
+      });
+      return [];
+    }
+
+    const date = Math.floor(Date.now() / 1000);
+    const trades: TradeRecord[] = [];
+
+    if (gap > 0) {
+      // Cash-heavy: buy gold, distributed proportionally to current holdings.
+      const totalGoldValue = pricedSymbols.reduce(
+        (sum, s) => sum + this.symbolMarketValueKg(s),
+        0,
+      );
+      for (const symbol of pricedSymbols) {
+        const price = this.lastPrices.get(symbol)!;
+        const share =
+          totalGoldValue > 0
+            ? gap * (this.symbolMarketValueKg(symbol) / totalGoldValue)
+            : gap / pricedSymbols.length;
+        const costPerKg = Math.round(kgToMesqal(1) * price);
+        const buyKg = Math.floor(share / costPerKg);
+        if (buyKg < WALLET_MIN_TRADE_KG) continue;
+
+        const cost = Math.round(kgToMesqal(buyKg) * price);
+        const wallet = this.ensureWallet(symbol);
+        wallet.lots.push({
+          id: ++this.lotIdCounter,
+          pricePerKg: Math.round(price * MITHQALS_PER_KILO),
+          qtyKg: buyKg,
+        });
+        wallet.goldKg += buyKg;
+        this.irrBalance -= cost;
+
+        const trade: TradeRecord = {
+          id: this.nextId(),
+          date,
+          source: 'REBALANCE',
+          symbol,
+          subType: 'normal',
+          side: 'BUY',
+          price,
+          quantityKg: buyKg,
+          amount: cost,
+          profit: 0,
+          executed: true,
+        };
+        this.recordTrade(trade);
+        trades.push(trade);
+        this.logger.logStructured('WALLET_REBALANCE_BUY', {
+          symbol,
+          quantityKg: buyKg,
+          price,
+          cost,
+        });
+      }
+    } else {
+      // Gold-heavy: sell gold (FIFO, profitable lots only) to raise cash.
+      let shortfall = -gap;
+      for (const symbol of pricedSymbols) {
+        if (shortfall <= 0) break;
+        const wallet = this.symbols.get(symbol);
+        if (!wallet || wallet.goldKg <= 0) continue;
+
+        const price = this.lastPrices.get(symbol)!;
+        const costPerKg = Math.round(kgToMesqal(1) * price);
+        const wantKg = Math.floor(shortfall / costPerKg);
+        const sellKg = Math.min(wantKg, this.saleableKg(wallet, price));
+        if (sellKg < WALLET_MIN_TRADE_KG) continue;
+
+        const proceedsPerKg = price * MITHQALS_PER_KILO;
+        const costBasis = this.consumeLots(wallet, sellKg, proceedsPerKg);
+        const proceeds = Math.round(kgToMesqal(sellKg) * price);
+        const profit = proceeds - costBasis;
+        this.irrBalance += proceeds;
+        this.totalRealizedProfit += profit;
+        shortfall -= proceeds;
+
+        const trade: TradeRecord = {
+          id: this.nextId(),
+          date,
+          source: 'REBALANCE',
+          symbol,
+          subType: 'normal',
+          side: 'SELL',
+          price,
+          quantityKg: sellKg,
+          amount: proceeds,
+          profit,
+          executed: true,
+        };
+        this.recordTrade(trade);
+        trades.push(trade);
+        this.logger.logStructured('WALLET_REBALANCE_SELL', {
+          symbol,
+          quantityKg: sellKg,
+          price,
+          proceeds,
+          profit,
+        });
+      }
+    }
+
+    return trades;
+  }
+
+  private async rebalance(): Promise<void> {
+    try {
+      const trades = this.rebalanceTrades();
+      if (trades.length > 0) {
+        await this.persistState();
+        this.report(trades);
+      }
+    } catch (error) {
+      this.logger.error('Wallet rebalance failed', error);
+    }
   }
 
   getSnapshot(): WalletSnapshot {

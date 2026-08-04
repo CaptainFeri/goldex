@@ -1,5 +1,6 @@
 import { RedisService } from '../../redis/redis.service';
 import { TelegramService } from '../telegram.service';
+import { ChartImageService } from '../price/chart-image.service';
 import { MITHQALS_PER_KILO } from '../price/price.types';
 import type {
   ArbitrageOpportunity,
@@ -8,6 +9,17 @@ import type {
 } from '../price/price.types';
 import { WalletService } from './wallet.service';
 import { kgToMesqal } from './wallet-report.formatter';
+import type { TradeRecord } from './wallet.types';
+
+/** Exposes private rebalance internals for tests. */
+type RebalanceInternals = {
+  rebalanceTrades(): TradeRecord[];
+  rebalance(): Promise<void>;
+  irrBalance: number;
+};
+
+const rebalanceInternals = (s: WalletService): RebalanceInternals =>
+  s as unknown as RebalanceInternals;
 
 function mockRedis(): RedisService {
   const client = {
@@ -26,6 +38,16 @@ function mockRedis(): RedisService {
 function mockTelegram(): TelegramService {
   return {
     sendWalletReport: jest.fn(async () => {}),
+    sendWalletStatusReport: jest.fn(async () => {}),
+  } as any;
+}
+
+function mockChartImage(
+  over: Partial<ChartImageService> = {},
+): ChartImageService {
+  return {
+    renderWalletChart: jest.fn(async () => Buffer.from('png-image')),
+    ...over,
   } as any;
 }
 
@@ -94,7 +116,7 @@ describe('WalletService', () => {
   let service: WalletService;
 
   beforeEach(() => {
-    service = new WalletService(mockRedis(), mockTelegram());
+    service = new WalletService(mockRedis(), mockTelegram(), mockChartImage());
   });
 
   it('starts with a 100B IRR pool and no symbol wallets', () => {
@@ -210,7 +232,9 @@ describe('WalletService', () => {
 
     const snapshot = service.getSnapshot();
     expect(snapshot.symbols[0].goldKg).toBe(0);
-    expect(snapshot.irrBalance).toBe(100_000_000_000 + sellAmount(74_000_000, 1));
+    expect(snapshot.irrBalance).toBe(
+      100_000_000_000 + sellAmount(74_000_000, 1),
+    );
     expect(snapshot.totalRealizedProfit).toBe(0);
   });
 
@@ -343,7 +367,11 @@ describe('WalletService', () => {
 
   it('publishes a wallet report to the report channel after execution', () => {
     const telegram = mockTelegram();
-    const withTelegram = new WalletService(mockRedis(), telegram);
+    const withTelegram = new WalletService(
+      mockRedis(),
+      telegram,
+      mockChartImage(),
+    );
 
     withTelegram.handleMarketOpportunity(
       marketOpportunity(73_500_000, 'WE_BUY'),
@@ -359,7 +387,11 @@ describe('WalletService', () => {
 
   it('does not publish reports for skipped trades', () => {
     const telegram = mockTelegram();
-    const withTelegram = new WalletService(mockRedis(), telegram);
+    const withTelegram = new WalletService(
+      mockRedis(),
+      telegram,
+      mockChartImage(),
+    );
 
     withTelegram.handleArbitrage(
       arbitrageOpportunity(73_500_000_000, 73_600_000_000),
@@ -372,7 +404,11 @@ describe('WalletService', () => {
     jest.useFakeTimers();
     try {
       const telegram = mockTelegram();
-      const withTelegram = new WalletService(mockRedis(), telegram);
+      const withTelegram = new WalletService(
+        mockRedis(),
+        telegram,
+        mockChartImage(),
+      );
       await withTelegram.onModuleInit();
 
       withTelegram.handleMarketOpportunity(
@@ -380,7 +416,8 @@ describe('WalletService', () => {
       );
       expect(telegram.sendWalletReport).toHaveBeenCalledTimes(1);
 
-      jest.advanceTimersByTime(60_000);
+      // First status tick has a single history sample -> text-only report.
+      await jest.advanceTimersByTimeAsync(60_000);
       expect(telegram.sendWalletReport).toHaveBeenCalledTimes(2);
       const status = (telegram.sendWalletReport as jest.Mock).mock
         .calls[1][0] as string;
@@ -389,8 +426,37 @@ describe('WalletService', () => {
       expect(status).toContain('با حواله');
       expect(status).toContain('سود کل تحقق');
 
-      jest.advanceTimersByTime(60_000);
-      expect(telegram.sendWalletReport).toHaveBeenCalledTimes(3);
+      // Second tick has two samples -> status sent with an assets chart.
+      await jest.advanceTimersByTimeAsync(60_000);
+      expect(telegram.sendWalletStatusReport).toHaveBeenCalledTimes(1);
+      const [caption, image] = (telegram.sendWalletStatusReport as jest.Mock)
+        .mock.calls[0];
+      expect(Buffer.isBuffer(image)).toBe(true);
+      expect(caption).toContain('وضعیت کیف پول ربات');
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  it('falls back to text-only status when the assets chart cannot be generated', async () => {
+    jest.useFakeTimers();
+    try {
+      const telegram = mockTelegram();
+      const chart = mockChartImage({
+        renderWalletChart: jest.fn(async () => {
+          throw new Error('QuickChart down');
+        }),
+      });
+      const withTelegram = new WalletService(mockRedis(), telegram, chart);
+      await withTelegram.onModuleInit();
+
+      await jest.advanceTimersByTimeAsync(60_000);
+      await jest.advanceTimersByTimeAsync(60_000);
+      expect(telegram.sendWalletStatusReport).not.toHaveBeenCalled();
+      expect(telegram.sendWalletReport).toHaveBeenCalledTimes(2);
+      const status = (telegram.sendWalletReport as jest.Mock).mock
+        .calls[1][0] as string;
+      expect(status).toContain('وضعیت کیف پول ربات');
     } finally {
       jest.useRealTimers();
     }
@@ -400,7 +466,11 @@ describe('WalletService', () => {
     jest.useFakeTimers();
     try {
       const telegram = mockTelegram();
-      const withTelegram = new WalletService(mockRedis(), telegram);
+      const withTelegram = new WalletService(
+        mockRedis(),
+        telegram,
+        mockChartImage(),
+      );
       await withTelegram.onModuleInit();
 
       jest.advanceTimersByTime(60_000);
@@ -411,5 +481,100 @@ describe('WalletService', () => {
     } finally {
       jest.useRealTimers();
     }
+  });
+
+  it('rebalances by buying gold when the wallet is cash-heavy', () => {
+    service.handleMarketOpportunity(marketOpportunity(73_500_000, 'WE_BUY'));
+    const before = service.getSnapshot();
+
+    const trades = rebalanceInternals(service).rebalanceTrades();
+
+    expect(trades).toHaveLength(1);
+    expect(trades[0]).toMatchObject({
+      source: 'REBALANCE',
+      side: 'BUY',
+      executed: true,
+      symbol: 'با حواله',
+    });
+
+    const after = service.getSnapshot();
+    expect(after.irrBalance).toBe(before.irrBalance - amount(73_500_000, 1));
+    expect(after.symbols[0].goldKg).toBe(3);
+    expect(service.getTrades({ source: 'REBALANCE' })).toHaveLength(1);
+  });
+
+  it('rebalances by selling gold when the wallet is gold-heavy, respecting the no-loss rule', () => {
+    service.handleMarketOpportunity(marketOpportunity(75_000_000, 'WE_BUY', 5));
+    const before = service.getSnapshot();
+    expect(before.symbols[0].goldKg).toBe(5);
+
+    const trades = rebalanceInternals(service).rebalanceTrades();
+
+    // One kg covers the shortfall; FIFO consumes the free seed lot first,
+    // so the sell books no profit (paid lots stay untouched).
+    expect(trades).toHaveLength(1);
+    expect(trades[0]).toMatchObject({
+      source: 'REBALANCE',
+      side: 'SELL',
+      quantityKg: 1,
+      profit: 0,
+      executed: true,
+    });
+
+    const after = service.getSnapshot();
+    expect(after.symbols[0].goldKg).toBe(4);
+    expect(after.symbols[0].lots.every((l) => l.pricePerKg > 0)).toBe(true);
+    expect(after.irrBalance).toBe(before.irrBalance + amount(75_000_000, 1));
+    expect(after.totalRealizedProfit).toBe(0);
+  });
+
+  it('skips rebalancing when the imbalance is within the tolerance band', () => {
+    service.handleMarketOpportunity(marketOpportunity(73_500_000, 'WE_BUY'));
+    // Cash equal to the gold value -> gap of zero vs. the 50% target.
+    const goldValue = 2 * 73_500_000 * MITHQALS_PER_KILO;
+    rebalanceInternals(service).irrBalance = Math.round(goldValue);
+
+    const trades = rebalanceInternals(service).rebalanceTrades();
+
+    expect(trades).toHaveLength(0);
+    expect(service.getTrades({ source: 'REBALANCE' })).toHaveLength(0);
+  });
+
+  it('skips rebalancing when no symbol has a price yet', () => {
+    const trades = rebalanceInternals(service).rebalanceTrades();
+
+    expect(trades).toHaveLength(0);
+    expect(service.getTrades()).toHaveLength(0);
+  });
+
+  it('never rebalances into the cash reserve', () => {
+    service.handleMarketOpportunity(marketOpportunity(73_500_000, 'WE_BUY'));
+    const snapshot = service.getSnapshot();
+    const reserve = Math.round(snapshot.equity * 0.2);
+
+    rebalanceInternals(service).rebalanceTrades();
+
+    expect(service.getSnapshot().irrBalance).toBeGreaterThan(reserve);
+  });
+
+  it('publishes a rebalance report to the report channel when trades execute', async () => {
+    const telegram = mockTelegram();
+    const withTelegram = new WalletService(
+      mockRedis(),
+      telegram,
+      mockChartImage(),
+    );
+    withTelegram.handleMarketOpportunity(
+      marketOpportunity(73_500_000, 'WE_BUY'),
+    );
+    expect(telegram.sendWalletReport).toHaveBeenCalledTimes(1);
+
+    await rebalanceInternals(withTelegram).rebalance();
+
+    expect(telegram.sendWalletReport).toHaveBeenCalledTimes(2);
+    const report = (telegram.sendWalletReport as jest.Mock).mock
+      .calls[1][0] as string;
+    expect(report).toContain('تعادل دارایی');
+    expect(report).toContain('خرید');
   });
 });
