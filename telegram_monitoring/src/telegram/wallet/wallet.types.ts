@@ -40,8 +40,10 @@ export interface TradeRecord {
   price: number;
   /** Quantity in kilograms (1 تا = 1 kg). */
   quantityKg: number;
-  /** Cash flow in Toman: cost for BUY, proceeds for SELL. */
+  /** Cash flow in Toman: cost for BUY, proceeds for SELL (gross of fee). */
   amount: number;
+  /** Exchange fee for the leg (per mesqal × mesqal quantity), in Toman. */
+  fee?: number;
   /** Realized profit for SELL legs; 0 for BUY legs. */
   profit: number;
   executed: boolean;

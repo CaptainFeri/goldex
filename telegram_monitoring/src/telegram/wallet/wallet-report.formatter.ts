@@ -40,8 +40,12 @@ function formatTrade(trade: TradeRecord): string[] {
     `${SIDE_LABELS[trade.side]} ${formatKg(trade.quantityKg)} @ ${formatPrice(pricePerGram)} (گرم)`,
     `   💵 ${trade.side === 'BUY' ? 'هزینه' : 'درآمد'}: ${formatPrice(trade.amount)} تومان`,
   ];
-  if (trade.profit > 0) {
-    lines.push(`   💰 سود: ${formatPrice(trade.profit)} تومان`);
+  if (trade.fee) {
+    lines.push(`   💸 کمیسیون: ${formatPrice(trade.fee)} تومان`);
+  }
+  if (trade.profit !== 0) {
+    const label = trade.profit > 0 ? '💰 سود' : '📉 زیان';
+    lines.push(`   ${label}: ${formatPrice(Math.abs(trade.profit))} تومان`);
   }
   if (!trade.executed) {
     lines.push(`   ⛔️ اجرا نشد: ${trade.reason ?? 'موجودی کافی نیست'}`);

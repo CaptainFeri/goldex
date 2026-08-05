@@ -61,6 +61,9 @@ const WALLET_HISTORY_MAX_POINTS =
 const WALLET_DELIVERY_TYPE = process.env.WALLET_DELIVERY_TYPE || 'با حواله';
 /** Whether the wallet Excel file is posted to the report channel every hour. */
 const WALLET_HOURLY_EXCEL_ENABLED = process.env.WALLET_HOURLY_EXCEL !== 'false';
+/** Exchange fee per mesqal of traded gold (Toman), charged on every leg. */
+const TRADE_FEE_PER_MITHQAL =
+  Number(process.env.TRADE_FEE_PER_MITHQAL) || 10_000;
 
 const STATE_KEY = 'wallet:state';
 const TRADE_IDS_KEY = 'wallet:trade:ids';
@@ -335,7 +338,7 @@ export class WalletService implements OnModuleInit, OnModuleDestroy {
       executed: false,
     };
 
-    const minLegCash = WALLET_MIN_TRADE_KG * costPerKg;
+    const minLegCash = WALLET_MIN_TRADE_KG * (costPerKg + this.tradeFee(1));
     const funding: TradeRecord[] = [];
     if (this.buyingPower() < minLegCash) {
       funding.push(
@@ -346,6 +349,8 @@ export class WalletService implements OnModuleInit, OnModuleDestroy {
     const qtyKg = this.affordableKg(signalQty, costPerKg);
     const cost = Math.round(kgToMesqal(qtyKg) * opportunity.buy.price);
     const proceeds = Math.round(kgToMesqal(qtyKg) * opportunity.sell.price);
+    const buyFee = this.tradeFee(qtyKg);
+    const sellFee = this.tradeFee(qtyKg);
 
     let reason: string | undefined;
     if (qtyKg < WALLET_MIN_TRADE_KG) {
@@ -376,7 +381,7 @@ export class WalletService implements OnModuleInit, OnModuleDestroy {
       ];
     }
 
-    const profit = proceeds - cost;
+    const profit = proceeds - cost - buyFee - sellFee;
     this.irrBalance += profit;
     this.totalRealizedProfit += profit;
 
@@ -387,6 +392,7 @@ export class WalletService implements OnModuleInit, OnModuleDestroy {
       price: opportunity.buy.price,
       quantityKg: qtyKg,
       amount: cost,
+      fee: buyFee,
       profit: 0,
       executed: true,
     };
@@ -397,6 +403,7 @@ export class WalletService implements OnModuleInit, OnModuleDestroy {
       price: opportunity.sell.price,
       quantityKg: qtyKg,
       amount: proceeds,
+      fee: sellFee,
       profit,
       executed: true,
     };
@@ -416,6 +423,8 @@ export class WalletService implements OnModuleInit, OnModuleDestroy {
         sellAt: opportunity.sell.price,
         cost,
         proceeds,
+        buyFee,
+        sellFee,
         profit,
         fundingSales: funding.length,
         goldKg: wallet.goldKg,
@@ -443,6 +452,7 @@ export class WalletService implements OnModuleInit, OnModuleDestroy {
       const costPerKg = Math.round(kgToMesqal(1) * opportunity.price);
       const qtyKg = this.affordableKg(signalQty, costPerKg, true);
       const cost = Math.round(kgToMesqal(qtyKg) * opportunity.price);
+      const fee = this.tradeFee(qtyKg);
       let reason: string | undefined;
       if (qtyKg < WALLET_MIN_TRADE_KG) {
         reason = this.insufficientCashReason(costPerKg);
@@ -470,11 +480,11 @@ export class WalletService implements OnModuleInit, OnModuleDestroy {
       const newGoldKg = oldGoldKg + qtyKg;
       wallet.lots.push({
         id: ++this.lotIdCounter,
-        pricePerKg: Math.round(proceedsPerKg),
+        pricePerKg: costPerKg + this.tradeFee(1),
         qtyKg,
       });
       wallet.goldKg = newGoldKg;
-      this.irrBalance -= cost;
+      this.irrBalance -= cost + fee;
 
       const trade: TradeRecord = {
         id: this.nextId(),
@@ -487,6 +497,7 @@ export class WalletService implements OnModuleInit, OnModuleDestroy {
         price: opportunity.price,
         quantityKg: qtyKg,
         amount: cost,
+        fee,
         profit: 0,
         executed: true,
       };
@@ -498,6 +509,7 @@ export class WalletService implements OnModuleInit, OnModuleDestroy {
         quantityKg: qtyKg,
         price: opportunity.price,
         cost,
+        fee,
       });
       return trade;
     }
@@ -505,13 +517,16 @@ export class WalletService implements OnModuleInit, OnModuleDestroy {
     // WE_SELL
     const qtyKg = signalQty;
     const proceeds = Math.round(kgToMesqal(qtyKg) * opportunity.price);
+    const fee = this.tradeFee(qtyKg);
+    const netProceedsPerKg = proceedsPerKg - this.tradeFee(1);
     const costBasisKg = this.costBasisKg(wallet, qtyKg);
 
     let reason: string | undefined;
     if (qtyKg > wallet.goldKg) {
       reason = `موجودی طلا کافی نیست (${qtyKg} کیلوگرم لازم است)`;
-    } else if (proceedsPerKg <= costBasisKg) {
-      reason = 'قیمت کمتر از بهای تمام‌شده است (فروش ضررده مجاز نیست)';
+    } else if (netProceedsPerKg <= costBasisKg) {
+      reason =
+        'قیمت کمتر از بهای تمام‌شده به‌همراه کمیسیون است (فروش ضررده مجاز نیست)';
     }
 
     if (reason) {
@@ -526,6 +541,7 @@ export class WalletService implements OnModuleInit, OnModuleDestroy {
         price: opportunity.price,
         quantityKg: qtyKg,
         amount: proceeds,
+        fee,
         profit: 0,
         executed: false,
         reason,
@@ -533,8 +549,8 @@ export class WalletService implements OnModuleInit, OnModuleDestroy {
     }
 
     const costBasis = this.consumeLots(wallet, qtyKg, proceedsPerKg);
-    const profit = Math.round(proceedsPerKg * qtyKg) - costBasis;
-    this.irrBalance += proceeds;
+    const profit = Math.round(proceedsPerKg * qtyKg) - fee - costBasis;
+    this.irrBalance += proceeds - fee;
     this.totalRealizedProfit += profit;
 
     const trade: TradeRecord = {
@@ -548,6 +564,7 @@ export class WalletService implements OnModuleInit, OnModuleDestroy {
       price: opportunity.price,
       quantityKg: qtyKg,
       amount: proceeds,
+      fee,
       profit,
       executed: true,
     };
@@ -559,6 +576,7 @@ export class WalletService implements OnModuleInit, OnModuleDestroy {
       quantityKg: qtyKg,
       price: opportunity.price,
       proceeds,
+      fee,
       profit,
     });
     return trade;
@@ -592,12 +610,21 @@ export class WalletService implements OnModuleInit, OnModuleDestroy {
   }
 
   /**
+   * Exchange fee for a leg in Toman: 10,000 IRR per mesqal of traded gold.
+   * Buys pay it on top of the cost; sells have it deducted from the proceeds.
+   */
+  private tradeFee(qtyKg: number): number {
+    return Math.round(kgToMesqal(qtyKg) * TRADE_FEE_PER_MITHQAL);
+  }
+
+  /**
    * Position sizing: the largest whole kilogram quantity the wallet can open
-   * for the signal without touching the cash reserve. When
-   * keepArbitrageFloor is set, an extra floor of one minimum trade leg is
-   * kept aside so the wallet can always fund an arbitrage — gold buys stop
-   * early instead of wiping out arbitrage capability. Returns 0 when even
-   * the minimum trade does not fit.
+   * for the signal without touching the cash reserve. The mesqal cost plus
+   * the per-kg fee is what must actually come out of cash. When
+   * keepArbitrageFloor is set, an extra floor of one minimum trade leg
+   * (all-in) is kept aside so the wallet can always fund an arbitrage — gold
+   * buys stop early instead of wiping out arbitrage capability. Returns 0
+   * when even the minimum trade does not fit.
    */
   private affordableKg(
     signalKg: number,
@@ -605,16 +632,16 @@ export class WalletService implements OnModuleInit, OnModuleDestroy {
     keepArbitrageFloor = false,
   ): number {
     if (costPerKg <= 0) return signalKg;
+    const allInPerKg = costPerKg + this.tradeFee(1);
     const budget =
-      this.buyingPower() -
-      (keepArbitrageFloor ? WALLET_MIN_TRADE_KG * costPerKg : 0);
-    const affordable = Math.floor(Math.max(0, budget) / costPerKg);
+      this.buyingPower() - (keepArbitrageFloor ? WALLET_MIN_TRADE_KG * allInPerKg : 0);
+    const affordable = Math.floor(Math.max(0, budget) / allInPerKg);
     return Math.max(0, Math.min(signalKg, affordable));
   }
 
   private insufficientCashReason(costPerKg: number): string {
-    const needed = Math.round(costPerKg * WALLET_MIN_TRADE_KG);
-    return `موجودی ریال کافی نیست (ذخیره نقدی و یک پایه آربیتراژ حفظ میشود؛ حداقل ${WALLET_MIN_TRADE_KG} کیلوگرم ≈ ${needed.toLocaleString('en-US')} تومان لازم است)`;
+    const needed = Math.round((costPerKg + this.tradeFee(1)) * WALLET_MIN_TRADE_KG);
+    return `موجودی ریال کافی نیست (ذخیره نقدی و یک پایه آربیتراژ حفظ میشود؛ حداقل ${WALLET_MIN_TRADE_KG} کیلوگرم با کمیسیون ≈ ${needed.toLocaleString('en-US')} تومان لازم است)`;
   }
 
   /**
@@ -695,7 +722,7 @@ export class WalletService implements OnModuleInit, OnModuleDestroy {
    * lot stops the run to keep FIFO intact.
    */
   private saleableKg(wallet: SymbolWallet, pricePerMesqal: number): number {
-    const sellPricePerKg = pricePerMesqal * MITHQALS_PER_KILO;
+    const sellPricePerKg = pricePerMesqal * MITHQALS_PER_KILO - this.tradeFee(1);
     let kg = 0;
     for (const lot of wallet.lots) {
       if (lot.pricePerKg > 0 && lot.pricePerKg >= sellPricePerKg) break;
@@ -723,11 +750,12 @@ export class WalletService implements OnModuleInit, OnModuleDestroy {
       const price = this.lastPrices.get(symbol);
       if (!price) continue;
       const proceedsPerKg = price * MITHQALS_PER_KILO;
+      const netProceedsPerKg = proceedsPerKg - this.tradeFee(1);
       while (this.irrBalance < targetIrr && wallet.goldKg > 0) {
         const need = targetIrr - this.irrBalance;
         const wantKg = Math.max(
           WALLET_MIN_TRADE_KG,
-          Math.ceil(need / proceedsPerKg),
+          Math.ceil(need / netProceedsPerKg),
         );
         const available = allowLoss
           ? wallet.goldKg
@@ -736,8 +764,9 @@ export class WalletService implements OnModuleInit, OnModuleDestroy {
         if (sellKg < WALLET_MIN_TRADE_KG) break;
         const costBasis = this.consumeLots(wallet, sellKg, proceedsPerKg);
         const proceeds = Math.round(kgToMesqal(sellKg) * price);
-        const profit = proceeds - costBasis;
-        this.irrBalance += proceeds;
+        const fee = this.tradeFee(sellKg);
+        const profit = proceeds - fee - costBasis;
+        this.irrBalance += proceeds - fee;
         this.totalRealizedProfit += profit;
         const trade: TradeRecord = {
           id: this.nextId(),
@@ -749,6 +778,7 @@ export class WalletService implements OnModuleInit, OnModuleDestroy {
           price,
           quantityKg: sellKg,
           amount: proceeds,
+          fee,
           profit,
           executed: true,
         };
@@ -759,6 +789,7 @@ export class WalletService implements OnModuleInit, OnModuleDestroy {
           quantityKg: sellKg,
           price,
           proceeds,
+          fee,
           profit,
           forcedLossSale: profit < 0,
         });
@@ -820,18 +851,20 @@ export class WalletService implements OnModuleInit, OnModuleDestroy {
             ? gap * (this.symbolMarketValueKg(symbol) / totalGoldValue)
             : gap / pricedSymbols.length;
         const costPerKg = Math.round(kgToMesqal(1) * price);
-        const buyKg = Math.floor(share / costPerKg);
+        const allInPerKg = costPerKg + this.tradeFee(1);
+        const buyKg = Math.floor(share / allInPerKg);
         if (buyKg < WALLET_MIN_TRADE_KG) continue;
 
         const cost = Math.round(kgToMesqal(buyKg) * price);
+        const fee = this.tradeFee(buyKg);
         const wallet = this.ensureWallet(symbol);
         wallet.lots.push({
           id: ++this.lotIdCounter,
-          pricePerKg: Math.round(price * MITHQALS_PER_KILO),
+          pricePerKg: allInPerKg,
           qtyKg: buyKg,
         });
         wallet.goldKg += buyKg;
-        this.irrBalance -= cost;
+        this.irrBalance -= cost + fee;
 
         const trade: TradeRecord = {
           id: this.nextId(),
@@ -843,6 +876,7 @@ export class WalletService implements OnModuleInit, OnModuleDestroy {
           price,
           quantityKg: buyKg,
           amount: cost,
+          fee,
           profit: 0,
           executed: true,
         };
@@ -853,6 +887,7 @@ export class WalletService implements OnModuleInit, OnModuleDestroy {
           quantityKg: buyKg,
           price,
           cost,
+          fee,
         });
       }
     } else {
@@ -871,7 +906,8 @@ export class WalletService implements OnModuleInit, OnModuleDestroy {
         ),
       );
       const cashCritical =
-        this.buyingPower() < WALLET_MIN_TRADE_KG * minCostPerKg;
+        this.buyingPower() <
+        WALLET_MIN_TRADE_KG * (minCostPerKg + this.tradeFee(1));
       if (cashCritical && this.irrBalance < targetCash) {
         trades.push(...this.sellGoldForCash(targetCash, true, date));
       }

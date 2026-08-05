@@ -59,8 +59,15 @@ const amount = (price: number, kg: number) =>
 const sellAmount = (price: number, kg: number) =>
   Math.round(price * MITHQALS_PER_KILO * kg);
 
+const TRADE_FEE_PER_MITHQAL = 10_000;
+
+/** Exchange fee for one trade leg (per mesqal × mesqal quantity), Toman. */
+const fee = (kg: number) =>
+  Math.round(kgToMesqal(kg) * TRADE_FEE_PER_MITHQAL);
+
+/** Net profit of an arbitrage round trip after fees on both legs. */
 const arbitrageProfit = (buy: number, sell: number, kg: number) =>
-  amount(sell, kg) - amount(buy, kg);
+  amount(sell, kg) - amount(buy, kg) - 2 * fee(kg);
 
 function snapshot(price: number, side: 'خرید' | 'فروش'): PriceSnapshot {
   return {
@@ -141,11 +148,13 @@ describe('WalletService', () => {
       price: 73_500_000,
       quantityKg: 1,
       amount: amount(73_500_000, 1),
+      fee: fee(1),
       profit: 0,
     });
     expect(trades[1]).toMatchObject({
       side: 'SELL',
       amount: amount(73_600_000, 1),
+      fee: fee(1),
       profit: arbitrageProfit(73_500_000, 73_600_000, 1),
     });
 
@@ -213,6 +222,8 @@ describe('WalletService', () => {
       source: 'REBALANCE',
       side: 'SELL',
       quantityKg: 1,
+      fee: fee(1),
+      profit: -fee(1),
       executed: true,
     });
     expect(trades[1]).toMatchObject({ source: 'ARBITRAGE', side: 'BUY' });
@@ -222,11 +233,12 @@ describe('WalletService', () => {
     expect(snapshot.symbols[0].goldKg).toBe(1);
     expect(snapshot.irrBalance).toBe(
       10_000_000_000 +
-        amount(75_000_000, 1) +
+        amount(75_000_000, 1) -
+        fee(1) +
         arbitrageProfit(75_000_000, 75_200_000, 1),
     );
     expect(snapshot.totalRealizedProfit).toBe(
-      arbitrageProfit(75_000_000, 75_200_000, 1),
+      arbitrageProfit(75_000_000, 75_200_000, 1) - fee(1),
     );
   });
 
@@ -239,13 +251,16 @@ describe('WalletService', () => {
       executed: true,
       side: 'BUY',
       amount: amount(73_500_000, 1),
+      fee: fee(1),
     });
 
     const snapshot = service.getSnapshot();
-    expect(snapshot.irrBalance).toBe(100_000_000_000 - amount(73_500_000, 1));
+    expect(snapshot.irrBalance).toBe(
+      100_000_000_000 - amount(73_500_000, 1) - fee(1),
+    );
     expect(snapshot.symbols[0]).toMatchObject({
       goldKg: 1,
-      lots: [{ pricePerKg: amount(73_500_000, 1), qtyKg: 1 }],
+      lots: [{ pricePerKg: amount(73_500_000, 1) + fee(1), qtyKg: 1 }],
     });
   });
 
@@ -268,19 +283,19 @@ describe('WalletService', () => {
     const trade = service.executeMarketMaker(
       marketOpportunity(74_000_000, 'WE_SELL'),
     );
-    const profit = sellAmount(74_000_000, 1) - amount(73_500_000, 1);
+    const profit =
+      sellAmount(74_000_000, 1) - amount(73_500_000, 1) - 2 * fee(1);
 
     expect(trade).toMatchObject({
       executed: true,
       side: 'SELL',
+      fee: fee(1),
       profit,
     });
 
     const snapshot = service.getSnapshot();
     expect(snapshot.symbols[0].goldKg).toBe(0);
-    expect(snapshot.irrBalance).toBe(
-      100_000_000_000 + sellAmount(74_000_000, 1) - amount(73_500_000, 1),
-    );
+    expect(snapshot.irrBalance).toBe(100_000_000_000 + profit);
     expect(snapshot.totalRealizedProfit).toBe(profit);
   });
 
@@ -327,7 +342,9 @@ describe('WalletService', () => {
 
     const snapshot = service.getSnapshot();
     expect(snapshot.symbols[0].goldKg).toBe(3);
-    expect(snapshot.irrBalance).toBe(100_000_000_000 - amount(73_500_000, 3));
+    expect(snapshot.irrBalance).toBe(
+      100_000_000_000 - amount(73_500_000, 3) - fee(3),
+    );
   });
 
   it('keeps enough cash for a minimum arbitrage leg when buying gold', () => {
@@ -335,7 +352,9 @@ describe('WalletService', () => {
 
     const snapshot = service.getSnapshot();
     expect(snapshot.symbols[0].goldKg).toBe(3);
-    expect(snapshot.buyingPower).toBeGreaterThanOrEqual(amount(73_500_000, 1));
+    expect(snapshot.buyingPower).toBeGreaterThanOrEqual(
+        amount(73_500_000, 1) + fee(1),
+      );
   });
 
   it('skips a WE_BUY when even the minimum kg exceeds the reserve-protected budget', () => {
@@ -363,7 +382,7 @@ describe('WalletService', () => {
     expect(after.equity).toBeCloseTo(100_000_000_000, -5);
     expect(after.cashReserve).toBeCloseTo(20_000_000_000, -5);
     expect(after.buyingPower).toBeCloseTo(
-      100_000_000_000 - amount(73_500_000, 3) - 20_000_000_000,
+      100_000_000_000 - amount(73_500_000, 3) - fee(3) - 20_000_000_000,
       -5,
     );
   });
@@ -578,7 +597,9 @@ describe('WalletService', () => {
     });
 
     const after = service.getSnapshot();
-    expect(after.irrBalance).toBe(before.irrBalance - amount(73_500_000, 1));
+    expect(after.irrBalance).toBe(
+      before.irrBalance - amount(73_500_000, 1) - fee(1),
+    );
     expect(after.symbols[0].goldKg).toBe(2);
     expect(service.getTrades({ source: 'REBALANCE' })).toHaveLength(1);
   });
