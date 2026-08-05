@@ -6,20 +6,27 @@ import {
   OrderButton,
   ParsedPrice,
   PriceSnapshot,
+  TRADE_FEE_PER_MITHQAL,
 } from './price.types';
 
 /** Max snapshots kept per category bucket (in-memory ring). */
 const MAX_PER_CATEGORY = 1000;
 /** Only compare prices seen within this window (seconds) for arbitrage. */
 const DEFAULT_ARBITRAGE_WINDOW_SECONDS = 600;
-  /** Default minimum per-unit profit (spread) to alert on. */
-  const DEFAULT_MIN_PROFIT = 80_000;
+/** Default minimum per-unit profit (spread) to alert on. */
+const DEFAULT_MIN_PROFIT = 80_000;
+/**
+ * The two legs of an arbitrage pair must be observed this close together
+ * (seconds). A leg that is older may have moved — pairing with it books
+ * profit that is not trustworthy.
+ */
+const DEFAULT_MAX_LEG_AGE_SECONDS = 60;
 
-  /**
-   * A reported (buyAt, sellAt) pair is remembered for this long before the
-   * same pair may alert again — matches the detection window by default.
-   */
-  const DEFAULT_REPORT_TTL_SECONDS = 600;
+/**
+ * A reported (buyAt, sellAt) pair is remembered for this long before the
+ * same pair may alert again — matches the detection window by default.
+ */
+const DEFAULT_REPORT_TTL_SECONDS = 600;
 
 /**
  * In-memory store of parsed price snapshots, grouped by category, plus a
@@ -47,6 +54,11 @@ export class PriceHistoryService {
   private readonly reportTtlSeconds =
     Number(process.env.ARBITRAGE_REPORT_TTL_SECONDS) ||
     this.windowSeconds;
+
+  /** Max age (seconds) of the opposite leg paired with the current message. */
+  private readonly maxLegAgeSeconds =
+    Number(process.env.ARBITRAGE_MAX_LEG_AGE_SECONDS) ||
+    DEFAULT_MAX_LEG_AGE_SECONDS;
 
   /** categoryKey (sub-type) -> snapshots, oldest first. */
   private readonly history = new Map<string, PriceSnapshot[]>();
@@ -110,80 +122,101 @@ export class PriceHistoryService {
 
   /**
    * Looks for an arbitrage opportunity in the same sub-type + delivery bucket
-   * as `parsed`, within the recent time window.
+   * as `parsed`, pairing the current message with the best opposite-side
+   * price seen recently.
+   *
+   * Time-distance rule: the two legs must have been observed within
+   * maxLegAgeSeconds of each other — an older leg has already moved, so its
+   * price (and any profit) is not trustworthy. The current message is always
+   * one leg (it just arrived); the opposite leg is chosen from the past
+   * window. This rejects stale pairs like a فروش from 13:34 paired with a
+   * خرید from 13:39.
    *
    * Semantics: خرید = a price we can SELL at, فروش = a price we can BUY at.
    * Profit exists when the highest خرید (our sell) exceeds the lowest فروش
-   * (our buy) for the same product. Buckets are per sub-type (عادی/شنا/معکوس)
-   * + delivery type, so only like-for-like products are compared.
+   * (our buy) for the same product. Profit is reported net of the exchange
+   * fee on both legs (10k IRR per mesqal each), and the spread must exceed
+   * the fees or the round trip is a guaranteed loss.
    */
-  detectArbitrage(
-    parsed: ParsedPrice,
-    asOf: number,
-  ): ArbitrageOpportunity | null {
+  detectArbitrage(snapshot: PriceSnapshot): ArbitrageOpportunity | null {
     // Only detect arbitrage on normal (عادی) opportunities — exclude معکوس and شنا.
-    if (parsed.subType !== 'normal') return null;
+    if (snapshot.subType !== 'normal') return null;
+    // Special/custom orders (description) are not tradable prices.
+    if (snapshot.description) return null;
 
-    const arbKey = this.arbitrageKeyFor(parsed);
-    const since = asOf - this.windowSeconds;
+    const asOf = snapshot.date;
+    const arbKey = this.arbitrageKeyFor(snapshot);
+    const since = asOf - this.maxLegAgeSeconds;
 
-    const recent = this.getHistory(this.categoryKeyFor(parsed)).filter(
-      (s) => `${s.subType}::${s.deliveryType}` === arbKey && s.date >= since,
-    );
-
-    let bestSell: PriceSnapshot | undefined; // highest خرید (we sell)
-    let bestBuy: PriceSnapshot | undefined; // lowest فروش (we buy)
-    let buyCount = 0;
-    let sellCount = 0;
-
-    for (const s of recent) {
+    // The opposite side observed within the freshness window. If the current
+    // message is a خرید (we sell), find the lowest فروش (we buy); if it is a
+    // فروش (we buy), find the highest خرید (we sell).
+    let opposite: PriceSnapshot | undefined;
+    let oppositeCount = 0;
+    for (const s of this.getHistory(this.categoryKeyFor(snapshot))) {
+      if (`${s.subType}::${s.deliveryType}` !== arbKey) continue;
       if (s.description) continue;
+      if (s.date < since || s.date > asOf) continue;
+      if (s.ourAction === snapshot.ourAction) continue;
+      oppositeCount++;
+      if (!opposite) {
+        opposite = s;
+        continue;
+      }
       if (s.ourAction === 'WE_SELL') {
-        sellCount++;
-        if (!bestSell || s.price > bestSell.price) bestSell = s;
-      } else {
-        buyCount++;
-        if (!bestBuy || s.price < bestBuy.price) bestBuy = s;
+        if (s.price > opposite.price) opposite = s;
+      } else if (s.price < opposite.price) {
+        opposite = s;
       }
     }
 
-    if (!bestSell || !bestBuy) {
+    if (!opposite) {
       this.logger.logStructured('ARBITRAGE_SKIP', {
-        reason: 'missing-side',
+        reason: 'missing-opposite-leg',
         bucket: arbKey,
-        recent: recent.length,
-        buyCount,
-        sellCount,
-        subType: parsed.subType,
-        deliveryType: parsed.deliveryType,
+        since,
+        oppositeCount,
+        subType: snapshot.subType,
+        deliveryType: snapshot.deliveryType,
       });
       return null;
     }
 
+    const bestBuy =
+      snapshot.ourAction === 'WE_BUY' ? snapshot : (opposite as PriceSnapshot);
+    const bestSell =
+      snapshot.ourAction === 'WE_SELL' ? snapshot : (opposite as PriceSnapshot);
+
     const spread = bestSell.price - bestBuy.price;
+    // Two legs each pay the fee per mesqal — anything at or below that is a
+    // guaranteed loss, whatever ARBITRAGE_MIN_PROFIT is set to.
+    const feeFloor = 2 * TRADE_FEE_PER_MITHQAL;
     // Only alert on a meaningful margin (default > 80,000 per unit).
-    if (spread <= this.minProfit) {
+    if (spread <= Math.max(this.minProfit, feeFloor)) {
       this.logger.logStructured('ARBITRAGE_SKIP', {
         reason: 'below-threshold',
         bucket: arbKey,
-        recent: recent.length,
-        buyCount,
-        sellCount,
+        oppositeCount,
+        legTimeGap: Math.abs(bestBuy.date - bestSell.date),
         bestBuy: bestBuy.price,
         bestSell: bestSell.price,
         spread,
+        feeFloor,
         minProfit: this.minProfit,
       });
       return null;
     }
 
     const quantity = Math.min(bestBuy.quantity, bestSell.quantity);
-    // Price is per mesqal, quantity is in kg. Convert mesqal → gram → kg profit.
-    const totalProfit = Math.round(spread * MITHQALS_PER_KILO * quantity);
+    // Price is per mesqal, quantity is in kg. Net profit after the fee on both
+    // legs: (spread − 2 × fee per mesqal) × mesqal-per-kg × quantity.
+    const totalProfit = Math.round(
+      (spread - feeFloor) * MITHQALS_PER_KILO * quantity,
+    );
     const opportunity: ArbitrageOpportunity = {
-      categoryKey: this.categoryKeyFor(parsed),
-      subType: parsed.subType,
-      deliveryType: parsed.deliveryType,
+      categoryKey: this.categoryKeyFor(snapshot),
+      subType: snapshot.subType,
+      deliveryType: snapshot.deliveryType,
       buy: bestBuy,
       sell: bestSell,
       spread,
@@ -195,10 +228,14 @@ export class PriceHistoryService {
       categoryKey: opportunity.categoryKey,
       deliveryType: opportunity.deliveryType,
       buyAt: bestBuy.price,
-      buyFromMessageId: bestBuy.messageId,
+      buyMessageId: bestBuy.messageId,
+      buyDate: bestBuy.date,
       sellAt: bestSell.price,
-      sellToMessageId: bestSell.messageId,
+      sellMessageId: bestSell.messageId,
+      sellDate: bestSell.date,
+      legTimeGap: Math.abs(bestBuy.date - bestSell.date),
       spread,
+      feeFloor,
       quantity,
       totalProfit: opportunity.totalProfit,
     });

@@ -14,6 +14,10 @@ export function sideToAction(side: PriceSideLabel): OurAction {
 export const GRAMS_PER_MITHQAL = Number(process.env.MITHQAL_GRAMS) || 4.3318;
 export const MITHQALS_PER_KILO = 1000 / GRAMS_PER_MITHQAL;
 
+/** Exchange fee per mesqal of traded gold (Toman), charged on every leg. */
+export const TRADE_FEE_PER_MITHQAL =
+  Number(process.env.TRADE_FEE_PER_MITHQAL) || 10_000;
+
 export type PriceSubType = 'normal' | 'shena' | 'makus';
 
 export const SUBTYPE_LABELS: Record<PriceSubType, string> = {

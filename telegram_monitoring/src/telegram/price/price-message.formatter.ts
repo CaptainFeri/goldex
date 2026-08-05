@@ -152,6 +152,11 @@ export function formatArbitrageMessage(
     `💵 سود کل: ${formatPrice(opportunity.totalProfit)}`,
   ];
 
+  const legTimeGap = Math.abs(opportunity.buy.date - opportunity.sell.date);
+  if (legTimeGap > 0) {
+    lines.push(`⏱️ فاصله زمانی دو سفارش: ${legTimeGap} ثانیه`);
+  }
+
   const buyLink = messageLink(opportunity.buy);
   const sellLink = messageLink(opportunity.sell);
   if (buyLink || sellLink) {

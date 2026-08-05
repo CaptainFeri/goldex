@@ -8,7 +8,10 @@ import { RedisService } from '../../redis/redis.service';
 import { TelegramService } from '../telegram.service';
 import { ChartImageService } from '../price/chart-image.service';
 import type { WalletChartPoint } from '../price/chart-image.service';
-import { MITHQALS_PER_KILO } from '../price/price.types';
+import {
+  MITHQALS_PER_KILO,
+  TRADE_FEE_PER_MITHQAL,
+} from '../price/price.types';
 import type {
   ArbitrageOpportunity,
   MarketOpportunity,
@@ -61,9 +64,6 @@ const WALLET_HISTORY_MAX_POINTS =
 const WALLET_DELIVERY_TYPE = process.env.WALLET_DELIVERY_TYPE || 'با حواله';
 /** Whether the wallet Excel file is posted to the report channel every hour. */
 const WALLET_HOURLY_EXCEL_ENABLED = process.env.WALLET_HOURLY_EXCEL !== 'false';
-/** Exchange fee per mesqal of traded gold (Toman), charged on every leg. */
-const TRADE_FEE_PER_MITHQAL =
-  Number(process.env.TRADE_FEE_PER_MITHQAL) || 10_000;
 
 const STATE_KEY = 'wallet:state';
 const TRADE_IDS_KEY = 'wallet:trade:ids';

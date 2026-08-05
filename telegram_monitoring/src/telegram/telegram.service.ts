@@ -553,10 +553,7 @@ export class TelegramService implements OnModuleInit, OnModuleDestroy {
 
       this.marketMaker.onPrice(parsed, snapshot);
 
-      const opportunity = this.priceHistory.detectArbitrage(
-        parsed,
-        message.date,
-      );
+      const opportunity = this.priceHistory.detectArbitrage(snapshot);
       if (opportunity && this.priceHistory.markReportedIfNew(opportunity)) {
         await this.sendArbitrageAlert(
           opportunity,
