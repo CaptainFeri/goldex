@@ -117,10 +117,6 @@ export function buildWalletExcel(
 ): Buffer {
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, statusSheet(snapshot), 'کیف پول');
-  XLSX.utils.book_append_sheet(
-    wb,
-    ordersSheet(trades),
-    'سفارش‌ها (مارکت میکر و آربیتراژ)',
-  );
+  XLSX.utils.book_append_sheet(wb, ordersSheet(trades), 'سفارش‌ها');
   return XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' }) as Buffer;
 }

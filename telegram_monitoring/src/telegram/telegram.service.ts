@@ -809,16 +809,16 @@ export class TelegramService implements OnModuleInit, OnModuleDestroy {
   }
 
   /**
-   * Sends the generated wallet Excel file to the wallet report channel.
+   * Sends the generated wallet Excel file to the target channel.
    */
-  async sendWalletExcelReport(buffer: Buffer, caption?: string): Promise<void> {
-    if (!this.walletReportPeerId) {
+  async sendWalletExcelToTarget(buffer: Buffer, caption?: string): Promise<void> {
+    if (!this.targetPeerId) {
       this.logger.warn(
-        'Wallet report channel not resolved — skipping Excel report',
+        'Target channel not resolved — skipping Excel report',
       );
       return;
     }
-    await this.sendWalletExcelFile(this.walletReportPeerId, buffer, caption);
+    await this.sendWalletExcelFile(this.targetPeerId, buffer, caption);
   }
 
   /**

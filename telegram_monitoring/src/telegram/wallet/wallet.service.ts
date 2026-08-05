@@ -769,7 +769,12 @@ export class WalletService implements OnModuleInit, OnModuleDestroy {
       }
     } else {
       // Gold-heavy: sell gold (FIFO, profitable lots only) to raise cash.
+      // When the wallet is cash-critical (cannot buy even the minimum
+      // position), loss-making lots are sold too — otherwise the robot is
+      // stuck forever: unable to buy (reserve floor) and unable to arbitrage
+      // or market-make (cash-funded legs), with gold it can never use.
       let shortfall = -gap;
+      const cashCritical = this.buyingPower() <= 0;
       for (const symbol of pricedSymbols) {
         if (shortfall <= 0) break;
         const wallet = this.symbols.get(symbol);
@@ -778,7 +783,9 @@ export class WalletService implements OnModuleInit, OnModuleDestroy {
         const price = this.lastPrices.get(symbol)!;
         const costPerKg = Math.round(kgToMesqal(1) * price);
         const wantKg = Math.floor(shortfall / costPerKg);
-        const sellKg = Math.min(wantKg, this.saleableKg(wallet, price));
+        const sellKg = cashCritical
+          ? Math.min(wantKg, wallet.goldKg)
+          : Math.min(wantKg, this.saleableKg(wallet, price));
         if (sellKg < WALLET_MIN_TRADE_KG) continue;
 
         const proceedsPerKg = price * MITHQALS_PER_KILO;
@@ -810,6 +817,7 @@ export class WalletService implements OnModuleInit, OnModuleDestroy {
           price,
           proceeds,
           profit,
+          forcedLossSale: cashCritical && profit < 0,
         });
       }
     }
@@ -887,12 +895,12 @@ export class WalletService implements OnModuleInit, OnModuleDestroy {
         hour: '2-digit',
         minute: '2-digit',
       });
-      await this.telegram.sendWalletExcelReport(
+      await this.telegram.sendWalletExcelToTarget(
         buffer,
         `📊 گزارش ساعتی کیف پول — ${hour}`,
       );
       this.logger.log(
-        `Hourly wallet Excel sent (${trades.length} orders) to report channel`,
+        `Hourly wallet Excel sent (${trades.length} orders) to target channel`,
       );
     } catch (error) {
       this.logger.error('Failed to send hourly wallet Excel report', error);
