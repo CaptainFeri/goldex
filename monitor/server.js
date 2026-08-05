@@ -193,10 +193,64 @@ function checkTcp(host, port, timeout = 4000) {
   });
 }
 
+let containerStatsCache = null;
+let containerStatsAt = 0;
+const CONTAINER_STATS_TTL_MS = 3000;
+
+function parseBytes(value, unit) {
+  const units = {
+    B: 1,
+    KiB: 1024,
+    MiB: 1024 ** 2,
+    GiB: 1024 ** 3,
+    TiB: 1024 ** 4,
+    kB: 1000,
+    MB: 1000 ** 2,
+    GB: 1000 ** 3,
+    TB: 1000 ** 4,
+  };
+  return Math.round(parseFloat(value) * (units[unit] || 1));
+}
+
+function getContainerStats() {
+  const now = Date.now();
+  if (containerStatsCache && now - containerStatsAt < CONTAINER_STATS_TTL_MS) {
+    return containerStatsCache;
+  }
+  const result = {};
+  try {
+    const out = execSync(
+      'docker stats --no-stream --format "{{.Name}}\\t{{.CPUPerc}}\\t{{.MemUsage}}\\t{{.MemPerc}}\\t{{.NetIO}}"',
+      { timeout: 8000, maxBuffer: 10 * 1024 * 1024 },
+    ).toString();
+    for (const line of out.split("\n")) {
+      const parts = line.split("\t");
+      if (parts.length < 4 || !parts[0]) continue;
+      const memMatch = parts[2].match(/^([\d.]+)([A-Za-z]+)\s*\/\s*([\d.]+)([A-Za-z]+)$/);
+      result[parts[0]] = {
+        cpuPercent: parseFloat(parts[1]) || 0,
+        memUsageBytes: memMatch ? parseBytes(memMatch[1], memMatch[2]) : 0,
+        memLimitBytes: memMatch ? parseBytes(memMatch[3], memMatch[4]) : 0,
+        memPercent: parseFloat(parts[3]) || 0,
+        netIO: parts[4] || "",
+      };
+    }
+  } catch {}
+  containerStatsCache = result;
+  containerStatsAt = now;
+  return result;
+}
+
+app.get("/api/containers/stats", (_req, res) => {
+  res.json(getContainerStats());
+});
+
 app.get("/api/services", async (_req, res) => {
+  const stats = getContainerStats();
   const results = await Promise.all(
     services.map(async (svc) => {
       const alive = await checkTcp(svc.host, svc.port);
+      const s = stats[svc.containerName];
       return {
         ...svc,
         alive,
@@ -204,6 +258,11 @@ app.get("/api/services", async (_req, res) => {
           ? `${EXTERNAL_HOST}:${svc.externalPort}`
           : null,
         internalEndpoint: `${svc.host}:${svc.port}`,
+        cpuPercent: s ? s.cpuPercent : null,
+        memUsageBytes: s ? s.memUsageBytes : null,
+        memLimitBytes: s ? s.memLimitBytes : null,
+        memPercent: s ? s.memPercent : null,
+        netIO: s ? s.netIO : null,
       };
     }),
   );

@@ -192,6 +192,12 @@ h1 small{font-size:12px;color:var(--text2);font-weight:400;letter-spacing:0;disp
   cursor:pointer;font-size:10px;transition:all .2s;
 }
 .btn-logs:hover{background:var(--border);color:var(--text)}
+.res-rows{display:flex;flex-direction:column;gap:5px;margin-top:8px}
+.res-row{display:flex;align-items:center;gap:8px;font-size:10px}
+.res-label{color:var(--text3);text-transform:uppercase;font-size:9px;letter-spacing:.04em;min-width:26px}
+.res-bar-wrap{flex:1;background:var(--surface2);border-radius:4px;height:5px;overflow:hidden}
+.res-bar-fill{height:100%;border-radius:4px;transition:width .6s ease}
+.res-value{color:var(--text2);font-size:10px;min-width:70px;text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
 
 /* Log modal */
 .modal-overlay{
@@ -484,6 +490,23 @@ function renderSys(sys) {
   `;
 }
 
+function resBar(pct, label, valueText) {
+  if (pct == null) return `
+    <div class="res-row">
+      <span class="res-label">${label}</span>
+      <div class="res-bar-wrap"></div>
+      <span class="res-value">—</span>
+    </div>`;
+  const color = pct > 80 ? 'var(--red)' : pct > 50 ? 'var(--amber)' : 'var(--green)';
+  const width = Math.min(pct, 100);
+  return `
+    <div class="res-row">
+      <span class="res-label">${label}</span>
+      <div class="res-bar-wrap"><div class="res-bar-fill" style="width:${width}%;background:${color}"></div></div>
+      <span class="res-value">${valueText}</span>
+    </div>`;
+}
+
 function renderSvcs(svcs) {
   const groups = {};
   for (const s of svcs) {
@@ -497,6 +520,12 @@ function renderSvcs(svcs) {
     const items = groups[cat].map(s => {
       const cls = s.alive ? "up" : "down";
       const ext = s.externalUrl;
+      const resHtml = `
+        <div class="res-rows">
+          ${resBar(s.cpuPercent, 'CPU', `${s.cpuPercent != null ? s.cpuPercent.toFixed(1) : 0}%`)}
+          ${resBar(s.memPercent, 'MEM', s.memPercent != null ? `${fmtBytes(s.memUsageBytes)} / ${fmtBytes(s.memLimitBytes)}` : '—')}
+        </div>
+      `;
       return `
         <div class="svc-card ${cls}">
           <div class="top">
@@ -519,6 +548,7 @@ function renderSvcs(svcs) {
               ${ext ? `<a href="${ext}" target="_blank" rel="noopener">open ↗</a>` : ''}
             </div>
           </div>
+          ${resHtml}
           <div class="svc-actions">
             <button class="btn-logs" onclick="viewLogs('${s.containerName}','${s.name}')">📋 Logs</button>
           </div>
