@@ -3,7 +3,7 @@ const os = require("os");
 const net = require("net");
 const dns = require("dns");
 const http = require("http");
-const { execSync, exec } = require("child_process");
+const { execSync } = require("child_process");
 
 const app = express();
 const PORT = 8080;
@@ -137,6 +137,14 @@ const services = [
     port: 3000,
     externalPort: 3002,
   },
+  {
+    name: "CBP Payment",
+    category: "Backend",
+    containerName: "goldex-cbp",
+    host: "goldex-cbp",
+    port: 4100,
+    externalPort: 4100,
+  },
   // Frontend
   {
     name: "Admin Panel",
@@ -202,16 +210,29 @@ app.get("/api/services", async (_req, res) => {
   res.json(results);
 });
 
+let prevCpuTimes = null;
+
 function getCpuInfo() {
   const cpus = os.cpus();
-  const cores = cpus.map((cpu, i) => {
-    const total = Object.values(cpu.times).reduce((a, b) => a + b, 0);
-    const idle = cpu.times.idle;
-    return {
-      core: i,
-      load: parseFloat((((total - idle) / total) * 100).toFixed(1)),
-    };
-  });
+  const current = cpus.map((cpu) => ({
+    total: Object.values(cpu.times).reduce((a, b) => a + b, 0),
+    idle: cpu.times.idle,
+  }));
+
+  let cores;
+  if (!prevCpuTimes) {
+    cores = current.map((cpu, i) => ({ core: i, load: 0 }));
+  } else {
+    cores = current.map((cpu, i) => {
+      const prev = prevCpuTimes[i];
+      const dTotal = Math.max(0, cpu.total - prev.total);
+      const dIdle = Math.max(0, cpu.idle - prev.idle);
+      const load = dTotal > 0 ? ((dTotal - dIdle) / dTotal) * 100 : 0;
+      return { core: i, load: parseFloat(load.toFixed(1)) };
+    });
+  }
+  prevCpuTimes = current;
+
   const avgLoad = cores.reduce((s, c) => s + c.load, 0) / cores.length;
   return { cores, avgLoad: parseFloat(avgLoad.toFixed(1)) };
 }
@@ -316,11 +337,19 @@ app.get("/api/ocr/train-status", async (_req, res) => {
 
 app.get("/api/logs/:container", (req, res) => {
   const { container } = req.params;
+  if (!/^[a-zA-Z0-9_.-]+$/.test(container)) {
+    return res.status(400).json({ error: "Invalid container name" });
+  }
   const lines = parseInt(req.query.lines) || 80;
-  exec(`docker logs -f ${container} 2>&1`, { timeout: 5000 }, (err, stdout) => {
-    if (err) return res.status(500).json({ error: err.message });
-    res.json({ container, lines, log: stdout });
-  });
+  try {
+    const log = execSync(
+      `docker logs --tail ${lines} ${container} 2>&1`,
+      { timeout: 5000, maxBuffer: 10 * 1024 * 1024 },
+    ).toString();
+    res.json({ container, lines, log });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 app.get("/api/debug", (_req, res) => {
