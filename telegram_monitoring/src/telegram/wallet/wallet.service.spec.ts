@@ -9,7 +9,7 @@ import type {
 } from '../price/price.types';
 import { WalletService } from './wallet.service';
 import { kgToMesqal } from './wallet-report.formatter';
-import type { TradeRecord } from './wallet.types';
+import type { SymbolWallet, TradeRecord } from './wallet.types';
 
 /** Exposes private rebalance internals for tests. */
 type RebalanceInternals = {
@@ -17,6 +17,7 @@ type RebalanceInternals = {
   rebalance(): Promise<void>;
   irrBalance: number;
   lastPrices: Map<string, number>;
+  symbols: Map<string, SymbolWallet>;
 };
 
 const rebalanceInternals = (s: WalletService): RebalanceInternals =>
@@ -189,6 +190,46 @@ describe('WalletService', () => {
     );
   });
 
+  it('sells gold to fund an arbitrage leg when cash is below one minimum leg', () => {
+    // Simulate a wallet loaded in a gold-heavy, cash-critical state
+    // (e.g. inherited from before the cash floor was introduced): 2kg gold
+    // with a 75M cost basis but only 10B IRR left.
+    const internals = rebalanceInternals(service);
+    internals.symbols.set('با حواله', {
+      symbol: 'با حواله',
+      goldKg: 2,
+      lots: [{ id: 1, pricePerKg: amount(75_000_000, 1), qtyKg: 2 }],
+    });
+    internals.irrBalance = 10_000_000_000;
+    internals.lastPrices.set('با حواله', 75_000_000);
+
+    const trades = service.executeArbitrage(
+      arbitrageOpportunity(75_000_000, 75_200_000),
+    );
+
+    expect(trades).toHaveLength(3);
+    expect(trades.map((t) => t.executed)).toEqual([true, true, true]);
+    expect(trades[0]).toMatchObject({
+      source: 'REBALANCE',
+      side: 'SELL',
+      quantityKg: 1,
+      executed: true,
+    });
+    expect(trades[1]).toMatchObject({ source: 'ARBITRAGE', side: 'BUY' });
+    expect(trades[2]).toMatchObject({ source: 'ARBITRAGE', side: 'SELL' });
+
+    const snapshot = service.getSnapshot();
+    expect(snapshot.symbols[0].goldKg).toBe(1);
+    expect(snapshot.irrBalance).toBe(
+      10_000_000_000 +
+        amount(75_000_000, 1) +
+        arbitrageProfit(75_000_000, 75_200_000, 1),
+    );
+    expect(snapshot.totalRealizedProfit).toBe(
+      arbitrageProfit(75_000_000, 75_200_000, 1),
+    );
+  });
+
   it('buys gold on a WE_BUY market maker signal when affordable', () => {
     const trade = service.executeMarketMaker(
       marketOpportunity(73_500_000, 'WE_BUY'),
@@ -280,13 +321,21 @@ describe('WalletService', () => {
     expect(trade).toMatchObject({
       executed: true,
       side: 'BUY',
-      quantityKg: 4,
-      amount: amount(73_500_000, 4),
+      quantityKg: 3,
+      amount: amount(73_500_000, 3),
     });
 
     const snapshot = service.getSnapshot();
-    expect(snapshot.symbols[0].goldKg).toBe(4);
-    expect(snapshot.irrBalance).toBe(100_000_000_000 - amount(73_500_000, 4));
+    expect(snapshot.symbols[0].goldKg).toBe(3);
+    expect(snapshot.irrBalance).toBe(100_000_000_000 - amount(73_500_000, 3));
+  });
+
+  it('keeps enough cash for a minimum arbitrage leg when buying gold', () => {
+    service.handleMarketOpportunity(marketOpportunity(73_500_000, 'WE_BUY', 5));
+
+    const snapshot = service.getSnapshot();
+    expect(snapshot.symbols[0].goldKg).toBe(3);
+    expect(snapshot.buyingPower).toBeGreaterThanOrEqual(amount(73_500_000, 1));
   });
 
   it('skips a WE_BUY when even the minimum kg exceeds the reserve-protected budget', () => {
@@ -299,8 +348,8 @@ describe('WalletService', () => {
     expect(trade?.reason).toContain('ریال');
     expect(trade?.reason).toContain('ذخیره');
     const snapshot = service.getSnapshot();
-    expect(snapshot.symbols[0].goldKg).toBe(4);
-    expect(snapshot.buyingPower).toBeLessThan(amount(73_500_000, 1));
+    expect(snapshot.symbols[0].goldKg).toBe(3);
+    expect(snapshot.buyingPower).toBeLessThan(2 * amount(73_500_000, 1));
   });
 
   it('keeps a cash reserve and exposes equity/buying power in the snapshot', () => {
@@ -314,7 +363,7 @@ describe('WalletService', () => {
     expect(after.equity).toBeCloseTo(100_000_000_000, -5);
     expect(after.cashReserve).toBeCloseTo(20_000_000_000, -5);
     expect(after.buyingPower).toBeCloseTo(
-      100_000_000_000 - amount(73_500_000, 4) - 20_000_000_000,
+      100_000_000_000 - amount(73_500_000, 3) - 20_000_000_000,
       -5,
     );
   });
@@ -537,10 +586,10 @@ describe('WalletService', () => {
   it('rebalances by selling gold when the wallet is gold-heavy, respecting the no-loss rule', () => {
     service.handleMarketOpportunity(marketOpportunity(75_000_000, 'WE_BUY', 5));
     const before = service.getSnapshot();
-    expect(before.symbols[0].goldKg).toBe(4);
+    expect(before.symbols[0].goldKg).toBe(3);
 
     // Push the market price up so a profitable FIFO sale becomes possible.
-    rebalanceInternals(service).lastPrices.set('با حواله', 76_000_000);
+    rebalanceInternals(service).lastPrices.set('با حواله', 90_000_000);
     const trades = rebalanceInternals(service).rebalanceTrades();
 
     expect(trades).toHaveLength(1);
@@ -553,7 +602,7 @@ describe('WalletService', () => {
     expect(trades[0].profit).toBeGreaterThan(0);
 
     const after = service.getSnapshot();
-    expect(after.symbols[0].goldKg).toBe(3);
+    expect(after.symbols[0].goldKg).toBe(2);
     expect(after.totalRealizedProfit).toBe(trades[0].profit);
   });
 

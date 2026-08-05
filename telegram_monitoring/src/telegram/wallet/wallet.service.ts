@@ -312,17 +312,15 @@ export class WalletService implements OnModuleInit, OnModuleDestroy {
    * Arbitrage = a round trip: buy at the lowest فروش and sell at the highest
    * خرید, both for the full signal quantity or nothing. The round trip is
    * funded entirely by the IRR pool — the buy leg provides the gold for the
-   * sell leg, so no pre-existing inventory is required. This lets a fully
-   * liquidated (cash-only) wallet keep hunting arbitrages with cash.
+   * sell leg, so no pre-existing inventory is required. When cash is too low
+   * to fund even a minimum leg, gold is sold first (even at a loss) to raise
+   * the needed IRR, so the wallet keeps arbitraging instead of stalling.
    */
   executeArbitrage(opportunity: ArbitrageOpportunity): TradeRecord[] {
     const symbol = opportunity.deliveryType;
     const wallet = this.ensureWallet(symbol);
     const signalQty = opportunity.quantity;
     const costPerKg = Math.round(kgToMesqal(1) * opportunity.buy.price);
-    const qtyKg = this.affordableKg(signalQty, costPerKg);
-    const cost = Math.round(kgToMesqal(qtyKg) * opportunity.buy.price);
-    const proceeds = Math.round(kgToMesqal(qtyKg) * opportunity.sell.price);
     const date = Math.floor(Date.now() / 1000);
     const base: Omit<
       TradeRecord,
@@ -337,6 +335,18 @@ export class WalletService implements OnModuleInit, OnModuleDestroy {
       executed: false,
     };
 
+    const minLegCash = WALLET_MIN_TRADE_KG * costPerKg;
+    const funding: TradeRecord[] = [];
+    if (this.buyingPower() < minLegCash) {
+      funding.push(
+        ...this.sellGoldForCash(this.cashReserve() + minLegCash, true, date),
+      );
+    }
+
+    const qtyKg = this.affordableKg(signalQty, costPerKg);
+    const cost = Math.round(kgToMesqal(qtyKg) * opportunity.buy.price);
+    const proceeds = Math.round(kgToMesqal(qtyKg) * opportunity.sell.price);
+
     let reason: string | undefined;
     if (qtyKg < WALLET_MIN_TRADE_KG) {
       reason = this.insufficientCashReason(costPerKg);
@@ -344,6 +354,7 @@ export class WalletService implements OnModuleInit, OnModuleDestroy {
 
     if (reason) {
       return [
+        ...funding,
         {
           ...base,
           id: this.nextId(),
@@ -406,11 +417,12 @@ export class WalletService implements OnModuleInit, OnModuleDestroy {
         cost,
         proceeds,
         profit,
+        fundingSales: funding.length,
         goldKg: wallet.goldKg,
       },
     );
 
-    return [buyTrade, sellTrade];
+    return [...funding, buyTrade, sellTrade];
   }
 
   /**
@@ -429,7 +441,7 @@ export class WalletService implements OnModuleInit, OnModuleDestroy {
 
     if (opportunity.ourAction === 'WE_BUY') {
       const costPerKg = Math.round(kgToMesqal(1) * opportunity.price);
-      const qtyKg = this.affordableKg(signalQty, costPerKg);
+      const qtyKg = this.affordableKg(signalQty, costPerKg, true);
       const cost = Math.round(kgToMesqal(qtyKg) * opportunity.price);
       let reason: string | undefined;
       if (qtyKg < WALLET_MIN_TRADE_KG) {
@@ -572,25 +584,37 @@ export class WalletService implements OnModuleInit, OnModuleDestroy {
     return Math.round(this.equity() * WALLET_CASH_RESERVE_RATIO);
   }
 
-  /** Cash available for buys above the reserve. */
+  /**
+   * Cash available for buys above the reserve.
+   */
   private buyingPower(): number {
     return Math.max(0, this.irrBalance - this.cashReserve());
   }
 
   /**
    * Position sizing: the largest whole kilogram quantity the wallet can open
-   * for the signal without touching the cash reserve. Returns 0 when even the
-   * minimum trade does not fit.
+   * for the signal without touching the cash reserve. When
+   * keepArbitrageFloor is set, an extra floor of one minimum trade leg is
+   * kept aside so the wallet can always fund an arbitrage — gold buys stop
+   * early instead of wiping out arbitrage capability. Returns 0 when even
+   * the minimum trade does not fit.
    */
-  private affordableKg(signalKg: number, costPerKg: number): number {
+  private affordableKg(
+    signalKg: number,
+    costPerKg: number,
+    keepArbitrageFloor = false,
+  ): number {
     if (costPerKg <= 0) return signalKg;
-    const affordable = Math.floor(this.buyingPower() / costPerKg);
+    const budget =
+      this.buyingPower() -
+      (keepArbitrageFloor ? WALLET_MIN_TRADE_KG * costPerKg : 0);
+    const affordable = Math.floor(Math.max(0, budget) / costPerKg);
     return Math.max(0, Math.min(signalKg, affordable));
   }
 
   private insufficientCashReason(costPerKg: number): string {
     const needed = Math.round(costPerKg * WALLET_MIN_TRADE_KG);
-    return `موجودی ریال کافی نیست (ذخیره نقدی حفظ میشود؛ حداقل ${WALLET_MIN_TRADE_KG} کیلوگرم ≈ ${needed.toLocaleString('en-US')} تومان لازم است)`;
+    return `موجودی ریال کافی نیست (ذخیره نقدی و یک پایه آربیتراژ حفظ میشود؛ حداقل ${WALLET_MIN_TRADE_KG} کیلوگرم ≈ ${needed.toLocaleString('en-US')} تومان لازم است)`;
   }
 
   /**
@@ -678,6 +702,69 @@ export class WalletService implements OnModuleInit, OnModuleDestroy {
       kg += lot.qtyKg;
     }
     return kg;
+  }
+
+  /**
+   * Sells gold FIFO (oldest lots first) across priced symbols until cash
+   * reaches targetIrr. With allowLoss=false only lots at or above their cost
+   * basis are sold; allowLoss=true also realizes losses — used to fund
+   * arbitrage legs and to break cash-critical deadlocks instead of letting
+   * the wallet stall. Returns the executed REBALANCE trades.
+   */
+  private sellGoldForCash(
+    targetIrr: number,
+    allowLoss: boolean,
+    date: number,
+  ): TradeRecord[] {
+    const trades: TradeRecord[] = [];
+    for (const [symbol, wallet] of this.symbols) {
+      if (this.irrBalance >= targetIrr) break;
+      if (wallet.goldKg <= 0) continue;
+      const price = this.lastPrices.get(symbol);
+      if (!price) continue;
+      const proceedsPerKg = price * MITHQALS_PER_KILO;
+      while (this.irrBalance < targetIrr && wallet.goldKg > 0) {
+        const need = targetIrr - this.irrBalance;
+        const wantKg = Math.max(
+          WALLET_MIN_TRADE_KG,
+          Math.ceil(need / proceedsPerKg),
+        );
+        const available = allowLoss
+          ? wallet.goldKg
+          : this.saleableKg(wallet, price);
+        const sellKg = Math.min(wantKg, available);
+        if (sellKg < WALLET_MIN_TRADE_KG) break;
+        const costBasis = this.consumeLots(wallet, sellKg, proceedsPerKg);
+        const proceeds = Math.round(kgToMesqal(sellKg) * price);
+        const profit = proceeds - costBasis;
+        this.irrBalance += proceeds;
+        this.totalRealizedProfit += profit;
+        const trade: TradeRecord = {
+          id: this.nextId(),
+          date,
+          source: 'REBALANCE',
+          symbol,
+          subType: 'normal',
+          side: 'SELL',
+          price,
+          quantityKg: sellKg,
+          amount: proceeds,
+          profit,
+          executed: true,
+        };
+        this.recordTrade(trade);
+        trades.push(trade);
+        this.logger.logStructured('WALLET_REBALANCE_SELL', {
+          symbol,
+          quantityKg: sellKg,
+          price,
+          proceeds,
+          profit,
+          forcedLossSale: profit < 0,
+        });
+      }
+    }
+    return trades;
   }
 
   /**
@@ -769,58 +856,26 @@ export class WalletService implements OnModuleInit, OnModuleDestroy {
         });
       }
     } else {
-      // Gold-heavy: sell gold (FIFO, profitable lots only) to raise cash.
-      // When the wallet is cash-critical (cannot buy even the minimum
-      // position), loss-making lots are sold too — otherwise the robot is
-      // stuck forever: unable to buy (reserve floor) and unable to arbitrage
-      // or market-make (cash-funded legs), with gold it can never use.
-      let shortfall = -gap;
-      const cashCritical = this.buyingPower() <= 0;
-      for (const symbol of pricedSymbols) {
-        if (shortfall <= 0) break;
-        const wallet = this.symbols.get(symbol);
-        if (!wallet || wallet.goldKg <= 0) continue;
-
-        const price = this.lastPrices.get(symbol)!;
-        const costPerKg = Math.round(kgToMesqal(1) * price);
-        const wantKg = Math.floor(shortfall / costPerKg);
-        const sellKg = cashCritical
-          ? Math.min(wantKg, wallet.goldKg)
-          : Math.min(wantKg, this.saleableKg(wallet, price));
-        if (sellKg < WALLET_MIN_TRADE_KG) continue;
-
-        const proceedsPerKg = price * MITHQALS_PER_KILO;
-        const costBasis = this.consumeLots(wallet, sellKg, proceedsPerKg);
-        const proceeds = Math.round(kgToMesqal(sellKg) * price);
-        const profit = proceeds - costBasis;
-        this.irrBalance += proceeds;
-        this.totalRealizedProfit += profit;
-        shortfall -= proceeds;
-
-        const trade: TradeRecord = {
-          id: this.nextId(),
-          date,
-          source: 'REBALANCE',
-          symbol,
-          subType: 'normal',
-          side: 'SELL',
-          price,
-          quantityKg: sellKg,
-          amount: proceeds,
-          profit,
-          executed: true,
-        };
-        this.recordTrade(trade);
-        trades.push(trade);
-        this.logger.logStructured('WALLET_REBALANCE_SELL', {
-          symbol,
-          quantityKg: sellKg,
-          price,
-          proceeds,
-          profit,
-          forcedLossSale: cashCritical && profit < 0,
-        });
+      // Gold-heavy: sell gold (FIFO) to raise cash back toward the target
+      // split. Profitable lots only — unless the wallet is cash-critical
+      // (cannot fund even one minimum trade/arbitrage leg), then losses are
+      // realized too; otherwise the robot stays stuck holding gold it can
+      // never use for buys or cash-funded arbitrage legs.
+      const date = Math.floor(Date.now() / 1000);
+      const trades: TradeRecord[] = [
+        ...this.sellGoldForCash(targetCash, false, date),
+      ];
+      const minCostPerKg = Math.min(
+        ...pricedSymbols.map((s) =>
+          Math.round(kgToMesqal(1) * this.lastPrices.get(s)!),
+        ),
+      );
+      const cashCritical =
+        this.buyingPower() < WALLET_MIN_TRADE_KG * minCostPerKg;
+      if (cashCritical && this.irrBalance < targetCash) {
+        trades.push(...this.sellGoldForCash(targetCash, true, date));
       }
+      return trades;
     }
 
     return trades;
