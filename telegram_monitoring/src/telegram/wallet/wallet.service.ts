@@ -59,6 +59,8 @@ const WALLET_HISTORY_MAX_POINTS =
  * Signals from any other delivery type are ignored.
  */
 const WALLET_DELIVERY_TYPE = process.env.WALLET_DELIVERY_TYPE || 'با حواله';
+/** Whether the wallet Excel file is posted to the report channel every hour. */
+const WALLET_HOURLY_EXCEL_ENABLED = process.env.WALLET_HOURLY_EXCEL !== 'false';
 
 const STATE_KEY = 'wallet:state';
 const TRADE_IDS_KEY = 'wallet:trade:ids';
@@ -88,6 +90,9 @@ export class WalletService implements OnModuleInit, OnModuleDestroy {
   private statusTimer: ReturnType<typeof setInterval> | null = null;
   private rebalanceTimer: ReturnType<typeof setInterval> | null = null;
   private dailyReportTimer: ReturnType<typeof setInterval> | null = null;
+  private hourlyExcelTimer: ReturnType<
+    typeof setTimeout | typeof setInterval
+  > | null = null;
 
   constructor(
     private readonly redis: RedisService,
@@ -100,6 +105,7 @@ export class WalletService implements OnModuleInit, OnModuleDestroy {
     this.startStatusReporting();
     this.startRebalanceReporting();
     this.startDailyReporting();
+    this.startHourlyExcelReporting();
   }
 
   onModuleDestroy(): void {
@@ -114,6 +120,11 @@ export class WalletService implements OnModuleInit, OnModuleDestroy {
     if (this.dailyReportTimer) {
       clearInterval(this.dailyReportTimer);
       this.dailyReportTimer = null;
+    }
+    if (this.hourlyExcelTimer) {
+      clearTimeout(this.hourlyExcelTimer);
+      clearInterval(this.hourlyExcelTimer);
+      this.hourlyExcelTimer = null;
     }
   }
 
@@ -831,6 +842,61 @@ export class WalletService implements OnModuleInit, OnModuleDestroy {
     this.logger.log(
       `Wallet daily report file scheduled every ${WALLET_DAILY_REPORT_INTERVAL_SECONDS}s`,
     );
+  }
+
+  /**
+   * Posts the wallet Excel file (status + market maker & arbitrage orders) to
+   * the report channel at the top of every hour (…, 1:00, 2:00, …).
+   */
+  private startHourlyExcelReporting(): void {
+    if (!WALLET_HOURLY_EXCEL_ENABLED) {
+      this.logger.log('Hourly wallet Excel report disabled');
+      return;
+    }
+    const now = new Date();
+    const next = new Date(now);
+    next.setMinutes(0, 0, 0);
+    next.setHours(next.getHours() + 1);
+    const delay = Math.max(1000, next.getTime() - now.getTime());
+
+    const fire = (): void => {
+      void this.sendHourlyExcelReport();
+    };
+
+    this.hourlyExcelTimer = setTimeout(() => {
+      fire();
+      this.hourlyExcelTimer = setInterval(fire, 60 * 60 * 1000);
+      this.hourlyExcelTimer.unref?.();
+    }, delay);
+    this.hourlyExcelTimer.unref?.();
+    this.logger.log(
+      `Hourly wallet Excel report scheduled at the top of each hour ` +
+        `(first in ${Math.round(delay / 60000)}m)`,
+    );
+  }
+
+  private async sendHourlyExcelReport(): Promise<void> {
+    try {
+      const snapshot = this.getSnapshot();
+      const trades = snapshot.trades.filter(
+        (t) => t.source === 'MARKET_MAKER' || t.source === 'ARBITRAGE',
+      );
+      const buffer = buildWalletExcel(snapshot, trades);
+      const hour = new Date().toLocaleString('fa-IR', {
+        timeZone: 'Asia/Tehran',
+        hour: '2-digit',
+        minute: '2-digit',
+      });
+      await this.telegram.sendWalletExcelReport(
+        buffer,
+        `📊 گزارش ساعتی کیف پول — ${hour}`,
+      );
+      this.logger.log(
+        `Hourly wallet Excel sent (${trades.length} orders) to report channel`,
+      );
+    } catch (error) {
+      this.logger.error('Failed to send hourly wallet Excel report', error);
+    }
   }
 
   /** Writes the day's changes to reports/wallet-YYYY-MM-DD.json. */

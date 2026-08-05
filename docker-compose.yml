@@ -343,6 +343,9 @@ services:
       WALLET_STATUS_INTERVAL_SECONDS: ${WALLET_STATUS_INTERVAL_SECONDS:-600}
       # Only trade signals of this delivery type (within the normal sub-type)
       WALLET_DELIVERY_TYPE: ${WALLET_DELIVERY_TYPE:-با حواله}
+      # Post the wallet Excel file (status + orders) to the report channel
+      # at the top of every hour (default: true)
+      WALLET_HOURLY_EXCEL: ${WALLET_HOURLY_EXCEL:-true}
       # Daily report file with all changes of the day
       WALLET_DAILY_REPORT_INTERVAL_SECONDS: ${WALLET_DAILY_REPORT_INTERVAL_SECONDS:-86400}
       WALLET_REPORTS_DIR: ${WALLET_REPORTS_DIR:-reports}

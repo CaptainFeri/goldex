@@ -809,10 +809,27 @@ export class TelegramService implements OnModuleInit, OnModuleDestroy {
   }
 
   /**
+   * Sends the generated wallet Excel file to the wallet report channel.
+   */
+  async sendWalletExcelReport(buffer: Buffer, caption?: string): Promise<void> {
+    if (!this.walletReportPeerId) {
+      this.logger.warn(
+        'Wallet report channel not resolved — skipping Excel report',
+      );
+      return;
+    }
+    await this.sendWalletExcelFile(this.walletReportPeerId, buffer, caption);
+  }
+
+  /**
    * Sends the generated wallet Excel file (status + orders) to the chat that
    * pressed the download button.
    */
-  async sendWalletExcelFile(chatId: string, buffer: Buffer): Promise<void> {
+  async sendWalletExcelFile(
+    chatId: string,
+    buffer: Buffer,
+    caption?: string,
+  ): Promise<void> {
     try {
       const entity = await this.client.getInputEntity(chatId);
       const file = new CustomFile(
@@ -823,7 +840,8 @@ export class TelegramService implements OnModuleInit, OnModuleDestroy {
       );
       await this.client.sendFile(entity, {
         file,
-        caption: '📊 فایل اکسل وضعیت کیف پول و سفارش‌ها',
+        caption:
+          caption ?? '📊 فایل اکسل وضعیت کیف پول و سفارش‌ها',
       });
       this.logger.log(`Sent wallet Excel file to ${chatId}`);
     } catch (error) {
