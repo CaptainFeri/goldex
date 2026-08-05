@@ -28,7 +28,7 @@ import type {
 
 const WALLET_INITIAL_IRR =
   Number(process.env.WALLET_INITIAL_IRR) || 100_000_000_000;
-const WALLET_INITIAL_GOLD_KG = Number(process.env.WALLET_INITIAL_GOLD_KG) || 1;
+const WALLET_INITIAL_GOLD_KG = Number(process.env.WALLET_INITIAL_GOLD_KG) || 0;
 const WALLET_TTL = Number(process.env.WALLET_TTL) || 604800;
 const WALLET_STATUS_INTERVAL_SECONDS =
   Number(process.env.WALLET_STATUS_INTERVAL_SECONDS) || 600;
@@ -221,14 +221,15 @@ export class WalletService implements OnModuleInit, OnModuleDestroy {
       wallet = {
         symbol,
         goldKg: WALLET_INITIAL_GOLD_KG,
-        lots: [
-          {
-            id: ++this.lotIdCounter,
-            pricePerKg: 0,
-            qtyKg: WALLET_INITIAL_GOLD_KG,
-          },
-        ],
+        lots: [],
       };
+      if (WALLET_INITIAL_GOLD_KG > 0) {
+        wallet.lots.push({
+          id: ++this.lotIdCounter,
+          pricePerKg: 0,
+          qtyKg: WALLET_INITIAL_GOLD_KG,
+        });
+      }
       this.symbols.set(symbol, wallet);
       this.logger.log(`Created wallet for symbol "${symbol}"`);
     }

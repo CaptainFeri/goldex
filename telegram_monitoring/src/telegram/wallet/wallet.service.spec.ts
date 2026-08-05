@@ -16,6 +16,7 @@ type RebalanceInternals = {
   rebalanceTrades(): TradeRecord[];
   rebalance(): Promise<void>;
   irrBalance: number;
+  lastPrices: Map<string, number>;
 };
 
 const rebalanceInternals = (s: WalletService): RebalanceInternals =>
@@ -156,7 +157,7 @@ describe('WalletService', () => {
     );
     expect(snapshot.symbols[0]).toMatchObject({
       symbol: 'با حواله',
-      goldKg: 1,
+      goldKg: 0,
     });
     expect(snapshot.trades).toHaveLength(2);
   });
@@ -173,13 +174,6 @@ describe('WalletService', () => {
   });
 
   it('executes a cash-funded arbitrage even with zero gold inventory', () => {
-    const seedSell = service.executeMarketMaker(
-      marketOpportunity(40_000_000, 'WE_SELL', 1),
-    );
-    expect(seedSell?.executed).toBe(true);
-    expect(seedSell?.profit).toBe(0);
-    expect(service.getSnapshot().symbols[0].goldKg).toBe(0);
-
     const trades = service.executeArbitrage(
       arbitrageOpportunity(40_000_000, 40_100_000, 2),
     );
@@ -188,9 +182,7 @@ describe('WalletService', () => {
     const snapshot = service.getSnapshot();
     expect(snapshot.symbols[0].goldKg).toBe(0);
     expect(snapshot.irrBalance).toBe(
-      100_000_000_000 +
-        sellAmount(40_000_000, 1) +
-        arbitrageProfit(40_000_000, 40_100_000, 2),
+      100_000_000_000 + arbitrageProfit(40_000_000, 40_100_000, 2),
     );
     expect(snapshot.totalRealizedProfit).toBe(
       arbitrageProfit(40_000_000, 40_100_000, 2),
@@ -211,61 +203,53 @@ describe('WalletService', () => {
     const snapshot = service.getSnapshot();
     expect(snapshot.irrBalance).toBe(100_000_000_000 - amount(73_500_000, 1));
     expect(snapshot.symbols[0]).toMatchObject({
-      goldKg: 2,
-      lots: [
-        { pricePerKg: 0, qtyKg: 1 },
-        { pricePerKg: amount(73_500_000, 1), qtyKg: 1 },
-      ],
+      goldKg: 1,
+      lots: [{ pricePerKg: amount(73_500_000, 1), qtyKg: 1 }],
     });
   });
 
-  it('charges the free seed gold at the sale price, so selling it books no profit', () => {
+  it('rejects a WE_SELL when there is no gold inventory (no seed gold)', () => {
     const trade = service.executeMarketMaker(
       marketOpportunity(74_000_000, 'WE_SELL'),
     );
 
     expect(trade).toMatchObject({
+      executed: false,
+      side: 'SELL',
+      reason: expect.stringContaining('طلا'),
+    });
+    expect(service.getSnapshot().irrBalance).toBe(100_000_000_000);
+    expect(service.getSnapshot().totalRealizedProfit).toBe(0);
+  });
+
+  it('sells gold FIFO and books profit above the cost basis', () => {
+    service.executeMarketMaker(marketOpportunity(73_500_000, 'WE_BUY'));
+    const trade = service.executeMarketMaker(
+      marketOpportunity(74_000_000, 'WE_SELL'),
+    );
+    const profit = sellAmount(74_000_000, 1) - amount(73_500_000, 1);
+
+    expect(trade).toMatchObject({
       executed: true,
       side: 'SELL',
-      profit: 0,
+      profit,
     });
 
     const snapshot = service.getSnapshot();
     expect(snapshot.symbols[0].goldKg).toBe(0);
     expect(snapshot.irrBalance).toBe(
-      100_000_000_000 + sellAmount(74_000_000, 1),
-    );
-    expect(snapshot.totalRealizedProfit).toBe(0);
-  });
-
-  it('sells gold FIFO (oldest free seed lot first) and only books profit on real buys', () => {
-    service.executeMarketMaker(marketOpportunity(73_500_000, 'WE_BUY'));
-    const trade = service.executeMarketMaker(
-      marketOpportunity(74_000_000, 'WE_SELL'),
-    );
-
-    expect(trade).toMatchObject({
-      executed: true,
-      side: 'SELL',
-      profit: 0,
-    });
-
-    const snapshot = service.getSnapshot();
-    expect(snapshot.symbols[0].goldKg).toBe(1);
-    expect(snapshot.symbols[0].lots).toHaveLength(1);
-    expect(snapshot.symbols[0].lots[0].pricePerKg).toBe(amount(73_500_000, 1));
-    expect(snapshot.irrBalance).toBe(
       100_000_000_000 + sellAmount(74_000_000, 1) - amount(73_500_000, 1),
     );
-    expect(snapshot.totalRealizedProfit).toBe(0);
+    expect(snapshot.totalRealizedProfit).toBe(profit);
   });
 
-  it('never sells at a loss once the free seed lot is consumed (FIFO guard)', () => {
+  it('never sells at a loss (FIFO guard)', () => {
     service.executeMarketMaker(marketOpportunity(75_000_000, 'WE_BUY'));
-    const seedSell = service.executeMarketMaker(
+    const first = service.executeMarketMaker(
       marketOpportunity(73_000_000, 'WE_SELL'),
     );
-    expect(seedSell?.executed).toBe(true);
+    expect(first?.executed).toBe(false);
+    expect(first?.reason).toContain('بهای');
 
     service.executeMarketMaker(marketOpportunity(75_000_000, 'WE_BUY'));
     const trade = service.executeMarketMaker(
@@ -301,7 +285,7 @@ describe('WalletService', () => {
     });
 
     const snapshot = service.getSnapshot();
-    expect(snapshot.symbols[0].goldKg).toBe(5);
+    expect(snapshot.symbols[0].goldKg).toBe(4);
     expect(snapshot.irrBalance).toBe(100_000_000_000 - amount(73_500_000, 4));
   });
 
@@ -315,7 +299,7 @@ describe('WalletService', () => {
     expect(trade?.reason).toContain('ریال');
     expect(trade?.reason).toContain('ذخیره');
     const snapshot = service.getSnapshot();
-    expect(snapshot.symbols[0].goldKg).toBe(5);
+    expect(snapshot.symbols[0].goldKg).toBe(4);
     expect(snapshot.buyingPower).toBeLessThan(amount(73_500_000, 1));
   });
 
@@ -349,7 +333,7 @@ describe('WalletService', () => {
     expect(snapshot.irrBalance).toBe(
       100_000_000_000 + arbitrageProfit(73_500_000, 73_600_000, 4),
     );
-    expect(snapshot.symbols[0].goldKg).toBe(1);
+    expect(snapshot.symbols[0].goldKg).toBe(0);
   });
 
   it('ignores non-normal (shena/makus) signals entirely', () => {
@@ -546,39 +530,37 @@ describe('WalletService', () => {
 
     const after = service.getSnapshot();
     expect(after.irrBalance).toBe(before.irrBalance - amount(73_500_000, 1));
-    expect(after.symbols[0].goldKg).toBe(3);
+    expect(after.symbols[0].goldKg).toBe(2);
     expect(service.getTrades({ source: 'REBALANCE' })).toHaveLength(1);
   });
 
   it('rebalances by selling gold when the wallet is gold-heavy, respecting the no-loss rule', () => {
     service.handleMarketOpportunity(marketOpportunity(75_000_000, 'WE_BUY', 5));
     const before = service.getSnapshot();
-    expect(before.symbols[0].goldKg).toBe(5);
+    expect(before.symbols[0].goldKg).toBe(4);
 
+    // Push the market price up so a profitable FIFO sale becomes possible.
+    rebalanceInternals(service).lastPrices.set('با حواله', 76_000_000);
     const trades = rebalanceInternals(service).rebalanceTrades();
 
-    // One kg covers the shortfall; FIFO consumes the free seed lot first,
-    // so the sell books no profit (paid lots stay untouched).
     expect(trades).toHaveLength(1);
     expect(trades[0]).toMatchObject({
       source: 'REBALANCE',
       side: 'SELL',
       quantityKg: 1,
-      profit: 0,
       executed: true,
     });
+    expect(trades[0].profit).toBeGreaterThan(0);
 
     const after = service.getSnapshot();
-    expect(after.symbols[0].goldKg).toBe(4);
-    expect(after.symbols[0].lots.every((l) => l.pricePerKg > 0)).toBe(true);
-    expect(after.irrBalance).toBe(before.irrBalance + amount(75_000_000, 1));
-    expect(after.totalRealizedProfit).toBe(0);
+    expect(after.symbols[0].goldKg).toBe(3);
+    expect(after.totalRealizedProfit).toBe(trades[0].profit);
   });
 
   it('skips rebalancing when the imbalance is within the tolerance band', () => {
     service.handleMarketOpportunity(marketOpportunity(73_500_000, 'WE_BUY'));
     // Cash equal to the gold value -> gap of zero vs. the 50% target.
-    const goldValue = 2 * 73_500_000 * MITHQALS_PER_KILO;
+    const goldValue = 1 * 73_500_000 * MITHQALS_PER_KILO;
     rebalanceInternals(service).irrBalance = Math.round(goldValue);
 
     const trades = rebalanceInternals(service).rebalanceTrades();

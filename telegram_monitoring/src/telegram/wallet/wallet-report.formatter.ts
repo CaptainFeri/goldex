@@ -1,4 +1,4 @@
-import { MITHQALS_PER_KILO } from '../price/price.types';
+import { GRAMS_PER_MITHQAL, MITHQALS_PER_KILO } from '../price/price.types';
 import type { TradeRecord, WalletSnapshot } from './wallet.types';
 
 function formatPrice(value: number): string {
@@ -35,8 +35,9 @@ function kgToMesqal(kg: number): number {
 }
 
 function formatTrade(trade: TradeRecord): string[] {
+  const pricePerGram = Math.round(trade.price / GRAMS_PER_MITHQAL);
   const lines = [
-    `${SIDE_LABELS[trade.side]} ${formatKg(trade.quantityKg)} @ ${formatPrice(trade.price)} (مثقال)`,
+    `${SIDE_LABELS[trade.side]} ${formatKg(trade.quantityKg)} @ ${formatPrice(pricePerGram)} (گرم)`,
     `   💵 ${trade.side === 'BUY' ? 'هزینه' : 'درآمد'}: ${formatPrice(trade.amount)} تومان`,
   ];
   if (trade.profit > 0) {

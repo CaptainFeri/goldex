@@ -1,4 +1,5 @@
 import * as XLSX from 'xlsx';
+import { GRAMS_PER_MITHQAL } from '../price/price.types';
 import type { OurAction } from '../price/price.types';
 import type { TradeRecord, WalletSnapshot } from './wallet.types';
 
@@ -68,7 +69,7 @@ function ordersSheet(trades: TradeRecord[]): XLSX.WorkSheet {
       'نماد',
       'سمت',
       'اقدام ما',
-      'قیمت (مثقال/تومان)',
+      'قیمت (گرم/تومان)',
       'مقدار (کیلوگرم)',
       'مبلغ (تومان)',
       'سود (تومان)',
@@ -84,7 +85,7 @@ function ordersSheet(trades: TradeRecord[]): XLSX.WorkSheet {
       t.symbol,
       SIDE_LABELS[t.side],
       ACTION_LABELS[t.ourAction!],
-      t.price,
+      Math.round(t.price / GRAMS_PER_MITHQAL),
       t.quantityKg,
       t.amount,
       t.profit,
