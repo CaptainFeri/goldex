@@ -699,6 +699,7 @@ export class TelegramService implements OnModuleInit, OnModuleDestroy {
         new Api.messages.SendMessage({
           peer: entity,
           message: text,
+          replyMarkup: this.walletExcelKeyboard(),
           noWebpage: true,
         }),
       );
@@ -709,6 +710,22 @@ export class TelegramService implements OnModuleInit, OnModuleDestroy {
         error,
       );
     }
+  }
+
+  /** Inline button that downloads the wallet status + orders as an .xlsx file. */
+  private walletExcelKeyboard(): Api.ReplyInlineMarkup {
+    return new Api.ReplyInlineMarkup({
+      rows: [
+        new Api.KeyboardButtonRow({
+          buttons: [
+            new Api.KeyboardButtonCallback({
+              text: '📥 دریافت اکسل وضعیت و سفارش‌ها',
+              data: Buffer.from('wallet:excel', 'utf-8'),
+            }),
+          ],
+        }),
+      ],
+    });
   }
 
   /**
@@ -742,11 +759,13 @@ export class TelegramService implements OnModuleInit, OnModuleDestroy {
             message: this.walletStatusMessageId,
             file,
             text: caption,
+            buttons: this.walletExcelKeyboard(),
           });
         } else {
           await this.client.editMessage(entity, {
             message: this.walletStatusMessageId,
             text: caption,
+            buttons: this.walletExcelKeyboard(),
           });
         }
         this.logger.log('Edited wallet status report in place');
@@ -768,9 +787,16 @@ export class TelegramService implements OnModuleInit, OnModuleDestroy {
           'status.png',
           photo,
         );
-        sent = await this.client.sendFile(entity, { file, caption });
+        sent = await this.client.sendFile(entity, {
+          file,
+          caption,
+          buttons: this.walletExcelKeyboard(),
+        });
       } else {
-        sent = await this.client.sendMessage(entity, { message: caption });
+        sent = await this.client.sendMessage(entity, {
+          message: caption,
+          buttons: this.walletExcelKeyboard(),
+        });
       }
       this.walletStatusMessageId = sent?.id ?? null;
       this.logger.log(`Sent wallet status report to report channel`);
@@ -779,6 +805,29 @@ export class TelegramService implements OnModuleInit, OnModuleDestroy {
         'Failed to send wallet status report to report channel',
         error,
       );
+    }
+  }
+
+  /**
+   * Sends the generated wallet Excel file (status + orders) to the chat that
+   * pressed the download button.
+   */
+  async sendWalletExcelFile(chatId: string, buffer: Buffer): Promise<void> {
+    try {
+      const entity = await this.client.getInputEntity(chatId);
+      const file = new CustomFile(
+        'wallet-report.xlsx',
+        buffer.length,
+        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        buffer,
+      );
+      await this.client.sendFile(entity, {
+        file,
+        caption: '📊 فایل اکسل وضعیت کیف پول و سفارش‌ها',
+      });
+      this.logger.log(`Sent wallet Excel file to ${chatId}`);
+    } catch (error) {
+      this.logger.error('Failed to send wallet Excel file', error);
     }
   }
 

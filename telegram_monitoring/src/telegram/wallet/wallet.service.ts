@@ -18,6 +18,7 @@ import {
   formatWalletTradeReport,
   kgToMesqal,
 } from './wallet-report.formatter';
+import { buildWalletExcel } from './wallet-excel.builder';
 import type {
   SymbolWallet,
   TradeRecord,
@@ -53,6 +54,11 @@ const WALLET_REBALANCE_TOLERANCE =
 /** Keep at most this many asset-history samples for the status chart. */
 const WALLET_HISTORY_MAX_POINTS =
   Number(process.env.WALLET_HISTORY_MAX_POINTS) || 1440;
+/**
+ * Delivery type (within the normal sub-type) the wallet trades on exclusively.
+ * Signals from any other delivery type are ignored.
+ */
+const WALLET_DELIVERY_TYPE = process.env.WALLET_DELIVERY_TYPE || 'با حواله';
 
 const STATE_KEY = 'wallet:state';
 const TRADE_IDS_KEY = 'wallet:trade:ids';
@@ -197,7 +203,7 @@ export class WalletService implements OnModuleInit, OnModuleDestroy {
     }
   }
 
-  /** Symbol wallets are created on first sight of a deliveryType (normal only). */
+  /** Symbol wallets are created on first sight of a deliveryType (normal/با حواله only). */
   private ensureWallet(symbol: string): SymbolWallet {
     let wallet = this.symbols.get(symbol);
     if (!wallet) {
@@ -220,7 +226,12 @@ export class WalletService implements OnModuleInit, OnModuleDestroy {
 
   @OnEvent('telegram.arbitrage')
   handleArbitrage(opportunity: ArbitrageOpportunity): void {
-    if (opportunity.subType !== 'normal') return;
+    if (
+      opportunity.subType !== 'normal' ||
+      opportunity.deliveryType !== WALLET_DELIVERY_TYPE
+    ) {
+      return;
+    }
     this.lastPrices.set(
       opportunity.deliveryType,
       Math.round((opportunity.buy.price + opportunity.sell.price) / 2),
@@ -238,7 +249,12 @@ export class WalletService implements OnModuleInit, OnModuleDestroy {
 
   @OnEvent('market.opportunity')
   handleMarketOpportunity(opportunity: MarketOpportunity): void {
-    if (opportunity.subType !== 'normal') return;
+    if (
+      opportunity.subType !== 'normal' ||
+      opportunity.deliveryType !== WALLET_DELIVERY_TYPE
+    ) {
+      return;
+    }
     this.lastPrices.set(opportunity.deliveryType, opportunity.price);
     const trade = this.executeMarketMaker(opportunity);
     if (trade?.executed) {
@@ -249,6 +265,34 @@ export class WalletService implements OnModuleInit, OnModuleDestroy {
         side: trade.side,
         reason: trade.reason,
       });
+    }
+  }
+
+  /**
+   * Excel download button pressed on a wallet report: sends the wallet status
+   * plus all market-maker & arbitrage orders as an .xlsx file to that chat.
+   */
+  @OnEvent('telegram.callbackQuery')
+  async handleWalletCallbackQuery(payload: {
+    chatId?: string;
+    data: string;
+    parts: string[];
+  }): Promise<void> {
+    const action = payload.parts?.[0] ?? payload.data;
+    if (!payload.chatId || action !== 'wallet:excel') return;
+
+    try {
+      const snapshot = this.getSnapshot();
+      const trades = snapshot.trades.filter(
+        (t) => t.source === 'MARKET_MAKER' || t.source === 'ARBITRAGE',
+      );
+      const buffer = buildWalletExcel(snapshot, trades);
+      await this.telegram.sendWalletExcelFile(payload.chatId, buffer);
+      this.logger.log(
+        `Sent wallet Excel (${trades.length} orders) to ${payload.chatId}`,
+      );
+    } catch (error) {
+      this.logger.error('Failed to generate/send wallet Excel file', error);
     }
   }
 
