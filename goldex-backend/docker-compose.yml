@@ -53,6 +53,7 @@ services:
   rabbitmq:
     image: rabbitmq:4-management-alpine
     container_name: goldex-rabbitmq
+    hostname: goldex-rabbitmq
     restart: always
     ports:
       - "${RABBITMQ_PORT:-5672}:5672"
