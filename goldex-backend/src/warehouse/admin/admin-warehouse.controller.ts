@@ -12,13 +12,14 @@ import {
   HttpCode,
   UseInterceptors,
   UploadedFile,
+  UploadedFiles,
   Req,
   Res,
   StreamableFile,
 } from "@nestjs/common";
 import { Response } from "express";
 import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth, ApiConsumes, ApiBody } from "@nestjs/swagger";
-import { FileInterceptor } from "@nestjs/platform-express";
+import { FileInterceptor, FileFieldsInterceptor } from "@nestjs/platform-express";
 import { AdminAuthGuard } from "../../admin/auth/Guard/admin.guard";
 import { AdminWorkTimeGuard } from "../../admin-schedule/admin-work-time.guard";
 import { WarehouseService } from "../service/warehouse.service";
@@ -33,7 +34,7 @@ import { AdminWarehouseQueryDto } from "./dto/admin-warehouse-query.dto";
 import { AdminRequestQueryDto } from "./dto/admin-request-query.dto";
 import { PacketQueryDto } from "../dto/packet-query.dto";
 import { CreateSettlementPacketDto } from "./dto/create-settlement-packet.dto";
-import { RequestStatusEnum } from "../enum/request-status.enum";
+import { ApproveWithdrawOutputDto } from "./dto/approve-withdraw-output.dto";
 import { AdminExpressRequest } from "../../admin/auth/types/adminExpressRequest";
 
 @ApiTags("Admin - Warehouse")
@@ -75,8 +76,9 @@ export class AdminWarehouseController {
   @ApiConsumes("multipart/form-data")
   @ApiBody({ type: AdminCreatePacketDto })
   @UseInterceptors(FileInterceptor("picture"))
-  async createPacket(@Body() dto: AdminCreatePacketDto, @UploadedFile() picture?: Express.Multer.File) {
-    return { data: await this.packetService.create(dto, picture) };
+  async createPacket(@Req() req: AdminExpressRequest, @Body() dto: AdminCreatePacketDto, @UploadedFile() picture?: Express.Multer.File) {
+    const adminId = req.admin["id"];
+    return { data: await this.packetService.create(dto, adminId, picture) };
   }
 
   @Get("packets")
@@ -207,10 +209,12 @@ export class AdminWarehouseController {
   @ApiConsumes("multipart/form-data")
   @UseInterceptors(FileInterceptor("picture"))
   async createSettlementPacket(
+    @Req() req: AdminExpressRequest,
     @Body() dto: CreateSettlementPacketDto,
     @UploadedFile() picture?: Express.Multer.File
   ) {
-    return { data: await this.packetService.createFromSettlement(dto, picture) };
+    const adminId = req.admin["id"];
+    return { data: await this.packetService.createFromSettlement(dto, adminId, picture) };
   }
 
   @Get("settlement-material/balance")
@@ -220,16 +224,33 @@ export class AdminWarehouseController {
     return { data: await this.warehouseService.getSettlementMaterialBalance() };
   }
 
-  @Put("requests/:id/approve-withdraw")
-  @ApiOperation({ summary: "Approve a withdraw request (auto-assigns nearest packet + delivery info)" })
+  @Post("requests/:id/approve-withdraw")
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: "Approve withdraw request: choose a user packet (split into withdrawal + remainder, 2 pictures)" +
+      " or an orphan packet, then deliver",
+  })
   @ApiResponse({ status: HttpStatus.OK, description: "Withdraw approved, packet assigned" })
+  @ApiConsumes("multipart/form-data")
+  @UseInterceptors(FileFieldsInterceptor([{ name: "picture1", maxCount: 1 }, { name: "picture2", maxCount: 1 }]))
   async approveWithdraw(
     @Req() req: AdminExpressRequest,
     @Param("id") id: string,
-    @Body() dto: AdminProcessRequestDto
+    @Body() dto: ApproveWithdrawOutputDto,
+    @UploadedFiles() files?: Record<string, Express.Multer.File[]>
   ) {
     const adminId = req.admin["id"];
-    return { data: await this.requestService.processRequest(id, adminId, { ...dto, status: RequestStatusEnum.APPROVED }) };
+    const picture1 = files?.picture1?.[0];
+    const picture2 = files?.picture2?.[0];
+    if (picture1) {
+      const fileInfo = await this.packetService.uploadPictureBuffer(`approve-${id}-p1-${Date.now()}`, picture1);
+      dto.picture1 = fileInfo.url;
+    }
+    if (picture2) {
+      const fileInfo = await this.packetService.uploadPictureBuffer(`approve-${id}-p2-${Date.now()}`, picture2);
+      dto.picture2 = fileInfo.url;
+    }
+    return { data: await this.requestService.approveWithdrawForOutput(id, adminId, dto) };
   }
 
   @Get("today-stats")

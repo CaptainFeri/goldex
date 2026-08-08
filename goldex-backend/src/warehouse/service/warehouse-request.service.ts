@@ -19,6 +19,7 @@ import { WarehouseStatusEnum } from "../enum/warehouse-status.enum";
 import { CreateDepositRequestDto } from "../dto/create-deposit-request.dto";
 import { CreateWithdrawRequestDto } from "../dto/create-withdraw-request.dto";
 import { AdminProcessRequestDto } from "../admin/dto/admin-process-request.dto";
+import { ApproveWithdrawOutputDto } from "../admin/dto/approve-withdraw-output.dto";
 import { AdminRequestQueryDto } from "../admin/dto/admin-request-query.dto";
 import { WarehouseService } from "./warehouse.service";
 import { TransactionTypeEnum } from "../../wallet/enum/transaction.type.enum";
@@ -411,6 +412,11 @@ export class WarehouseRequestService {
             await this.processInputApproval(queryRunner, request);
           }
         } else if (request.type === RequestTypeEnum.OUTPUT) {
+          if (!request.packet) {
+            throw new BadRequestException(
+              "SELECT_PACKET: choose a packet first via approve-withdraw (user packet to split or orphan packet) before approving"
+            );
+          }
           await this.processOutputApproval(queryRunner, request, dto);
         }
       }
@@ -554,80 +560,12 @@ export class WarehouseRequestService {
     request: WarehouseRequestEntity,
     dto: AdminProcessRequestDto
   ): Promise<void> {
-    let packet = request.packet;
-
-    if (!packet && dto.packetId) {
-      packet = await queryRunner.manager.findOne(PacketEntity, {
-        where: { id: dto.packetId },
-        lock: { mode: "pessimistic_write" },
-        relations: { warehouse: true },
-      });
-
-      if (!packet) {
-        throw new BadRequestException(`Packet ${dto.packetId} not found`);
-      }
-
-      const isOwnAvailable =
-        !packet.isOrphan && packet.status === PacketStatusEnum.IN_WAREHOUSE && packet.userId === request.userId;
-      const isOrphanAvailable = packet.isOrphan && packet.status === PacketStatusEnum.ORPHAN;
-
-      if (!isOwnAvailable && !isOrphanAvailable) {
-        throw new BadRequestException(
-          `Packet ${packet.idSecure} cannot be assigned (status: ${packet.status}, orphan: ${packet.isOrphan})`
-        );
-      }
-
-      if (isOrphanAvailable) {
-        packet.userId = request.userId;
-        packet.isOrphan = false;
-        packet.status = PacketStatusEnum.IN_WAREHOUSE;
-        await queryRunner.manager.save(packet);
-      }
-
-      request.packetId = packet.id;
-      request.packet = packet;
-      request.warehouseId = packet.warehouseId;
-
-      await this.addHistory(queryRunner, {
-        requestId: request.id,
-        packetId: packet.id,
-        warehouseId: packet.warehouseId,
-        action: "PACKET_ASSIGNED_ON_APPROVAL",
-        description: `Packet ${packet.idSecure} assigned to withdraw request ${request.id} on approval by explicit selection`,
-        performedBy: request.adminId,
-        performedRole: "ADMIN",
-        metadata: { weight: packet.pureWeight, selectedByAdmin: true },
-      });
-    }
+    const packet = request.packet;
 
     if (!packet) {
-      packet = await this.selectPacketForWithdraw(queryRunner, request);
-
-      if (!packet) {
-        throw new BadRequestException(
-          "NO_MATCHING_PACKET: No orphan packet (<= requested weight) or user packet is available. Assign a packet manually first."
-        );
-      }
-
-      packet.userId = request.userId;
-      packet.isOrphan = false;
-      packet.status = PacketStatusEnum.IN_WAREHOUSE;
-      await queryRunner.manager.save(packet);
-
-      request.packetId = packet.id;
-      request.packet = packet;
-      request.warehouseId = packet.warehouseId;
-
-      await this.addHistory(queryRunner, {
-        requestId: request.id,
-        packetId: packet.id,
-        warehouseId: packet.warehouseId,
-        action: "PACKET_ASSIGNED_ON_APPROVAL",
-        description: `Packet ${packet.idSecure} assigned to withdraw request ${request.id} on approval`,
-        performedBy: request.adminId,
-        performedRole: "ADMIN",
-        metadata: { weight: packet.pureWeight },
-      });
+      throw new BadRequestException(
+        "SELECT_PACKET: choose a packet first via approve-withdraw (user packet to split or orphan packet) before approving"
+      );
     }
 
     if (packet.status !== PacketStatusEnum.IN_WAREHOUSE) {
@@ -675,49 +613,6 @@ export class WarehouseRequestService {
         this.logger.warn(`Failed to send SMS for withdrawal approval: ${(smsError as any).message}`);
       }
     }
-  }
-
-  /**
-   * Picks the packet for a withdrawal approval:
-   * 1. User's own IN_WAREHOUSE packet closest to the requested weight.
-   * 2. Otherwise the orphan packet with weight <= requested weight that is
-   *    closest to it (never over-fills).
-   * Returns null when nothing qualifies.
-   */
-  private async selectPacketForWithdraw(
-    queryRunner: any,
-    request: WarehouseRequestEntity
-  ): Promise<PacketEntity | null> {
-    const requested = new Decimal(request.weight);
-
-    const ownPackets = await queryRunner.manager.find(PacketEntity, {
-      where: {
-        userId: request.userId,
-        status: PacketStatusEnum.IN_WAREHOUSE,
-        isOrphan: false,
-      },
-      relations: { warehouse: true },
-    });
-
-    if (ownPackets.length > 0) {
-      ownPackets.sort(
-        (a, b) =>
-          new Decimal(a.pureWeight).minus(requested).abs().toNumber() -
-          new Decimal(b.pureWeight).minus(requested).abs().toNumber()
-      );
-      return ownPackets[0];
-    }
-
-    const orphans = await queryRunner.manager.find(PacketEntity, {
-      where: { isOrphan: true, status: PacketStatusEnum.ORPHAN },
-      relations: { warehouse: true },
-    });
-
-    const candidates = orphans
-      .filter((p) => new Decimal(p.pureWeight).lessThanOrEqualTo(requested))
-      .sort((a, b) => new Decimal(b.pureWeight).minus(a.pureWeight).toNumber());
-
-    return candidates.length > 0 ? candidates[0] : null;
   }
 
   /**
@@ -968,6 +863,222 @@ export class WarehouseRequestService {
           await this.smsService.sendSMS(request.user.phone, msg);
         } catch (e) {
           this.logger.warn(`Failed to notify user ${request.userId} about packet assignment`);
+        }
+      }
+
+      return this.getRequestById(request.id);
+    } catch (error) {
+      await queryRunner.rollbackTransaction();
+      throw error;
+    } finally {
+      await queryRunner.release();
+    }
+  }
+
+  /**
+   * Approves a withdraw request with an EXPLICIT packet choice:
+   *  - user's own IN_WAREHOUSE packet -> split into two packets at approval
+   *    (withdrawal part + remainder part), each with uploaded info,
+   *  - or an ORPHAN orphan packet -> assigned directly.
+   */
+  async approveWithdrawForOutput(
+    requestId: string,
+    adminId: string,
+    dto: ApproveWithdrawOutputDto
+  ): Promise<WarehouseRequestEntity> {
+    const queryRunner = this.dataSource.createQueryRunner();
+    await queryRunner.connect();
+    await queryRunner.startTransaction();
+
+    try {
+      const request = await queryRunner.manager.findOne(WarehouseRequestEntity, {
+        where: { id: requestId },
+        lock: { mode: "pessimistic_write" },
+      });
+
+      if (!request) {
+        throw new NotFoundException("Request not found");
+      }
+      if (request.type !== RequestTypeEnum.OUTPUT) {
+        throw new BadRequestException("Only withdraw requests can be approved this way");
+      }
+      if (request.status !== RequestStatusEnum.PENDING) {
+        throw new BadRequestException(`Only PENDING requests can be approved (status: ${request.status})`);
+      }
+      if (!dto.packetId) {
+        throw new BadRequestException(
+          "SELECT_PACKET: choose the user's packet (it will be split) or an orphan packet to assign"
+        );
+      }
+
+      const packet = await queryRunner.manager.findOne(PacketEntity, {
+        where: { id: dto.packetId },
+        lock: { mode: "pessimistic_write" },
+        relations: { warehouse: true },
+      });
+
+      if (!packet) {
+        throw new NotFoundException("Packet not found");
+      }
+
+      const requested = new Decimal(request.weight);
+      const packetWeight = new Decimal(packet.pureWeight);
+
+      const isUserPacket =
+        !packet.isOrphan && packet.status === PacketStatusEnum.IN_WAREHOUSE && packet.userId === request.userId;
+      const isOrphanPacket = packet.isOrphan && packet.status === PacketStatusEnum.ORPHAN;
+
+      if (!isUserPacket && !isOrphanPacket) {
+        throw new BadRequestException(
+          `Packet ${packet.idSecure} cannot be assigned (status: ${packet.status}, orphan: ${packet.isOrphan})`
+        );
+      }
+
+      let splitInfo: any = null;
+
+      if (isOrphanPacket) {
+        packet.userId = request.userId;
+        packet.isOrphan = false;
+        packet.status = PacketStatusEnum.IN_WAREHOUSE;
+        if (dto.ang1 !== undefined) packet.ang = dto.ang1;
+        if (dto.ayar1 !== undefined) packet.ayar = dto.ayar1;
+        if (dto.position1 !== undefined) packet.warehouseIndexPosition = dto.position1;
+        if (dto.picture1) packet.picture = dto.picture1;
+        await queryRunner.manager.save(packet);
+
+        await this.addHistory(queryRunner, {
+          requestId: request.id,
+          packetId: packet.id,
+          warehouseId: packet.warehouseId,
+          action: "PACKET_ASSIGNED_FROM_ORPHAN",
+          description: `Orphan packet ${packet.idSecure} (${packetWeight.toString()}g) assigned to withdraw request ${request.id} by admin ${adminId}`,
+          performedBy: adminId,
+          performedRole: "ADMIN",
+          metadata: { weight: packet.pureWeight, assignedSource: "orphan" },
+        });
+      } else {
+        if (packetWeight.lessThan(requested)) {
+          throw new BadRequestException(
+            `Packet weight (${packetWeight.toString()}g) is less than the requested amount (${requested.toString()}g)`
+          );
+        }
+
+        const w1 = new Decimal(dto.weight1 !== undefined ? dto.weight1 : requested);
+        const w2 = packetWeight.minus(w1);
+
+        if (w1.lessThanOrEqualTo(0)) {
+          throw new BadRequestException("Withdrawal part weight must be positive");
+        }
+        if (w2.lessThan(0)) {
+          throw new BadRequestException("Withdrawal part weight exceeds the packet weight");
+        }
+
+        packet.pureWeight = w1.toNumber();
+        if (dto.ang1 !== undefined) packet.ang = dto.ang1;
+        if (dto.ayar1 !== undefined) packet.ayar = dto.ayar1;
+        if (dto.position1 !== undefined) packet.warehouseIndexPosition = dto.position1;
+        if (dto.picture1) packet.picture = dto.picture1;
+        await queryRunner.manager.save(packet);
+
+        let remainderPacket: PacketEntity | null = null;
+        if (w2.greaterThan(0)) {
+          const idGen = () => Math.random().toString(36).substring(2, 8).toUpperCase();
+          remainderPacket = queryRunner.manager.create(PacketEntity, {
+            warehouseId: packet.warehouseId,
+            userId: request.userId,
+            pureWeight: w2.toNumber(),
+            idSecure: `REM-${Date.now()}-${idGen()}`,
+            dateTime: new Date(),
+            status: PacketStatusEnum.IN_WAREHOUSE,
+            ang: dto.ang2 !== undefined ? dto.ang2 : packet.ang,
+            ayar: dto.ayar2 !== undefined ? dto.ayar2 : packet.ayar,
+            warehouseIndexPosition: dto.position2,
+            picture: dto.picture2,
+            batchNumber: packet.batchNumber,
+            isOrphan: false,
+          });
+          await queryRunner.manager.save(remainderPacket);
+        }
+
+        splitInfo = {
+          sourcePacketId: packet.id,
+          sourceWeight: packetWeight.toString(),
+          withdrawalWeight: w1.toString(),
+          remainderWeight: w2.toString(),
+          remainderPacketId: remainderPacket?.id || null,
+        };
+
+        await this.addHistory(queryRunner, {
+          requestId: request.id,
+          packetId: packet.id,
+          warehouseId: packet.warehouseId,
+          action: "PACKET_SPLIT_FOR_WITHDRAW",
+          description:
+            `User packet ${packet.idSecure} (${packetWeight.toString()}g) split on approval of request ${request.id}: ` +
+            `${w1.toString()}g withdrawal part, ${w2.toString()}g remainder` +
+            (remainderPacket ? ` (new packet ${remainderPacket.idSecure})` : ""),
+          performedBy: adminId,
+          performedRole: "ADMIN",
+          metadata: splitInfo,
+        });
+      }
+
+      request.packetId = packet.id;
+      request.packet = packet;
+      request.warehouseId = packet.warehouseId;
+      request.adminId = adminId;
+      request.status = RequestStatusEnum.APPROVED;
+      request.processedAt = new Date();
+      request.metadata = {
+        ...(request.metadata || {}),
+        assignedSource: isOrphanPacket ? "orphan" : "user-split",
+        ...(splitInfo ? { split: splitInfo } : {}),
+      };
+
+      const warehouse = packet.warehouse || (await queryRunner.manager.findOne(WarehouseEntity, { where: { id: packet.warehouseId } }));
+
+      if (dto.deliveryDate) request.deliveryDate = new Date(dto.deliveryDate);
+      if (dto.deliveryTime) request.deliveryTime = dto.deliveryTime;
+      if (dto.deliveryLocation) request.deliveryLocation = dto.deliveryLocation;
+
+      if (warehouse && !request.deliveryDate) {
+        const deliveryInfo = this.getDeliveryInfoFromWarehouse(warehouse);
+        request.deliveryDate = deliveryInfo.date;
+        request.deliveryTime = request.deliveryTime || deliveryInfo.time || warehouse.timeLimit || null;
+        request.deliveryLocation = request.deliveryLocation || warehouse.location || null;
+      }
+
+      await queryRunner.manager.save(request);
+
+      await this.addHistory(queryRunner, {
+        requestId: request.id,
+        packetId: request.packetId,
+        warehouseId: request.warehouseId,
+        action: "REQUEST_APPROVED",
+        description: `Withdraw request ${request.id} approved by admin ${adminId} (packet ${packet.idSecure})`,
+        performedBy: adminId,
+        performedRole: "ADMIN",
+        metadata: { assignedSource: isOrphanPacket ? "orphan" : "user-split" },
+      });
+
+      await this.syncLinkedRecord(queryRunner, request);
+
+      await queryRunner.commitTransaction();
+      this.logger.log(`Withdraw request ${requestId} approved by admin ${adminId} with packet ${packet.idSecure}`);
+
+const user = await queryRunner.manager.findOne<{ id: string; phone?: string }>("user", { where: { id: request.userId } });
+      if (user && user.phone) {
+        try {
+          const deliveryInfo = [];
+          if (request.deliveryDate) deliveryInfo.push(`date: ${request.deliveryDate.toISOString().split("T")[0]}`);
+          if (request.deliveryTime) deliveryInfo.push(`time: ${request.deliveryTime}`);
+          if (request.deliveryLocation) deliveryInfo.push(`location: ${request.deliveryLocation}`);
+          await this.smsService.sendSMS(
+            user.phone,
+            `Your gold withdrawal request ${request.id} is ready for pickup. ${deliveryInfo.length > 0 ? deliveryInfo.join(", ") : "Please check the warehouse for details."}`
+          );
+        } catch (e) {
+          this.logger.warn(`Failed to notify user ${request.userId} about withdrawal approval`);
         }
       }
 

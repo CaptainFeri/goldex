@@ -675,7 +675,18 @@ function ApproveWithdrawModal({
   onClose: () => void;
 }) {
   const qc = useQueryClient();
+  const [mode, setMode] = useState<"user" | "orphan">("user");
   const [selectedPacketId, setSelectedPacketId] = useState("");
+  const [weight1, setWeight1] = useState("");
+  const [ang1, setAng1] = useState("");
+  const [ayar1, setAyar1] = useState("");
+  const [position1, setPosition1] = useState("");
+  const [weight2, setWeight2] = useState("");
+  const [ang2, setAng2] = useState("");
+  const [ayar2, setAyar2] = useState("");
+  const [position2, setPosition2] = useState("");
+  const [picture1, setPicture1] = useState<File | null>(null);
+  const [picture2, setPicture2] = useState<File | null>(null);
 
   const userId = request.userId || request.user?.id || "";
   const warehouseId = request.warehouseId || request.warehouse?.id || "";
@@ -689,20 +700,48 @@ function ApproveWithdrawModal({
     enabled: !!userId,
   });
 
+  const orphanPacketsQ = useQuery({
+    queryKey: ["admin-orphan-packets"],
+    queryFn: async (): Promise<Packet[]> => {
+      const params = warehouseId ? `?status=ORPHAN&warehouseId=${warehouseId}` : "?status=ORPHAN";
+      const res = unwrap<{ packets: Packet[] }>((await api.get(`/admin/warehouse/packets${params}`)).data);
+      return res.packets ?? [];
+    },
+  });
+
   const userPackets: Packet[] = userPacketsQ.data ?? [];
-  const selectedPacket = userPackets.find((p) => p.id === selectedPacketId);
-  const remainingWeight = selectedPacket ? Math.max(0, selectedPacket.pureWeight - request.weight) : 0;
+  const orphanPackets: Packet[] = orphanPacketsQ.data ?? [];
+  const pool = mode === "user" ? userPackets : orphanPackets;
+  const selectedPacket = pool.find((p) => p.id === selectedPacketId);
+
+  const w1 = Number(weight1) > 0 ? Number(weight1) : (selectedPacket && mode === "user" ? request.weight : selectedPacket?.pureWeight ?? 0);
+  const w2 = selectedPacket && mode === "user" ? Math.max(0, selectedPacket.pureWeight - w1) : 0;
 
   const approve = useMutation({
-    mutationFn: () =>
-      api.put(`/admin/warehouse/requests/${request.id}/approve-withdraw`, {
-        status: "APPROVED",
-        packetId: selectedPacketId || undefined,
-      }),
+    mutationFn: () => {
+      const fd = new FormData();
+      fd.append("packetId", selectedPacketId);
+      if (weight1) fd.append("weight1", String(w1));
+      if (ang1) fd.append("ang1", String(ang1));
+      if (ayar1) fd.append("ayar1", String(ayar1));
+      if (position1) fd.append("position1", position1);
+      if (picture1) fd.append("picture1", picture1);
+      if (mode === "user") {
+        if (w2 > 0 && weight2) fd.append("weight2", String(Number(weight2)));
+        if (ang2) fd.append("ang2", String(ang2));
+        if (ayar2) fd.append("ayar2", String(ayar2));
+        if (position2) fd.append("position2", position2);
+        if (picture2) fd.append("picture2", picture2);
+      }
+      return api.post(`/admin/warehouse/requests/${request.id}/approve-withdraw`, fd, {
+        headers: { "Content-Type": "multipart/form-data" },
+      });
+    },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["admin-requests"] });
       qc.invalidateQueries({ queryKey: ["admin-pending-withdraw"] });
       qc.invalidateQueries({ queryKey: ["admin-packets"] });
+      qc.invalidateQueries({ queryKey: ["admin-orphan-packets"] });
       qc.invalidateQueries({ queryKey: ["warehouse-overview"] });
       onClose();
     },
@@ -710,6 +749,7 @@ function ApproveWithdrawModal({
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    if (!selectedPacketId) return;
     approve.mutate();
   };
 
@@ -718,8 +758,8 @@ function ApproveWithdrawModal({
     : request.userId?.slice(0, 8);
 
   return (
-    <Modal title="تایید برداشت با تفکیک بسته" onClose={onClose} wide>
-      <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: 12, minWidth: 400 }}>
+    <Modal title="تایید برداشت با انتخاب بسته" onClose={onClose} wide>
+      <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: 12, minWidth: 420 }}>
         {approve.isError && <div className="error-text">{apiError(approve.error)}</div>}
 
         <div className="kv" style={{ marginBottom: 4 }}>
@@ -731,22 +771,47 @@ function ApproveWithdrawModal({
           <span>{fmtNum(request.weight, 6)}g</span>
         </div>
 
+        <div className="row" style={{ gap: 8 }}>
+          <button
+            type="button"
+            className={`btn ${mode === "user" ? "primary" : "ghost"}`}
+            onClick={() => { setMode("user"); setSelectedPacketId(""); }}
+          >
+            بسته کاربر (تفکیک به ۲ بخش)
+          </button>
+          <button
+            type="button"
+            className={`btn ${mode === "orphan" ? "primary" : "ghost"}`}
+            onClick={() => { setMode("orphan"); setSelectedPacketId(""); }}
+          >
+            بسته یتیم (تخصیص مستقیم)
+          </button>
+        </div>
+
         <div className="field">
-          <label>انتخاب بسته کاربر جهت تفکیک (اختیاری — بدون انتخاب، بسته نزدیک‌ترین وزن به‌صورت خودکار انتخاب می‌شود)</label>
-          {userPacketsQ.isLoading ? (
+          <label>
+            {mode === "user"
+              ? "بسته کاربر برای تفکیک"
+              : "بسته یتیم برای تخصیص مستقیم به این کاربر"}
+          </label>
+          {mode === "user" && userPacketsQ.isLoading ? (
             <div>در حال بارگذاری بسته‌های کاربر…</div>
-          ) : userPackets.length === 0 ? (
+          ) : mode === "orphan" && orphanPacketsQ.isLoading ? (
+            <div>در حال بارگذاری بسته‌های یتیم…</div>
+          ) : pool.length === 0 ? (
             <div style={{ color: "var(--red)" }}>
-              کاربر بسته‌ای در انبار ندارد. ابتدا برای کاربر بسته ایجاد کنید یا از بسته‌های یتیم استفاده کنید.
+              {mode === "user"
+                ? "کاربر بسته‌ای در انبار ندارد — ابتدا برای کاربر بسته ایجاد کنید یا از بسته یتیم استفاده کنید."
+                : "بسته یتیم موجودی ندارد — ابتدا از مواد تسویه بسته یتیم ایجاد کنید."}
             </div>
           ) : (
             <select
               className="input"
               value={selectedPacketId}
-              onChange={(e) => setSelectedPacketId(e.target.value)}
+              onChange={(e) => { setSelectedPacketId(e.target.value); setWeight1(""); setWeight2(""); }}
             >
-              <option value="">انتخاب خودکار…</option>
-              {userPackets.map((p) => (
+              <option value="">انتخاب بسته…</option>
+              {pool.map((p) => (
                 <option key={p.id} value={p.id}>
                   {p.idSecure} — وزن: {fmtNum(p.pureWeight, 6)}g
                   {p.warehouse ? ` @ ${p.warehouse.name}` : ""}
@@ -757,31 +822,115 @@ function ApproveWithdrawModal({
           )}
         </div>
 
-        {selectedPacket && (
-          <div
-            className="alert"
-            style={{
-              backgroundColor: "var(--gold-bg)",
-              border: "1px solid var(--gold)",
-              padding: 12,
-              borderRadius: 8,
-              fontSize: 13,
-            }}
-          >
-            <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-              <strong>پیش‌نمایش تفکیک:</strong>
-              <div className="row" style={{ justifyContent: "space-between" }}>
-                <span>بسته اصلی: {fmtNum(selectedPacket.pureWeight, 6)}g</span>
+        {selectedPacket && mode === "user" && (
+          <>
+            <div
+              className="alert"
+              style={{
+                backgroundColor: "var(--gold-bg)",
+                border: "1px solid var(--gold)",
+                padding: 12,
+                borderRadius: 8,
+                fontSize: 13,
+              }}
+            >
+              <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                <strong>پیش‌نمایش تفکیک:</strong>
+                <div className="row" style={{ justifyContent: "space-between" }}>
+                  <span>بسته اصلی: {fmtNum(selectedPacket.pureWeight, 6)}g</span>
+                </div>
+                <div className="row" style={{ justifyContent: "space-between" }}>
+                  <span style={{ color: "var(--red)" }}>برداشت (بخش ۱): −{fmtNum(w1, 6)}g</span>
+                </div>
+                <div className="row" style={{ justifyContent: "space-between" }}>
+                  <span style={{ color: "var(--green)" }}>
+                    باقی‌مانده (بخش ۲): {fmtNum(w2, 6)}g
+                    {w2 > 0 ? " (بسته جدید ایجاد می‌شود)" : " (کل وزن برداشت می‌شود)"}
+                  </span>
+                </div>
               </div>
-              <div className="row" style={{ justifyContent: "space-between" }}>
-                <span style={{ color: "var(--red)" }}>برداشت: −{fmtNum(request.weight, 6)}g</span>
+            </div>
+
+            <div style={{ border: "1px solid var(--border)", borderRadius: 8, padding: 10, display: "flex", flexDirection: "column", gap: 10 }}>
+              <strong>بخش ۱ — برداشت</strong>
+              <div className="row" style={{ gap: 8, flexWrap: "wrap" }}>
+                <div className="field" style={{ flex: 1 }}>
+                  <label>وزن (گرم)</label>
+                  <input className="input" type="number" step="any" value={weight1} placeholder={String(request.weight)} onChange={(e) => setWeight1(e.target.value)} />
+                </div>
+                <div className="field" style={{ flex: 1 }}>
+                  <label>عکس بخش برداشت</label>
+                  <input className="input" type="file" accept="image/*" onChange={(e) => setPicture1(e.target.files?.[0] ?? null)} />
+                </div>
               </div>
-              <div className="row" style={{ justifyContent: "space-between" }}>
-                <span style={{ color: "var(--green)" }}>
-                  باقی‌مانده برای کاربر: {fmtNum(remainingWeight, 6)}g
-                  {remainingWeight > 0 ? " (بسته جدید ایجاد می‌شود)" : " (کل وزن برداشت می‌شود)"}
-                </span>
+              <div className="row" style={{ gap: 8, flexWrap: "wrap" }}>
+                <div className="field" style={{ flex: 1 }}>
+                  <label>ANG</label>
+                  <input className="input" type="number" step="any" value={ang1} placeholder={selectedPacket.ang != null ? String(selectedPacket.ang) : ""} onChange={(e) => setAng1(e.target.value)} />
+                </div>
+                <div className="field" style={{ flex: 1 }}>
+                  <label>AYAR</label>
+                  <input className="input" type="number" step="any" value={ayar1} placeholder={selectedPacket.ayar != null ? String(selectedPacket.ayar) : ""} onChange={(e) => setAyar1(e.target.value)} />
+                </div>
+                <div className="field" style={{ flex: 1 }}>
+                  <label>موقعیت در انبار</label>
+                  <input className="input" type="text" value={position1} placeholder={selectedPacket.warehouseIndexPosition} onChange={(e) => setPosition1(e.target.value)} />
+                </div>
               </div>
+            </div>
+
+            {w2 > 0 && (
+              <div style={{ border: "1px solid var(--border)", borderRadius: 10, padding: 10, display: "flex", flexDirection: "column", gap: 10 }}>
+                <strong>بخش ۲ — باقی‌مانده (بسته جدید برای کاربر)</strong>
+                <div className="row" style={{ gap: 8, flexWrap: "wrap" }}>
+                  <div className="field" style={{ flex: 1 }}>
+                    <label>وزن (گرم)</label>
+                    <input className="input" type="number" step="any" value={weight2} placeholder={String(w2)} onChange={(e) => setWeight2(e.target.value)} />
+                  </div>
+                  <div className="field" style={{ flex: 1 }}>
+                    <label>عکس بخش باقی‌مانده</label>
+                    <input className="input" type="file" accept="image/*" onChange={(e) => setPicture2(e.target.files?.[0] ?? null)} />
+                  </div>
+                </div>
+                <div className="row" style={{ gap: 8, flexWrap: "wrap" }}>
+                  <div className="field" style={{ flex: 1 }}>
+                    <label>ANG</label>
+                    <input className="input" type="number" step="any" value={ang2} placeholder={selectedPacket.ang != null ? String(selectedPacket.ang) : ""} onChange={(e) => setAng2(e.target.value)} />
+                  </div>
+                  <div className="field" style={{ flex: 1 }}>
+                    <label>AYAR</label>
+                    <input className="input" type="number" step="any" value={ayar2} placeholder={selectedPacket.ayar != null ? String(selectedPacket.ayar) : ""} onChange={(e) => setAyar2(e.target.value)} />
+                  </div>
+                  <div className="field" style={{ flex: 1 }}>
+                    <label>موقعیت در انبار</label>
+                    <input className="input" type="text" value={position2} placeholder={selectedPacket.warehouseIndexPosition} onChange={(e) => setPosition2(e.target.value)} />
+                  </div>
+                </div>
+              </div>
+            )}
+          </>
+        )}
+
+        {selectedPacket && mode === "orphan" && (
+          <div style={{ border: "1px solid var(--border)", borderRadius: 10, padding: 10, display: "flex", flexDirection: "column", gap: 10 }}>
+            <strong>مشخصات پس از تخصیص (اختیاری)</strong>
+            <div className="row" style={{ gap: 8, flexWrap: "wrap" }}>
+              <div className="field" style={{ flex: 1 }}>
+                <label>ANG</label>
+                <input className="input" type="number" step="any" value={ang1} placeholder={selectedPacket.ang != null ? String(selectedPacket.ang) : ""} onChange={(e) => setAng1(e.target.value)} />
+              </div>
+              <div className="field" style={{ flex: 1 }}>
+                <label>AYAR</label>
+                <input className="input" type="number" step="any" value={ayar1} placeholder={selectedPacket.ayar != null ? String(selectedPacket.ayar) : ""} onChange={(e) => setAyar1(e.target.value)} />
+              </div>
+              <div className="field" style={{ flex: 1 }}>
+                <label>موقعیت در انبار</label>
+                <input className="input" type="text" value={position1} placeholder={selectedPacket.warehouseIndexPosition} onChange={(e) => setPosition1(e.target.value)} />
+              </div>
+            </div>
+            <div className="field">
+              <label>عکس بسته</label>
+              <input className="input" type="file" accept="image/*" onChange={(e) => setPicture1(e.target.files?.[0] ?? null)} />
             </div>
           </div>
         )}
@@ -790,8 +939,8 @@ function ApproveWithdrawModal({
           <button className="btn ghost" type="button" onClick={onClose}>
             انصراف
           </button>
-          <button className="btn primary" type="submit" disabled={approve.isPending}>
-            {approve.isPending ? "در حال تایید…" : "تایید و تفکیک بسته"}
+          <button className="btn primary" type="submit" disabled={approve.isPending || !selectedPacketId}>
+            {approve.isPending ? "در حال تایید…" : mode === "user" ? "تایید و تفکیک بسته" : "تایید و تخصیص بسته یتیم"}
           </button>
         </div>
       </form>

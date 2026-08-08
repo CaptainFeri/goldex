@@ -34,7 +34,7 @@ export class PacketService {
     private readonly dataSource: DataSource
   ) {}
 
-  async create(dto: AdminCreatePacketDto, pictureFile?: Express.Multer.File): Promise<PacketEntity> {
+  async create(dto: AdminCreatePacketDto, adminId?: string, pictureFile?: Express.Multer.File): Promise<PacketEntity> {
     const queryRunner = this.dataSource.createQueryRunner();
     await queryRunner.connect();
     await queryRunner.startTransaction();
@@ -80,6 +80,8 @@ export class PacketService {
         packetId: saved.id,
         action: "PACKET_CREATED",
         description: `Packet ${saved.idSecure} created in warehouse ${dto.warehouseId}`,
+        performedBy: adminId,
+        performedRole: "ADMIN",
         metadata: { pureWeight: dto.pureWeight, isOrphan: dto.isOrphan },
       });
 
@@ -96,7 +98,7 @@ export class PacketService {
     }
   }
 
-  async createFromSettlement(dto: CreateSettlementPacketDto, pictureFile?: Express.Multer.File): Promise<PacketEntity> {
+  async createFromSettlement(dto: CreateSettlementPacketDto, adminId?: string, pictureFile?: Express.Multer.File): Promise<PacketEntity> {
     const queryRunner = this.dataSource.createQueryRunner();
     await queryRunner.connect();
     await queryRunner.startTransaction();
@@ -142,6 +144,8 @@ export class PacketService {
         packetId: saved.id,
         action: "SETTLEMENT_PACKET_CREATED",
         description: `Orphan packet ${saved.idSecure} created from settlement with provider ${dto.providerKey}, weight ${dto.pureWeight}`,
+        performedBy: adminId,
+        performedRole: "ADMIN",
         metadata: { providerKey: dto.providerKey, pureWeight: dto.pureWeight },
       });
 
