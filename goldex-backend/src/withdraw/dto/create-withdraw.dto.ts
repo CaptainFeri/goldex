@@ -48,4 +48,9 @@ export class CreateWithdrawDto {
   @IsString()
   @ApiProperty({ required: false, description: "Beneficiary id (required for gateway withdrawals)" })
   beneficiaryId?: string;
+
+  @IsOptional()
+  @IsString()
+  @ApiProperty({ required: false, description: "Preferred warehouse ID (optional when type=warehouse)" })
+  warehouseId?: string;
 }

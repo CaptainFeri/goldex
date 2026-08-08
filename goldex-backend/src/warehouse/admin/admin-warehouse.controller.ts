@@ -33,6 +33,7 @@ import { AdminWarehouseQueryDto } from "./dto/admin-warehouse-query.dto";
 import { AdminRequestQueryDto } from "./dto/admin-request-query.dto";
 import { PacketQueryDto } from "../dto/packet-query.dto";
 import { CreateSettlementPacketDto } from "./dto/create-settlement-packet.dto";
+import { RequestStatusEnum } from "../enum/request-status.enum";
 import { AdminExpressRequest } from "../../admin/auth/types/adminExpressRequest";
 
 @ApiTags("Admin - Warehouse")
@@ -203,8 +204,13 @@ export class AdminWarehouseController {
   @Post("settlement-material/release")
   @ApiOperation({ summary: "Create orphan packet from provider settlement material" })
   @ApiResponse({ status: HttpStatus.CREATED, description: "Settlement packet created" })
-  async createSettlementPacket(@Body() dto: CreateSettlementPacketDto) {
-    return { data: await this.packetService.createFromSettlement(dto) };
+  @ApiConsumes("multipart/form-data")
+  @UseInterceptors(FileInterceptor("picture"))
+  async createSettlementPacket(
+    @Body() dto: CreateSettlementPacketDto,
+    @UploadedFile() picture?: Express.Multer.File
+  ) {
+    return { data: await this.packetService.createFromSettlement(dto, picture) };
   }
 
   @Get("settlement-material/balance")
@@ -214,16 +220,16 @@ export class AdminWarehouseController {
     return { data: await this.warehouseService.getSettlementMaterialBalance() };
   }
 
-  @Post("requests/:id/approve-withdraw")
-  @ApiOperation({ summary: "Approve withdraw with packet split" })
-  @ApiResponse({ status: HttpStatus.OK, description: "Withdraw approved, packet split" })
+  @Put("requests/:id/approve-withdraw")
+  @ApiOperation({ summary: "Approve a withdraw request (auto-assigns nearest packet + delivery info)" })
+  @ApiResponse({ status: HttpStatus.OK, description: "Withdraw approved, packet assigned" })
   async approveWithdraw(
     @Req() req: AdminExpressRequest,
     @Param("id") id: string,
-    @Body() body: { packetId: string }
+    @Body() dto: AdminProcessRequestDto
   ) {
     const adminId = req.admin["id"];
-    return { data: await this.requestService.approveWithdrawWithSplit(id, body.packetId, adminId) };
+    return { data: await this.requestService.processRequest(id, adminId, { ...dto, status: RequestStatusEnum.APPROVED }) };
   }
 
   @Get("today-stats")

@@ -51,4 +51,7 @@ export class DepositEntity extends myBaseEntity {
 
   @Column({ name: "completed_at", nullable: true })
   completedAt: Date;
+
+  @Column({ name: "warehouse_request_id", type: "uuid", nullable: true })
+  warehouseRequestId: string;
 }

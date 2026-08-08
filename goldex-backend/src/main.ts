@@ -26,7 +26,7 @@ async function bootstrap() {
 
   app.setGlobalPrefix("api");
 
-  app.useGlobalPipes(new ValidationPipe());
+  app.useGlobalPipes(new ValidationPipe({ transform: true }));
 
   app.enableVersioning({
     type: VersioningType.URI,

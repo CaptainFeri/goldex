@@ -1,5 +1,6 @@
 import { ApiProperty, ApiPropertyOptional } from "@nestjs/swagger";
 import { IsString, IsNumber, IsUUID, IsOptional, Min } from "class-validator";
+import { Type } from "class-transformer";
 
 export class CreateSettlementPacketDto {
   @ApiProperty({ description: "Warehouse ID to store the packet" })
@@ -11,6 +12,7 @@ export class CreateSettlementPacketDto {
   providerKey: string;
 
   @ApiProperty({ description: "Pure weight of the material" })
+  @Type(() => Number)
   @IsNumber()
   @Min(0.00000001)
   pureWeight: number;
@@ -21,11 +23,13 @@ export class CreateSettlementPacketDto {
   idSecure?: string;
 
   @ApiPropertyOptional({ description: "ANG (purity)" })
+  @Type(() => Number)
   @IsNumber()
   @IsOptional()
   ang?: number;
 
   @ApiPropertyOptional({ description: "AYAR" })
+  @Type(() => Number)
   @IsNumber()
   @IsOptional()
   ayar?: number;

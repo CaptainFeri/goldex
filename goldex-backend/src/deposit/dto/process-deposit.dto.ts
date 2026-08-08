@@ -21,4 +21,34 @@ export class ProcessDepositDto {
   @IsObject()
   @ApiProperty({ required: false, description: "Updated OCR parsed data to save as metadata.ocr" })
   metadata?: Record<string, any>;
+
+  @IsOptional()
+  @IsString()
+  @ApiProperty({ required: false, description: "Delivery date (warehouse deposits)" })
+  deliveryDate?: string;
+
+  @IsOptional()
+  @IsString()
+  @ApiProperty({ required: false, description: "Delivery time (warehouse deposits)" })
+  deliveryTime?: string;
+
+  @IsOptional()
+  @IsString()
+  @ApiProperty({ required: false, description: "Delivery location (warehouse deposits)" })
+  deliveryLocation?: string;
+
+  @IsOptional()
+  @IsString()
+  @ApiProperty({ required: false, description: "Material ANG - purity (warehouse confirm)" })
+  ang?: string;
+
+  @IsOptional()
+  @IsString()
+  @ApiProperty({ required: false, description: "Material AYAR - fineness (warehouse confirm)" })
+  ayar?: string;
+
+  @IsOptional()
+  @IsString()
+  @ApiProperty({ required: false, description: "Warehouse index position (warehouse confirm)" })
+  warehouseIndexPosition?: string;
 }

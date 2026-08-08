@@ -441,7 +441,13 @@ function PacketForm({
   const whList: Warehouse[] = warehousesQ.data?.warehouses ?? [];
 
   const save = useMutation({
-    mutationFn: (body: any) => api.post("/admin/warehouse/packets", body),
+    mutationFn: (body: any) => {
+      const fd = new FormData();
+      Object.entries(body).forEach(([k, v]) => {
+        if (v !== undefined && v !== null && v !== "") fd.append(k, String(v));
+      });
+      return api.post("/admin/warehouse/packets", fd, { headers: { "Content-Type": "multipart/form-data" } });
+    },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["admin-packets"] });
       qc.invalidateQueries({ queryKey: ["admin-orphan-packets"] });
@@ -689,7 +695,10 @@ function ApproveWithdrawModal({
 
   const approve = useMutation({
     mutationFn: () =>
-      api.post(`/admin/warehouse/requests/${request.id}/approve-withdraw`, { packetId: selectedPacketId }),
+      api.put(`/admin/warehouse/requests/${request.id}/approve-withdraw`, {
+        status: "APPROVED",
+        packetId: selectedPacketId || undefined,
+      }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["admin-requests"] });
       qc.invalidateQueries({ queryKey: ["admin-pending-withdraw"] });
@@ -723,7 +732,7 @@ function ApproveWithdrawModal({
         </div>
 
         <div className="field">
-          <label>انتخاب بسته کاربر جهت تفکیک</label>
+          <label>انتخاب بسته کاربر جهت تفکیک (اختیاری — بدون انتخاب، بسته نزدیک‌ترین وزن به‌صورت خودکار انتخاب می‌شود)</label>
           {userPacketsQ.isLoading ? (
             <div>در حال بارگذاری بسته‌های کاربر…</div>
           ) : userPackets.length === 0 ? (
@@ -735,9 +744,8 @@ function ApproveWithdrawModal({
               className="input"
               value={selectedPacketId}
               onChange={(e) => setSelectedPacketId(e.target.value)}
-              required
             >
-              <option value="">انتخاب بسته…</option>
+              <option value="">انتخاب خودکار…</option>
               {userPackets.map((p) => (
                 <option key={p.id} value={p.id}>
                   {p.idSecure} — وزن: {fmtNum(p.pureWeight, 6)}g
@@ -782,7 +790,7 @@ function ApproveWithdrawModal({
           <button className="btn ghost" type="button" onClick={onClose}>
             انصراف
           </button>
-          <button className="btn primary" type="submit" disabled={!selectedPacketId || approve.isPending}>
+          <button className="btn primary" type="submit" disabled={approve.isPending}>
             {approve.isPending ? "در حال تایید…" : "تایید و تفکیک بسته"}
           </button>
         </div>
@@ -796,9 +804,19 @@ function SettlementReleaseForm({ onClose }: { onClose: () => void }) {
   const [warehouseId, setWarehouseId] = useState("");
   const [providerKey, setProviderKey] = useState("");
   const [pureWeight, setPureWeight] = useState("");
+  const [picture, setPicture] = useState<File | null>(null);
 
   const release = useMutation({
-    mutationFn: (body: any) => api.post("/admin/warehouse/settlement-material/release", body),
+    mutationFn: (body: any) => {
+      const fd = new FormData();
+      Object.entries(body).forEach(([k, v]) => {
+        if (v !== undefined && v !== null && v !== "") fd.append(k, String(v));
+      });
+      if (picture) fd.append("picture", picture);
+      return api.post("/admin/warehouse/settlement-material/release", fd, {
+        headers: { "Content-Type": "multipart/form-data" },
+      });
+    },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["admin-packets"] });
       qc.invalidateQueries({ queryKey: ["settlement-balance"] });
@@ -827,6 +845,10 @@ function SettlementReleaseForm({ onClose }: { onClose: () => void }) {
           <label>وزن (گرم)</label>
           <input className="input" type="number" step="0.00000001" value={pureWeight}
             onChange={(e) => setPureWeight(e.target.value)} required />
+        </div>
+        <div className="field">
+          <label>تصویر (اختیاری)</label>
+          <input className="input" type="file" accept="image/*" onChange={(e) => setPicture(e.target.files?.[0] ?? null)} />
         </div>
         <div className="row" style={{ justifyContent: "flex-end", gap: 8, marginTop: 12 }}>
           <button className="btn ghost" type="button" onClick={onClose}>انصراف</button>

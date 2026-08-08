@@ -49,9 +49,11 @@ import { NotificationModule } from "./notification/notification.module";
 import { CrmModule } from "./crm/crm.module";
 import { PaymentBusModule } from "./payment-bus/payment-bus.module";
 import { PaymentCallbackModule } from "./payment-callback/payment-callback.module";
+import { ScheduleModule } from "@nestjs/schedule";
 
 @Module({
   imports: [
+    ScheduleModule.forRoot(),
     EventEmitterModule.forRoot(),
     ServeStaticModule.forRoot(
       {

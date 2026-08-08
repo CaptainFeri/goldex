@@ -26,4 +26,11 @@ export class AdminProcessRequestDto {
   @IsString()
   @IsOptional()
   deliveryTime?: string;
+
+  @ApiPropertyOptional({
+    description: "Explicit packet to assign (withdraw approval). Own IN_WAREHOUSE or orphan packet. Omit to auto-select.",
+  })
+  @IsString()
+  @IsOptional()
+  packetId?: string;
 }

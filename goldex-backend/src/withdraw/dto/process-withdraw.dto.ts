@@ -21,4 +21,19 @@ export class ProcessWithdrawDto {
   @IsObject()
   @ApiProperty({ required: false, description: "Updated OCR parsed data to save as metadata.ocr" })
   metadata?: Record<string, any>;
+
+  @IsOptional()
+  @IsString()
+  @ApiProperty({ required: false, description: "Delivery date (warehouse withdrawals)" })
+  deliveryDate?: string;
+
+  @IsOptional()
+  @IsString()
+  @ApiProperty({ required: false, description: "Delivery time (warehouse withdrawals)" })
+  deliveryTime?: string;
+
+  @IsOptional()
+  @IsString()
+  @ApiProperty({ required: false, description: "Delivery location (warehouse withdrawals)" })
+  deliveryLocation?: string;
 }

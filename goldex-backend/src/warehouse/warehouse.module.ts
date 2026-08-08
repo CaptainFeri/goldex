@@ -1,9 +1,11 @@
 import { Module } from "@nestjs/common";
 import { TypeOrmModule } from "@nestjs/typeorm";
+import { ScheduleModule } from "@nestjs/schedule";
 import { WarehouseController } from "./warehouse.controller";
 import { WarehouseService } from "./service/warehouse.service";
 import { PacketService } from "./service/packet.service";
 import { WarehouseRequestService } from "./service/warehouse-request.service";
+import { WarehouseCronService } from "./warehouse-cron.service";
 import { WarehouseEntity } from "./entity/warehouse.entity";
 import { PacketEntity } from "./entity/packet.entity";
 import { WarehouseRequestEntity } from "./entity/warehouse-request.entity";
@@ -28,10 +30,11 @@ import { AdminWarehouseModule } from "./admin/admin-warehouse.module";
     ]),
     MinioModule,
     SmsModule,
+    ScheduleModule,
     AdminWarehouseModule,
   ],
   controllers: [WarehouseController],
-  providers: [WarehouseService, PacketService, WarehouseRequestService],
+  providers: [WarehouseService, PacketService, WarehouseRequestService, WarehouseCronService],
   exports: [WarehouseService, PacketService, WarehouseRequestService],
 })
 export class WarehouseModule {}

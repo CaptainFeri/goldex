@@ -33,4 +33,9 @@ export class CreateDepositDto {
   @IsString()
   @ApiProperty({ required: false, description: "Gateway provider code for payment-gateway deposits" })
   gatewayCode?: string;
+
+  @IsOptional()
+  @IsString()
+  @ApiProperty({ required: false, description: "Warehouse ID (required when type=warehouse)" })
+  warehouseId?: string;
 }

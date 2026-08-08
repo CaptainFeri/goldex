@@ -1,5 +1,6 @@
 import { ApiProperty, ApiPropertyOptional } from "@nestjs/swagger";
 import { IsString, IsNumber, IsUUID, IsOptional, Min, IsBoolean } from "class-validator";
+import { Type, Transform } from "class-transformer";
 
 export class AdminCreatePacketDto {
   @ApiProperty({ description: "Warehouse ID" })
@@ -7,6 +8,7 @@ export class AdminCreatePacketDto {
   warehouseId: string;
 
   @ApiProperty({ description: "Pure weight of the packet" })
+  @Type(() => Number)
   @IsNumber()
   @Min(0.00000001)
   pureWeight: number;
@@ -21,11 +23,13 @@ export class AdminCreatePacketDto {
   warehouseIndexPosition?: string;
 
   @ApiPropertyOptional({ description: "ANG (purity)" })
+  @Type(() => Number)
   @IsNumber()
   @IsOptional()
   ang?: number;
 
   @ApiPropertyOptional({ description: "AYAR" })
+  @Type(() => Number)
   @IsNumber()
   @IsOptional()
   ayar?: number;
@@ -51,6 +55,11 @@ export class AdminCreatePacketDto {
   batchNumber?: string;
 
   @ApiPropertyOptional({ description: "Is orphan packet" })
+  @Transform(({ value }) => {
+    if (value === "true" || value === true) return true;
+    if (value === "false" || value === false) return false;
+    return value;
+  })
   @IsBoolean()
   @IsOptional()
   isOrphan?: boolean;

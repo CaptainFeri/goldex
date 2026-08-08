@@ -8,6 +8,10 @@ import { PacketEntity } from "../entity/packet.entity";
 import { WarehouseEntity } from "../entity/warehouse.entity";
 import { WalletEntity } from "../../wallet/entities/wallet.entity";
 import { TransactionEntity } from "../../wallet/entities/transaction.entity";
+import { DepositEntity } from "../../deposit/deposit.entity";
+import { WithdrawEntity } from "../../withdraw/withdraw.entity";
+import { DepositStatusEnum } from "../../deposit/enum/deposit-status.enum";
+import { WithdrawStatusEnum } from "../../withdraw/enum/withdraw-status.enum";
 import { RequestTypeEnum } from "../enum/request-type.enum";
 import { RequestStatusEnum } from "../enum/request-status.enum";
 import { PacketStatusEnum } from "../enum/packet-status.enum";
@@ -105,140 +109,62 @@ export class WarehouseRequestService {
         );
       }
 
-      const orphans = await queryRunner.manager.find(PacketEntity, {
-        where: { isOrphan: true, status: PacketStatusEnum.ORPHAN },
-        relations: { warehouse: true },
-        order: { dateTime: "ASC" },
+      let warehouse: WarehouseEntity | null = null;
+      if (dto.warehouseId) {
+        warehouse = await queryRunner.manager.findOne(WarehouseEntity, {
+          where: { id: dto.warehouseId },
+        });
+      }
+
+      const request = queryRunner.manager.create(WarehouseRequestEntity, {
+        type: RequestTypeEnum.OUTPUT,
+        status: RequestStatusEnum.PENDING,
+        userId,
+        warehouseId: dto.warehouseId,
+        symbolId: dto.symbolId,
+        weight: dto.weight,
+        notes: dto.notes,
       });
 
-      if (orphans.length === 0) {
-        const request = queryRunner.manager.create(WarehouseRequestEntity, {
-          type: RequestTypeEnum.OUTPUT,
-          status: RequestStatusEnum.PENDING,
-          userId,
-          warehouseId: dto.warehouseId,
-          symbolId: dto.symbolId,
-          weight: dto.weight,
-          notes: dto.notes,
-        });
-
-        const saved = await queryRunner.manager.save(request);
-
-        wallet.freeBalance = freeBalance.minus(decimalAmount).toNumber();
-        wallet.lockedBalance = new Decimal(wallet.lockedBalance).plus(decimalAmount).toNumber();
-        await queryRunner.manager.save(wallet);
-
-        const transaction = this.createTransactionRecord(
-          wallet,
-          TransactionTypeEnum.MATERIAL_WITHDRAW,
-          decimalAmount.toNumber(),
-          TransactionStatusEnum.PENDING,
-          `Withdraw request ${saved.id}: ${decimalAmount.toString()} locked, awaiting packet assignment`,
-          { requestId: saved.id, weight: decimalAmount.toString(), status: "AWAITING_PACKET" }
-        );
-        await queryRunner.manager.save(transaction);
-
-        await this.addHistory(queryRunner, {
-          requestId: saved.id,
-          warehouseId: null,
-          action: "WITHDRAW_REQUEST_CREATED_PENDING",
-          description: `Withdraw request created by user ${userId} for ${decimalAmount.toString()}, no orphan packets available`,
-          performedBy: userId,
-          performedRole: "USER",
-        });
-
-        await queryRunner.commitTransaction();
-        this.logger.log(`Withdraw request created (pending): ${saved.id} by user ${userId}, no orphans available`);
-
-        return {
-          ...saved,
-          status: "PENDING",
-          message: "No orphan packets available. Request is pending admin assignment.",
-        };
-      }
-
-      let assignedWeight = new Decimal(0);
-      const assignedPackets: PacketEntity[] = [];
-
-      for (const orphan of orphans) {
-        if (assignedWeight.greaterThanOrEqualTo(decimalAmount)) break;
-
-        orphan.userId = userId;
-        orphan.isOrphan = false;
-        orphan.status = PacketStatusEnum.IN_WAREHOUSE;
-        orphan.dateTime = new Date();
-        await queryRunner.manager.save(orphan);
-
-        assignedWeight = assignedWeight.plus(new Decimal(orphan.pureWeight));
-        assignedPackets.push(orphan);
-      }
-
-      const warehouse = assignedPackets[0].warehouse;
-      const deliveryInfo = this.getDeliveryInfoFromWarehouse(warehouse);
+      const saved = await queryRunner.manager.save(request);
 
       wallet.freeBalance = freeBalance.minus(decimalAmount).toNumber();
       wallet.lockedBalance = new Decimal(wallet.lockedBalance).plus(decimalAmount).toNumber();
       await queryRunner.manager.save(wallet);
-
-      const request = queryRunner.manager.create(WarehouseRequestEntity, {
-        type: RequestTypeEnum.OUTPUT,
-        status: RequestStatusEnum.APPROVED,
-        userId,
-        packetId: assignedPackets[0].id,
-        warehouseId: warehouse.id,
-        symbolId: dto.symbolId,
-        weight: dto.weight,
-        notes: dto.notes,
-        deliveryDate: deliveryInfo.date,
-        deliveryTime: deliveryInfo.time || warehouse.timeLimit || null,
-        deliveryLocation: warehouse.location || null,
-      });
-
-      const saved = await queryRunner.manager.save(request);
 
       const transaction = this.createTransactionRecord(
         wallet,
         TransactionTypeEnum.MATERIAL_WITHDRAW,
         decimalAmount.toNumber(),
         TransactionStatusEnum.PENDING,
-        `Withdraw request ${saved.id}: ${decimalAmount.toString()} locked for withdrawal, packet(s) assigned`,
-        { requestId: saved.id, packetIds: assignedPackets.map((p) => p.id), weight: decimalAmount.toString() }
+        `Withdraw request ${saved.id}: ${decimalAmount.toString()} locked, awaiting admin approval and packet assignment`,
+        { requestId: saved.id, weight: decimalAmount.toString(), status: "AWAITING_APPROVAL" }
       );
       await queryRunner.manager.save(transaction);
 
       await this.addHistory(queryRunner, {
         requestId: saved.id,
-        packetId: assignedPackets[0].id,
-        warehouseId: warehouse.id,
-        action: "WITHDRAW_REQUEST_CREATED_ASSIGNED",
-        description: `Withdraw request created by user ${userId} for ${decimalAmount.toString()}, ${assignedPackets.length} orphan packet(s) assigned`,
+        warehouseId: dto.warehouseId,
+        action: "WITHDRAW_REQUEST_CREATED_PENDING",
+        description: `Withdraw request created by user ${userId} for ${decimalAmount.toString()}, awaiting admin approval`,
         performedBy: userId,
         performedRole: "USER",
       });
 
       await queryRunner.commitTransaction();
-      this.logger.log(`Withdraw request created (approved): ${saved.id} by user ${userId}, ${assignedPackets.length} orphan(s) assigned`);
+      this.logger.log(`Withdraw request created (pending): ${saved.id} by user ${userId}, awaiting admin approval`);
 
-      const user = await this.requestRepository.findOne({
-        where: { id: saved.id },
-        relations: { user: true },
-      });
-
-      if (user?.user?.phone) {
-        try {
-          const msg = `Your withdrawal request has been approved. Delivery date: ${deliveryInfo.date.toISOString().split("T")[0]}, Location: ${warehouse.location || "Warehouse"}`;
-          await this.smsService.sendSMS(user.user.phone, msg);
-        } catch (e) {
-          this.logger.warn(`Failed to notify user ${userId} about withdrawal approval`);
-        }
-      }
+      const deliveryInfo = warehouse
+        ? this.getDeliveryInfoFromWarehouse(warehouse)
+        : { date: null, time: null };
 
       return {
         ...saved,
+        status: "PENDING",
+        message: "Request is pending admin approval and packet assignment.",
         deliveryDate: deliveryInfo.date,
-        deliveryTime: deliveryInfo.time || warehouse.timeLimit,
-        deliveryLocation: warehouse.location,
-        assignedPackets: assignedPackets.map((p) => ({ id: p.id, idSecure: p.idSecure, pureWeight: p.pureWeight })),
+        deliveryTime: deliveryInfo.time,
+        deliveryLocation: warehouse?.location || null,
       };
     } catch (error) {
       await queryRunner.rollbackTransaction();
@@ -484,7 +410,7 @@ export class WarehouseRequestService {
           if (!request.packet) {
             await this.processInputApproval(queryRunner, request);
           }
-        } else if (request.type === RequestTypeEnum.OUTPUT && request.packet) {
+        } else if (request.type === RequestTypeEnum.OUTPUT) {
           await this.processOutputApproval(queryRunner, request, dto);
         }
       }
@@ -500,14 +426,12 @@ export class WarehouseRequestService {
       if (dto.status === RequestStatusEnum.REJECTED) {
         if (request.type === RequestTypeEnum.OUTPUT && request.packet) {
           await this.unlockWalletForRejectedWithdraw(queryRunner, request);
-          request.packet.status = PacketStatusEnum.IN_WAREHOUSE;
-          await queryRunner.manager.save(request.packet);
+          await this.returnPacketToPool(queryRunner, request, request.packet);
         } else if (request.type === RequestTypeEnum.INPUT && request.packet) {
           if (prevStatus === RequestStatusEnum.APPROVED) {
             await this.unlockWalletForRejectedDeposit(queryRunner, request);
           }
-          request.packet.status = PacketStatusEnum.ORPHAN;
-          await queryRunner.manager.save(request.packet);
+          await queryRunner.manager.softDelete(PacketEntity, request.packet.id);
         }
       }
 
@@ -523,6 +447,8 @@ export class WarehouseRequestService {
         performedRole: "ADMIN",
         metadata: { previousStatus: prevStatus, newStatus: dto.status },
       });
+
+      await this.syncLinkedRecord(queryRunner, saved);
 
       await queryRunner.commitTransaction();
       this.logger.log(`Request ${requestId} processed by admin ${adminId}: ${dto.status}`);
@@ -627,24 +553,118 @@ export class WarehouseRequestService {
     queryRunner: any,
     request: WarehouseRequestEntity,
     dto: AdminProcessRequestDto
-): Promise<void> {
-    if (!request.packet) {
-      throw new BadRequestException("WITHDRAWAL_NO_PACKET");
+  ): Promise<void> {
+    let packet = request.packet;
+
+    if (!packet && dto.packetId) {
+      packet = await queryRunner.manager.findOne(PacketEntity, {
+        where: { id: dto.packetId },
+        lock: { mode: "pessimistic_write" },
+        relations: { warehouse: true },
+      });
+
+      if (!packet) {
+        throw new BadRequestException(`Packet ${dto.packetId} not found`);
+      }
+
+      const isOwnAvailable =
+        !packet.isOrphan && packet.status === PacketStatusEnum.IN_WAREHOUSE && packet.userId === request.userId;
+      const isOrphanAvailable = packet.isOrphan && packet.status === PacketStatusEnum.ORPHAN;
+
+      if (!isOwnAvailable && !isOrphanAvailable) {
+        throw new BadRequestException(
+          `Packet ${packet.idSecure} cannot be assigned (status: ${packet.status}, orphan: ${packet.isOrphan})`
+        );
+      }
+
+      if (isOrphanAvailable) {
+        packet.userId = request.userId;
+        packet.isOrphan = false;
+        packet.status = PacketStatusEnum.IN_WAREHOUSE;
+        await queryRunner.manager.save(packet);
+      }
+
+      request.packetId = packet.id;
+      request.packet = packet;
+      request.warehouseId = packet.warehouseId;
+
+      await this.addHistory(queryRunner, {
+        requestId: request.id,
+        packetId: packet.id,
+        warehouseId: packet.warehouseId,
+        action: "PACKET_ASSIGNED_ON_APPROVAL",
+        description: `Packet ${packet.idSecure} assigned to withdraw request ${request.id} on approval by explicit selection`,
+        performedBy: request.adminId,
+        performedRole: "ADMIN",
+        metadata: { weight: packet.pureWeight, selectedByAdmin: true },
+      });
     }
 
-    request.packet.status = PacketStatusEnum.PENDING;
-    await queryRunner.manager.save(request.packet);
+    if (!packet) {
+      packet = await this.selectPacketForWithdraw(queryRunner, request);
 
-    const user = await queryRunner.manager.findOne(
-      "user",
-      { where: { id: request.userId } }
-    );
+      if (!packet) {
+        throw new BadRequestException(
+          "NO_MATCHING_PACKET: No orphan packet (<= requested weight) or user packet is available. Assign a packet manually first."
+        );
+      }
+
+      packet.userId = request.userId;
+      packet.isOrphan = false;
+      packet.status = PacketStatusEnum.IN_WAREHOUSE;
+      await queryRunner.manager.save(packet);
+
+      request.packetId = packet.id;
+      request.packet = packet;
+      request.warehouseId = packet.warehouseId;
+
+      await this.addHistory(queryRunner, {
+        requestId: request.id,
+        packetId: packet.id,
+        warehouseId: packet.warehouseId,
+        action: "PACKET_ASSIGNED_ON_APPROVAL",
+        description: `Packet ${packet.idSecure} assigned to withdraw request ${request.id} on approval`,
+        performedBy: request.adminId,
+        performedRole: "ADMIN",
+        metadata: { weight: packet.pureWeight },
+      });
+    }
+
+    if (packet.status !== PacketStatusEnum.IN_WAREHOUSE) {
+      throw new BadRequestException(`Assigned packet is not IN_WAREHOUSE (status: ${packet.status})`);
+    }
+
+    const assignedSource =
+      request.metadata?.assignedSource || (packet.isOrphan ? "orphan" : "own");
+    request.metadata = {
+      ...(request.metadata || {}),
+      assignedSource,
+      assignedPacketId: packet.id,
+      assignedPacketWeight: packet.pureWeight,
+    };
+
+    const warehouse = packet.warehouse || (await queryRunner.manager.findOne(WarehouseEntity, { where: { id: packet.warehouseId } }));
+
+    if (dto.deliveryDate) request.deliveryDate = new Date(dto.deliveryDate);
+    if (dto.deliveryTime) request.deliveryTime = dto.deliveryTime;
+    if (dto.deliveryLocation) request.deliveryLocation = dto.deliveryLocation;
+
+    if (warehouse && !request.deliveryDate) {
+      const deliveryInfo = this.getDeliveryInfoFromWarehouse(warehouse);
+      request.deliveryDate = deliveryInfo.date;
+      request.deliveryTime = request.deliveryTime || deliveryInfo.time || warehouse.timeLimit || null;
+      request.deliveryLocation = request.deliveryLocation || warehouse.location || null;
+    }
+
+    await queryRunner.manager.save(request);
+
+    const user = await queryRunner.manager.findOne("user", { where: { id: request.userId } });
 
     if (user && user.phone) {
       const deliveryInfo = [];
-      if (dto.deliveryDate) deliveryInfo.push(`date: ${dto.deliveryDate}`);
-      if (dto.deliveryTime) deliveryInfo.push(`time: ${dto.deliveryTime}`);
-      if (dto.deliveryLocation) deliveryInfo.push(`location: ${dto.deliveryLocation}`);
+      if (request.deliveryDate) deliveryInfo.push(`date: ${request.deliveryDate.toISOString().split("T")[0]}`);
+      if (request.deliveryTime) deliveryInfo.push(`time: ${request.deliveryTime}`);
+      if (request.deliveryLocation) deliveryInfo.push(`location: ${request.deliveryLocation}`);
 
       const message = `Your gold withdrawal request ${request.id} is ready for pickup. ${deliveryInfo.length > 0 ? deliveryInfo.join(", ") : "Please check the warehouse for details."}`;
 
@@ -657,21 +677,109 @@ export class WarehouseRequestService {
     }
   }
 
+  /**
+   * Picks the packet for a withdrawal approval:
+   * 1. User's own IN_WAREHOUSE packet closest to the requested weight.
+   * 2. Otherwise the orphan packet with weight <= requested weight that is
+   *    closest to it (never over-fills).
+   * Returns null when nothing qualifies.
+   */
+  private async selectPacketForWithdraw(
+    queryRunner: any,
+    request: WarehouseRequestEntity
+  ): Promise<PacketEntity | null> {
+    const requested = new Decimal(request.weight);
+
+    const ownPackets = await queryRunner.manager.find(PacketEntity, {
+      where: {
+        userId: request.userId,
+        status: PacketStatusEnum.IN_WAREHOUSE,
+        isOrphan: false,
+      },
+      relations: { warehouse: true },
+    });
+
+    if (ownPackets.length > 0) {
+      ownPackets.sort(
+        (a, b) =>
+          new Decimal(a.pureWeight).minus(requested).abs().toNumber() -
+          new Decimal(b.pureWeight).minus(requested).abs().toNumber()
+      );
+      return ownPackets[0];
+    }
+
+    const orphans = await queryRunner.manager.find(PacketEntity, {
+      where: { isOrphan: true, status: PacketStatusEnum.ORPHAN },
+      relations: { warehouse: true },
+    });
+
+    const candidates = orphans
+      .filter((p) => new Decimal(p.pureWeight).lessThanOrEqualTo(requested))
+      .sort((a, b) => new Decimal(b.pureWeight).minus(a.pureWeight).toNumber());
+
+    return candidates.length > 0 ? candidates[0] : null;
+  }
+
+  /**
+   * Returns an assigned packet to the pool:
+   * - packets that came from the orphan pool become orphans again,
+   * - packets that already belonged to the user stay IN_WAREHOUSE under the user.
+   */
+  private async returnPacketToPool(queryRunner: any, request: WarehouseRequestEntity, packet: PacketEntity): Promise<void> {
+    const assignedSource = request.metadata?.assignedSource || "orphan";
+
+    if (assignedSource === "orphan") {
+      packet.userId = null;
+      packet.isOrphan = true;
+      packet.status = PacketStatusEnum.ORPHAN;
+      packet.deliveryTime = null;
+    } else {
+      packet.status = PacketStatusEnum.IN_WAREHOUSE;
+      packet.deliveryTime = null;
+    }
+
+    await queryRunner.manager.save(packet);
+
+    await this.addHistory(queryRunner, {
+      requestId: request.id,
+      packetId: packet.id,
+      warehouseId: packet.warehouseId,
+      action: "PACKET_RETURNED_TO_POOL",
+      description: `Packet ${packet.idSecure} returned to ${assignedSource === "orphan" ? "orphan pool" : "user warehouse"} after request ${request.id}`,
+      metadata: { assignedSource },
+    });
+  }
+
   private async processOutputCompletion(queryRunner: any, request: WarehouseRequestEntity): Promise<void> {
     if (!request.packet) {
       throw new BadRequestException("No packet associated with this withdrawal request");
     }
 
-    request.packet.status = PacketStatusEnum.WITHDRAWN;
-    request.packet.deliveryTime = new Date();
-    await queryRunner.manager.save(request.packet);
+    const requested = new Decimal(request.weight);
+    const packetWeight = new Decimal(request.packet.pureWeight);
 
-    await this.warehouseService.updateCapacity(request.warehouseId, -request.weight, queryRunner);
+    let exitedWeight: Decimal;
+
+    if (packetWeight.greaterThan(requested)) {
+      await this.packetService.splitPacket(request.packet.id, request.weight, queryRunner);
+      exitedWeight = requested;
+    } else {
+      request.packet.status = PacketStatusEnum.WITHDRAWN;
+      request.packet.deliveryTime = new Date();
+      await queryRunner.manager.save(request.packet);
+      exitedWeight = packetWeight;
+    }
+
+    const refundedWeight = requested.minus(exitedWeight);
+
+    await this.warehouseService.updateCapacity(request.warehouseId, -exitedWeight.toNumber(), queryRunner);
 
     const wallet = await this.getWalletForUpdate(queryRunner, request.userId, request.symbolId);
-    const decimalAmount = new Decimal(request.weight);
 
-    wallet.lockedBalance = new Decimal(wallet.lockedBalance).minus(decimalAmount).toNumber();
+    wallet.lockedBalance = new Decimal(wallet.lockedBalance).minus(requested).toNumber();
+    if (refundedWeight.greaterThan(0)) {
+      wallet.freeBalance = new Decimal(wallet.freeBalance).plus(refundedWeight).toNumber();
+    }
     await queryRunner.manager.save(wallet);
 
     const pendingTx = await queryRunner.manager.findOne(TransactionEntity, {
@@ -691,6 +799,8 @@ export class WarehouseRequestService {
         ...pendingTx.metadata,
         completedAt: new Date().toISOString(),
         completedBy: request.adminId,
+        exitedWeight: exitedWeight.toString(),
+        refundedWeight: refundedWeight.toString(),
       };
       await queryRunner.manager.save(pendingTx);
     }
@@ -830,6 +940,12 @@ export class WarehouseRequestService {
       request.deliveryDate = deliveryInfo.date;
       request.deliveryTime = deliveryInfo.time || warehouse.timeLimit || null;
       request.deliveryLocation = warehouse.location || null;
+      request.metadata = {
+        ...(request.metadata || {}),
+        assignedSource: "orphan",
+        assignedPacketId: packet.id,
+        assignedPacketWeight: packet.pureWeight,
+      };
       await queryRunner.manager.save(request);
 
       await this.addHistory(queryRunner, {
@@ -841,6 +957,8 @@ export class WarehouseRequestService {
         performedBy: adminId,
         performedRole: "ADMIN",
       });
+
+      await this.syncLinkedRecord(queryRunner, request);
 
       await queryRunner.commitTransaction();
 
@@ -862,103 +980,200 @@ export class WarehouseRequestService {
     }
   }
 
-  async approveWithdrawWithSplit(
-    requestId: string,
-    packetId: string,
-    adminId: string
-  ): Promise<WarehouseRequestEntity> {
-    const queryRunner = this.dataSource.createQueryRunner();
-    await queryRunner.connect();
-    await queryRunner.startTransaction();
+  /**
+   * Mirrors a warehouse_request status onto the linked deposit/withdraw record
+   * (created via POST /deposit or POST /withdraw with type=warehouse).
+   */
+  private async syncLinkedRecord(queryRunner: any, request: WarehouseRequestEntity): Promise<void> {
+    if (!request.id) return;
 
-    try {
-      const request = await queryRunner.manager.findOne(WarehouseRequestEntity, {
-        where: { id: requestId, type: RequestTypeEnum.OUTPUT },
-        relations: { user: true, warehouse: true },
-        lock: { mode: "pessimistic_write" },
-      });
+    const deposit = await queryRunner.manager.findOne(DepositEntity, {
+      where: { warehouseRequestId: request.id },
+      lock: { mode: "pessimistic_write" },
+    });
 
-      if (!request) throw new NotFoundException("Withdraw request not found");
-      if (request.status !== RequestStatusEnum.PENDING) {
-        throw new BadRequestException(`Request status must be PENDING, got ${request.status}`);
+    if (deposit) {
+      switch (request.status) {
+        case RequestStatusEnum.PENDING:
+          deposit.status = DepositStatusEnum.PENDING;
+          break;
+        case RequestStatusEnum.APPROVED:
+          deposit.status = DepositStatusEnum.PROCESSING;
+          break;
+        case RequestStatusEnum.COMPLETED:
+          deposit.status = DepositStatusEnum.COMPLETED;
+          deposit.completedAt = new Date();
+          break;
+        case RequestStatusEnum.REJECTED:
+        case RequestStatusEnum.CANCELLED:
+          deposit.status = DepositStatusEnum.CANCELLED;
+          break;
       }
-
-      const wallet = await this.getWalletForUpdate(queryRunner, request.userId, request.symbolId);
-      const decimalAmount = new Decimal(request.weight);
-
-      await this.packetService.splitPacket(packetId, request.weight, queryRunner);
-
-      await this.warehouseService.updateCapacity(request.warehouseId, -request.weight, queryRunner);
-
-      request.status = RequestStatusEnum.COMPLETED;
-      request.adminId = adminId;
-      request.processedAt = new Date();
-      request.deliveryDate = new Date();
-      await queryRunner.manager.save(request);
-
-      wallet.lockedBalance = new Decimal(wallet.lockedBalance).minus(decimalAmount).toNumber();
-      await queryRunner.manager.save(wallet);
-
-      const pendingTx = await queryRunner.manager.findOne(TransactionEntity, {
-        where: {
-          walletId: wallet.id,
-          transactionType: TransactionTypeEnum.MATERIAL_WITHDRAW,
-          status: TransactionStatusEnum.PENDING,
-        },
-        order: { createAt: "DESC" },
-        lock: { mode: "pessimistic_write" },
-      });
-
-      if (pendingTx) {
-        pendingTx.status = TransactionStatusEnum.COMPLETED;
-        pendingTx.completedAt = new Date();
-        pendingTx.metadata = {
-          ...pendingTx.metadata,
-          completedAt: new Date().toISOString(),
-          completedBy: adminId,
-          splitPacketId: packetId,
-        };
-        await queryRunner.manager.save(pendingTx);
-      } else {
-        const completedTx = this.createTransactionRecord(
-          wallet,
-          TransactionTypeEnum.MATERIAL_WITHDRAW,
-          decimalAmount.toNumber(),
-          TransactionStatusEnum.COMPLETED,
-          `Withdraw request ${request.id} completed: ${decimalAmount.toString()} withdrawn, packet ${packetId} split`,
-          { requestId: request.id, splitPacketId: packetId, weight: decimalAmount.toString(), completedBy: adminId }
-        );
-        await queryRunner.manager.save(completedTx);
-      }
-
-      await this.addHistory(queryRunner, {
-        requestId: request.id,
-        packetId: packetId,
-        warehouseId: request.warehouseId,
-        action: "WITHDRAW_APPROVED_WITH_SPLIT",
-        description: `Withdraw request ${request.id} approved with packet split: ${decimalAmount.toString()} withdrawn by admin ${adminId}`,
-        performedBy: adminId,
-        performedRole: "ADMIN",
-      });
-
-      await queryRunner.commitTransaction();
-
-      if (request.user?.phone) {
-        try {
-          const msg = `Your withdrawal request ${request.id} has been completed. Amount: ${decimalAmount.toString()}g. Thank you.`;
-          await this.smsService.sendSMS(request.user.phone, msg);
-        } catch (e) {
-          this.logger.warn(`Failed to notify user ${request.userId} about withdrawal completion`);
-        }
-      }
-
-      return this.getRequestById(request.id);
-    } catch (error) {
-      await queryRunner.rollbackTransaction();
-      throw error;
-    } finally {
-      await queryRunner.release();
+      await queryRunner.manager.save(deposit);
     }
+
+    const withdraw = await queryRunner.manager.findOne(WithdrawEntity, {
+      where: { warehouseRequestId: request.id },
+      lock: { mode: "pessimistic_write" },
+    });
+
+    if (withdraw) {
+      switch (request.status) {
+        case RequestStatusEnum.PENDING:
+          withdraw.status = WithdrawStatusEnum.PENDING;
+          break;
+        case RequestStatusEnum.APPROVED:
+          withdraw.status = WithdrawStatusEnum.PROCESSING;
+          break;
+        case RequestStatusEnum.COMPLETED:
+          withdraw.status = WithdrawStatusEnum.COMPLETED;
+          withdraw.completedAt = new Date();
+          break;
+        case RequestStatusEnum.REJECTED:
+        case RequestStatusEnum.CANCELLED:
+          withdraw.status = WithdrawStatusEnum.CANCELLED;
+          break;
+      }
+      await queryRunner.manager.save(withdraw);
+    }
+  }
+
+  /**
+   * Cancels approved requests whose delivery day has ended without the user
+   * showing up. Packets go back to the orphan pool (or stay under the user
+   * when they owned the material) and wallet locks are refunded.
+   * Returns the number of cancelled requests.
+   */
+  async autoCancelExpiredRequests(now: Date = new Date()): Promise<number> {
+    const approved = await this.requestRepository.find({
+      where: { status: RequestStatusEnum.APPROVED },
+      relations: { warehouse: true, packet: true, user: true },
+    });
+
+    let cancelled = 0;
+
+    for (const request of approved) {
+      const end = this.getDeliveryDayEnd(request);
+      if (!end || now.getTime() < end.getTime()) continue;
+
+      const queryRunner = this.dataSource.createQueryRunner();
+      await queryRunner.connect();
+      await queryRunner.startTransaction();
+
+      try {
+        const locked = await queryRunner.manager.findOne(WarehouseRequestEntity, {
+          where: { id: request.id, status: RequestStatusEnum.APPROVED },
+          lock: { mode: "pessimistic_write" },
+        });
+
+        if (!locked) {
+          await queryRunner.rollbackTransaction();
+          continue;
+        }
+
+        let packet: PacketEntity | null = null;
+        if (locked.packetId) {
+          packet = await queryRunner.manager.findOne(PacketEntity, {
+            where: { id: locked.packetId },
+            lock: { mode: "pessimistic_write" },
+          });
+        }
+        locked.packet = packet;
+
+        locked.status = RequestStatusEnum.CANCELLED;
+        locked.processedAt = now;
+        await queryRunner.manager.save(locked);
+
+        if (locked.type === RequestTypeEnum.OUTPUT) {
+          await this.unlockWalletForRejectedWithdraw(queryRunner, locked);
+          if (packet) {
+            await this.returnPacketToPool(queryRunner, locked, packet);
+          }
+        } else if (locked.type === RequestTypeEnum.INPUT && packet) {
+          await queryRunner.manager.softDelete(PacketEntity, packet.id);
+        }
+
+        await this.addHistory(queryRunner, {
+          requestId: locked.id,
+          packetId: locked.packetId,
+          warehouseId: locked.warehouseId,
+          action: "REQUEST_AUTO_CANCELLED_NO_SHOW",
+          description: `Request ${locked.id} auto-cancelled: user did not show up before the end of the delivery day`,
+          performedBy: "system",
+          performedRole: "SYSTEM",
+        });
+
+        await this.syncLinkedRecord(queryRunner, locked);
+
+        await queryRunner.commitTransaction();
+        cancelled++;
+
+        if (locked.user?.phone) {
+          try {
+            await this.smsService.sendSMS(
+              locked.user.phone,
+              `Your ${locked.type === RequestTypeEnum.OUTPUT ? "withdrawal" : "deposit"} request ${locked.id} was cancelled because you did not show up before the end of the delivery day.`
+            );
+          } catch (e) {
+            this.logger.warn(`Failed to notify user ${locked.userId} about auto-cancel`);
+          }
+        }
+      } catch (error) {
+        await queryRunner.rollbackTransaction();
+        this.logger.error(`Failed to auto-cancel request ${request.id}: ${(error as any).message}`);
+      } finally {
+        await queryRunner.release();
+      }
+    }
+
+    return cancelled;
+  }
+
+  /**
+   * Computes the end of the delivery day for an approved request (Asia/Tehran):
+   * - end time from the warehouse delivery schedule for that weekday,
+   * - otherwise the end of the calendar day (23:59:59).
+   * Returns null when no deliveryDate exists.
+   */
+  private getDeliveryDayEnd(request: WarehouseRequestEntity): Date | null {
+    if (!request.deliveryDate) return null;
+
+    const parts = this.tehranParts(request.deliveryDate);
+    const weekday = this.tehranWeekdayName(request.deliveryDate);
+
+    let endHour = 23;
+    let endMinute = 59;
+    let endSecond = 59;
+
+    const schedule = request.warehouse?.deliverySchedule;
+    if (schedule && schedule[weekday]?.end) {
+      const [h, m] = String(schedule[weekday].end).split(":").map((x) => Number(x));
+      if (!Number.isNaN(h)) endHour = h;
+      if (!Number.isNaN(m)) endMinute = m;
+      endSecond = 0;
+    }
+
+    const localMs = Date.UTC(parts.year, parts.month - 1, parts.day, endHour, endMinute, endSecond);
+    return new Date(localMs - 3.5 * 3600 * 1000);
+  }
+
+  private tehranParts(date: Date): { year: number; month: number; day: number } {
+    const s = new Intl.DateTimeFormat("en-US", {
+      timeZone: "Asia/Tehran",
+      year: "numeric",
+      month: "numeric",
+      day: "numeric",
+    }).format(date);
+    const [m, d, y] = s.split("/").map(Number);
+    return { year: y, month: m, day: d };
+  }
+
+  private tehranWeekdayName(date: Date): string {
+    const s = new Intl.DateTimeFormat("en-US", {
+      timeZone: "Asia/Tehran",
+      weekday: "long",
+    }).format(date);
+    return s.toLowerCase();
   }
 
   async cancelRequest(userId: string, requestId: string): Promise<WarehouseRequestEntity> {
@@ -984,14 +1199,12 @@ export class WarehouseRequestService {
 
       if (request.type === RequestTypeEnum.INPUT) {
         if (request.packet) {
-          request.packet.status = PacketStatusEnum.ORPHAN;
-          await queryRunner.manager.save(request.packet);
+          await queryRunner.manager.softDelete(PacketEntity, request.packet.id);
         }
       } else if (request.type === RequestTypeEnum.OUTPUT) {
         await this.unlockWalletForRejectedWithdraw(queryRunner, request);
         if (request.packet) {
-          request.packet.status = PacketStatusEnum.IN_WAREHOUSE;
-          await queryRunner.manager.save(request.packet);
+          await this.returnPacketToPool(queryRunner, request, request.packet);
         }
       }
 
@@ -1004,6 +1217,8 @@ export class WarehouseRequestService {
         performedBy: userId,
         performedRole: "USER",
       });
+
+      await this.syncLinkedRecord(queryRunner, saved);
 
       await queryRunner.commitTransaction();
       return saved;
