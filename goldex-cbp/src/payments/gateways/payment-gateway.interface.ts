@@ -40,6 +40,19 @@ export interface GatewayVerifyResult {
   error?: string;
 }
 
+export type GatewayHealthStatus = "up" | "down" | "not_configured" | "unknown";
+
+export interface GatewayHealthResult {
+  code: string;
+  name: string;
+  category: PaymentCategoryEnum;
+  kind: PaymentGatewayKindEnum;
+  status: GatewayHealthStatus;
+  latencyMs?: number;
+  message?: string;
+  checkedAt: string;
+}
+
 export interface IPaymentGateway {
   readonly metadata: GatewayMetadata;
   deposit(params: DepositParams): Promise<any>;
@@ -49,4 +62,5 @@ export interface IPaymentGateway {
     data: Record<string, any>,
   ): Promise<GatewayVerifyResult>;
   inquiry?(payment: GatewayPaymentRef): Promise<GatewayVerifyResult>;
+  healthCheck?(): Promise<GatewayHealthResult>;
 }

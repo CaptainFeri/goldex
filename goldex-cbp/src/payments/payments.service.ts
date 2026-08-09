@@ -50,6 +50,7 @@ export class PaymentsService {
   private categoryOf(symbolType: SymbolTypeEnum): PaymentCategoryEnum {
     switch (symbolType) {
       case SymbolTypeEnum.RIAL:
+        return PaymentCategoryEnum.RIAL;
       case SymbolTypeEnum.FIAT:
         return PaymentCategoryEnum.FIAT;
       case SymbolTypeEnum.CRYPTO:

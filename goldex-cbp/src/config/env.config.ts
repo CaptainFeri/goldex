@@ -31,4 +31,13 @@ export default registerAs("app", () => ({
       process.env.KAINO_IPG_PAY_PATH ??
       "/rest/channel/wallet/v1/chargeWallet/pay",
   },
+  shahin: {
+    baseUrl: process.env.SHAHIN_SERVICE_URL ?? "https://9eb6cj.parszargar.com",
+    apiKey: process.env.SHAHIN_SERVICE_API_KEY ?? "",
+    bankCode: process.env.SHAHIN_BANK_CODE ?? "BKV",
+    companyNationalCode: process.env.SHAHIN_COMPANY_NATIONAL_CODE ?? "",
+    sourceAccount: process.env.SHAHIN_SOURCE_ACCOUNT ?? "",
+    timeoutMs: process.env.SHAHIN_REQUEST_TIMEOUT ?? "60000",
+  },
+  adminApiKey: process.env.CBP_ADMIN_API_KEY ?? "",
 }));

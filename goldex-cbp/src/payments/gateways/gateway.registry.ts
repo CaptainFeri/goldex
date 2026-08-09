@@ -2,8 +2,10 @@ import { Injectable, NotFoundException } from "@nestjs/common";
 import {
   IPaymentGateway,
   GatewayMetadata,
+  GatewayHealthResult,
 } from "./payment-gateway.interface";
 import { KainoGatewayService } from "./informal/kaino-gateway.service";
+import { ShahinGatewayService } from "./shahin/shahin-gateway.service";
 import { PaymentCategoryEnum } from "../enum/payment-category.enum";
 import { PaymentGatewayKindEnum } from "../enum/payment-gateway-kind.enum";
 
@@ -16,8 +18,12 @@ import { PaymentGatewayKindEnum } from "../enum/payment-gateway-kind.enum";
 export class GatewayRegistry {
   private readonly gateways = new Map<string, IPaymentGateway>();
 
-  constructor(private readonly kainoGateway: KainoGatewayService) {
+  constructor(
+    private readonly kainoGateway: KainoGatewayService,
+    private readonly shahinGateway: ShahinGatewayService,
+  ) {
     this.register(this.kainoGateway);
+    this.register(this.shahinGateway);
   }
 
   private register(gateway: IPaymentGateway): void {
@@ -53,5 +59,41 @@ export class GatewayRegistry {
 
   isRegistered(code: string): boolean {
     return this.gateways.has(code);
+  }
+
+  /**
+   * Runs the health probe of every registered gateway. Gateways without a
+   * healthCheck implementation report `unknown`.
+   */
+  async health(): Promise<GatewayHealthResult[]> {
+    const results: GatewayHealthResult[] = [];
+    for (const gateway of this.gateways.values()) {
+      if (!gateway.healthCheck) {
+        results.push({
+          code: gateway.metadata.code,
+          name: gateway.metadata.name,
+          category: gateway.metadata.category,
+          kind: gateway.metadata.kind,
+          status: "unknown",
+          message: "No health probe implemented",
+          checkedAt: new Date().toISOString(),
+        });
+        continue;
+      }
+      try {
+        results.push(await gateway.healthCheck());
+      } catch (err: any) {
+        results.push({
+          code: gateway.metadata.code,
+          name: gateway.metadata.name,
+          category: gateway.metadata.category,
+          kind: gateway.metadata.kind,
+          status: "down",
+          message: (err as Error)?.message ?? String(err),
+          checkedAt: new Date().toISOString(),
+        });
+      }
+    }
+    return results;
   }
 }

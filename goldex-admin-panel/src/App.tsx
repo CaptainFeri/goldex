@@ -13,6 +13,7 @@ import MappingsPage from "./pages/MappingsPage";
 import AdminsPage from "./pages/AdminsPage";
 import FinancePage from "./pages/FinancePage";
 import ProviderFinancePage from "./pages/ProviderFinancePage";
+import CbpPage from "./pages/CbpPage";
 import UsersPage from "./pages/UsersPage";
 import WarehousePage from "./pages/WarehousePage";
 import OrdersPage from "./pages/OrdersPage";
@@ -69,6 +70,7 @@ export default function App() {
         <Route path="/mappings" element={<MappingsPage />} />
         <Route path="/finance" element={<FinancePage />} />
         <Route path="/provider-finance" element={<ProviderFinancePage />} />
+        <Route path="/cbp" element={<CbpPage />} />
         <Route path="/admins" element={<AdminsPage />} />
         <Route path="/warehouse" element={<WarehousePage />} />
         <Route path="/orders" element={<OrdersPage />} />

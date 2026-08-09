@@ -1,10 +1,12 @@
 import { Injectable } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
+import { KainoAuthService } from "../../../kaino/auth/kaino-auth.service";
 import { KainoWalletService } from "../../../kaino/wallet/kaino-wallet.service";
 import { PaymentCategoryEnum } from "../../enum/payment-category.enum";
 import { PaymentGatewayKindEnum } from "../../enum/payment-gateway-kind.enum";
 import {
   DepositParams,
+  GatewayHealthResult,
   GatewayMetadata,
   GatewayPaymentRef,
   GatewayVerifyResult,
@@ -25,6 +27,7 @@ export class KainoGatewayService implements IPaymentGateway {
 
   constructor(
     private readonly wallet: KainoWalletService,
+    private readonly auth: KainoAuthService,
     private readonly config: ConfigService,
   ) {}
 
@@ -141,5 +144,37 @@ export class KainoGatewayService implements IPaymentGateway {
     }
     const res = await this.wallet.inquiry(stan, localDate);
     return { success: this.isSuccess(res), raw: res };
+  }
+
+  /**
+   * Health probe: a fresh Kaino login validates both reachability and
+   * credentials without mutating any business data.
+   */
+  async healthCheck(): Promise<GatewayHealthResult> {
+    const start = Date.now();
+    try {
+      await this.auth.login();
+      return {
+        code: this.metadata.code,
+        name: this.metadata.name,
+        category: this.metadata.category,
+        kind: this.metadata.kind,
+        status: "up",
+        latencyMs: Date.now() - start,
+        message: "Login succeeded",
+        checkedAt: new Date().toISOString(),
+      };
+    } catch (err: any) {
+      return {
+        code: this.metadata.code,
+        name: this.metadata.name,
+        category: this.metadata.category,
+        kind: this.metadata.kind,
+        status: "down",
+        latencyMs: Date.now() - start,
+        message: (err as Error)?.message ?? String(err),
+        checkedAt: new Date().toISOString(),
+      };
+    }
   }
 }

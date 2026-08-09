@@ -20,6 +20,7 @@ const SECONDARY_NAV: { to: string; label: string; icon: string; end?: boolean }[
   { to: "/kyc", label: "احراز هویت", icon: "🪪" },
   { to: "/warehouse", label: "انبار", icon: "🏭" },
   { to: "/provider-finance", label: "مالی تأمین‌کنندگان", icon: "🏦" },
+  { to: "/cbp", label: "درگاه‌های پرداخت", icon: "💳" },
   { to: "/symbols", label: "نمادها", icon: "◈" },
   { to: "/pairs", label: "جفت‌ارزها", icon: "⇄" },
   { to: "/mappings", label: "نگاشت تأمین‌کننده", icon: "🔗" },
