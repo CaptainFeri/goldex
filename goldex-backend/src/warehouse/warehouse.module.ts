@@ -5,6 +5,7 @@ import { WarehouseController } from "./warehouse.controller";
 import { WarehouseService } from "./service/warehouse.service";
 import { PacketService } from "./service/packet.service";
 import { WarehouseRequestService } from "./service/warehouse-request.service";
+import { AllocationService } from "./service/allocation.service";
 import { WarehouseCronService } from "./warehouse-cron.service";
 import { WarehouseEntity } from "./entity/warehouse.entity";
 import { PacketEntity } from "./entity/packet.entity";
@@ -34,7 +35,7 @@ import { AdminWarehouseModule } from "./admin/admin-warehouse.module";
     AdminWarehouseModule,
   ],
   controllers: [WarehouseController],
-  providers: [WarehouseService, PacketService, WarehouseRequestService, WarehouseCronService],
-  exports: [WarehouseService, PacketService, WarehouseRequestService],
+  providers: [WarehouseService, PacketService, WarehouseRequestService, AllocationService, WarehouseCronService],
+  exports: [WarehouseService, PacketService, WarehouseRequestService, AllocationService],
 })
 export class WarehouseModule {}

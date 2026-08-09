@@ -15,6 +15,7 @@ import { AdminUpdatePacketDto } from "../admin/dto/admin-update-packet.dto";
 import { CreateSettlementPacketDto } from "../admin/dto/create-settlement-packet.dto";
 import { PacketStatusEnum } from "../enum/packet-status.enum";
 import { WarehouseService } from "./warehouse.service";
+import { computeNetWeight } from "../constants/warehouse.constants";
 
 @Injectable()
 export class PacketService {
@@ -40,7 +41,10 @@ export class PacketService {
     await queryRunner.startTransaction();
 
     try {
-      await this.warehouseService.updateCapacity(dto.warehouseId, dto.pureWeight, queryRunner);
+      // Packing & QC: net weight (750) = (apparent weight x fineness) / 750
+      const netWeight = this.resolveNetWeight(dto.apparentWeight, dto.ayar, dto.pureWeight);
+
+      await this.warehouseService.updateCapacity(dto.warehouseId, netWeight, queryRunner);
 
       let pictureUrl: string | undefined;
 
@@ -59,13 +63,15 @@ export class PacketService {
 
       const packet = this.packetRepository.create({
         warehouseId: dto.warehouseId,
-        pureWeight: dto.pureWeight,
+        pureWeight: netWeight,
         idSecure: dto.idSecure,
         dateTime: new Date(),
         status: dto.isOrphan ? PacketStatusEnum.ORPHAN : PacketStatusEnum.IN_WAREHOUSE,
         warehouseIndexPosition: dto.warehouseIndexPosition,
         ang: dto.ang,
         ayar: dto.ayar,
+        apparentWeight: dto.apparentWeight ?? netWeight,
+        wastage: dto.wastage,
         picture: pictureUrl || dto.picture,
         userId: dto.userId,
         qrCode: dto.qrCode,
@@ -82,7 +88,7 @@ export class PacketService {
         description: `Packet ${saved.idSecure} created in warehouse ${dto.warehouseId}`,
         performedBy: adminId,
         performedRole: "ADMIN",
-        metadata: { pureWeight: dto.pureWeight, isOrphan: dto.isOrphan },
+        metadata: { pureWeight: netWeight, isOrphan: dto.isOrphan },
       });
 
       await queryRunner.commitTransaction();
@@ -104,7 +110,9 @@ export class PacketService {
     await queryRunner.startTransaction();
 
     try {
-      await this.warehouseService.updateCapacity(dto.warehouseId, dto.pureWeight, queryRunner);
+      const netWeight = this.resolveNetWeight(dto.apparentWeight, dto.ayar, dto.pureWeight);
+
+      await this.warehouseService.updateCapacity(dto.warehouseId, netWeight, queryRunner);
 
       let pictureUrl: string | undefined;
 
@@ -125,13 +133,15 @@ export class PacketService {
 
       const packet = this.packetRepository.create({
         warehouseId: dto.warehouseId,
-        pureWeight: dto.pureWeight,
+        pureWeight: netWeight,
         idSecure,
         dateTime: new Date(),
         status: PacketStatusEnum.ORPHAN,
         warehouseIndexPosition: dto.warehouseIndexPosition,
         ang: dto.ang,
         ayar: dto.ayar,
+        apparentWeight: dto.apparentWeight ?? netWeight,
+        wastage: dto.wastage,
         picture: pictureUrl,
         isOrphan: true,
         batchNumber: dto.batchNumber || `STL-${dto.providerKey}-${Date.now()}`,
@@ -143,10 +153,10 @@ export class PacketService {
         warehouseId: dto.warehouseId,
         packetId: saved.id,
         action: "SETTLEMENT_PACKET_CREATED",
-        description: `Orphan packet ${saved.idSecure} created from settlement with provider ${dto.providerKey}, weight ${dto.pureWeight}`,
+        description: `Orphan packet ${saved.idSecure} created from settlement with provider ${dto.providerKey}, weight ${netWeight}`,
         performedBy: adminId,
         performedRole: "ADMIN",
-        metadata: { providerKey: dto.providerKey, pureWeight: dto.pureWeight },
+        metadata: { providerKey: dto.providerKey, pureWeight: netWeight },
       });
 
       await queryRunner.commitTransaction();
@@ -277,6 +287,122 @@ export class PacketService {
       action: "PACKET_DELETED",
       description: `Packet ${packet.idSecure} deleted`,
     });
+  }
+
+  /**
+   * Packing & QC rule (warehouse-roadmap.html §2 & §4):
+   * net weight (750) = (apparent weight x fineness) / 750.
+   * When apparent weight + fineness are supplied the net weight is ALWAYS
+   * re-derived; otherwise the admin-provided pure weight is used as-is.
+   */
+  resolveNetWeight(apparentWeight?: number, ayar?: number, pureWeight?: number): number {
+    if (apparentWeight !== undefined && apparentWeight !== null && Number(apparentWeight) > 0 && ayar !== undefined && ayar !== null && Number(ayar) > 0) {
+      return computeNetWeight(Number(apparentWeight), Number(ayar));
+    }
+    return Number(pureWeight ?? 0);
+  }
+
+  /**
+   * Generic package split with mass conservation + wastage log
+   * (warehouse-roadmap.html §4 & Diagram 3):
+   * sum(childWeights) + wastage MUST equal the parent net weight.
+   * Children become orphan packages (or stay under the parent owner when the
+   * parent was user-owned), the parent is archived as WITHDRAWN, and the
+   * wastage is recorded on the parent + history for the audit trail.
+   */
+  async splitWithParts(
+    packetId: string,
+    parts: { weight: number; ang?: number; ayar?: number; position?: string }[],
+    wastage: number,
+    adminId?: string
+  ): Promise<{ parent: PacketEntity; children: PacketEntity[] }> {
+    const queryRunner = this.dataSource.createQueryRunner();
+    await queryRunner.connect();
+    await queryRunner.startTransaction();
+
+    try {
+      const parent = await queryRunner.manager.findOne(PacketEntity, {
+        where: { id: packetId },
+        lock: { mode: "pessimistic_write" },
+        relations: { warehouse: true },
+      });
+      if (!parent) throw new NotFoundException("Packet not found");
+      if (parent.status !== PacketStatusEnum.IN_WAREHOUSE && parent.status !== PacketStatusEnum.ORPHAN) {
+        throw new BadRequestException("Only IN_WAREHOUSE or ORPHAN packets can be split");
+      }
+
+      const parentWeight = new Decimal(parent.pureWeight);
+      const partsTotal = parts.reduce((acc, p) => acc.plus(new Decimal(p.weight || 0)), new Decimal(0));
+      const wastageDec = new Decimal(wastage || 0);
+
+      // Mass conservation: children + wastage == parent
+      const conserved = partsTotal.plus(wastageDec);
+      if (conserved.minus(parentWeight).absoluteValue().greaterThan(new Decimal("0.00000001"))) {
+        throw new BadRequestException(
+          `Net weights do not match parent package: children (${partsTotal.toString()}) + wastage (${wastageDec.toString()}) != parent (${parentWeight.toString()})`
+        );
+      }
+
+      const children: PacketEntity[] = [];
+      const now = new Date();
+      const idGen = () => Math.random().toString(36).substring(2, 8).toUpperCase();
+
+      for (let i = 0; i < parts.length; i++) {
+        const part = parts[i];
+        const child = queryRunner.manager.create(PacketEntity, {
+          warehouseId: parent.warehouseId,
+          userId: parent.userId,
+          pureWeight: Number(part.weight),
+          apparentWeight: Number(part.weight),
+          idSecure: `${parent.idSecure}-${i + 1}-${idGen()}`,
+          dateTime: now,
+          status: parent.isOrphan ? PacketStatusEnum.ORPHAN : PacketStatusEnum.IN_WAREHOUSE,
+          ang: part.ang ?? parent.ang,
+          ayar: part.ayar ?? parent.ayar,
+          warehouseIndexPosition: part.position ?? parent.warehouseIndexPosition,
+          batchNumber: parent.batchNumber,
+          parentId: parent.id,
+          isOrphan: parent.isOrphan,
+        });
+        children.push(await queryRunner.manager.save(child));
+      }
+
+      // Archive parent, record wastage for the audit trail
+      parent.status = PacketStatusEnum.WITHDRAWN;
+      parent.wastage = wastageDec.toNumber();
+      parent.metadata = {
+        ...(parent.metadata || {}),
+        splitInfo: {
+          childIds: children.map((c) => c.id),
+          wastage: wastageDec.toString(),
+          splitAt: now.toISOString(),
+        },
+      };
+      await queryRunner.manager.save(parent);
+
+      await this.addHistory(queryRunner, {
+        warehouseId: parent.warehouseId,
+        packetId: parent.id,
+        action: "PACKET_SPLIT_MASS",
+        description:
+          `Packet ${parent.idSecure} (${parentWeight.toString()}g) split into ${parts.length} parts + wastage ${wastageDec.toString()}g`,
+        performedBy: adminId,
+        performedRole: "ADMIN",
+        metadata: {
+          parts: parts.map((p) => Number(p.weight)),
+          wastage: wastageDec.toString(),
+          childIds: children.map((c) => c.id),
+        },
+      });
+
+      await queryRunner.commitTransaction();
+      return { parent, children };
+    } catch (error) {
+      await queryRunner.rollbackTransaction();
+      throw error;
+    } finally {
+      await queryRunner.release();
+    }
   }
 
   async findOrphanPackets(warehouseId?: string): Promise<PacketEntity[]> {

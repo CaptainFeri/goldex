@@ -331,7 +331,7 @@ export default function WarehousePage() {
                 <table className="order-table">
                   <thead>
                     <tr>
-                      <th>ID</th><th>Status</th><th>Weight</th><th>Warehouse</th><th>Ang</th><th>Ayar</th><th>Batch</th><th>Created</th>
+                      <th>ID</th><th>Status</th><th>Weight</th><th>Apparent</th><th>Wastage</th><th>Warehouse</th><th>Ang</th><th>Ayar</th><th>Batch</th><th>Created</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -340,6 +340,8 @@ export default function WarehousePage() {
                         <td style={{ fontFamily: 'monospace', fontSize: '0.8rem' }}>{p.idSecure}</td>
                         <td><span className={`badge ${PKT_BADGE[p.status] || 'badge-warning'}`}>{p.status}</span></td>
                         <td>{fmt(p.pureWeight)}g</td>
+                        <td>{p.apparentWeight != null ? `${fmt(p.apparentWeight)}g` : '—'}</td>
+                        <td>{p.wastage != null ? `${fmt(p.wastage)}g` : '—'}</td>
                         <td>{p.warehouse?.name || '—'}</td>
                         <td>{p.ang != null ? p.ang : '—'}</td>
                         <td>{p.ayar != null ? p.ayar : '—'}</td>

@@ -36,6 +36,8 @@ import { PacketQueryDto } from "../dto/packet-query.dto";
 import { CreateSettlementPacketDto } from "./dto/create-settlement-packet.dto";
 import { ApproveWithdrawOutputDto } from "./dto/approve-withdraw-output.dto";
 import { AdminExpressRequest } from "../../admin/auth/types/adminExpressRequest";
+import { ApplyAllocationDto } from "./dto/apply-allocation.dto";
+import { SplitPacketDto } from "./dto/split-packet.dto";
 
 @ApiTags("Admin - Warehouse")
 @ApiBearerAuth()
@@ -86,6 +88,20 @@ export class AdminWarehouseController {
   @ApiResponse({ status: HttpStatus.OK, description: "Returns all packets" })
   async getAllPackets(@Query() query: PacketQueryDto) {
     return { data: await this.packetService.findAll(query) };
+  }
+
+  @Post("packets/:id/split")
+  @ApiOperation({
+    summary: "Split a package into several child packages (mass conservation: sum(parts) + wastage == parent)",
+  })
+  @ApiResponse({ status: HttpStatus.OK, description: "Package split, children created" })
+  async splitPacket(
+    @Req() req: AdminExpressRequest,
+    @Param("id") id: string,
+    @Body() dto: SplitPacketDto
+  ) {
+    const adminId = req.admin["id"];
+    return { data: await this.packetService.splitWithParts(id, dto.parts, dto.wastage ?? 0, adminId) };
   }
 
   @Post("packets/:id/picture")
@@ -149,6 +165,23 @@ export class AdminWarehouseController {
     return { data: await this.requestService.getPendingWithdrawRequests() };
   }
 
+  @Get("requests/:id/allocation-suggestions")
+  @ApiOperation({
+    summary: "Smart allocation suggestions for a withdraw request (exact match, best fit, combination)",
+  })
+  @ApiResponse({ status: HttpStatus.OK, description: "Returns ranked allocation options" })
+  async getAllocationSuggestions(@Param("id") id: string) {
+    return { data: await this.requestService.getAllocationSuggestions(id) };
+  }
+
+  @Post("requests/:id/allocation-apply")
+  @ApiOperation({ summary: "Apply a smart allocation suggestion to a withdraw request" })
+  @ApiResponse({ status: HttpStatus.OK, description: "Allocation applied, request approved" })
+  async applyAllocation(@Req() req: AdminExpressRequest, @Param("id") id: string, @Body() dto: ApplyAllocationDto) {
+    const adminId = req.admin["id"];
+    return { data: await this.requestService.applyAllocationOption(id, adminId, dto.optionKey) };
+  }
+
   @Get("requests/:id")
   @ApiOperation({ summary: "Get request by ID (Admin)" })
   @ApiResponse({ status: HttpStatus.OK, description: "Returns request details" })
@@ -178,6 +211,8 @@ export class AdminWarehouseController {
     const materialData: any = {};
     if (body.ang !== undefined && body.ang !== "") materialData.ang = Number(body.ang);
     if (body.ayar !== undefined && body.ayar !== "") materialData.ayar = Number(body.ayar);
+    if (body.apparentWeight !== undefined && body.apparentWeight !== "") materialData.apparentWeight = Number(body.apparentWeight);
+    if (body.wastage !== undefined && body.wastage !== "") materialData.wastage = Number(body.wastage);
     if (body.warehouseIndexPosition) materialData.warehouseIndexPosition = body.warehouseIndexPosition;
     if (picture) {
       const fileInfo = await this.packetService.uploadPictureBuffer(

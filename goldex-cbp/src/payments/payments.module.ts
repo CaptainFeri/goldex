@@ -1,7 +1,7 @@
 import { Module } from "@nestjs/common";
 import { TypeOrmModule } from "@nestjs/typeorm";
 import { SymbolsModule } from "../symbols/symbols.module";
-import { CbpAdminController } from "./admin/cbp-admin.controller";
+import { CbpAdminConsumer } from "./admin/cbp-admin.consumer";
 import { CbpAdminService } from "./admin/cbp-admin.service";
 import { KainoCallbackController } from "./callbacks/kaino-callback.controller";
 import { PaymentEntity } from "./entity/payment.entity";
@@ -20,8 +20,8 @@ import { PaymentsService } from "./payments.service";
     SymbolsModule,
     GatewaysModule,
   ],
-  providers: [PaymentsService, PaymentEventsService, CbpAdminService],
-  controllers: [KainoCallbackController, CbpAdminController],
+  providers: [PaymentsService, PaymentEventsService, CbpAdminService, CbpAdminConsumer],
+  controllers: [KainoCallbackController],
   exports: [PaymentsService],
 })
 export class PaymentsModule {}

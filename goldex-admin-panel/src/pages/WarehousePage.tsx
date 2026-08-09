@@ -3,7 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, unwrap, apiError } from "../api/client";
 import { Card, Modal, Loading, ErrorState, Empty, Badge } from "../components/ui";
 import { fmtNum, fmtDate } from "../lib/format";
-import type { Warehouse, Packet, WarehouseRequest } from "../api/types";
+import type { Warehouse, Packet, WarehouseRequest, AllocationOption } from "../api/types";
 
 function downloadCSV(data: Record<string, any>[], filename: string) {
   if (!data.length) return;
@@ -431,6 +431,8 @@ function PacketForm({
   const [idSecure, setIdSecure] = useState("");
   const [ang, setAng] = useState("");
   const [ayar, setAyar] = useState("");
+  const [apparentWeight, setApparentWeight] = useState("");
+  const [wastage, setWastage] = useState("");
   const [batchNumber, setBatchNumber] = useState("");
   const [isOrphan, setIsOrphan] = useState(false);
 
@@ -463,6 +465,8 @@ function PacketForm({
       idSecure: idSecure || `ADM-${Date.now()}`,
       ang: ang ? Number(ang) : undefined,
       ayar: ayar ? Number(ayar) : undefined,
+      apparentWeight: apparentWeight ? Number(apparentWeight) : undefined,
+      wastage: wastage ? Number(wastage) : undefined,
       batchNumber: batchNumber || undefined,
       isOrphan,
     });
@@ -483,6 +487,22 @@ function PacketForm({
           <label>وزن (گرم)</label>
           <input className="input" type="number" step="0.00000001" value={weight} onChange={(e) => setWeight(e.target.value)} required />
         </div>
+        <div className="field">
+          <label>وزن ظاهری (گرم — توزین)</label>
+          <input className="input" type="number" step="any" value={apparentWeight}
+            placeholder="اختیاری؛ اگر با عیار وارد شود، وزن خالص خودکار محاسبه می‌شود"
+            onChange={(e) => setApparentWeight(e.target.value)} />
+        </div>
+        <div className="field">
+          <label>انگی / ضایعات (گرم)</label>
+          <input className="input" type="number" step="any" value={wastage}
+            onChange={(e) => setWastage(e.target.value)} placeholder="0" />
+        </div>
+        {Number(apparentWeight) > 0 && Number(ayar) > 0 && (
+          <div className="alert" style={{ backgroundColor: "var(--gold-bg)", border: "1px solid var(--gold)", padding: 10, borderRadius: 8, fontSize: 13 }}>
+            وزن خالص محاسبه‌شده: <strong className="mono">{fmtNum((Number(apparentWeight) * Number(ayar)) / 750, 6)}g</strong> (ظاهری × عیار ÷ ۷۵۰)
+          </div>
+        )}
         <div className="field">
           <label>شناسه امن</label>
           <input className="input" value={idSecure} onChange={(e) => setIdSecure(e.target.value)} placeholder="خودکار اگر خالی" />
@@ -522,6 +542,8 @@ function ConfirmMaterialModal({
   const qc = useQueryClient();
   const [ang, setAng] = useState("");
   const [ayar, setAyar] = useState("");
+  const [apparentWeight, setApparentWeight] = useState("");
+  const [wastage, setWastage] = useState("");
   const [position, setPosition] = useState("");
   const [pictureFile, setPictureFile] = useState<File | null>(null);
 
@@ -543,6 +565,8 @@ function ConfirmMaterialModal({
     const fd = new FormData();
     if (ang) fd.append("ang", String(Number(ang)));
     if (ayar) fd.append("ayar", String(Number(ayar)));
+    if (apparentWeight) fd.append("apparentWeight", String(Number(apparentWeight)));
+    if (wastage) fd.append("wastage", String(Number(wastage)));
     if (position) fd.append("warehouseIndexPosition", position);
     if (pictureFile) fd.append("picture", pictureFile);
     confirm.mutate(fd);
@@ -566,6 +590,25 @@ function ConfirmMaterialModal({
           <label>عیار</label>
           <input className="input" type="number" step="0.0001" value={ayar} onChange={(e) => setAyar(e.target.value)} />
         </div>
+        <div className="field">
+          <label>وزن ظاهری (گرم — توزین)</label>
+          <input className="input" type="number" step="any" value={apparentWeight}
+            placeholder="اختیاری؛ اگر با عیار وارد شود، وزن خالص خودکار محاسبه می‌شود"
+            onChange={(e) => setApparentWeight(e.target.value)} />
+        </div>
+        <div className="field">
+          <label>انگی / ضایعات (گرم)</label>
+          <input className="input" type="number" step="any" value={wastage}
+            onChange={(e) => setWastage(e.target.value)} placeholder="0" />
+        </div>
+        {Number(apparentWeight) > 0 && Number(ayar) > 0 && (
+          <div className="alert" style={{ backgroundColor: "var(--gold-bg)", border: "1px solid var(--gold)", padding: 10, borderRadius: 8, fontSize: 13 }}>
+            وزن خالص QC: <strong className="mono">{fmtNum((Number(apparentWeight) * Number(ayar)) / 750, 6)}g</strong>
+            {Math.abs((Number(apparentWeight) * Number(ayar)) / 750 - request.weight) > 0.00000001 && (
+              <span> (اعلامی: {fmtNum(request.weight, 6)}g — تفاوت ثبت خواهد شد)</span>
+            )}
+          </div>
+        )}
         <div className="field">
           <label>موقعیت در انبار</label>
           <input className="input" value={position} onChange={(e) => setPosition(e.target.value)} placeholder="مثال: A1-B2" />
@@ -948,11 +991,274 @@ function ApproveWithdrawModal({
   );
 }
 
+function SmartAllocationModal({
+  request,
+  onClose,
+}: {
+  request: WarehouseRequest;
+  onClose: () => void;
+}) {
+  const qc = useQueryClient();
+  const [selectedKey, setSelectedKey] = useState("");
+
+  const suggestionsQ = useQuery({
+    queryKey: ["allocation-suggestions", request.id],
+    queryFn: async (): Promise<AllocationOption[]> => {
+      return unwrap<AllocationOption[]>(
+        (await api.get(`/admin/warehouse/requests/${request.id}/allocation-suggestions`)).data
+      );
+    },
+  });
+
+  const apply = useMutation({
+    mutationFn: (optionKey: string) =>
+      api.post(`/admin/warehouse/requests/${request.id}/allocation-apply`, { optionKey }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["admin-requests"] });
+      qc.invalidateQueries({ queryKey: ["admin-pending-withdraw"] });
+      qc.invalidateQueries({ queryKey: ["admin-packets"] });
+      qc.invalidateQueries({ queryKey: ["admin-orphan-packets"] });
+      qc.invalidateQueries({ queryKey: ["warehouse-overview"] });
+      onClose();
+    },
+  });
+
+  const opts: AllocationOption[] = suggestionsQ.data ?? [];
+  const selected = opts.find((o) => o.optionKey === selectedKey);
+
+  const KIND_LABEL: Record<string, string> = {
+    "own-exact": "بسته کاربر — تطابق دقیق",
+    "own-fit": "بسته کاربر — تفکیک",
+    "orphan-exact": "بسته یتیم — تطابق دقیق",
+    "orphan-fit": "بسته یتیم — نزدیک‌ترین",
+    combination: "ترکیب بسته‌ها",
+  };
+
+  return (
+    <Modal title="تخصیص هوشمند بسته‌ها" onClose={onClose} wide>
+      <div style={{ display: "flex", flexDirection: "column", gap: 12, minWidth: 420 }}>
+        <div className="kv" style={{ marginBottom: 4 }}>
+          <span className="k">درخواست</span>
+          <span>{request.id?.slice(0, 8)}…</span>
+          <span className="k">وزن</span>
+          <span>{fmtNum(request.weight, 6)}g</span>
+        </div>
+
+        {suggestionsQ.isLoading ? (
+          <div>در حال محاسبه پیشنهادها…</div>
+        ) : suggestionsQ.isError ? (
+          <div className="error-text">{apiError(suggestionsQ.error)}</div>
+        ) : opts.length === 0 ? (
+          <div style={{ color: "var(--red)" }}>
+            هیچ پیشنهاد تخصیصی یافت نشد — ابتدا برای کاربر بسته ایجاد کنید یا بسته یتیم موجود کنید.
+          </div>
+        ) : (
+          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+            {opts.map((o) => (
+              <label
+                key={o.optionKey}
+                style={{
+                  display: "flex",
+                  gap: 8,
+                  padding: 10,
+                  border: "1px solid var(--border)",
+                  borderRadius: 8,
+                  cursor: "pointer",
+                  alignItems: "flex-start",
+                }}
+              >
+                <input
+                  type="radio"
+                  name="alloc"
+                  value={o.optionKey}
+                  checked={selectedKey === o.optionKey}
+                  onChange={() => setSelectedKey(o.optionKey)}
+                  style={{ marginTop: 3 }}
+                />
+                <div style={{ display: "flex", flexDirection: "column", gap: 4, flex: 1 }}>
+                  <div className="row" style={{ justifyContent: "space-between" }}>
+                    <strong>{KIND_LABEL[o.kind] ?? o.kind}</strong>
+                    <span className="mono">{fmtNum(o.deliveredWeight, 6)}g</span>
+                  </div>
+                  <div style={{ fontSize: 12, color: "var(--text-faint)" }}>{o.description}</div>
+                  {o.refundWeight > 0 && (
+                    <div style={{ fontSize: 12, color: "var(--green)" }}>
+                      بازگشت به کیف پول: {fmtNum(o.refundWeight, 6)}g
+                    </div>
+                  )}
+                  {o.splitsUserPacket && (
+                    <div style={{ fontSize: 12, color: "var(--gold)" }}>
+                      بسته کاربر تفکیک می‌شود و بسته جدیدی برای کاربر ایجاد می‌شود.
+                    </div>
+                  )}
+                </div>
+              </label>
+            ))}
+          </div>
+        )}
+
+        {apply.isError && <div className="error-text">{apiError(apply.error)}</div>}
+
+        <div className="row" style={{ justifyContent: "flex-end", gap: 8, marginTop: 12 }}>
+          <button className="btn ghost" type="button" onClick={onClose}>انصراف</button>
+          <button
+            className="btn primary"
+            disabled={apply.isPending || !selectedKey || !selected}
+            onClick={() => apply.mutate(selectedKey)}
+          >
+            {apply.isPending ? "در حال اعمال…" : `اعمال: ${selected?.packetIds.length ?? 0} بسته`}
+          </button>
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
+function SplitPacketModal({
+  packet,
+  onClose,
+}: {
+  packet: Packet;
+  onClose: () => void;
+}) {
+  const qc = useQueryClient();
+  const [parts, setParts] = useState([{ weight: "", ang: "", ayar: "", position: "" }]);
+  const [wastage, setWastage] = useState("");
+
+  const partsSum = parts.reduce((s, p) => s + (Number(p.weight) || 0), 0);
+  const waste = Number(wastage) || 0;
+  const delta = packet.pureWeight - (partsSum + waste);
+  const conserved = Math.abs(delta) < 0.00000001;
+
+  const save = useMutation({
+    mutationFn: (body: any) => api.post(`/admin/warehouse/packets/${packet.id}/split`, body),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["admin-packets"] });
+      qc.invalidateQueries({ queryKey: ["admin-orphan-packets"] });
+      qc.invalidateQueries({ queryKey: ["warehouse-overview"] });
+      onClose();
+    },
+  });
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!conserved) return;
+    save.mutate({
+      parts: parts
+        .filter((p) => Number(p.weight) > 0)
+        .map((p) => ({
+          weight: Number(p.weight),
+          ang: p.ang ? Number(p.ang) : undefined,
+          ayar: p.ayar ? Number(p.ayar) : undefined,
+          position: p.position || undefined,
+        })),
+      wastage: waste > 0 ? waste : undefined,
+    });
+  };
+
+  const updatePart = (i: number, field: string, value: string) => {
+    setParts((prev) => prev.map((p, idx) => (idx === i ? { ...p, [field]: value } : p)));
+  };
+
+  return (
+    <Modal title={`تقسیم بسته ${packet.idSecure}`} onClose={onClose} wide>
+      <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: 12, minWidth: 420 }}>
+        {save.isError && <div className="error-text">{apiError(save.error)}</div>}
+        <div className="kv" style={{ marginBottom: 4 }}>
+          <span className="k">وزن مادر</span>
+          <span className="mono">{fmtNum(packet.pureWeight, 6)}g</span>
+          <span className="k">مجموع بخش‌ها</span>
+          <span className="mono">{fmtNum(partsSum, 6)}g</span>
+          <span className="k">انگی</span>
+          <span className="mono">{fmtNum(waste, 6)}g</span>
+        </div>
+
+        <div
+          className="alert"
+          style={{
+            backgroundColor: conserved ? "var(--green-bg)" : "var(--gold-bg)",
+            border: `1px solid ${conserved ? "var(--green)" : "var(--gold)"}`,
+            padding: 12,
+            borderRadius: 8,
+            fontSize: 13,
+          }}
+        >
+          {conserved
+            ? "پایستگی جرم برقرار است: مجموع بخش‌ها + انگی = وزن مادر ✓"
+            : `اختلاف: ${fmtNum(Math.abs(delta), 6)}g ${delta > 0 ? "کمتر" : "بیشتر"} از وزن مادر — باید مجموع بخش‌ها + انگی برابر وزن مادر باشد.`}
+        </div>
+
+        {parts.map((p, i) => (
+          <div key={i} style={{ border: "1px solid var(--border)", borderRadius: 10, padding: 10, display: "flex", flexDirection: "column", gap: 8 }}>
+            <div className="row" style={{ justifyContent: "space-between" }}>
+              <strong>بخش {i + 1}</strong>
+              {parts.length > 1 && (
+                <button type="button" className="btn ghost sm" onClick={() => setParts((prev) => prev.filter((_, idx) => idx !== i))}>
+                  حذف
+                </button>
+              )}
+            </div>
+            <div className="row" style={{ gap: 8, flexWrap: "wrap" }}>
+              <div className="field" style={{ flex: 1 }}>
+                <label>وزن (گرم)</label>
+                <input className="input" type="number" step="any" value={p.weight}
+                  onChange={(e) => updatePart(i, "weight", e.target.value)} required />
+              </div>
+              <div className="field" style={{ flex: 1 }}>
+                <label>ANG</label>
+                <input className="input" type="number" step="any" value={p.ang}
+                  placeholder={packet.ang != null ? String(packet.ang) : ""}
+                  onChange={(e) => updatePart(i, "ang", e.target.value)} />
+              </div>
+              <div className="field" style={{ flex: 1 }}>
+                <label>AYAR</label>
+                <input className="input" type="number" step="any" value={p.ayar}
+                  placeholder={packet.ayar != null ? String(packet.ayar) : ""}
+                  onChange={(e) => updatePart(i, "ayar", e.target.value)} />
+              </div>
+              <div className="field" style={{ flex: 1 }}>
+                <label>موقعیت</label>
+                <input className="input" type="text" value={p.position}
+                  placeholder={packet.warehouseIndexPosition}
+                  onChange={(e) => updatePart(i, "position", e.target.value)} />
+              </div>
+            </div>
+          </div>
+        ))}
+
+        <div className="row" style={{ gap: 8 }}>
+          <div className="field" style={{ flex: 1 }}>
+            <label>انگی / ضایعات (گرم)</label>
+            <input className="input" type="number" step="any" value={wastage}
+              onChange={(e) => setWastage(e.target.value)} placeholder="0" />
+          </div>
+          <div className="field" style={{ flex: 1 }}>
+            <label>بخش جدید</label>
+            <button type="button" className="btn" style={{ width: "100%" }}
+              onClick={() => setParts((prev) => [...prev, { weight: "", ang: "", ayar: "", position: "" }])}>
+              + افزودن بخش
+            </button>
+          </div>
+        </div>
+
+        <div className="row" style={{ justifyContent: "flex-end", gap: 8, marginTop: 12 }}>
+          <button className="btn ghost" type="button" onClick={onClose}>انصراف</button>
+          <button className="btn primary" type="submit" disabled={save.isPending || !conserved || partsSum <= 0}>
+            {save.isPending ? "در حال تقسیم…" : "تقسیم بسته"}
+          </button>
+        </div>
+      </form>
+    </Modal>
+  );
+}
+
 function SettlementReleaseForm({ onClose }: { onClose: () => void }) {
   const qc = useQueryClient();
   const [warehouseId, setWarehouseId] = useState("");
   const [providerKey, setProviderKey] = useState("");
   const [pureWeight, setPureWeight] = useState("");
+  const [apparentWeight, setApparentWeight] = useState("");
+  const [ayar, setAyar] = useState("");
   const [picture, setPicture] = useState<File | null>(null);
 
   const release = useMutation({
@@ -975,8 +1281,19 @@ function SettlementReleaseForm({ onClose }: { onClose: () => void }) {
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    release.mutate({ warehouseId, providerKey, pureWeight: Number(pureWeight) });
+    release.mutate({
+      warehouseId,
+      providerKey,
+      pureWeight: Number(pureWeight),
+      apparentWeight: apparentWeight ? Number(apparentWeight) : undefined,
+      ayar: ayar ? Number(ayar) : undefined,
+    });
   };
+
+  const qcNet =
+    Number(apparentWeight) > 0 && Number(ayar) > 0
+      ? (Number(apparentWeight) * Number(ayar)) / 750
+      : null;
 
   return (
     <Modal title="انتشار مواد تسویه" onClose={onClose}>
@@ -995,6 +1312,21 @@ function SettlementReleaseForm({ onClose }: { onClose: () => void }) {
           <input className="input" type="number" step="0.00000001" value={pureWeight}
             onChange={(e) => setPureWeight(e.target.value)} required />
         </div>
+        <div className="field">
+          <label>وزن ظاهری (گرم — توزین)</label>
+          <input className="input" type="number" step="any" value={apparentWeight}
+            placeholder="اختیاری؛ با عیار، وزن خالص = ظاهری × عیار ÷ ۷۵۰"
+            onChange={(e) => setApparentWeight(e.target.value)} />
+        </div>
+        <div className="field">
+          <label>عیار</label>
+          <input className="input" type="number" step="any" value={ayar} onChange={(e) => setAyar(e.target.value)} />
+        </div>
+        {qcNet !== null && (
+          <div className="alert" style={{ backgroundColor: "var(--gold-bg)", border: "1px solid var(--gold)", padding: 10, borderRadius: 8, fontSize: 13 }}>
+            وزن خالص محاسبه‌شده: <strong className="mono">{fmtNum(qcNet, 6)}g</strong>
+          </div>
+        )}
         <div className="field">
           <label>تصویر (اختیاری)</label>
           <input className="input" type="file" accept="image/*" onChange={(e) => setPicture(e.target.files?.[0] ?? null)} />
@@ -1083,6 +1415,8 @@ export default function WarehousePage() {
   const [requestDetailId, setRequestDetailId] = useState<string | null>(null);
   const [warehouseDetailId, setWarehouseDetailId] = useState<string | null>(null);
   const [assignPacketReq, setAssignPacketReq] = useState<WarehouseRequest | null>(null);
+  const [smartAllocReq, setSmartAllocReq] = useState<WarehouseRequest | null>(null);
+  const [splitPacket, setSplitPacket] = useState<Packet | null>(null);
 
   // Queries
   const overview = useQuery({
@@ -1342,6 +1676,7 @@ export default function WarehousePage() {
                       <td>
                         <div className="row" style={{ gap: 4 }}>
                         <button className="btn sm" onClick={() => setPacketDetailId(p.id)}>جزئیات</button>
+                        <button className="btn sm" disabled={p.status !== "IN_WAREHOUSE" && p.status !== "ORPHAN"} onClick={() => setSplitPacket(p)}>تقسیم</button>
                         <select
                           className="input"
                           style={{ fontSize: 11, padding: "4px 6px", width: 110 }}
@@ -1366,6 +1701,7 @@ export default function WarehousePage() {
             </div>
           )}
           {showPacketForm && <PacketForm onClose={() => setShowPacketForm(false)} />}
+          {splitPacket && <SplitPacketModal packet={splitPacket} onClose={() => setSplitPacket(null)} />}
         </>
       )}
 
@@ -1455,6 +1791,9 @@ export default function WarehousePage() {
                                 <button className="btn sm primary" onClick={() => setApproveWithdrawReq(r)}>
                                   تایید و تفکیک
                                 </button>
+                                <button className="btn sm" onClick={() => setSmartAllocReq(r)}>
+                                  تخصیص هوشمند
+                                </button>
                                 <button className="btn sm" onClick={() => setAssignPacketReq(r)}>
                                   اختصاص بسته یتیم
                                 </button>
@@ -1470,6 +1809,7 @@ export default function WarehousePage() {
             </div>
           )}
           {approveWithdrawReq && <ApproveWithdrawModal request={approveWithdrawReq} onClose={() => setApproveWithdrawReq(null)} />}
+          {smartAllocReq && <SmartAllocationModal request={smartAllocReq} onClose={() => setSmartAllocReq(null)} />}
         </>
       )}
 

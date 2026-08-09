@@ -162,6 +162,8 @@ export interface Packet {
   warehouseIndexPosition?: string;
   ang?: number;
   ayar?: number;
+  apparentWeight?: number;
+  wastage?: number;
   picture?: string;
   user?: any;
   userId?: string;
@@ -169,6 +171,18 @@ export interface Packet {
   isOrphan: boolean;
   batchNumber?: string;
   createAt?: string;
+  [k: string]: any;
+}
+
+export interface AllocationOption {
+  kind: "own-exact" | "own-fit" | "orphan-exact" | "orphan-fit" | "combination";
+  optionKey: string;
+  title: string;
+  packetIds: string[];
+  deliveredWeight: number;
+  refundWeight: number;
+  splitsUserPacket: boolean;
+  description: string;
   [k: string]: any;
 }
 

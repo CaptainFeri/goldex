@@ -1,9 +1,10 @@
 import { Module } from "@nestjs/common";
-import { HttpModule } from "@nestjs/axios";
 import { CbpAdminController } from "./cbp-admin.controller";
+import { CbpAdminService } from "./cbp-admin.service";
 
 @Module({
-  imports: [HttpModule],
+  providers: [CbpAdminService],
   controllers: [CbpAdminController],
+  exports: [CbpAdminService],
 })
 export class CbpAdminModule {}

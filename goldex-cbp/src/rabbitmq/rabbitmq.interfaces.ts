@@ -5,6 +5,10 @@ export enum CbpMessagePatterns {
   PAYMENT_REQUEST_WITHDRAW_APPROVE = "payment.request.withdraw.approve",
   SYMBOL_SYNC = "symbol.sync",
 
+  // Admin queries from goldex-backend (RabbitMQ RPC: request -> response)
+  CBP_ADMIN_REQUEST = "cbp.admin.request",
+  CBP_ADMIN_RESPONSE = "cbp.admin.response",
+
   // Events published to goldex-backend
   PAYMENT_PROCESSING = "payment.processing",
   PAYMENT_SUCCEEDED = "payment.succeeded",
@@ -74,5 +78,20 @@ export interface PaymentEventMessage {
   identifier?: string;
   ipgReference?: string;
   gatewayUrl?: string;
+  error?: string;
+}
+
+/** Admin query received from goldex-backend over RabbitMQ. */
+export interface CbpAdminRequestMessage {
+  requestId: string;
+  action: "health" | "gateways" | "payments" | "payment";
+  params?: Record<string, any>;
+}
+
+/** Admin query reply published back to goldex-backend. */
+export interface CbpAdminResponseMessage {
+  requestId: string;
+  ok: boolean;
+  result?: any;
   error?: string;
 }

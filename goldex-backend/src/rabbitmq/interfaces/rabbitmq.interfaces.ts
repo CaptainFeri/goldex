@@ -31,6 +31,10 @@ export enum MessagePatterns {
   PAYMENT_SUCCEEDED = 'payment.succeeded',
   PAYMENT_FAILED = 'payment.failed',
   PAYMENT_REJECTED = 'payment.rejected',
+
+  // CBP admin RPC (request -> cbp, cbp replies on the response pattern)
+  CBP_ADMIN_REQUEST = 'cbp.admin.request',
+  CBP_ADMIN_RESPONSE = 'cbp.admin.response',
 }
 
 export interface RabbitMQMessage {

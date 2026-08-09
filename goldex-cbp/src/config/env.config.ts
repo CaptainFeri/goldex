@@ -39,5 +39,4 @@ export default registerAs("app", () => ({
     sourceAccount: process.env.SHAHIN_SOURCE_ACCOUNT ?? "",
     timeoutMs: process.env.SHAHIN_REQUEST_TIMEOUT ?? "60000",
   },
-  adminApiKey: process.env.CBP_ADMIN_API_KEY ?? "",
 }));

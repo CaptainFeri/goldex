@@ -26,6 +26,8 @@ import { TransactionTypeEnum } from "../../wallet/enum/transaction.type.enum";
 import { TransactionStatusEnum } from "../../wallet/enum/transaction.status.enum";
 import { PacketService } from "./packet.service";
 import { SmsService } from "../../sms/sms.service";
+import { AllocationService, AllocationOption } from "./allocation.service";
+import { TOLERANCE_GRAMS, computeNetWeight } from "../constants/warehouse.constants";
 
 Decimal.set({
   precision: 20,
@@ -52,6 +54,7 @@ export class WarehouseRequestService {
     private readonly warehouseService: WarehouseService,
     private readonly packetService: PacketService,
     private readonly smsService: SmsService,
+    private readonly allocationService: AllocationService,
     private readonly dataSource: DataSource
   ) {}
 
@@ -264,7 +267,7 @@ export class WarehouseRequestService {
   async confirmDepositMaterial(
     requestId: string,
     adminId: string,
-    materialData?: { ang?: number; ayar?: number; picture?: string; warehouseIndexPosition?: string }
+    materialData?: { ang?: number; ayar?: number; apparentWeight?: number; wastage?: number; picture?: string; warehouseIndexPosition?: string }
   ): Promise<WarehouseRequestEntity> {
     const queryRunner = this.dataSource.createQueryRunner();
     await queryRunner.connect();
@@ -309,6 +312,20 @@ export class WarehouseRequestService {
         if (materialData.ayar !== undefined) packet.ayar = materialData.ayar;
         if (materialData.picture !== undefined) packet.picture = materialData.picture;
         if (materialData.warehouseIndexPosition !== undefined) packet.warehouseIndexPosition = materialData.warehouseIndexPosition;
+
+        // Packing & QC rule: when the scale reads apparent weight + fineness is measured,
+        // the REAL net weight is (apparent x fineness) / 750 regardless of declaration.
+        if (
+          materialData.apparentWeight !== undefined &&
+          materialData.apparentWeight > 0 &&
+          materialData.ayar !== undefined &&
+          materialData.ayar > 0
+        ) {
+          const qcNet = computeNetWeight(materialData.apparentWeight, materialData.ayar);
+          packet.pureWeight = qcNet;
+          packet.apparentWeight = materialData.apparentWeight;
+          if (materialData.wastage !== undefined) packet.wastage = materialData.wastage;
+        }
       }
 
       packet.status = PacketStatusEnum.IN_WAREHOUSE;
@@ -316,7 +333,7 @@ export class WarehouseRequestService {
       await queryRunner.manager.save(packet);
       request.packet = packet;
 
-      await this.warehouseService.updateCapacity(request.warehouseId, request.weight, queryRunner);
+      await this.warehouseService.updateCapacity(request.warehouseId, packet.pureWeight ?? request.weight, queryRunner);
 
       request.status = RequestStatusEnum.COMPLETED;
       request.adminId = adminId;
@@ -324,7 +341,22 @@ export class WarehouseRequestService {
       await queryRunner.manager.save(request);
 
       const wallet = await this.getWalletForUpdate(queryRunner, request.userId, request.symbolId);
-      const decimalAmount = new Decimal(request.weight);
+      const decimalAmount = new Decimal(packet.pureWeight ?? request.weight);
+
+      if (packet.pureWeight !== request.weight) {
+        await this.addHistory(queryRunner, {
+          warehouseId: request.warehouseId,
+          packetId: packet.id,
+          requestId: request.id,
+          action: "QC_WEIGHT_RECALC",
+          description:
+            `QC: apparent ${materialData?.apparentWeight}g x fineness ${materialData?.ayar} / 750 = net ${packet.pureWeight}g ` +
+            `(declared ${request.weight}g)`,
+          performedBy: adminId,
+          performedRole: "ADMIN",
+          metadata: { declaredWeight: request.weight, netWeight: packet.pureWeight, apparentWeight: materialData?.apparentWeight },
+        });
+      }
 
       wallet.freeBalance = new Decimal(wallet.freeBalance).plus(decimalAmount).toNumber();
       await queryRunner.manager.save(wallet);
@@ -622,6 +654,31 @@ export class WarehouseRequestService {
    */
   private async returnPacketToPool(queryRunner: any, request: WarehouseRequestEntity, packet: PacketEntity): Promise<void> {
     const assignedSource = request.metadata?.assignedSource || "orphan";
+    const allocation = request.metadata?.allocation;
+
+    if (allocation?.strategy === "combination" && allocation?.packetIds?.length) {
+      for (const pid of allocation.packetIds) {
+        const p = await queryRunner.manager.findOne(PacketEntity, {
+          where: { id: pid },
+          lock: { mode: "pessimistic_write" },
+        });
+        if (!p) continue;
+        p.userId = null;
+        p.isOrphan = true;
+        p.status = PacketStatusEnum.ORPHAN;
+        p.deliveryTime = null;
+        await queryRunner.manager.save(p);
+      }
+      await this.addHistory(queryRunner, {
+        requestId: request.id,
+        packetId: packet.id,
+        warehouseId: packet.warehouseId,
+        action: "PACKET_COMBINATION_RETURNED_TO_POOL",
+        description: `Combination packets returned to orphan pool after request ${request.id}`,
+        metadata: { ...allocation },
+      });
+      return;
+    }
 
     if (assignedSource === "orphan") {
       packet.userId = null;
@@ -646,26 +703,51 @@ export class WarehouseRequestService {
   }
 
   private async processOutputCompletion(queryRunner: any, request: WarehouseRequestEntity): Promise<void> {
-    if (!request.packet) {
-      throw new BadRequestException("No packet associated with this withdrawal request");
-    }
-
     const requested = new Decimal(request.weight);
-    const packetWeight = new Decimal(request.packet.pureWeight);
 
     let exitedWeight: Decimal;
+    const allocation = request.metadata?.allocation;
 
-    if (packetWeight.greaterThan(requested)) {
-      await this.packetService.splitPacket(request.packet.id, request.weight, queryRunner);
-      exitedWeight = requested;
+    if (allocation?.strategy === "combination" && allocation?.packetIds?.length) {
+      const packetIds: string[] = allocation.packetIds;
+      let totalExited = new Decimal(0);
+
+      for (const pid of packetIds) {
+        const p = await queryRunner.manager.findOne(PacketEntity, {
+          where: { id: pid },
+          lock: { mode: "pessimistic_write" },
+        });
+        if (!p) continue;
+        p.status = PacketStatusEnum.WITHDRAWN;
+        p.deliveryTime = new Date();
+        await queryRunner.manager.save(p);
+        totalExited = totalExited.plus(new Decimal(p.pureWeight));
+      }
+
+      exitedWeight = totalExited;
     } else {
-      request.packet.status = PacketStatusEnum.WITHDRAWN;
-      request.packet.deliveryTime = new Date();
-      await queryRunner.manager.save(request.packet);
-      exitedWeight = packetWeight;
+      if (!request.packet) {
+        throw new BadRequestException("No packet associated with this withdrawal request");
+      }
+
+      const packetWeight = new Decimal(request.packet.pureWeight);
+
+      if (packetWeight.greaterThan(requested)) {
+        await this.packetService.splitPacket(request.packet.id, request.weight, queryRunner);
+        exitedWeight = requested;
+      } else {
+        request.packet.status = PacketStatusEnum.WITHDRAWN;
+        request.packet.deliveryTime = new Date();
+        await queryRunner.manager.save(request.packet);
+        exitedWeight = packetWeight;
+      }
     }
 
-    const refundedWeight = requested.minus(exitedWeight);
+    // Tolerance threshold (warehouse-roadmap.html §4): differences <= 0.05g are zeroed.
+    const rawRefund = requested.minus(exitedWeight);
+    const refundedWeight = rawRefund.greaterThan(0) && rawRefund.lessThanOrEqualTo(TOLERANCE_GRAMS)
+      ? new Decimal(0)
+      : rawRefund;
 
     await this.warehouseService.updateCapacity(request.warehouseId, -exitedWeight.toNumber(), queryRunner);
 
@@ -674,6 +756,11 @@ export class WarehouseRequestService {
     wallet.lockedBalance = new Decimal(wallet.lockedBalance).minus(requested).toNumber();
     if (refundedWeight.greaterThan(0)) {
       wallet.freeBalance = new Decimal(wallet.freeBalance).plus(refundedWeight).toNumber();
+    } else if (refundedWeight.lessThan(0) && !allocation?.packetIds?.length) {
+      // Over-delivery beyond the request without prior allocation metadata is not allowed.
+      throw new BadRequestException(
+        `Delivered package weight (${exitedWeight.toString()}) exceeds the requested amount (${requested.toString()})`
+      );
     }
     await queryRunner.manager.save(wallet);
 
@@ -765,6 +852,145 @@ export class WarehouseRequestService {
       relations: { user: true, warehouse: true },
       order: { createAt: "ASC" },
     });
+  }
+
+  async getAllocationSuggestions(requestId: string): Promise<AllocationOption[]> {
+    return this.allocationService.suggestForRequest(requestId);
+  }
+
+  /**
+   * Applies a smart-allocation option to a pending withdraw request
+   * (warehouse-roadmap.html §3): exact match, best-fit below, user packet
+   * split, or a min-count combination of orphan packages.
+   */
+  async applyAllocationOption(
+    requestId: string,
+    adminId: string,
+    optionKey: string
+  ): Promise<WarehouseRequestEntity> {
+    const { kind, packetIds } = this.allocationService.parseOptionKey(optionKey);
+    if (!kind) throw new BadRequestException("Missing allocation strategy");
+
+    if (kind === "orphan-exact" || kind === "orphan-fit") {
+      if (packetIds.length !== 1) throw new BadRequestException("This strategy expects exactly one orphan packet");
+      return this.assignPacketToRequest(requestId, packetIds[0], adminId);
+    }
+
+    if (kind === "own-exact" || kind === "own-fit") {
+      if (packetIds.length !== 1) throw new BadRequestException("This strategy expects exactly one user packet");
+      const dto = new ApproveWithdrawOutputDto();
+      dto.packetId = packetIds[0];
+      // empty weight1 means the service slices exactly the requested weight
+      return this.approveWithdrawForOutput(requestId, adminId, dto);
+    }
+
+    if (kind === "combination") {
+      return this.applyCombinationAllocation(requestId, adminId, packetIds);
+    }
+
+    throw new BadRequestException(`Unknown allocation strategy: ${kind}`);
+  }
+
+  /**
+   * Allocates a combination of orphan packages to an OUTPUT request.
+   * Combines the chosen orphan packets into one delivery: the packets are
+   * marked as the user's (IN_WAREHOUSE), the request stores the allocation
+   * metadata, and delivery refunds the digital difference at completion.
+   */
+  private async applyCombinationAllocation(
+    requestId: string,
+    adminId: string,
+    packetIds: string[]
+  ): Promise<WarehouseRequestEntity> {
+    const queryRunner = this.dataSource.createQueryRunner();
+    await queryRunner.connect();
+    await queryRunner.startTransaction();
+
+    try {
+      const request = await queryRunner.manager.findOne(WarehouseRequestEntity, {
+        where: { id: requestId, type: RequestTypeEnum.OUTPUT },
+        lock: { mode: "pessimistic_write" },
+      });
+
+      if (!request) throw new NotFoundException("Request not found");
+      if (request.status !== RequestStatusEnum.PENDING) {
+        throw new BadRequestException(`Only PENDING requests can be allocated (status: ${request.status})`);
+      }
+      if (request.packetId) throw new BadRequestException("REQUEST_ALREADY_HAS_PACKET");
+
+      const packets: PacketEntity[] = [];
+      let totalWeight = new Decimal(0);
+
+      for (const packetId of packetIds) {
+        const packet = await queryRunner.manager.findOne(PacketEntity, {
+          where: { id: packetId },
+          lock: { mode: "pessimistic_write" },
+          relations: { warehouse: true },
+        });
+        if (!packet) throw new NotFoundException(`Packet not found: ${packetId}`);
+        if (!packet.isOrphan || packet.status !== PacketStatusEnum.ORPHAN) {
+          throw new BadRequestException(`Packet ${packet.idSecure} is not an available orphan packet`);
+        }
+        packets.push(packet);
+        totalWeight = totalWeight.plus(new Decimal(packet.pureWeight));
+      }
+
+      for (const packet of packets) {
+        packet.userId = request.userId;
+        packet.isOrphan = false;
+        packet.status = PacketStatusEnum.IN_WAREHOUSE;
+        await queryRunner.manager.save(packet);
+      }
+
+      request.packetId = packets[0].id;
+      request.packet = packets[0];
+      request.warehouseId = packets[0].warehouseId;
+      request.adminId = adminId;
+      request.status = RequestStatusEnum.APPROVED;
+      request.processedAt = new Date();
+      request.metadata = {
+        ...(request.metadata || {}),
+        allocation: {
+          strategy: "combination",
+          packetIds: packets.map((p) => p.id),
+          totalWeight: totalWeight.toNumber(),
+          refundWeight: Math.max(0, new Decimal(request.weight).minus(totalWeight).toNumber()),
+        },
+      };
+
+      const warehouse = packets[0].warehouse || null;
+      if (warehouse) {
+        const deliveryInfo = this.getDeliveryInfoFromWarehouse(warehouse);
+        request.deliveryDate = deliveryInfo.date;
+        request.deliveryTime = request.deliveryTime || deliveryInfo.time || warehouse.timeLimit || null;
+        request.deliveryLocation = request.deliveryLocation || warehouse.location || null;
+      }
+
+      await queryRunner.manager.save(request);
+
+      await this.addHistory(queryRunner, {
+        requestId: request.id,
+        packetId: request.packetId,
+        warehouseId: request.warehouseId,
+        action: "PACKET_COMBINATION_ASSIGNED",
+        description:
+          `Combination of ${packets.length} orphan packets (${totalWeight.toString()}g) assigned to withdraw request ${request.id} by admin ${adminId}`,
+        performedBy: adminId,
+        performedRole: "ADMIN",
+        metadata: { packetIds: packets.map((p) => p.id), totalWeight: totalWeight.toString() },
+      });
+
+      await this.syncLinkedRecord(queryRunner, request);
+      await queryRunner.commitTransaction();
+      this.logger.log(`Combination allocation applied to request ${requestId}`);
+
+      return this.getRequestById(request.id);
+    } catch (error) {
+      await queryRunner.rollbackTransaction();
+      throw error;
+    } finally {
+      await queryRunner.release();
+    }
   }
 
   async assignPacketToRequest(requestId: string, packetId: string, adminId: string): Promise<WarehouseRequestEntity> {

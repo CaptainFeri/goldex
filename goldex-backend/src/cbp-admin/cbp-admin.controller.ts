@@ -1,53 +1,31 @@
 import { Controller, Get, Param, Query, UseGuards } from "@nestjs/common";
-import { HttpService } from "@nestjs/axios";
-import { ConfigService } from "@nestjs/config";
-import { firstValueFrom } from "rxjs";
 import { AdminAuthGuard } from "../admin/auth/Guard/admin.guard";
 import { AdminRolesGuard } from "../admin/auth/Guard/admin.role.guard";
 import { AdminRoles } from "../admin/role/admin.role.decorator";
 import { AdminRole } from "../admin/role/admin.roles.enum";
+import { CbpAdminService } from "./cbp-admin.service";
 
 /**
- * Proxy for the CBP admin surface. goldex-cbp is never exposed publicly —
- * the admin panel reaches its health checks and payment logs through this
- * controller, which forwards to the internal service with the admin key.
+ * Admin panel entry point for the goldex-cbp admin surface. goldex-cbp is
+ * headless (no HTTP API); every query is forwarded over RabbitMQ and the
+ * response is awaited via the matching reply pattern.
  */
 @Controller("admin/cbp")
 export class CbpAdminController {
-  private readonly cbpUrl: string;
-  private readonly adminKey: string;
-
-  constructor(
-    private readonly http: HttpService,
-    config: ConfigService,
-  ) {
-    const base = config.get("cbp", { infer: true }).url.replace(/\/+$/, "");
-    this.cbpUrl = `${base}/api/v1/admin/cbp`;
-    this.adminKey = process.env.GOLDEX_CBP_ADMIN_KEY ?? "";
-  }
-
-  private async forward<T>(path: string, params?: Record<string, any>): Promise<T> {
-    const { data } = await firstValueFrom(
-      this.http.get<T>(`${this.cbpUrl}${path}`, {
-        params,
-        headers: { "X-Admin-Key": this.adminKey },
-      }),
-    );
-    return data;
-  }
+  constructor(private readonly cbpAdmin: CbpAdminService) {}
 
   @Get("health")
   @UseGuards(AdminAuthGuard, AdminRolesGuard)
   @AdminRoles(AdminRole.ADMIN)
   async health() {
-    return this.forward("/health");
+    return this.cbpAdmin.health();
   }
 
   @Get("gateways")
   @UseGuards(AdminAuthGuard, AdminRolesGuard)
   @AdminRoles(AdminRole.ADMIN)
   async gateways() {
-    return this.forward("/gateways");
+    return this.cbpAdmin.gateways();
   }
 
   @Get("payments")
@@ -63,7 +41,7 @@ export class CbpAdminController {
     @Query("externalReference") externalReference?: string,
     @Query("identifier") identifier?: string,
   ) {
-    return this.forward("/payments", {
+    return this.cbpAdmin.payments({
       page,
       limit,
       status,
@@ -79,6 +57,6 @@ export class CbpAdminController {
   @UseGuards(AdminAuthGuard, AdminRolesGuard)
   @AdminRoles(AdminRole.ADMIN)
   async payment(@Param("id") id: string) {
-    return this.forward(`/payments/${id}`);
+    return this.cbpAdmin.payment(id);
   }
 }

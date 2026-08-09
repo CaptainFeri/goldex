@@ -4,6 +4,7 @@ import { AdminWarehouseController } from "./admin-warehouse.controller";
 import { WarehouseService } from "../service/warehouse.service";
 import { PacketService } from "../service/packet.service";
 import { WarehouseRequestService } from "../service/warehouse-request.service";
+import { AllocationService } from "../service/allocation.service";
 import { WarehouseEntity } from "../entity/warehouse.entity";
 import { PacketEntity } from "../entity/packet.entity";
 import { WarehouseRequestEntity } from "../entity/warehouse-request.entity";
@@ -31,7 +32,7 @@ import { AdminScheduleModule } from "../../admin-schedule/admin-schedule.module"
     AdminScheduleModule,
   ],
   controllers: [AdminWarehouseController],
-  providers: [WarehouseService, PacketService, WarehouseRequestService],
-  exports: [WarehouseService, PacketService, WarehouseRequestService],
+  providers: [WarehouseService, PacketService, WarehouseRequestService, AllocationService],
+  exports: [WarehouseService, PacketService, WarehouseRequestService, AllocationService],
 })
 export class AdminWarehouseModule {}

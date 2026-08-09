@@ -53,6 +53,15 @@ export class PacketEntity extends myBaseEntity {
   @Column({ type: "decimal", precision: 10, scale: 4, nullable: true })
   ayar: number;
 
+  @Column({ type: "decimal", precision: 20, scale: 8, name: "apparent_weight", nullable: true })
+  apparentWeight: number;
+
+  @Column({ type: "decimal", precision: 20, scale: 8, nullable: true })
+  wastage: number;
+
+  @Column({ type: "uuid", name: "parent_id", nullable: true })
+  parentId: string;
+
   @Column({ type: "varchar", length: 500, nullable: true })
   picture: string;
 

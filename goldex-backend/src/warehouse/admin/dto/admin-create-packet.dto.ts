@@ -28,11 +28,26 @@ export class AdminCreatePacketDto {
   @IsOptional()
   ang?: number;
 
-  @ApiPropertyOptional({ description: "AYAR" })
+  @ApiPropertyOptional({ description: "AYAR (fineness)" })
   @Type(() => Number)
   @IsNumber()
   @IsOptional()
   ayar?: number;
+
+  @ApiPropertyOptional({
+    description: "Apparent weight (وزن ظاهری) read from the scale. When provided together with AYAR, " +
+      "the net weight is auto-computed as (apparent x fineness) / 750",
+  })
+  @Type(() => Number)
+  @IsNumber()
+  @IsOptional()
+  apparentWeight?: number;
+
+  @ApiPropertyOptional({ description: "Wastage (انگی) in grams" })
+  @Type(() => Number)
+  @IsNumber()
+  @IsOptional()
+  wastage?: number;
 
   @ApiPropertyOptional({ description: "Picture file path" })
   @IsString()
