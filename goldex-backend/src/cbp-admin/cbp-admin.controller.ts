@@ -18,14 +18,14 @@ export class CbpAdminController {
   @UseGuards(AdminAuthGuard, AdminRolesGuard)
   @AdminRoles(AdminRole.ADMIN)
   async health() {
-    return this.cbpAdmin.health();
+    return { data: await this.cbpAdmin.health() };
   }
 
   @Get("gateways")
   @UseGuards(AdminAuthGuard, AdminRolesGuard)
   @AdminRoles(AdminRole.ADMIN)
   async gateways() {
-    return this.cbpAdmin.gateways();
+    return { data: await this.cbpAdmin.gateways() };
   }
 
   @Get("payments")
@@ -39,9 +39,9 @@ export class CbpAdminController {
     @Query("gatewayCode") gatewayCode?: string,
     @Query("userId") userId?: string,
     @Query("externalReference") externalReference?: string,
-    @Query("identifier") identifier?: string,
+    @Query("identifier") identifier?: string
   ) {
-    return this.cbpAdmin.payments({
+    return { data: await this.cbpAdmin.payments({
       page,
       limit,
       status,
@@ -50,13 +50,13 @@ export class CbpAdminController {
       userId,
       externalReference,
       identifier,
-    });
+    }) };
   }
 
   @Get("payments/:id")
   @UseGuards(AdminAuthGuard, AdminRolesGuard)
   @AdminRoles(AdminRole.ADMIN)
   async payment(@Param("id") id: string) {
-    return this.cbpAdmin.payment(id);
+    return { data: await this.cbpAdmin.payment(id) };
   }
 }
