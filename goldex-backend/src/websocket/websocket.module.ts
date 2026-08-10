@@ -11,12 +11,13 @@ import { AdminPairModule } from "../admin-pair/admin-pair.module";
 import { AdminPairService } from "../admin-pair/admin-pair.service";
 import { SymbolEntity } from "../admin-symbol/entity/symbol.entity";
 import { UserMarketTypeEntity } from "../user/entity/user.market.type.entity";
+import { UserEntity } from "../user/entity/user.entity";
 import { RedisModule } from "../redis/redis.module";
 
 @Module({
   imports: [
     ScheduleModule.forRoot(),
-    TypeOrmModule.forFeature([PricePairEntity, SymbolEntity, UserMarketTypeEntity]),
+    TypeOrmModule.forFeature([PricePairEntity, SymbolEntity, UserMarketTypeEntity, UserEntity]),
     AdminPairModule,
     RedisModule,
     JwtModule.registerAsync({

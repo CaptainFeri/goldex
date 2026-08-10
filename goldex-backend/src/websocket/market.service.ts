@@ -4,6 +4,8 @@ import { Repository } from "typeorm";
 import { PricePairEntity } from "../admin-pair/entity/price.pair.entity";
 import { SymbolEntity } from "../admin-symbol/entity/symbol.entity";
 import { UserMarketTypeEntity } from "../user/entity/user.market.type.entity";
+import { UserEntity } from "../user/entity/user.entity";
+import { defaultMarketTypesForRole } from "../shared/market-access.helper";
 import { Cron, CronExpression } from "@nestjs/schedule";
 import { RabbitMQService } from "../rabbitmq/rabbitmq.service";
 import {
@@ -52,6 +54,8 @@ export class MarketService implements OnModuleInit {
     private readonly symbolRepo: Repository<SymbolEntity>,
     @InjectRepository(UserMarketTypeEntity)
     private readonly userMarketTypeRepo: Repository<UserMarketTypeEntity>,
+    @InjectRepository(UserEntity)
+    private readonly userRepo: Repository<UserEntity>,
     private readonly rmq: RabbitMQService,
   ) {}
 
@@ -255,9 +259,16 @@ export class MarketService implements OnModuleInit {
     }
   }
 
-  async getUserMarketTypes(userId: string): Promise<string[]> {
-    const records = await this.userMarketTypeRepo.find({ where: { userId } });
-    return records.map((r) => r.marketType);
+  // Effective market types for price filtering: explicit rows win, otherwise the
+  // role defaults apply (CUSTOMER → formal only, PARTNER → formal + informal).
+  async getEffectiveMarketTypes(userId: string): Promise<string[]> {
+    const [user, records] = await Promise.all([
+      this.userRepo.findOne({ where: { id: userId } }),
+      this.userMarketTypeRepo.find({ where: { userId } }),
+    ]);
+    if (records.length > 0) return records.map((r) => r.marketType);
+    if (!user) return [];
+    return defaultMarketTypesForRole(user.role);
   }
 
   async getMarketData(baseCode?: string, quoteCode?: string, limit: number = 50) {

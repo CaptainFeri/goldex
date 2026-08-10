@@ -89,9 +89,11 @@ export class MarketGateway implements OnGatewayInit, OnGatewayConnection, OnGate
         if (!userId) return;
         client.data.userId = userId;
 
-        // Load user's market type restrictions
+        // Load the user's effective market types (role defaults when no
+        // explicit assignment), so price broadcasts and market data follow the
+        // same rules as the REST pairs endpoint.
         try {
-          const mts = await this.marketService.getUserMarketTypes(userId);
+          const mts = await this.marketService.getEffectiveMarketTypes(userId);
           client.data.marketTypes = mts;
         } catch {
           client.data.marketTypes = [];

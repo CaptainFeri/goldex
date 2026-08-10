@@ -13,6 +13,7 @@ import KycPage from './pages/KycPage'
 import SessionsPage from './pages/SessionsPage'
 import SettingsPage from './pages/SettingsPage'
 import EliteTradePage from './pages/EliteTradePage'
+import OfferPage from './pages/OfferPage'
 import CreditPage from './pages/CreditPage'
 import LevelPage from './pages/LevelPage'
 import NotificationPage from './pages/NotificationPage'
@@ -36,6 +37,7 @@ export default function App() {
         >
           <Route path="/trade" element={<TradePage />} />
           <Route path="/elite-trade" element={<EliteTradePage />} />
+          <Route path="/offer" element={<OfferPage />} />
           <Route path="/wallet" element={<WalletPage />} />
           <Route path="/warehouse" element={<WarehousePage />} />
           <Route path="/profile" element={<ProfilePage />} />

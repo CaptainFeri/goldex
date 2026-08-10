@@ -22,11 +22,20 @@ function CreditIcon() {
 }
 
 const SECONDARY_NAV_KEYS = [
+  { key: 'offer', path: '/offer', icon: OfferIcon },
   { key: 'credit', path: '/credit', icon: CreditIcon },
   { key: 'verification', path: '/kyc', icon: ShieldIcon },
   { key: 'sessions', path: '/sessions', icon: DeviceIcon },
   { key: 'settings', path: '/settings', icon: SettingsIcon },
 ]
+
+function OfferIcon() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="bn-icon">
+      <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z" />
+    </svg>
+  )
+}
 
 function TradeIcon() {
   return (
@@ -118,6 +127,10 @@ export default function BottomNav({ user }) {
     if (item.path === '/trade') return canTradeKind('MARKET')
     return true
   })
+  const secondaryNav = SECONDARY_NAV_KEYS.filter((item) => {
+    if (item.path === '/offer') return canTradeKind('OFFER')
+    return true
+  })
 
   const handleLogout = async () => {
     setLoggingOut(true)
@@ -155,7 +168,7 @@ export default function BottomNav({ user }) {
         </div>
 
         <div className="bn-menu-items">
-          {SECONDARY_NAV_KEYS.map(({ key, path, icon: Icon }) => (
+          {secondaryNav.map(({ key, path, icon: Icon }) => (
             <button
               key={path}
               className={`bn-menu-item ${location.pathname === path ? 'active' : ''}`}
