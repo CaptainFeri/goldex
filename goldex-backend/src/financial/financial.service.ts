@@ -198,10 +198,15 @@ export class FinancialService {
   async getProviderDeals() {
     const rows = await this.providerDealRepo.find({ order: { providerKey: "ASC" } });
     return rows.map((r) => {
-      const netVolume = Number(r.netVolume); // net gold (XAU)
-      const netValue = Number(r.netValue); // net cash (IRR)
+      const netVolume = Number(r.netVolume); // net base asset (e.g. gold)
+      const netValue = Number(r.netValue); // net quote asset (e.g. currency)
+      const base = r.baseSymbol ?? "XAU";
+      const quote = r.quoteSymbol ?? "IRR";
       return {
         providerKey: r.providerKey,
+        itemId: r.itemId,
+        baseSymbol: base,
+        quoteSymbol: quote,
         dealCount: r.dealCount,
         totalVolume: Number(r.totalVolume),
         totalValue: Number(r.totalValue),
@@ -213,8 +218,8 @@ export class FinancialService {
         netValue,
         // Per-symbol provider balance derived from completed deals.
         symbols: [
-          { symbol: "XAU", value: netVolume },
-          { symbol: "IRR", value: netValue },
+          { symbol: base, value: netVolume },
+          { symbol: quote, value: netValue },
         ],
         lastDealAt: r.lastDealAt,
         updatedAt: r.updatedAt,

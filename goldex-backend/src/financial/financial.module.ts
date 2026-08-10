@@ -14,10 +14,12 @@ import { UserEntity } from "../user/entity/user.entity";
 import { UserKycEntity } from "../user/entity/user.kyc.entity";
 import { SymbolEntity } from "../admin-symbol/entity/symbol.entity";
 import { AdminScheduleModule } from "../admin-schedule/admin-schedule.module";
+import { ProviderPairMappingModule } from "../provider-pair-mapping/provider-pair-mapping.module";
 
 @Module({
   imports: [
     AdminScheduleModule,
+    ProviderPairMappingModule,
     TypeOrmModule.forFeature([
       SystemLedgerEntity,
       ProviderBalanceSnapshotEntity,

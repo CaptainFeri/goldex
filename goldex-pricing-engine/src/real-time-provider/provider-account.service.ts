@@ -59,63 +59,79 @@ export class ProviderAccountService implements OnApplicationBootstrap {
     }
   }
 
-  // Aggregate a provider's COMPLETED (dealStatus=1) deals and publish the result
-  // over RabbitMQ (PROVIDER_DEALS_UPDATED) for the backend to snapshot.
+  // Aggregate a provider's COMPLETED (dealStatus=1) deals per item and publish
+  // the result over RabbitMQ (PROVIDER_DEALS_UPDATED) for the backend to
+  // snapshot. Aggregating per itemId lets the backend map each item to its
+  // real base/quote pair symbols instead of assuming XAU/IRR.
   async publishDealBalance(providerKey: string): Promise<void> {
     if (!this.rabbitMQService) return;
     const deals = await this.dealRepo.find({ where: { providerKey, dealStatus: 1 } });
 
-    let totalVolume = 0;
-    let totalValue = 0;
-    let buyVolume = 0;
-    let sellVolume = 0;
-    let buyValue = 0;
-    let sellValue = 0;
-    let lastDealAt: Date | null = null;
+    const byItem = new Map<number | null, ProviderDealEntity[]>();
     for (const d of deals) {
-      const vol = Number(d.gramVolume ?? d.count ?? 0);
-      // Value is reckoned at the CUSTOMER gram price (display) whenever it's known
-      // (our order-placed deals); otherwise fall back to the provider's reported
-      // totalPrice, then the pure gram price.
-      const cgp = Number(d.customerGramPrice ?? 0);
-      const val = cgp > 0 ? vol * cgp : Number(d.totalPrice ?? 0) || vol * Number(d.gramPrice ?? 0);
-      totalVolume += vol;
-      totalValue += val;
-      // dealTypeStr is set for fetched deals; order-placed deals only set the
-      // numeric dealType (0 = buy, 1 = sell).
-      const t = d.dealTypeStr || '';
-      const isBuy = t.includes('خرید') || (t === '' && d.dealType === 0);
-      const isSell = t.includes('فروش') || (t === '' && d.dealType === 1);
-      if (isBuy) {
-        buyVolume += vol;
-        buyValue += val;
-      } else if (isSell) {
-        sellVolume += vol;
-        sellValue += val;
-      }
-      if (d.orderDate && (!lastDealAt || d.orderDate > lastDealAt)) lastDealAt = d.orderDate;
+      const key = d.itemId ?? null;
+      if (!byItem.has(key)) byItem.set(key, []);
+      byItem.get(key)!.push(d);
     }
 
-    await this.rabbitMQService.publish(
-      MessagePatterns.PROVIDER_DEALS_UPDATED,
-      {
-        providerKey,
-        doneDeals: {
-          dealCount: deals.length,
-          totalVolume,
-          totalValue,
-          buyVolume,
-          sellVolume,
-          buyValue,
-          sellValue,
-          // Net gold position (XAU) and net cash position (IRR) with the provider.
-          netVolume: buyVolume - sellVolume,
-          netValue: sellValue - buyValue,
-          lastDealAt,
+    for (const [itemId, itemDeals] of byItem.entries()) {
+      let totalVolume = 0;
+      let totalValue = 0;
+      let buyVolume = 0;
+      let sellVolume = 0;
+      let buyValue = 0;
+      let sellValue = 0;
+      let lastDealAt: Date | null = null;
+      let itemName: string | undefined;
+
+      for (const d of itemDeals) {
+        if (!itemName && d.itemName) itemName = d.itemName;
+        const vol = Number(d.gramVolume ?? d.count ?? 0);
+        // Value is reckoned at the CUSTOMER gram price (display) whenever it's known
+        // (our order-placed deals); otherwise fall back to the provider's reported
+        // totalPrice, then the pure gram price.
+        const cgp = Number(d.customerGramPrice ?? 0);
+        const val = cgp > 0 ? vol * cgp : Number(d.totalPrice ?? 0) || vol * Number(d.gramPrice ?? 0);
+        totalVolume += vol;
+        totalValue += val;
+        // dealTypeStr is set for fetched deals; order-placed deals only set the
+        // numeric dealType (0 = buy, 1 = sell).
+        const t = d.dealTypeStr || '';
+        const isBuy = t.includes('خرید') || (t === '' && d.dealType === 0);
+        const isSell = t.includes('فروش') || (t === '' && d.dealType === 1);
+        if (isBuy) {
+          buyVolume += vol;
+          buyValue += val;
+        } else if (isSell) {
+          sellVolume += vol;
+          sellValue += val;
+        }
+        if (d.orderDate && (!lastDealAt || d.orderDate > lastDealAt)) lastDealAt = d.orderDate;
+      }
+
+      await this.rabbitMQService.publish(
+        MessagePatterns.PROVIDER_DEALS_UPDATED,
+        {
+          providerKey,
+          itemId: itemId ?? null,
+          itemName: itemName ?? null,
+          doneDeals: {
+            dealCount: itemDeals.length,
+            totalVolume,
+            totalValue,
+            buyVolume,
+            sellVolume,
+            buyValue,
+            sellValue,
+            // Net gold position (base) and net cash position (quote) with the provider.
+            netVolume: buyVolume - sellVolume,
+            netValue: sellValue - buyValue,
+            lastDealAt,
+          },
         },
-      },
-      providerKey,
-    );
+        providerKey,
+      );
+    }
   }
 
   async getLastOrderDate(providerKey: string): Promise<string | null> {

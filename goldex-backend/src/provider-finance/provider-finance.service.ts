@@ -54,7 +54,7 @@ export class ProviderFinanceService {
 
   /**
    * Per-provider, per-symbol balance:
-   *   traded   = cumulative position from deals (XAU=netVolume, IRR=netValue)
+   *   traded   = cumulative position from deals (base=netVolume, quote=netValue)
    *   settled  = signed sum of admin settlements
    *   outstanding = traded + settled
    *     > 0 → bedehkar  (provider owes us)
@@ -74,8 +74,12 @@ export class ProviderFinanceService {
     };
 
     for (const d of deals) {
-      cell(d.providerKey, "XAU").traded += Number(d.netVolume);
-      cell(d.providerKey, "IRR").traded += Number(d.netValue);
+      // Each snapshot row is per (provider, item) with its resolved pair
+      // symbols; unmapped/legacy rows fall back to XAU/IRR.
+      const base = d.baseSymbol ?? "XAU";
+      const quote = d.quoteSymbol ?? "IRR";
+      cell(d.providerKey, base).traded += Number(d.netVolume);
+      cell(d.providerKey, quote).traded += Number(d.netValue);
     }
     for (const s of settlements) {
       cell(s.providerKey, s.symbol).settled += signedSettlement(s.direction, Number(s.amount));

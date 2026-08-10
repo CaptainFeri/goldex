@@ -98,6 +98,21 @@ export class ProviderPairMappingService {
     });
   }
 
+  /**
+   * Resolve a provider item to its mapped price pair, including the pair's
+   * base/quote symbols. Used to attribute provider deals to the real pair.
+   */
+  async findPairForProviderItem(
+    providerKey: string,
+    providerItemId: number,
+  ): Promise<PricePairEntity | null> {
+    const mapping = await this.mappingRepo.findOne({
+      where: { providerKey, providerItemId },
+      relations: { pair: { baseSymbol: true, quoteSymbol: true } },
+    });
+    return mapping?.pair ?? null;
+  }
+
   async update(
     id: string,
     dto: Partial<CreateProviderPairMappingDto>,
