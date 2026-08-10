@@ -131,12 +131,21 @@ function LogoutIcon() {
 }
 
 export default function Sidebar({ user }) {
-  const { logout } = useAuth()
+  const { logout, marketAccess } = useAuth()
   const navigate = useNavigate()
   const location = useLocation()
   const [loggingOut, setLoggingOut] = useState(false)
   const [level, setLevel] = useState(null)
   const [unreadNotifs, setUnreadNotifs] = useState(0)
+
+  // Hide navigation entries the user has no market access to.
+  const canTradeKind = (kind) =>
+    !marketAccess || (marketAccess.marketKinds || []).includes(kind)
+  const visibleNav = navItems.filter((item) => {
+    if (item.path === '/elite-trade') return canTradeKind('LIMIT')
+    if (item.path === '/trade') return canTradeKind('MARKET')
+    return true
+  })
 
   useEffect(() => {
     levelApi.getMyLevel().then(setLevel).catch(() => {})
@@ -184,7 +193,7 @@ export default function Sidebar({ user }) {
       </div>
 
       <nav className="sidebar-nav">
-        {navItems.map(({ label, path, icon: Icon }) => (
+        {visibleNav.map(({ label, path, icon: Icon }) => (
           <button
             key={path}
             className={`nav-item ${location.pathname === path ? 'active' : ''}`}

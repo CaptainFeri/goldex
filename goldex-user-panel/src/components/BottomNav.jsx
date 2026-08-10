@@ -104,11 +104,20 @@ function LogoutIcon() {
 
 export default function BottomNav({ user }) {
   const { t } = useTranslation()
-  const { logout } = useAuth()
+  const { logout, marketAccess } = useAuth()
   const navigate = useNavigate()
   const location = useLocation()
   const [menuOpen, setMenuOpen] = useState(false)
   const [loggingOut, setLoggingOut] = useState(false)
+
+  // Hide navigation entries the user has no market access to.
+  const canTradeKind = (kind) =>
+    !marketAccess || (marketAccess.marketKinds || []).includes(kind)
+  const primaryNav = PRIMARY_NAV_KEYS.filter((item) => {
+    if (item.path === '/elite-trade') return canTradeKind('LIMIT')
+    if (item.path === '/trade') return canTradeKind('MARKET')
+    return true
+  })
 
   const handleLogout = async () => {
     setLoggingOut(true)
@@ -119,7 +128,7 @@ export default function BottomNav({ user }) {
   return (
     <>
       <nav className="bottom-nav">
-        {PRIMARY_NAV_KEYS.map(({ key, path, icon: Icon }) => (
+        {primaryNav.map(({ key, path, icon: Icon }) => (
           <button
             key={path}
             className={`bn-item ${location.pathname === path ? 'active' : ''}`}

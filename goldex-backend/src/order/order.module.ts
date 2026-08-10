@@ -15,6 +15,7 @@ import { UserTelegramModule } from "../user-telegram/user-telegram.module";
 import { QuoteRequestModule } from "../quote-request/quote-request.module";
 import { OrderBookService } from "../order-book/order-book.service";
 import { UserMarketTypeEntity } from "../user/entity/user.market.type.entity";
+import { UserMarketKindEntity } from "../user/entity/user.market.kind.entity";
 import { TransactionEntity } from "../wallet/entities/transaction.entity";
 import { CreditEntity } from "../credit/entity/credit.entity";
 import { CreditOrderEntity } from "../credit/entity/credit-order.entity";
@@ -28,6 +29,7 @@ import { UserLevelModule } from "../user-level/user-level.module";
       PricePairEntity,
       WalletEntity,
       UserMarketTypeEntity,
+      UserMarketKindEntity,
       TransactionEntity,
       CreditEntity,
       CreditOrderEntity,

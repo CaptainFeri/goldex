@@ -19,6 +19,9 @@ import { ProviderPairMappingService } from "../provider-pair-mapping/provider-pa
 import { WalletOrderService } from "../wallet/services/wallet-order.service";
 import { TelegramNotifierService } from "../telegram-notifier/telegram-notifier.service";
 import { UserMarketTypeEntity } from "../user/entity/user.market.type.entity";
+import { UserMarketKindEntity } from "../user/entity/user.market.kind.entity";
+import { MarketKindEnum } from "../admin-pair/enum/market.kind.enum";
+import { defaultMarketKindsForRole } from "../shared/market-access.helper";
 import { OrderBookService } from "../order-book/order-book.service";
 import { Side } from "nodejs-order-book";
 import { OrderSource } from "../order-book/interfaces/order-book.types";
@@ -45,6 +48,8 @@ export class OrderService {
     private readonly telegramNotifier: TelegramNotifierService,
     @InjectRepository(UserMarketTypeEntity)
     private readonly userMarketTypeRepo: Repository<UserMarketTypeEntity>,
+    @InjectRepository(UserMarketKindEntity)
+    private readonly userMarketKindRepo: Repository<UserMarketKindEntity>,
     private readonly orderBookService: OrderBookService,
     @InjectRepository(CreditEntity)
     private readonly creditRepo: Repository<CreditEntity>,
@@ -85,6 +90,26 @@ export class OrderService {
       if (pairMarketType && allowedMarketTypes.size > 0 && !allowedMarketTypes.has(pairMarketType)) {
         throw new BadRequestException(
           `You do not have access to trade on ${pairMarketType} market pairs.`
+        );
+      }
+
+      // Enforce the user's allowed market kinds (trading modes). Users with no
+      // explicit assignment fall back to their role's defaults (CUSTOMER:
+      // MARKET+LIMIT, PARTNER: MARKET+LIMIT+OFFER). QUOTE is a legacy/internal
+      // flow and is not gated by market kinds.
+      const userMarketKinds = await this.userMarketKindRepo.find({ where: { userId: user.id } });
+      const allowedMarketKinds = new Set(
+        userMarketKinds.length > 0
+          ? userMarketKinds.map((r) => r.marketKind)
+          : defaultMarketKindsForRole(user.role)
+      );
+      const requestedKind = dto.orderType as unknown as MarketKindEnum;
+      if (
+        Object.values(MarketKindEnum).includes(requestedKind) &&
+        !allowedMarketKinds.has(requestedKind)
+      ) {
+        throw new BadRequestException(
+          `You do not have access to ${dto.orderType} market trading.`
         );
       }
 

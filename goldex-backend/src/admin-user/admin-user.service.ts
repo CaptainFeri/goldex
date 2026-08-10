@@ -20,7 +20,13 @@ import { KycStatusEnum } from "../baseinfo/enum/kycStatus.enum";
 import { RedisService } from "../redis/redis.service";
 import { CreatePartnerDto } from "./dto/create-partner.dto";
 import { UserMarketTypeEntity } from "../user/entity/user.market.type.entity";
+import { UserMarketKindEntity } from "../user/entity/user.market.kind.entity";
 import { MarketTypeEnum } from "../admin-pair/enum/market.type.enum";
+import { MarketKindEnum } from "../admin-pair/enum/market.kind.enum";
+import {
+  defaultMarketKindsForRole,
+  defaultMarketTypesForRole,
+} from "../shared/market-access.helper";
 
 const ONLINE_SET = "online_users";
 
@@ -45,6 +51,8 @@ export class AdminUserService {
     private readonly symbolRepo: Repository<SymbolEntity>,
     @InjectRepository(UserMarketTypeEntity)
     private readonly userMarketTypeRepo: Repository<UserMarketTypeEntity>,
+    @InjectRepository(UserMarketKindEntity)
+    private readonly userMarketKindRepo: Repository<UserMarketKindEntity>,
     private readonly redisService: RedisService,
     private readonly baseInfoService: BaseInfoService
   ) {}
@@ -100,12 +108,21 @@ export class AdminUserService {
     await this.userSettingRepo.save(setting);
 
     // Save market type assignments (default: formal + informal for partners)
-    const marketTypes = dto.marketTypes?.length > 0 ? dto.marketTypes : [MarketTypeEnum.FORMAL, MarketTypeEnum.INFORMAL];
+    const marketTypes = dto.marketTypes?.length > 0 ? dto.marketTypes : defaultMarketTypesForRole(role);
     for (const mt of marketTypes) {
       const umt = new UserMarketTypeEntity();
       umt.userId = saved.id;
       umt.marketType = mt;
       await this.userMarketTypeRepo.save(umt);
+    }
+
+    // Save market kind assignments (which trading modes the user may use).
+    const marketKinds = dto.marketKinds?.length > 0 ? dto.marketKinds : defaultMarketKindsForRole(role);
+    for (const mk of marketKinds) {
+      const umk = new UserMarketKindEntity();
+      umk.userId = saved.id;
+      umk.marketKind = mk;
+      await this.userMarketKindRepo.save(umk);
     }
 
     return saved;
@@ -315,13 +332,66 @@ export class AdminUserService {
     return marketTypes;
   }
 
-  // Get the market types a user can see.
+  // Get the market types a user can see. Returns the role-based defaults when
+  // the user has no explicit assignment.
   async getUserMarketTypes(userId: string): Promise<MarketTypeEnum[]> {
     const user = await this.userRepo.findOne({ where: { id: userId } });
     if (!user) throw new NotFoundException("USER.NOT_FOUND");
 
     const records = await this.userMarketTypeRepo.find({ where: { userId } });
-    return records.map((r) => r.marketType);
+    if (records.length > 0) return records.map((r) => r.marketType);
+    return defaultMarketTypesForRole(user.role);
+  }
+
+  // Assign which market kinds (trading modes: MARKET/LIMIT/OFFER) a user may
+  // use. Replaces any existing assignments.
+  async assignUserMarketKinds(userId: string, marketKinds: MarketKindEnum[]): Promise<MarketKindEnum[]> {
+    const user = await this.userRepo.findOne({ where: { id: userId } });
+    if (!user) throw new NotFoundException("USER.NOT_FOUND");
+
+    await this.userMarketKindRepo.delete({ userId });
+
+    for (const mk of marketKinds) {
+      const umk = new UserMarketKindEntity();
+      umk.userId = userId;
+      umk.marketKind = mk;
+      await this.userMarketKindRepo.save(umk);
+    }
+
+    return marketKinds;
+  }
+
+  // Get the market kinds a user may use. Returns the role-based defaults when
+  // the user has no explicit assignment.
+  async getUserMarketKinds(userId: string): Promise<MarketKindEnum[]> {
+    const user = await this.userRepo.findOne({ where: { id: userId } });
+    if (!user) throw new NotFoundException("USER.NOT_FOUND");
+
+    const records = await this.userMarketKindRepo.find({ where: { userId } });
+    if (records.length > 0) return records.map((r) => r.marketKind);
+    return defaultMarketKindsForRole(user.role);
+  }
+
+  // Change a user's role between CUSTOMER and PARTNER (the only admin-toggleable
+  // roles). Market access falls back to the new role's defaults wherever the
+  // user has no explicit assignment.
+  async changeUserRole(
+    userId: string,
+    role: UserRoleEnum,
+  ): Promise<{ id: string; role: number; marketTypes: MarketTypeEnum[]; marketKinds: MarketKindEnum[] }> {
+    const user = await this.userRepo.findOne({ where: { id: userId } });
+    if (!user) throw new NotFoundException("USER.NOT_FOUND");
+    if (user.role === UserRoleEnum.ADMIN) throw new BadRequestException("ROLE.ADMIN_NOT_EDITABLE");
+
+    user.role = role;
+    await this.userRepo.save(user);
+
+    return {
+      id: user.id,
+      role: user.role,
+      marketTypes: await this.getUserMarketTypes(userId),
+      marketKinds: await this.getUserMarketKinds(userId),
+    };
   }
 
   // async getKycByUserId(id: string): Promise<UserKycGetDto> {

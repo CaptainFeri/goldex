@@ -1,11 +1,15 @@
 import { createContext, useContext, useState, useEffect, useCallback } from 'react'
-import { authApi, profileApi } from '../services/api'
+import { authApi, profileApi, marketApi } from '../services/api'
 import { tokens } from '../services/http'
 
 const AuthContext = createContext(null)
 
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null)
+  // Effective market access for the logged-in user:
+  //   { marketTypes: ['formal'|'informal'...], marketKinds: ['MARKET'|'LIMIT'|'OFFER'...] }
+  // Falls back to role defaults when the user has no explicit assignment.
+  const [marketAccess, setMarketAccess] = useState(null)
   const [accessToken, setAccessToken] = useState(() => localStorage.getItem('access_token'))
   const [deviceId, setDeviceId] = useState(() => localStorage.getItem('device_id'))
   const [loading, setLoading] = useState(true)
@@ -25,6 +29,7 @@ export function AuthProvider({ children }) {
       if (deviceId && accessToken) await authApi.logout(deviceId)
     } catch (_) {}
     setUser(null)
+    setMarketAccess(null)
     setAccessToken(null)
     setDeviceId(null)
     tokens.clear()
@@ -41,6 +46,12 @@ export function AuthProvider({ children }) {
         setUser(profile)
       } catch (_) {
         setUser(null)
+      }
+      try {
+        const access = await marketApi.getAccess()
+        setMarketAccess(access)
+      } catch (_) {
+        setMarketAccess(null)
       } finally {
         setLoading(false)
       }
@@ -50,6 +61,7 @@ export function AuthProvider({ children }) {
 
   const value = {
     user, setUser,
+    marketAccess, setMarketAccess,
     accessToken, deviceId,
     saveTokens, saveDevice,
     logout,

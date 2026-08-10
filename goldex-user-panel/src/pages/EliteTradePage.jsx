@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState, useCallback } from 'react'
 import { useToast } from '../context/ToastContext'
+import { useAuth } from '../context/AuthContext'
 import { marketApi, orderApi, walletApi, orderBookApi } from '../services/api'
 import { useMarketPrices } from '../hooks/useMarketPrices'
 import { Spinner, Alert, Button, Field } from '../components/UI'
@@ -33,6 +34,7 @@ const MESQAL_TO_GRAM = 4.3318
 
 export default function EliteTradePage() {
   const toast = useToast()
+  const { marketAccess } = useAuth()
   const [pairs, setPairs] = useState([])
   const [orders, setOrders] = useState([])
   const [wallets, setWallets] = useState([])
@@ -84,7 +86,13 @@ export default function EliteTradePage() {
     const init = async () => {
       try {
         const [list] = await Promise.all([marketApi.getPairs(), loadWallets()])
-        const arr = Array.isArray(list) ? list : []
+        let arr = Array.isArray(list) ? list : []
+        // The backend already filters by market type; keep a client-side safety
+        // net so pairs outside the user's allowed market types never render.
+        const allowedTypes = marketAccess?.marketTypes
+        if (allowedTypes && allowedTypes.length > 0) {
+          arr = arr.filter((p) => allowedTypes.includes(p.marketType))
+        }
         setPairs(arr)
         if (arr.length) setSelectedId(arr[0].id)
       } catch (_) {
@@ -94,7 +102,7 @@ export default function EliteTradePage() {
       }
     }
     init()
-  }, [])
+  }, [marketAccess])
 
   useEffect(() => { loadOrders() }, [loadOrders])
 
@@ -231,6 +239,26 @@ export default function EliteTradePage() {
       <Spinner light />
     </div>
   )
+
+  // Access control: LIMIT trading must be enabled for this user.
+  const limitKindAllowed = !marketAccess || (marketAccess.marketKinds || []).includes('LIMIT')
+  if (!limitKindAllowed) {
+    return (
+      <div className="animate-fade-in">
+        <div className="main-header">
+          <h1 className="main-header-title">Elite Trade</h1>
+          <p className="main-header-sub">Advanced limit order trading with live order book</p>
+        </div>
+        <div className="main-body">
+          <div className="card">
+            <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem' }}>
+              You do not have access to limit (elite) trading. Please contact support.
+            </p>
+          </div>
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div className="animate-fade-in">

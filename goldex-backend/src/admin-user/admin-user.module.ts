@@ -11,6 +11,7 @@ import { UserKycEntity } from "../user/entity/user.kyc.entity";
 import { WalletEntity } from "../wallet/entities/wallet.entity";
 import { SymbolEntity } from "../admin-symbol/entity/symbol.entity";
 import { UserMarketTypeEntity } from "../user/entity/user.market.type.entity";
+import { UserMarketKindEntity } from "../user/entity/user.market.kind.entity";
 import { RedisModule } from "../redis/redis.module";
 
 @Module({
@@ -26,6 +27,7 @@ import { RedisModule } from "../redis/redis.module";
       WalletEntity,
       SymbolEntity,
       UserMarketTypeEntity,
+      UserMarketKindEntity,
     ]),
   ],
   providers: [AdminUserService],

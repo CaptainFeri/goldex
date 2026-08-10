@@ -8,6 +8,7 @@ import { UserKycEntity } from "./user.kyc.entity";
 import { UserBankAccountEntity } from "./user.bank.account.entity";
 import { WalletEntity } from "../../wallet/entities/wallet.entity";
 import { UserMarketTypeEntity } from "./user.market.type.entity";
+import { UserMarketKindEntity } from "./user.market.kind.entity";
 import { UserLevelEntity } from "../../user-level/entity/user-level.entity";
 
 @Entity("user")
@@ -131,6 +132,9 @@ export class UserEntity extends myBaseEntity {
 
   @OneToMany(() => UserMarketTypeEntity, (umt) => umt.user)
   marketTypes: UserMarketTypeEntity[];
+
+  @OneToMany(() => UserMarketKindEntity, (umk) => umk.user)
+  marketKinds: UserMarketKindEntity[];
 
   @ManyToOne(() => UserLevelEntity, (lvl) => lvl.users, { onDelete: "SET NULL" })
   @JoinColumn({ name: "level_id" })

@@ -6,11 +6,13 @@ import { AdminPairService } from "./admin-pair.service";
 import { PricePairEntity } from "./entity/price.pair.entity";
 import { GainTypeEnum } from "../admin-symbol/enum/gain.type.enum";
 import { MarketTypeEnum } from "./enum/market.type.enum";
+import { MarketKindEnum } from "./enum/market.kind.enum";
+import { defaultMarketKindsForRole, defaultMarketTypesForRole } from "../shared/market-access.helper";
 import { MESQAL_TO_GRAM } from "../common/constants";
 import { UserAuthGuard } from "../user/auth/Guard/user.guard";
-import { UserRoleEnum } from "../shared/enum/user.role.enum";
 import { UserExpressRequest } from "../user/auth/types/user-express-request";
 import { UserMarketTypeEntity } from "../user/entity/user.market.type.entity";
+import { UserMarketKindEntity } from "../user/entity/user.market.kind.entity";
 
 @ApiTags("Market")
 @ApiBearerAuth()
@@ -21,7 +23,28 @@ export class MarketController {
     private readonly pairService: AdminPairService,
     @InjectRepository(UserMarketTypeEntity)
     private readonly userMarketTypeRepo: Repository<UserMarketTypeEntity>,
+    @InjectRepository(UserMarketKindEntity)
+    private readonly userMarketKindRepo: Repository<UserMarketKindEntity>,
   ) {}
+
+  @Get("access")
+  @ApiOperation({ summary: "The current user's effective market access (kinds + pair types)" })
+  async getAccess(@Req() req: UserExpressRequest) {
+    const user = req.user;
+    if (!user) return { data: null };
+
+    const typeRows = await this.userMarketTypeRepo.find({ where: { userId: user.id } });
+    const marketTypes = typeRows.length > 0
+      ? typeRows.map((r) => r.marketType)
+      : defaultMarketTypesForRole(user.role);
+
+    const kindRows = await this.userMarketKindRepo.find({ where: { userId: user.id } });
+    const marketKinds = kindRows.length > 0
+      ? kindRows.map((r) => r.marketKind)
+      : defaultMarketKindsForRole(user.role);
+
+    return { data: { marketTypes, marketKinds } };
+  }
 
   @Get("pairs")
   @ApiOperation({ summary: "List valid trading pairs with user-facing prices" })
@@ -32,14 +55,14 @@ export class MarketController {
 
     if (user) {
       const userMts = await this.userMarketTypeRepo.find({ where: { userId: user.id } });
-      if (userMts.length > 0) {
-        const allowed = new Set(userMts.map((r) => r.marketType));
-        visible = pairs.filter((p) => p.baseSymbol && allowed.has(p.baseSymbol.marketType));
-      } else {
-        visible = user.role === UserRoleEnum.PARTNER
-          ? pairs
-          : pairs.filter((p) => p.baseSymbol?.marketType === MarketTypeEnum.FORMAL);
-      }
+      // Explicit assignment wins; otherwise fall back to role defaults
+      // (CUSTOMER → formal only, PARTNER → formal + informal).
+      const allowed = new Set(
+        userMts.length > 0
+          ? userMts.map((r) => r.marketType)
+          : defaultMarketTypesForRole(user.role)
+      );
+      visible = pairs.filter((p) => p.baseSymbol && allowed.has(p.baseSymbol.marketType));
     } else {
       visible = pairs;
     }

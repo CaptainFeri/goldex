@@ -36,6 +36,12 @@ export const MARKET_TYPES = [
   { value: "informal", label: "غیررسمی" },
 ];
 
+export const MARKET_KINDS_ENUM = [
+  { value: "MARKET", label: "بازار (Market)" },
+  { value: "LIMIT", label: "محدود (Limit)" },
+  { value: "OFFER", label: "پیشنهاد (Offer — تلگرام)" },
+];
+
 export const DEPOSIT_TYPES = [
   { value: "manual", label: "دستی" },
   { value: "payment-gateway", label: "درگاه پرداخت" },

@@ -2,6 +2,7 @@ import { ApiProperty, ApiPropertyOptional } from "@nestjs/swagger";
 import { IsArray, IsEmail, IsEnum, IsISO8601, IsNotEmpty, IsNumber, IsOptional, IsString, Matches } from "class-validator";
 import { UserRoleEnum } from "../../shared/enum/user.role.enum";
 import { MarketTypeEnum } from "../../admin-pair/enum/market.type.enum";
+import { MarketKindEnum } from "../../admin-pair/enum/market.kind.enum";
 
 export class CreatePartnerDto {
   @ApiProperty({ example: "09123456789" })
@@ -44,4 +45,10 @@ export class CreatePartnerDto {
   @IsArray()
   @IsEnum(MarketTypeEnum, { each: true })
   marketTypes?: MarketTypeEnum[];
+
+  @ApiPropertyOptional({ enum: MarketKindEnum, isArray: true, description: "Trading market kinds this user can use (e.g. ['MARKET', 'LIMIT', 'OFFER'])" })
+  @IsOptional()
+  @IsArray()
+  @IsEnum(MarketKindEnum, { each: true })
+  marketKinds?: MarketKindEnum[];
 }

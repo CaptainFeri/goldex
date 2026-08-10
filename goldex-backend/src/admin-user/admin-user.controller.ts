@@ -16,6 +16,8 @@ import { AdminUserService } from "./admin-user.service";
 import { AdminAuthGuard } from "../admin/auth/Guard/admin.guard";
 import { CreatePartnerDto } from "./dto/create-partner.dto";
 import { AssignMarketTypesDto } from "./dto/assign-market-types.dto";
+import { AssignMarketKindsDto } from "./dto/assign-market-kinds.dto";
+import { ChangeUserRoleDto } from "./dto/change-user-role.dto";
 
 @Controller("admin/users")
 @ApiTags("Admin-User")
@@ -128,6 +130,36 @@ export class AdminUserController {
   async getUserMarketTypes(@Param("id") id: string) {
     return {
       data: await this.adminUserService.getUserMarketTypes(id),
+    };
+  }
+
+  @ApiBearerAuth()
+  @UseGuards(AdminAuthGuard)
+  @Put("users/:id/market-kinds")
+  @ApiOperation({ summary: "Assign market kinds a user can trade on (replaces existing)" })
+  async assignUserMarketKinds(@Param("id") id: string, @Body() dto: AssignMarketKindsDto) {
+    return {
+      data: await this.adminUserService.assignUserMarketKinds(id, dto.marketKinds),
+    };
+  }
+
+  @ApiBearerAuth()
+  @UseGuards(AdminAuthGuard)
+  @Get("users/:id/market-kinds")
+  @ApiOperation({ summary: "Get market kinds a user can trade on" })
+  async getUserMarketKinds(@Param("id") id: string) {
+    return {
+      data: await this.adminUserService.getUserMarketKinds(id),
+    };
+  }
+
+  @ApiBearerAuth()
+  @UseGuards(AdminAuthGuard)
+  @Patch("users/:id/role")
+  @ApiOperation({ summary: "Change a user's role (CUSTOMER <-> PARTNER)" })
+  async changeUserRole(@Param("id") id: string, @Body() dto: ChangeUserRoleDto) {
+    return {
+      data: await this.adminUserService.changeUserRole(id, dto.role),
     };
   }
 

@@ -106,7 +106,11 @@ export const walletApi = {
 export const marketApi = {
   // Valid trading pairs with base/quote symbols and current prices
   getPairs: async () =>
-    unwrap(await http.get('/market/pairs'))
+    unwrap(await http.get('/market/pairs')),
+
+  // Current user's effective market access: { marketTypes, marketKinds }
+  getAccess: async () =>
+    unwrap(await http.get('/market/access'))
 }
 
 export const orderBookApi = {

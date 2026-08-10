@@ -3,7 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, unwrap, apiError } from "../api/client";
 import { Card, Stat, Loading, ErrorState, Empty, Badge, Modal } from "../components/ui";
 import { fmtNum, fmtDate } from "../lib/format";
-import { MARKET_TYPES_ENUM } from "../lib/enums";
+import { MARKET_TYPES_ENUM, MARKET_KINDS_ENUM } from "../lib/enums";
 
 const ROLE_LABEL: Record<number, string> = { 0: "مشتری", 1: "ادمین", 2: "کاربر جدید", 3: "شریک" };
 function roleBadge(r: number) {
@@ -19,9 +19,13 @@ function CreatePartner({ onDone }: { onDone: () => void }) {
   const qc = useQueryClient();
   const [form, setForm] = useState({ phone: "", firstName: "", lastName: "", password: "", activeUntil: "" });
   const [marketTypes, setMarketTypes] = useState<string[]>(["formal", "informal"]);
+  const [marketKinds, setMarketKinds] = useState<string[]>(["MARKET", "LIMIT", "OFFER"]);
   const set = (k: string, v: any) => setForm((f) => ({ ...f, [k]: v }));
   const toggleMarketType = (v: string) => {
     setMarketTypes((prev) => prev.includes(v) ? prev.filter((x) => x !== v) : [...prev, v]);
+  };
+  const toggleMarketKind = (v: string) => {
+    setMarketKinds((prev) => prev.includes(v) ? prev.filter((x) => x !== v) : [...prev, v]);
   };
   const create = useMutation({
     mutationFn: (p: any) => api.post("/admin/users/partners", p),
@@ -30,6 +34,7 @@ function CreatePartner({ onDone }: { onDone: () => void }) {
       qc.invalidateQueries({ queryKey: ["user-stats"] });
       setForm({ phone: "", firstName: "", lastName: "", password: "", activeUntil: "" });
       setMarketTypes(["formal", "informal"]);
+      setMarketKinds(["MARKET", "LIMIT", "OFFER"]);
       onDone();
     },
   });
@@ -43,11 +48,12 @@ function CreatePartner({ onDone }: { onDone: () => void }) {
       lastName: form.lastName || undefined,
       activeUntil: form.activeUntil ? new Date(form.activeUntil).toISOString() : undefined,
       marketTypes: marketTypes.length > 0 ? marketTypes : undefined,
+      marketKinds: marketKinds.length > 0 ? marketKinds : undefined,
     });
   }
   return (
     <Card title="افزودن کاربر شریک (Partner)">
-      <form onSubmit={submit} className="toolbar" style={{ alignItems: "flex-end" }}>
+      <form onSubmit={submit} className="toolbar" style={{ alignItems: "flex-end", flexWrap: "wrap" }}>
         <div className="field" style={{ margin: 0, minWidth: 170 }}>
           <label>شماره موبایل</label>
           <input className="input mono" dir="ltr" placeholder="09123456789" value={form.phone} onChange={(e) => set("phone", e.target.value.trim())} />
@@ -68,13 +74,24 @@ function CreatePartner({ onDone }: { onDone: () => void }) {
           <label>فعال تا (اختیاری)</label>
           <input className="input" type="date" value={form.activeUntil} onChange={(e) => set("activeUntil", e.target.value)} />
         </div>
-        <div className="field" style={{ margin: 0, minWidth: 200 }}>
-          <label>دسترسی به بازار</label>
+        <div className="field" style={{ margin: 0, minWidth: 240 }}>
+          <label>نوع بازار (رسمی / غیررسمی)</label>
           <div className="row" style={{ gap: 12, paddingTop: 4 }}>
             {MARKET_TYPES_ENUM.map((mt) => (
               <label key={mt.value} className="row" style={{ gap: 4, cursor: "pointer" }}>
                 <input type="checkbox" checked={marketTypes.includes(mt.value)} onChange={() => toggleMarketType(mt.value)} />
                 {mt.label}
+              </label>
+            ))}
+          </div>
+        </div>
+        <div className="field" style={{ margin: 0, minWidth: 300 }}>
+          <label>بازارهای معاملاتی (Market / Limit / Offer)</label>
+          <div className="row" style={{ gap: 12, paddingTop: 4 }}>
+            {MARKET_KINDS_ENUM.map((mk) => (
+              <label key={mk.value} className="row" style={{ gap: 4, cursor: "pointer" }}>
+                <input type="checkbox" checked={marketKinds.includes(mk.value)} onChange={() => toggleMarketKind(mk.value)} />
+                {mk.label}
               </label>
             ))}
           </div>
@@ -85,38 +102,52 @@ function CreatePartner({ onDone }: { onDone: () => void }) {
       </form>
       {create.isError && <div className="error-text">{apiError(create.error)}</div>}
       <div className="muted" style={{ fontSize: 12, marginTop: 8 }}>
-        شرکا به بازارهای انتخاب‌شده دسترسی دارند (پیش‌فرض: رسمی و غیررسمی).
+        شرکا به بازارهای انتخاب‌شده دسترسی دارند (پیش‌فرض: رسمی و غیررسمی + هر سه بازار معاملاتی).
       </div>
     </Card>
   );
 }
 
-function MarketTypesModal({ userId, onClose }: { userId: string; onClose: () => void }) {
+function MarketsModal({ userId, onClose }: { userId: string; onClose: () => void }) {
   const qc = useQueryClient();
   const current = useQuery({
-    queryKey: ["user-mt", userId],
-    queryFn: async () => unwrap<string[]>((await api.get(`/admin/users/users/${userId}/market-types`)).data),
+    queryKey: ["user-markets", userId],
+    queryFn: async () => {
+      const [types, kinds] = await Promise.all([
+        api.get(`/admin/users/users/${userId}/market-types`),
+        api.get(`/admin/users/users/${userId}/market-kinds`),
+      ]);
+      return {
+        marketTypes: unwrap<string[]>(types.data),
+        marketKinds: unwrap<string[]>(kinds.data),
+      };
+    },
   });
-  const [selected, setSelected] = useState<string[]>([]);
+  const [types, setTypes] = useState<string[]>([]);
+  const [kinds, setKinds] = useState<string[]>([]);
   const [hydrated, setHydrated] = useState(false);
 
   // Hydrate once data arrives.
   if (current.data && !hydrated) {
-    setSelected(current.data);
+    setTypes(current.data.marketTypes);
+    setKinds(current.data.marketKinds);
     setHydrated(true);
   }
 
   const save = useMutation({
-    mutationFn: (p: { marketTypes: string[] }) =>
-      api.put(`/admin/users/users/${userId}/market-types`, p),
+    mutationFn: (p: { marketTypes: string[]; marketKinds: string[] }) =>
+      Promise.all([
+        api.put(`/admin/users/users/${userId}/market-types`, { marketTypes: p.marketTypes }),
+        api.put(`/admin/users/users/${userId}/market-kinds`, { marketKinds: p.marketKinds }),
+      ]),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["user-mt", userId] });
+      qc.invalidateQueries({ queryKey: ["user-markets", userId] });
       onClose();
     },
   });
 
-  function toggle(v: string) {
-    setSelected((prev) => (prev.includes(v) ? prev.filter((x) => x !== v) : [...prev, v]));
+  function toggle(list: string[], setList: (v: string[]) => void, v: string) {
+    setList(list.includes(v) ? list.filter((x) => x !== v) : [...list, v]);
   }
 
   return (
@@ -128,17 +159,32 @@ function MarketTypesModal({ userId, onClose }: { userId: string; onClose: () => 
       ) : (
         <>
           <div className="muted" style={{ fontSize: 12, marginBottom: 12 }}>
-            بازارهایی که کاربر مجاز به دیدن آن‌هاست. تغییرات جایگزین لیست قبلی می‌شود.
+            نوع بازار: کدام بازارها (رسمی / غیررسمی) برای کاربر نمایش داده شود.
           </div>
           <div style={{ display: "flex", flexDirection: "column", gap: 10, marginBottom: 16 }}>
             {MARKET_TYPES_ENUM.map((mt) => (
               <label key={mt.value} className="row" style={{ gap: 8, cursor: "pointer" }}>
                 <input
                   type="checkbox"
-                  checked={selected.includes(mt.value)}
-                  onChange={() => toggle(mt.value)}
+                  checked={types.includes(mt.value)}
+                  onChange={() => toggle(types, setTypes, mt.value)}
                 />
                 {mt.label}
+              </label>
+            ))}
+          </div>
+          <div className="muted" style={{ fontSize: 12, marginBottom: 12 }}>
+            بازارهای معاملاتی: کاربر به کدام حالت‌های معاملاتی دسترسی داشته باشد (Market / Limit / Offer).
+          </div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 10, marginBottom: 16 }}>
+            {MARKET_KINDS_ENUM.map((mk) => (
+              <label key={mk.value} className="row" style={{ gap: 8, cursor: "pointer" }}>
+                <input
+                  type="checkbox"
+                  checked={kinds.includes(mk.value)}
+                  onChange={() => toggle(kinds, setKinds, mk.value)}
+                />
+                {mk.label}
               </label>
             ))}
           </div>
@@ -150,7 +196,7 @@ function MarketTypesModal({ userId, onClose }: { userId: string; onClose: () => 
             <button
               className="btn primary"
               disabled={save.isPending}
-              onClick={() => save.mutate({ marketTypes: selected })}
+              onClick={() => save.mutate({ marketTypes: types, marketKinds: kinds })}
             >
               {save.isPending ? <span className="spin" /> : "ذخیره"}
             </button>
@@ -184,6 +230,14 @@ export default function UsersPage() {
 
   const toggleBlock = useMutation({
     mutationFn: (id: string) => api.patch(`/admin/users/users/${id}/activation`),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["users"] });
+      qc.invalidateQueries({ queryKey: ["user-stats"] });
+    },
+  });
+
+  const changeRole = useMutation({
+    mutationFn: (p: { id: string; role: number }) => api.patch(`/admin/users/users/${p.id}/role`, { role: p.role }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["users"] });
       qc.invalidateQueries({ queryKey: ["user-stats"] });
@@ -269,13 +323,25 @@ export default function UsersPage() {
                         >
                           {u.blockedAt ? "رفع مسدودیت" : "مسدود"}
                         </button>
-                        {u.role === 3 && (
+                        <button
+                          className="btn sm"
+                          onClick={() => setMtUserId(u.id)}
+                          title="نوع بازار و بازارهای معاملاتی"
+                        >
+                          بازارها
+                        </button>
+                        {u.role !== 1 && (
                           <button
                             className="btn sm"
-                            onClick={() => setMtUserId(u.id)}
-                            title="دسترسی بازار"
+                            disabled={changeRole.isPending}
+                            onClick={() => {
+                              const target = u.role === 3 ? 0 : 3;
+                              if (window.confirm(`نقش کاربر به «${ROLE_LABEL[target]}» تغییر کند؟`)) {
+                                changeRole.mutate({ id: u.id, role: target });
+                              }
+                            }}
                           >
-                            بازارها
+                            {u.role === 3 ? "تبدیل به مشتری" : "تبدیل به شریک"}
                           </button>
                         )}
                       </div>
@@ -289,7 +355,7 @@ export default function UsersPage() {
       </Card>
 
       {mtUserId && (
-        <MarketTypesModal
+        <MarketsModal
           userId={mtUserId}
           onClose={() => setMtUserId(null)}
         />
