@@ -43,6 +43,8 @@ export class QuoteRequestController {
       data: {
         request: result.request,
         matchAlert: result.matchAlert || false,
+        matched: result.matched || false,
+        matchedRequestId: result.matchedRequestId || null,
       },
     };
   }

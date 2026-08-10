@@ -39,21 +39,12 @@ export class AdminOrderController {
   }
 
   @Get("book/:pairId")
-  @ApiOperation({ summary: "Get order book depth for a pair" })
+  @ApiOperation({ summary: "Get Limit Market order book depth for a pair" })
   @ApiParam({ name: "pairId", description: "Price pair ID" })
-  @ApiResponse({ status: HttpStatus.OK, description: "Returns order book depth" })
+  @ApiResponse({ status: HttpStatus.OK, description: "Returns Limit Market depth" })
   async getOrderBookDepth(@Param("pairId") pairId: string) {
     const depth = this.orderBookService.getDepth(pairId);
-    const arbitrage = this.orderBookService.getArbitrageStatus(pairId);
-    return { data: { ...depth, arbitrage } };
-  }
-
-  @Get("arbitrage/:pairId")
-  @ApiOperation({ summary: "Check arbitrage status for a pair" })
-  @ApiParam({ name: "pairId", description: "Price pair ID" })
-  @ApiResponse({ status: HttpStatus.OK, description: "Returns arbitrage status" })
-  async getArbitrage(@Param("pairId") pairId: string) {
-    return { data: this.orderBookService.getArbitrageStatus(pairId) };
+    return { data: depth };
   }
 
   @Delete(":id/cancel")

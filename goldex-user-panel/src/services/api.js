@@ -113,6 +113,18 @@ export const marketApi = {
     unwrap(await http.get('/market/access'))
 }
 
+export const quoteRequestApi = {
+  // Custom (Telegram) market requests. create → { request, matchAlert, matched, matchedRequestId }
+  create: async (payload) =>
+    unwrap(await http.post('/quote-requests', payload)),
+
+  my: async () =>
+    unwrap(await http.get('/quote-requests/my')),
+
+  cancel: async (id) =>
+    unwrap(await http.delete(`/quote-requests/${id}`)),
+}
+
 export const orderBookApi = {
   // Order book depth for a pair: { bids, asks }
   getDepth: async (pairId) =>

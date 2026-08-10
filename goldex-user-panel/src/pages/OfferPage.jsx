@@ -1,18 +1,16 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useToast } from '../context/ToastContext'
 import { useAuth } from '../context/AuthContext'
-import { marketApi, orderApi, walletApi } from '../services/api'
+import { marketApi, walletApi, quoteRequestApi } from '../services/api'
 import { useMarketPrices } from '../hooks/useMarketPrices'
 import { Spinner, Alert, Button, Field } from '../components/UI'
 
 const STATUS_BADGE = {
   PENDING: 'badge-warning',
-  PARTIALLY_COMPLETED: 'badge-warning',
-  COMPLETED: 'badge-success',
+  MATCHED: 'badge-success',
   CANCELLED: 'badge-danger',
-  REJECTED: 'badge-danger'
 }
-const CANCELLABLE = ['PENDING', 'PARTIALLY_COMPLETED']
+const CANCELLABLE = ['PENDING']
 
 const fmt = (n, d = 2) => {
   const num = Number(n)
@@ -34,14 +32,14 @@ export default function OfferPage() {
   const toast = useToast()
   const { marketAccess } = useAuth()
   const [pairs, setPairs] = useState([])
-  const [orders, setOrders] = useState([])
+  const [requests, setRequests] = useState([])
   const [wallets, setWallets] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
 
   const [selectedId, setSelectedId] = useState(null)
   const [side, setSide] = useState('BUY')
-  const orderType = 'QUOTE'
+  const [price, setPrice] = useState('')
   const [quantity, setQuantity] = useState('')
   const [placing, setPlacing] = useState(false)
   const [cancelling, setCancelling] = useState(null)
@@ -53,8 +51,8 @@ export default function OfferPage() {
   const selected = useMemo(() => pairs.find((p) => p.id === selectedId), [pairs, selectedId])
   const pairMap = useMemo(() => Object.fromEntries(pairs.map((p) => [p.id, p])), [pairs])
 
-  // Offers settle at the pure gram price; commission is taken in-kind from what
-  // the customer receives. So the trading price is the pure (best) gram price.
+  // The custom market price is chosen by the customer; we prefill it with the
+  // live pure gram price so offers quote a fair starting point.
   const priceOf = (p) => {
     if (!p) return { buy: 0, sell: 0, buyGram: 0, sellGram: 0 }
     const lp = live[p.pairKey]
@@ -68,26 +66,21 @@ export default function OfferPage() {
 
   const walletFor = (symbolId) => wallets.find((w) => w.symbol?.id === symbolId)
 
-  const marketTypesParam = useMemo(
-    () => {
-      const types = marketAccess?.marketTypes?.filter(Boolean)
-      return types && types.length > 0 ? types.join(',') : undefined
-    },
-    [marketAccess]
-  )
+  // Prefill the price whenever the pair or the side changes (only while the
+  // user has not typed a custom value).
+  useEffect(() => {
+    if (!selected) return
+    const pr = priceOf(selected)
+    const gram = side === 'BUY' ? pr.buyGram : pr.sellGram
+    if (gram > 0) setPrice(String(Number(gram)))
+  }, [selectedId, side])
 
-  const loadOrders = async () => {
+  const loadRequests = async () => {
     try {
-      // Only the user's offer (telegram) orders on the market type(s) this
-      // page displays — buy and sell alike.
-      const res = await orderApi.list({
-        limit: 20,
-        offset: 0,
-        status: statusFilter || undefined,
-        orderType,
-        marketTypes: marketTypesParam,
-      })
-      setOrders(res?.orders || [])
+      const res = await quoteRequestApi.my()
+      let arr = Array.isArray(res) ? res : []
+      if (statusFilter) arr = arr.filter((r) => r.status === statusFilter)
+      setRequests(arr)
     } catch (_) {}
   }
 
@@ -103,8 +96,6 @@ export default function OfferPage() {
       try {
         const [list] = await Promise.all([marketApi.getPairs(), loadWallets()])
         let arr = Array.isArray(list) ? list : []
-        // The backend already filters by market type; keep a client-side safety
-        // net so pairs outside the user's allowed market types never render.
         const allowedTypes = marketAccess?.marketTypes
         if (allowedTypes && allowedTypes.length > 0) {
           arr = arr.filter((p) => allowedTypes.includes(p.marketType))
@@ -120,24 +111,24 @@ export default function OfferPage() {
     init()
   }, [marketAccess])
 
-  useEffect(() => { loadOrders() }, [statusFilter, marketTypesParam])
+  useEffect(() => { loadRequests() }, [statusFilter])
 
-  // While any offer is still open it resolves (success/fail) asynchronously on
-  // the provider side — poll so the user sees the outcome and the updated
-  // balances without a manual refresh.
+  // While any custom request is still open (PENDING) it can be matched by
+  // another customer at any time — poll so the user sees the outcome without
+  // a manual refresh.
   useEffect(() => {
-    const hasOpen = orders.some((o) => CANCELLABLE.includes(o.status))
+    const hasOpen = requests.some((r) => CANCELLABLE.includes(r.status))
     if (!hasOpen) return
-    const t = setInterval(() => { loadOrders(); loadWallets() }, 4000)
+    const t = setInterval(() => { loadRequests(); loadWallets() }, 4000)
     return () => clearInterval(t)
-  }, [orders])
+  }, [requests])
 
   const pr = selected ? priceOf(selected) : { buy: 0, sell: 0, buyGram: 0, sellGram: 0 }
   const marketPrice = side === 'BUY' ? pr.buyGram : pr.sellGram
   const mesghalPrice = side === 'BUY' ? pr.buy : pr.sell
-  const effectivePrice = Number(marketPrice)
+  const askPrice = Number(price) || 0
   const qty = Number(quantity) || 0 // grams
-  const estTotal = qty * (effectivePrice || 0)
+  const estTotal = qty * askPrice
   const decimals = selected?.decimals ?? 2
 
   // Commission is taken in-kind from what the user receives.
@@ -162,12 +153,12 @@ export default function OfferPage() {
   const belowMin = minQ > 0 && qty > 0 && qty < minQ
   const aboveMax = maxQ > 0 && qty > maxQ
 
-  const blocked = !selected || qty <= 0 || insufficient || belowMin || aboveMax
+  const blocked = !selected || qty <= 0 || askPrice <= 0 || insufficient || belowMin || aboveMax
 
   const setMax = () => {
     if (!selected) return
     if (side === 'BUY') {
-      const px = effectivePrice || marketPrice
+      const px = askPrice || marketPrice
       if (px > 0) setQuantity(String(Number((available / px).toFixed(8))))
     } else {
       setQuantity(String(available))
@@ -178,20 +169,25 @@ export default function OfferPage() {
     e.preventDefault()
     if (!selected) return
     if (qty <= 0) { toast.error('Enter a valid quantity.'); return }
+    if (askPrice <= 0) { toast.error('Enter a valid price per gram.'); return }
     if (insufficient) { toast.error(`Insufficient ${availSymbol} balance.`); return }
     if (belowMin) { toast.error(`Minimum is ${fmt(minQ, decimals)}.`); return }
     if (aboveMax) { toast.error(`Maximum is ${fmt(maxQ, decimals)}.`); return }
     setPlacing(true)
     try {
-      await orderApi.create({
+      const res = await quoteRequestApi.create({
         pricePairId: selected.id,
         side,
-        orderType,
-        quantity: qty
+        quantity: qty,
+        price: askPrice
       })
-      toast.success(`${side === 'BUY' ? 'Buy' : 'Sell'} offer sent to Telegram.`)
+      if (res?.matched) {
+        toast.success(`${side === 'BUY' ? 'Buy' : 'Sell'} request matched instantly with another customer!`)
+      } else {
+        toast.success(`${side === 'BUY' ? 'Buy' : 'Sell'} request placed in the custom market.`)
+      }
       setQuantity('')
-      await Promise.all([loadOrders(), loadWallets()])
+      await Promise.all([loadRequests(), loadWallets()])
     } catch (err) {
       toast.error(err.response?.data?.message || 'Offer could not be placed.')
     } finally {
@@ -202,9 +198,9 @@ export default function OfferPage() {
   const cancelOrder = async (id) => {
     setCancelling(id)
     try {
-      await orderApi.cancel(id)
+      await quoteRequestApi.cancel(id)
       toast.success('Offer cancelled.')
-      await Promise.all([loadOrders(), loadWallets()])
+      await Promise.all([loadRequests(), loadWallets()])
     } catch (err) {
       toast.error(err.response?.data?.message || 'Could not cancel offer.')
     } finally {
@@ -241,7 +237,7 @@ export default function OfferPage() {
     <div className="animate-fade-in">
       <div className="main-header">
         <h1 className="main-header-title">Offer Market</h1>
-        <p className="main-header-sub">Trade via Telegram offers</p>
+        <p className="main-header-sub">Custom demand & supply — matches with other customers instantly</p>
       </div>
 
       <div className="main-body" style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
@@ -251,7 +247,7 @@ export default function OfferPage() {
           <div className="card"><p style={{ color: 'var(--text-muted)', fontSize: '0.9rem' }}>No trading pairs are available right now.</p></div>
         ) : (
           <div className="trade-grid">
-            {/* Offer market list */}
+            {/* Custom market list */}
             <div className="card animate-fade-up">
               <div className="card-title" style={{ justifyContent: 'space-between' }}>
                 <span style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}><div className="gold-dot" />Markets</span>
@@ -283,7 +279,7 @@ export default function OfferPage() {
               </div>
             </div>
 
-            {/* Offer ticket */}
+            {/* Custom offer ticket */}
             <form className="card animate-fade-up" onSubmit={placeOrder}>
               <div className="card-title" style={{ justifyContent: 'space-between' }}>
                 <span style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
@@ -294,10 +290,6 @@ export default function OfferPage() {
               <div className="side-toggle">
                 <button type="button" className={`side-btn buy ${side === 'BUY' ? 'active' : ''}`} onClick={() => setSide('BUY')}>Buy</button>
                 <button type="button" className={`side-btn sell ${side === 'SELL' ? 'active' : ''}`} onClick={() => setSide('SELL')}>Sell</button>
-              </div>
-
-              <div className="type-toggle">
-                <button type="button" className={`type-btn active`}>Offer</button>
               </div>
 
               <div className="ticket-summary">
@@ -316,14 +308,17 @@ export default function OfferPage() {
                   onChange={(e) => setQuantity(e.target.value)} placeholder="0.00" />
               </Field>
 
-              <div className="ticket-summary">
-                <span className="label">Price / gram {connected && <span className="live-pip inline" />}</span>
-                <span className="val">{fmt(marketPrice, decimals)}</span>
-              </div>
+              <Field
+                label={`Your price / gram ${connected ? '(ref ' + fmt(marketPrice, decimals) + ')' : ''}`}
+                hint="A compatible opposite order with the same quantity matches instantly"
+              >
+                <input className="form-input" type="number" step="any" min="0" value={price}
+                  onChange={(e) => setPrice(e.target.value)} placeholder="0.00" />
+              </Field>
 
               {mesghalPrice > 0 && (
                 <div className="ticket-summary">
-                  <span className="label">Price / mesghal</span>
+                  <span className="label">Ref price / mesghal</span>
                   <span className="val">{fmt(mesghalPrice, decimals)}</span>
                 </div>
               )}
@@ -352,7 +347,7 @@ export default function OfferPage() {
           </div>
         )}
 
-        {/* Offer history */}
+        {/* Custom offers history */}
         <div className="card animate-fade-up">
           <div className="card-title" style={{ justifyContent: 'space-between' }}>
             <span style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}><div className="gold-dot" />Your Offers</span>
@@ -364,13 +359,11 @@ export default function OfferPage() {
             >
               <option value="">All statuses</option>
               <option value="PENDING">Pending</option>
-              <option value="PARTIALLY_COMPLETED">Partially completed</option>
-              <option value="COMPLETED">Completed</option>
+              <option value="MATCHED">Matched</option>
               <option value="CANCELLED">Cancelled</option>
-              <option value="REJECTED">Rejected</option>
             </select>
           </div>
-          {orders.length === 0 ? (
+          {requests.length === 0 ? (
             <p style={{ color: 'var(--text-muted)', fontSize: '0.875rem' }}>
               {statusFilter ? 'No offers with this status.' : 'No offers yet.'}
             </p>
@@ -383,22 +376,29 @@ export default function OfferPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {orders.map((o) => {
-                    const p = pairMap[o.pricePairId] || o.pricePair
+                  {requests.map((r) => {
+                    const p = pairMap[r.pricePairId] || r.pricePair
                     const d = p?.decimals ?? 2
                     return (
-                      <tr key={o.id}>
+                      <tr key={r.id}>
                         <td>{p ? pairLabel(p) : '—'}</td>
-                        <td className={o.side === 'BUY' ? 'txt-buy' : 'txt-sell'}>{o.side}</td>
-                        <td>{fmt(o.quantity, d)}</td>
-                        <td>{fmt(o.averagePrice > 0 ? o.averagePrice : o.price, d)}</td>
-                        <td>{fmt(o.totalValue, 2)}</td>
-                        <td><span className={`badge ${STATUS_BADGE[o.status] || 'badge-warning'}`}>{o.status?.replace('_', ' ')}</span></td>
-                        <td>{formatDateTime(o.createAt || o.createdAt)}</td>
+                        <td className={r.side === 'BUY' ? 'txt-buy' : 'txt-sell'}>{r.side}</td>
+                        <td>{fmt(r.quantity, d)}</td>
+                        <td>{r.price ? fmt(r.price, d) : 'Market'}</td>
+                        <td>{r.price ? fmt(Number(r.quantity) * Number(r.price), 2) : '—'}</td>
                         <td>
-                          {CANCELLABLE.includes(o.status) && (
-                            <button className="btn btn-danger" disabled={cancelling === o.id} onClick={() => cancelOrder(o.id)}>
-                              {cancelling === o.id ? <Spinner light /> : 'Cancel'}
+                          <span className={`badge ${STATUS_BADGE[r.status] || 'badge-warning'}`}>
+                            {r.status === 'MATCHED' ? 'Matched' : r.status?.replace('_', ' ')}
+                          </span>
+                          {r.status === 'MATCHED' && r.matchedAt && (
+                            <div className="pair-sub">{formatDateTime(r.matchedAt)}</div>
+                          )}
+                        </td>
+                        <td>{formatDateTime(r.createAt || r.createdAt)}</td>
+                        <td>
+                          {CANCELLABLE.includes(r.status) && (
+                            <button className="btn btn-danger" disabled={cancelling === r.id} onClick={() => cancelOrder(r.id)}>
+                              {cancelling === r.id ? <Spinner light /> : 'Cancel'}
                             </button>
                           )}
                         </td>

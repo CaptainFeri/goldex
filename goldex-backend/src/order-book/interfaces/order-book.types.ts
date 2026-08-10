@@ -1,15 +1,7 @@
 import { Side } from "nodejs-order-book";
 
 export enum OrderSource {
-  PROVIDER = "PROVIDER",
   CUSTOMER = "CUSTOMER",
-}
-
-export interface ProviderOrderInfo {
-  pairId: string;
-  side: Side;
-  price: number;
-  index: number;
 }
 
 export interface CustomerOrderInfo {
@@ -26,17 +18,6 @@ export interface MatchedOrder {
   size: number;
   takerPrice: number;
   profit: number;
-}
-
-export interface ProcessedTrade {
-  makerOrderId: string;
-  makerSide: Side;
-  makerPrice: number;
-  makerSource: OrderSource;
-  takerOrderId: string;
-  takerSide: Side;
-  takerPrice: number;
-  size: number;
 }
 
 export interface DepthLevel {

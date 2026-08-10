@@ -465,7 +465,6 @@ export class OrderService {
 
     for (const match of result.matchedOrders) {
       const s = match.size;
-      const isProvider = match.makerSource === OrderSource.PROVIDER;
 
       await this.walletOrderService.settleLimitMatch(
         order,
@@ -473,7 +472,7 @@ export class OrderService {
         match.takerPrice,
         match.makerPrice,
         match.makerSource,
-        isProvider ? null : match.makerOrderId,
+        match.makerOrderId,
         pricePair,
       );
 

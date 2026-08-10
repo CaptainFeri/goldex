@@ -17,6 +17,8 @@ import * as crypto from "crypto";
 interface CreateQuoteRequestResult {
   request: QuoteRequestEntity;
   matchAlert?: boolean;
+  matched?: boolean;
+  matchedRequestId?: string | null;
 }
 
 @Injectable()
@@ -37,6 +39,12 @@ export class QuoteRequestService {
     private readonly notifier: TelegramNotifierService,
   ) {}
 
+  /**
+   * Create a request in the Custom (Telegram) market, then immediately compare
+   * it against the other pending requests. A compatible counterpart with the
+   * same quantity and a known price is matched right away (customer-to-customer);
+   * otherwise the best opportunity is surfaced as a match alert.
+   */
   async create(
     userId: string,
     side: OrderSideEnum,
@@ -65,7 +73,8 @@ export class QuoteRequestService {
 
       await queryRunner.commitTransaction();
 
-      // Check for potential match outside the txn (no critical state)
+      // Compare new request against pending ones (outside the txn — the match
+      // itself runs in its own transaction).
       const oppositeSide = side === OrderSideEnum.BUY ? OrderSideEnum.SELL : OrderSideEnum.BUY;
       const candidate = await this.repo.findOne({
         where: { side: oppositeSide, pricePairId, status: QuoteRequestStatus.PENDING, userId: Not(userId) },
@@ -74,6 +83,20 @@ export class QuoteRequestService {
       });
 
       if (candidate && this.isCompatible(side, quantity, price, candidate.side, Number(candidate.quantity), Number(candidate.price))) {
+        // Clean full match (equal quantity, both requests priced) → execute the
+        // P2P settlement right away so the custom pool behaves like a real market.
+        const newPrice = Number(price);
+        const candQty = Number(candidate.quantity);
+        const candPrice = Number(candidate.price);
+        if (newPrice > 0 && candPrice > 0 && candQty === Number(quantity)) {
+          const fresh = await this.repo.findOne({
+            where: { id: saved.id },
+            relations: { pricePair: { baseSymbol: true, quoteSymbol: true } },
+          });
+          await this.settleMatchPair(fresh || saved, candidate, userId);
+          return { request: saved, matchAlert: true, matched: true, matchedRequestId: candidate.id };
+        }
+
         await this.alertMatchOpportunity(saved, candidate);
         return { request: saved, matchAlert: true };
       }
@@ -94,18 +117,15 @@ export class QuoteRequestService {
     });
     if (!request) throw new Error("درخواست یافت نشد");
     if (request.status !== QuoteRequestStatus.PENDING) throw new Error("این درخواست دیگر فعال نیست");
+    if (request.side !== OrderSideEnum.SELL) throw new Error("فقط درخواست‌های فروش قابل تطبیق مستقیم هستند");
 
     const pair = request.pricePair;
     const quantity = Number(request.quantity);
     const price = Number(request.price);
-    const totalValue = quantity * price;
-
-    if (!price || totalValue <= 0) {
+    if (!price || quantity * price <= 0) {
       throw new Error("قیمت سفارش نامعتبر است");
     }
 
-    let sellerId: string;
-    let buyerId: string;
     let buyerOrder: QuoteRequestEntity | null = null;
 
     if (request.userId === matcherUserId) {
@@ -122,13 +142,46 @@ export class QuoteRequestService {
       if (!buyerOrder) {
         throw new Error("هیچ سفارش خریدی برای تطبیق یافت نشد");
       }
-      sellerId = request.userId;
-      buyerId = buyerOrder.userId;
-    } else {
-      // Buyer is calling match (the current order is SELL, caller is buyer)
-      sellerId = request.userId;
-      buyerId = matcherUserId;
     }
+
+    await this.settleMatchPair(request, buyerOrder, matcherUserId);
+
+    return { request, matchedBuyOrderId: buyerOrder?.id || null };
+  }
+
+  /**
+   * Settle a matched customer pair in the Custom market inside one transaction:
+   * SELL (XAU locked) → BUY (IRR locked/free), commissions taken in-kind,
+   * both requests marked MATCHED.
+   */
+  private async settleMatchPair(
+    sellerRequest: QuoteRequestEntity,
+    buyerRequest: QuoteRequestEntity | null,
+    buyerUserId: string,
+  ): Promise<void> {
+    if (sellerRequest.side !== OrderSideEnum.SELL && buyerRequest && buyerRequest.side !== OrderSideEnum.SELL) {
+      throw new Error("درخواست فروش برای تطبیق یافت نشد");
+    }
+
+    // Normalise: `seller` is always the SELL request.
+    const seller =
+      sellerRequest.side === OrderSideEnum.SELL ? sellerRequest : buyerRequest;
+    const buyer =
+      sellerRequest.side === OrderSideEnum.BUY ? sellerRequest : buyerRequest;
+    const matcherUserId =
+      sellerRequest.side === OrderSideEnum.SELL ? buyerUserId : sellerRequest.userId;
+
+    const pair = seller.pricePair;
+    const quantity = Number(seller.quantity);
+    const price = Number(seller.price);
+    const totalValue = quantity * price;
+
+    if (!pair || !price || totalValue <= 0) {
+      throw new Error("قیمت سفارش نامعتبر است");
+    }
+
+    const sellerId = seller.userId;
+    const buyerId = buyer ? buyer.userId : matcherUserId;
 
     const queryRunner = this.dataSource.createQueryRunner();
     await queryRunner.connect();
@@ -146,7 +199,7 @@ export class QuoteRequestService {
         throw new Error(`موجودی مسدود شده ${pair.baseSymbol.slug} فروشنده کافی نیست`);
       }
 
-      // Buyer's IRR: either already locked (from a BUY order) or taken from free balance
+      // Buyer's IRR: either already locked (from a BUY request) or taken from free balance
       const buyerIrrAlreadyLocked = buyerIrWallet.lockedBalance >= totalValue;
       if (!buyerIrrAlreadyLocked && buyerIrWallet.freeBalance < totalValue) {
         throw new Error(`موجودی ${pair.quoteSymbol.slug} خریدار کافی نیست (نیاز: ${totalValue.toLocaleString()})`);
@@ -220,7 +273,7 @@ export class QuoteRequestService {
           symbolId: pair.baseSymbol.id,
           type: SystemLedgerType.COMMISSION_SELL,
           amount: sellCommission,
-          requestId: request.id,
+          requestId: seller.id,
           userId: sellerId,
           description: `P2P sell commission (${sellCommRate}%) in ${pair.baseSymbol.slug}`,
         });
@@ -230,42 +283,30 @@ export class QuoteRequestService {
           symbolId: pair.quoteSymbol.id,
           type: SystemLedgerType.COMMISSION_BUY,
           amount: buyCommission,
-          requestId: request.id,
+          requestId: seller.id,
           userId: buyerId,
           description: `P2P buy commission (${buyCommRate}%) in ${pair.quoteSymbol.slug}`,
         });
       }
 
-      // Mark SELL order as matched
-      request.status = QuoteRequestStatus.MATCHED;
-      request.matchedUserId = matcherUserId;
-      request.matchedAt = new Date();
-      await queryRunner.manager.save(request);
+      // Mark SELL request as matched
+      seller.status = QuoteRequestStatus.MATCHED;
+      seller.matchedUserId = buyerId;
+      seller.matchedAt = new Date();
+      await queryRunner.manager.save(seller);
 
-      // Mark buyer's matching BUY order as matched (find inside txn with lock)
-      if (buyerOrder) {
-        // Already found above in seller path — refresh inside transaction
-        buyerOrder = await queryRunner.manager.findOne(QuoteRequestEntity, {
-          where: { id: buyerOrder.id },
+      // Mark buyer's request as matched (if it exists)
+      if (buyer) {
+        const lockedBuyer = await queryRunner.manager.findOne(QuoteRequestEntity, {
+          where: { id: buyer.id },
           lock: { mode: "pessimistic_write" },
         });
-      }
-      if (!buyerOrder) {
-        buyerOrder = await queryRunner.manager.findOne(QuoteRequestEntity, {
-          where: {
-            userId: buyerId,
-            side: OrderSideEnum.BUY,
-            pricePairId: request.pricePairId,
-            status: QuoteRequestStatus.PENDING,
-          },
-          lock: { mode: "pessimistic_write" },
-        });
-      }
-      if (buyerOrder) {
-        buyerOrder.status = QuoteRequestStatus.MATCHED;
-        buyerOrder.matchedUserId = sellerId;
-        buyerOrder.matchedAt = new Date();
-        await queryRunner.manager.save(buyerOrder);
+        if (lockedBuyer && lockedBuyer.status === QuoteRequestStatus.PENDING) {
+          lockedBuyer.status = QuoteRequestStatus.MATCHED;
+          lockedBuyer.matchedUserId = sellerId;
+          lockedBuyer.matchedAt = new Date();
+          await queryRunner.manager.save(lockedBuyer);
+        }
       }
 
       await queryRunner.commitTransaction();
@@ -279,9 +320,7 @@ export class QuoteRequestService {
     }
 
     // Channel message update is handled by goldex-telegram-bot.
-    await this.notifyMatchedUsers(request, matcherUserId);
-
-    return { request, matchedBuyOrderId: buyerOrder?.id || null };
+    await this.notifyMatchedUsers(seller, buyerId);
   }
 
   async findMyRequests(userId: string): Promise<QuoteRequestEntity[]> {
@@ -522,35 +561,5 @@ export class QuoteRequestService {
       userId: params.userId,
       description: params.description,
     });
-  }
-
-  private async updateChannelMessageMatched(request: QuoteRequestEntity, pair: PricePairEntity): Promise<void> {
-    const symbol = pair?.baseSymbol?.slug || "—";
-    const sideLabel = request.side === OrderSideEnum.BUY ? "خرید" : "فروش";
-    const priceLabel = request.price ? `${Number(request.price).toLocaleString()} تومان` : "قیمت بازار";
-
-    const text =
-      `✅ *سفارش تطبیق یافت*\n\n` +
-      `🔹 نوع: ${sideLabel} ${symbol}\n` +
-      `🔹 مقدار: ${request.quantity} گرم\n` +
-      `🔹 قیمت: ${priceLabel}\n\n` +
-      `🟢 این سفارش تکمیل شده است.`;
-
-    await this.notifier.editMessageText(request.channelChatId, request.channelMessageId, text, null);
-  }
-
-  private async broadcastToChannel(request: QuoteRequestEntity, pair: PricePairEntity): Promise<{ chatId: number; messageId: number } | null> {
-    const symbol = pair?.baseSymbol?.slug || "—";
-    const sideLabel = request.side === OrderSideEnum.BUY ? "خرید" : "فروش";
-    const priceLabel = request.price ? `${Number(request.price).toLocaleString()} تومان` : "قیمت بازار";
-    const notesLabel = request.notes ? `\n📝 ${request.notes}` : "";
-
-    const text =
-      `📊 *سفارش جدید*\n\n` +
-      `🔹 نوع: ${sideLabel} ${symbol}\n` +
-      `🔹 مقدار: ${request.quantity} گرم\n` +
-      `🔹 قیمت: ${priceLabel}${notesLabel}`;
-
-    return this.notifier.sendQuoteRequestToChannel(text, request.id);
   }
 }

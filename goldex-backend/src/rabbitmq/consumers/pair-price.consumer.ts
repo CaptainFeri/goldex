@@ -8,7 +8,6 @@ import { PricePairEntity } from "../../admin-pair/entity/price.pair.entity";
 import { PricePairHistoryEntity } from "../../admin-pair/entity/price-pair-history.entity";
 import { SymbolEntity } from "../../admin-symbol/entity/symbol.entity";
 import { MESQAL_TO_GRAM } from "../../common/constants";
-import { OrderBookService } from "../../order-book/order-book.service";
 
 interface ProviderPrice {
   buyPrice: number;
@@ -27,7 +26,6 @@ export class PairPriceConsumer implements OnModuleInit {
     private readonly pairRepo: Repository<PricePairEntity>,
     @InjectRepository(PricePairHistoryEntity)
     private readonly historyRepo: Repository<PricePairHistoryEntity>,
-    private readonly orderBookService: OrderBookService,
   ) {}
 
   async onModuleInit() {
@@ -186,9 +184,8 @@ export class PairPriceConsumer implements OnModuleInit {
         `[BEST] pair=${pairId} buy=${bestBuyPrice} (${bestBuyProvider}) sell=${bestSellPrice} (${bestSellProvider})`
       );
 
-      // Refresh synthetic provider liquidity in the order book at the new
-      // best prices (0 disables a side that has no pricing yet).
-      this.orderBookService.updateProviderPrices(pairId, finalBestBuyPrice ?? 0, finalBestSellPrice ?? 0);
+      // The Limit Market pool is real customers only — supplier prices feed
+      // the Market (supplier) market directly, never the limit order book.
 
       for (const mapping of mappings) {
         const price = pairPrices.get(mapping.providerKey);

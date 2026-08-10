@@ -3,7 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import { api, unwrap, apiError } from "../api/client";
 import { Card, Loading, ErrorState, Empty } from "../components/ui";
 import { fmtNum, pairLabel } from "../lib/format";
-import type { PricePair, OrderBookDepth, OrderBookDepthLevel, ArbitrageStatus } from "../api/types";
+import type { PricePair, OrderBookDepth, OrderBookDepthLevel } from "../api/types";
 
 function DepthTable({ levels, side, maxSize }: { levels: OrderBookDepthLevel[]; side: "bid" | "ask"; maxSize: number }) {
   const isAsk = side === "ask";
@@ -15,7 +15,7 @@ function DepthTable({ levels, side, maxSize }: { levels: OrderBookDepthLevel[]; 
       <div className="ob-hdr">
         <span>قیمت</span>
         <span>مقدار</span>
-        <span>منبع</span>
+        <span>سفارش</span>
       </div>
       <div className="ob-rows">
         {levels.length === 0 ? (
@@ -33,9 +33,7 @@ function DepthTable({ levels, side, maxSize }: { levels: OrderBookDepthLevel[]; 
               />
               <span className={`ob-price ${colorClass}`}>{fmtNum(l.price, 4)}</span>
               <span className="ob-size">{fmtNum(l.size, 4)}</span>
-              <span className="ob-src">
-                <span className={`badge ${l.source === "PROVIDER" ? "badge-provider" : "badge-customer"}`}>{l.source}</span>
-              </span>
+              <span className="ob-src">{l.orderCount}</span>
             </div>
           ))
         )}
@@ -70,15 +68,6 @@ export default function OrderBookPage() {
 
   const depth = depthQ.data;
 
-  const arbQ = useQuery({
-    queryKey: ["arbitrage", selectedId],
-    queryFn: async () => unwrap<ArbitrageStatus>((await api.get(`/admin/orders/arbitrage/${selectedId}`)).data),
-    enabled: !!selectedId,
-    refetchInterval: 5000,
-  });
-
-  const arbitrage = arbQ.data;
-
   const asks = depth?.asks ?? [];
   const bids = depth?.bids ?? [];
 
@@ -90,15 +79,8 @@ export default function OrderBookPage() {
   const maxAskSize = Math.max(...asks.map((a) => a.size), 1);
   const maxBidSize = Math.max(...bids.map((b) => b.size), 1);
 
-  const providerAsks = asks.filter((a) => a.source === "PROVIDER");
-  const providerBids = bids.filter((b) => b.source === "PROVIDER");
-  const customerAsks = asks.filter((a) => a.source === "CUSTOMER");
-  const customerBids = bids.filter((b) => b.source === "CUSTOMER");
-
-  const totalProviderAskSize = providerAsks.reduce((s, l) => s + l.size, 0);
-  const totalProviderBidSize = providerBids.reduce((s, l) => s + l.size, 0);
-  const totalCustomerAskSize = customerAsks.reduce((s, l) => s + l.size, 0);
-  const totalCustomerBidSize = customerBids.reduce((s, l) => s + l.size, 0);
+  const totalAskSize = asks.reduce((s, l) => s + l.size, 0);
+  const totalBidSize = bids.reduce((s, l) => s + l.size, 0);
 
   return (
     <Card
@@ -154,62 +136,9 @@ export default function OrderBookPage() {
               <div className="stat-value">{fmtNum(spread, 4)} ({fmtNum(spreadPercent, 2)}%)</div>
             </div>
             <div className="stat">
-              <div className="stat-label">تأمین‌کنندگان</div>
+              <div className="stat-label">عمق سفارشات</div>
               <div className="stat-value" style={{ fontSize: 14 }}>
-                خرید {fmtNum(totalProviderBidSize, 2)}g / فروش {fmtNum(totalProviderAskSize, 2)}g
-              </div>
-            </div>
-          </div>
-
-          {/* Arbitrage alert */}
-          {arbitrage?.arbitrage && (
-            <div className="alert alert-danger" style={{ marginBottom: 16, padding: "12px 16px", borderRadius: 8, background: "#fff0f0", border: "1px solid #ffcccc" }}>
-              <div style={{ fontWeight: 700, fontSize: 15, marginBottom: 4, color: "#cc0000" }}>
-                ⚠️ آربیتراژ تشخیص داده شد
-              </div>
-              <div style={{ fontSize: 13, color: "#990000" }}>
-                قیمت خرید تأمین‌کنندگان ({fmtNum(arbitrage.bestBid, 4)}) ≥ قیمت فروش تأمین‌کنندگان ({fmtNum(arbitrage.bestAsk, 4)})
-                — این جفت‌ارز فرصت سود بدون ریسک دارد.
-              </div>
-            </div>
-          )}
-
-          {/* Provider liquidity detail */}
-          <div className="grid grid-2" style={{ marginBottom: 20, gap: 12 }}>
-            <div className="card" style={{ padding: "12px 16px" }}>
-              <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 8, color: "var(--green)" }}>نقدینگی تأمین‌کنندگان — خرید</div>
-              {providerBids.length === 0 ? (
-                <div style={{ fontSize: 12, color: "var(--text-faint)" }}>خالی</div>
-              ) : (
-                <div style={{ fontSize: 12, display: "flex", flexDirection: "column", gap: 4 }}>
-                  {providerBids.map((b, i) => (
-                    <div key={i} className="row spread">
-                      <span>{fmtNum(b.price, 4)}</span>
-                      <span>{fmtNum(b.size, 2)} g</span>
-                    </div>
-                  ))}
-                </div>
-              )}
-              <div style={{ marginTop: 8, fontSize: 12, color: "var(--text-faint)", borderTop: "1px solid var(--border)", paddingTop: 6 }}>
-                مجموع: {fmtNum(totalProviderBidSize, 2)} g   |   {providerBids.length} سفارش
-              </div>
-            </div>
-            <div className="card" style={{ padding: "12px 16px" }}>
-              <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 8, color: "var(--red)" }}>نقدینگی تأمین‌کنندگان — فروش</div>
-              {providerAsks.length === 0 ? (
-                <div style={{ fontSize: 12, color: "var(--text-faint)" }}>خالی</div>
-              ) : (
-                <div style={{ fontSize: 12, display: "flex", flexDirection: "column", gap: 4 }}>
-                  {providerAsks.map((a, i) => (
-                    <div key={i} className="row spread">
-                      <span>{fmtNum(a.price, 4)}</span>
-                      <span>{fmtNum(a.size, 2)} g</span>
-                    </div>
-                  ))}
-                </div>
-              )}
-              <div style={{ marginTop: 8, fontSize: 12, color: "var(--text-faint)", borderTop: "1px solid var(--border)", paddingTop: 6 }}>
-                مجموع: {fmtNum(totalProviderAskSize, 2)} g   |   {providerAsks.length} سفارش
+                خرید {fmtNum(totalBidSize, 2)}g / فروش {fmtNum(totalAskSize, 2)}g
               </div>
             </div>
           </div>
