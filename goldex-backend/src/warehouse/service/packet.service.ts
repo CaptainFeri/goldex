@@ -324,7 +324,6 @@ export class PacketService {
       const parent = await queryRunner.manager.findOne(PacketEntity, {
         where: { id: packetId },
         lock: { mode: "pessimistic_write" },
-        relations: { warehouse: true },
       });
       if (!parent) throw new NotFoundException("Packet not found");
       if (parent.status !== PacketStatusEnum.IN_WAREHOUSE && parent.status !== PacketStatusEnum.ORPHAN) {
