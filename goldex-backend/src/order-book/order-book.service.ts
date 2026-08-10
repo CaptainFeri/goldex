@@ -2,6 +2,7 @@ import { Injectable, Logger, OnModuleInit } from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
 import { Repository, In } from "typeorm";
 import { OrderBook, Side } from "nodejs-order-book";
+import type { OrderBookOptions } from "nodejs-order-book";
 import { PricePairEntity } from "../admin-pair/entity/price.pair.entity";
 import { OrderEntity } from "../order/order.entity";
 import { OrderStatusEnum } from "../order/enum/order.status.enum";
@@ -38,13 +39,20 @@ export class OrderBookService implements OnModuleInit {
       relations: { baseSymbol: true, quoteSymbol: true },
     });
 
+    const pendingByPair = await this.loadPendingLimitOrders();
+
     for (const pair of pairs) {
-      this.limitBooks.set(pair.id, new OrderBook());
+      const snapshot = this.buildRestoreSnapshot(pendingByPair.get(pair.id) ?? []);
+      this.limitBooks.set(pair.id, new OrderBook({ snapshot }));
+      const restored = this.countSnapshotOrders(snapshot);
+      if (restored > 0) {
+        this.logger.log(
+          `Restored ${restored} resting LIMIT order(s) into the ${pair.id} book`,
+        );
+      }
     }
 
     this.logger.log(`Limit Market ready for ${pairs.length} pair(s) — real customer orders only`);
-    await this.loadExistingCustomerOrders();
-    this.logger.log("Restored resting LIMIT orders into the Limit Market books");
   }
 
   // ---------------------------------------------------------------------------
@@ -164,12 +172,19 @@ export class OrderBookService implements OnModuleInit {
     const toDisplay = (price: number) => Number((price * MESQAL_TO_GRAM).toFixed(4));
 
     if (book) {
+      // Real per-level order counts come from the snapshot (depth() only
+      // exposes aggregated size per level).
+      const orderCounts = new Map<number, number>();
+      const snap = book.snapshot();
+      for (const level of snap.bids) orderCounts.set(level.price, level.orders.length);
+      for (const level of snap.asks) orderCounts.set(level.price, level.orders.length);
+
       const [cAsks, cBids] = book.depth();
       for (const [price, size] of cBids) {
-        if (size > 0) bids.push({ price: toDisplay(price), size, orderCount: 0, source: OrderSource.CUSTOMER });
+        if (size > 0) bids.push({ price: toDisplay(price), size, orderCount: orderCounts.get(price) ?? 0, source: OrderSource.CUSTOMER });
       }
       for (const [price, size] of cAsks) {
-        if (size > 0) asks.push({ price: toDisplay(price), size, orderCount: 0, source: OrderSource.CUSTOMER });
+        if (size > 0) asks.push({ price: toDisplay(price), size, orderCount: orderCounts.get(price) ?? 0, source: OrderSource.CUSTOMER });
       }
     }
 
@@ -190,7 +205,7 @@ export class OrderBookService implements OnModuleInit {
   // Internal helpers
   // ---------------------------------------------------------------------------
 
-  private async loadExistingCustomerOrders(): Promise<void> {
+  private async loadPendingLimitOrders(): Promise<Map<string, OrderEntity[]>> {
     const pendingOrders = await this.orderRepo.find({
       where: {
         orderType: OrderTypeEnum.LIMIT,
@@ -198,20 +213,72 @@ export class OrderBookService implements OnModuleInit {
       },
     });
 
+    const byPair = new Map<string, OrderEntity[]>();
     for (const order of pendingOrders) {
-      const book = this.limitBooks.get(order.pricePairId);
-      if (!book) continue;
+      const remaining = Number(order.quantity) - Number(order.executedQuantity ?? 0);
+      if (remaining <= 0 || !order.price || Number(order.price) <= 0) continue;
+      const list = byPair.get(order.pricePairId) ?? [];
+      list.push(order);
+      byPair.set(order.pricePairId, list);
+    }
+    return byPair;
+  }
 
-      const remaining = order.quantity - order.executedQuantity;
-      if (remaining <= 0) continue;
+  /**
+   * Restore resting orders through a snapshot instead of re-`limit()`-ing them:
+   * `limit()` immediately matches any order that crosses an already-rested
+   * order (their limits may have moved past each other since placement) and
+   * silently consumes it without persistence. The snapshot path places every
+   * order with NO taker matching, so the book faithfully reflects all PENDING
+   * orders; crossings resolve when new orders arrive through processLimitOrder.
+   */
+  private buildRestoreSnapshot(orders: OrderEntity[]): NonNullable<OrderBookOptions["snapshot"]> {
+    const bids = new Map<number, any[]>();
+    const asks = new Map<number, any[]>();
+    const now = Date.now();
+
+    for (const order of orders) {
+      const remaining = Number(order.quantity) - Number(order.executedQuantity ?? 0);
+      if (remaining <= 0 || !order.price || Number(order.price) <= 0) continue;
 
       const side = order.side === "BUY" ? Side.BUY : Side.SELL;
-      book.limit({
+      const price = Number(order.price);
+      const entry = {
         id: order.id,
+        type: "limit",
         side,
         size: remaining,
-        price: Number(order.price) || 0,
-      });
+        origSize: remaining,
+        price,
+        time: order.createAt ? new Date(order.createAt).getTime() : now,
+        timeInForce: "GTC",
+        makerQty: 0,
+        takerQty: 0,
+      };
+
+      const target = side === Side.BUY ? bids : asks;
+      const arr = target.get(price) ?? [];
+      arr.push(entry);
+      target.set(price, arr);
     }
+
+    const toLevels = (m: Map<number, any[]>) =>
+      [...m.entries()]
+        .sort((a, b) => a[0] - b[0])
+        .map(([price, orders]) => ({ price, orders }));
+
+    return {
+      bids: toLevels(bids),
+      asks: toLevels(asks),
+      stopBook: { bids: [], asks: [] },
+      ts: now,
+      lastOp: 0,
+    } as any;
+  }
+
+  private countSnapshotOrders(snapshot: any): number {
+    const count = (levels: any[]) =>
+      levels.reduce((sum: number, level: any) => sum + level.orders.length, 0);
+    return count(snapshot.bids) + count(snapshot.asks);
   }
 }
