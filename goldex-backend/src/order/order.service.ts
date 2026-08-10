@@ -321,7 +321,7 @@ export class OrderService {
   }
 
   async getUserOrders(userId: string, query: OrderQueryDto): Promise<{ orders: OrderEntity[]; total: number }> {
-    const { pricePairId, side, orderType, status, limit = 10, offset = 0 } = query;
+    const { pricePairId, side, orderType, status, marketTypes, limit = 10, offset = 0 } = query;
 
     const queryBuilder = this.orderRepository
       .createQueryBuilder("order")
@@ -345,6 +345,18 @@ export class OrderService {
 
     if (status) {
       queryBuilder.andWhere("order.status = :status", { status });
+    }
+
+    // Scope the list to the given base-symbol market types (e.g. elite/offer
+    // pages only want orders of the market type they display).
+    const marketTypeList = (marketTypes || "")
+      .split(",")
+      .map((m) => m.trim())
+      .filter(Boolean);
+    if (marketTypeList.length > 0) {
+      queryBuilder
+        .leftJoinAndSelect("pricePair.baseSymbol", "baseSymbol")
+        .andWhere("baseSymbol.market_type IN (:...marketTypeList)", { marketTypeList });
     }
 
     queryBuilder.orderBy("order.created_at", "DESC").skip(offset).take(limit);

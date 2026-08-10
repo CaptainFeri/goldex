@@ -70,10 +70,20 @@ export default function EliteTradePage() {
 
   const loadOrders = useCallback(async () => {
     try {
-      const res = await orderApi.list({ limit: 20, offset: 0, status: statusFilter || undefined, orderType: 'LIMIT' })
+      // Only fetch the user's own limit orders on the market type(s) this
+      // page displays (buy and sell alike) — orders from other market types
+      // never leak into the elite list.
+      const types = marketAccess?.marketTypes?.filter(Boolean)
+      const res = await orderApi.list({
+        limit: 20,
+        offset: 0,
+        status: statusFilter || undefined,
+        orderType: 'LIMIT',
+        marketTypes: types && types.length > 0 ? types.join(',') : undefined,
+      })
       setOrders(res?.orders || [])
     } catch (_) {}
-  }, [statusFilter])
+  }, [statusFilter, marketAccess])
 
   const loadWallets = async () => {
     try {

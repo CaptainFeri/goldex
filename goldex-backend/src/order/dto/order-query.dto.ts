@@ -25,6 +25,12 @@ export class OrderQueryDto {
   @IsEnum(OrderStatusEnum)
   status?: OrderStatusEnum;
 
+  @ApiPropertyOptional({
+    description: "Comma-separated base-symbol market types to filter orders by (e.g. 'formal,informal')",
+  })
+  @IsOptional()
+  marketTypes?: string;
+
   @ApiPropertyOptional()
   @IsOptional()
   limit?: number;

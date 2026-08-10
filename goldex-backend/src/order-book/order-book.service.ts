@@ -9,18 +9,13 @@ import { OrderTypeEnum } from "../order/enum/order.type.enum";
 import { OrderSource, DepthLevel, MatchedOrder } from "./interfaces/order-book.types";
 import { MESQAL_TO_GRAM } from "../common/constants";
 
-const PROVIDER_LOT_SIZE = 100;
-const PROVIDER_TOTAL_LOTS = 10;
-
 /**
  * Provider liquidity for a pair, split into two single-side books.
  *
- * The asks book holds provider SELL orders (the platform can BUY at
- * bestBuyPrice) and the bids book holds provider BUY orders (the platform
- * can SELL at bestSellPrice).  Because bestSellPrice > bestBuyPrice in a
- * healthy market, resting both sides inside a single order book would make
- * them cross immediately and annihilate each other.  Keeping each side in
- * its own book guarantees seeds and replenishments never self-match.
+ * The asks book would hold provider SELL orders and the bids book provider
+ * BUY orders. Books are intentionally kept EMPTY: the limit pool must behave
+ * like a real order book and only contain orders actually placed by users,
+ * so no default buy/sell liquidity is seeded by the platform.
  */
 interface ProviderBookSet {
   asks: OrderBook;
@@ -53,7 +48,7 @@ export class OrderBookService implements OnModuleInit {
       this.seedPairBooks(pair);
     }
 
-    this.logger.log(`Seeded ${pairs.length} pair(s) with provider liquidity`);
+    this.logger.log(`Prepared ${pairs.length} pair(s) — real order book only (no synthetic liquidity)`);
     await this.loadExistingCustomerOrders();
     this.logger.log("Customer limit orders loaded into books");
   }
@@ -87,7 +82,6 @@ export class OrderBookService implements OnModuleInit {
     for (const done of result.done) {
       const price = (done as any).price ?? 0;
       matched.push({ orderId: done.id, price, size: done.size });
-      this.replenishProviderOrder(pairId, done.id);
     }
 
     if (result.partial) {
@@ -203,7 +197,6 @@ export class OrderBookService implements OnModuleInit {
           takerPrice: makerP,
           profit: 0,
         });
-        this.replenishProviderOrder(pairId, done.id);
       }
 
       if (provResult.partial) {
@@ -323,7 +316,6 @@ export class OrderBookService implements OnModuleInit {
             takerPrice: price,
             profit: Math.max(0, profit),
           });
-          this.replenishProviderOrder(pairId, done.id);
         }
 
         if (provResult.partial) {
@@ -371,7 +363,7 @@ export class OrderBookService implements OnModuleInit {
   }
 
   /**
-   * Get combined depth from both books.
+   * Get depth of the real customer order book.
    */
   getDepth(pairId: string): { bids: DepthLevel[]; asks: DepthLevel[] } {
     const customerBook = this.customerBooks.get(pairId);
@@ -380,14 +372,6 @@ export class OrderBookService implements OnModuleInit {
     const asks: DepthLevel[] = [];
 
     const toDisplay = (price: number) => Number((price * MESQAL_TO_GRAM).toFixed(4));
-
-    const [pAsks, pBids] = this.providerDepth(pairId);
-    for (const [price, size] of pBids) {
-      if (size > 0) bids.push({ price: toDisplay(price), size, orderCount: 0, source: OrderSource.PROVIDER });
-    }
-    for (const [price, size] of pAsks) {
-      if (size > 0) asks.push({ price: toDisplay(price), size, orderCount: 0, source: OrderSource.PROVIDER });
-    }
 
     if (customerBook) {
       const [cAsks, cBids] = customerBook.depth();
@@ -406,11 +390,12 @@ export class OrderBookService implements OnModuleInit {
   }
 
   /**
-   * Update provider prices for a pair — re-seed the provider book.
+   * Provider price updates are no longer seeded into the order book — the
+   * pool only contains real user orders. Kept as a no-op for the price
+   * pipeline so providers keep being tracked without touching the book.
    */
-  updateProviderPrices(pairId: string, bestBuyPrice: number, bestSellPrice: number): void {
-    this.seedProviderBook(pairId, bestBuyPrice, bestSellPrice);
-    this.logger.log(`Provider book re-seeded for pair ${pairId}: buy=${bestBuyPrice} sell=${bestSellPrice}`);
+  updateProviderPrices(pairId: string, _bestBuyPrice: number, _bestSellPrice: number): void {
+    this.seedProviderBook(pairId, 0, 0);
   }
 
   /**
@@ -470,65 +455,13 @@ export class OrderBookService implements OnModuleInit {
     this.customerBooks.set(pair.id, new OrderBook());
   }
 
-  private seedProviderBook(pairId: string, bestBuyPrice: number, bestSellPrice: number): void {
-    const askBook = new OrderBook();
-    const bidBook = new OrderBook();
-    this.providerBooks.set(pairId, { asks: askBook, bids: bidBook });
-
-    const buyGram = bestBuyPrice / MESQAL_TO_GRAM;
-    const sellGram = bestSellPrice / MESQAL_TO_GRAM;
-
-    // bestBuyPrice = cheapest price at which platform can BUY from providers
-    // This means providers SELL at that price → ASK side of the book
-    if (buyGram > 0) {
-      for (let i = 0; i < PROVIDER_TOTAL_LOTS; i++) {
-        askBook.limit({
-          id: `provider:${pairId}:ask:${i}`,
-          side: Side.SELL,
-          size: PROVIDER_LOT_SIZE,
-          price: buyGram,
-        });
-      }
+  private seedProviderBook(pairId: string, _bestBuyPrice: number, _bestSellPrice: number): void {
+    // Empty books on purpose — the limit pool only shows real user orders.
+    // Keeping both sides registered lets the rest of the matching pipeline
+    // run untouched while never injecting synthetic buy/sell liquidity.
+    if (!this.providerBooks.has(pairId)) {
+      this.providerBooks.set(pairId, { asks: new OrderBook(), bids: new OrderBook() });
     }
-
-    // bestSellPrice = best price at which platform can SELL to providers
-    // This means providers BUY at that price → BID side of the book
-    if (sellGram > 0) {
-      for (let i = 0; i < PROVIDER_TOTAL_LOTS; i++) {
-        bidBook.limit({
-          id: `provider:${pairId}:bid:${i}`,
-          side: Side.BUY,
-          size: PROVIDER_LOT_SIZE,
-          price: sellGram,
-        });
-      }
-    }
-  }
-
-  private replenishProviderOrder(pairId: string, orderId: string): void {
-    if (!orderId.startsWith("provider:")) return;
-    const parts = orderId.split(":");
-    if (parts.length < 4) return;
-    const label = parts[2]; // "bid" | "ask"
-    const side = label === "ask" ? Side.SELL : Side.BUY;
-    const index = parseInt(parts[3], 10);
-
-    const set = this.providerBooks.get(pairId);
-    if (!set) return;
-    // Each side book only contains orders of one side, so re-adding a lot
-    // can never cross-match the other provider side.
-    const book = label === "ask" ? set.asks : set.bids;
-
-    const fullId = `provider:${pairId}:${label}:${index}`;
-    const price = book.order(fullId)?.price;
-    if (!price) return;
-
-    book.limit({
-      id: fullId,
-      side,
-      size: PROVIDER_LOT_SIZE,
-      price,
-    });
   }
 
   /**
