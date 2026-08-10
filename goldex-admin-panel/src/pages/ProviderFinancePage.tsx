@@ -38,7 +38,14 @@ function balanceCell(s: SymBalance) {
 
 export default function ProviderFinancePage() {
   const qc = useQueryClient();
-  const [form, setForm] = useState({ providerKey: "", symbol: "XAU", direction: "RECEIVE", amount: "", note: "" });
+  const [form, setForm] = useState({
+    providerKey: "",
+    baseSymbol: "XAU",
+    quoteSymbol: "IRR",
+    baseReceived: "",
+    quotePaid: "",
+    note: "",
+  });
   const set = (k: string, v: any) => setForm((f) => ({ ...f, [k]: v }));
 
   const overview = useQuery({
@@ -51,11 +58,11 @@ export default function ProviderFinancePage() {
   });
 
   const settle = useMutation({
-    mutationFn: (p: any) => api.post("/admin/provider-finance/settle", p),
+    mutationFn: (p: any) => api.post("/admin/provider-finance/settle-pair", p),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["pf-overview"] });
       qc.invalidateQueries({ queryKey: ["pf-settlements"] });
-      setForm((f) => ({ ...f, amount: "", note: "" }));
+      setForm((f) => ({ ...f, baseReceived: "", quotePaid: "", note: "" }));
     },
   });
 
@@ -69,13 +76,15 @@ export default function ProviderFinancePage() {
 
   function submit(e: React.FormEvent) {
     e.preventDefault();
-    const amount = Number(form.amount);
-    if (!form.providerKey || !form.symbol || Number.isNaN(amount) || amount <= 0) return;
+    const base = Number(form.baseReceived);
+    const quote = Number(form.quotePaid);
+    if (!form.providerKey || Number.isNaN(base) || base <= 0 || Number.isNaN(quote) || quote <= 0) return;
     settle.mutate({
       providerKey: form.providerKey,
-      symbol: form.symbol,
-      direction: form.direction,
-      amount,
+      baseSymbol: form.baseSymbol,
+      quoteSymbol: form.quoteSymbol,
+      baseReceived: base,
+      quotePaid: quote,
       note: form.note || undefined,
     });
   }
@@ -94,23 +103,28 @@ export default function ProviderFinancePage() {
             </select>
           </div>
           <div className="field" style={{ margin: 0, minWidth: 110 }}>
-            <label>نماد</label>
-            <select className="select" value={form.symbol} onChange={(e) => set("symbol", e.target.value)}>
+            <label>نماد پایه (طلا)</label>
+            <select className="select" value={form.baseSymbol} onChange={(e) => set("baseSymbol", e.target.value)}>
               {symbolsForProvider.map((s) => (
                 <option key={s} value={s}>{s}</option>
               ))}
             </select>
           </div>
-          <div className="field" style={{ margin: 0, minWidth: 200 }}>
-            <label>نوع</label>
-            <select className="select" value={form.direction} onChange={(e) => set("direction", e.target.value)}>
-              <option value="RECEIVE">دریافت از تأمین‌کننده</option>
-              <option value="PAY">پرداخت به تأمین‌کننده</option>
+          <div className="field" style={{ margin: 0, minWidth: 160 }}>
+            <label>دریافت از تأمین‌کننده</label>
+            <input className="input mono" dir="ltr" value={form.baseReceived} onChange={(e) => set("baseReceived", e.target.value)} placeholder="0" />
+          </div>
+          <div className="field" style={{ margin: 0, minWidth: 110 }}>
+            <label>نماد ارز (ریال)</label>
+            <select className="select" value={form.quoteSymbol} onChange={(e) => set("quoteSymbol", e.target.value)}>
+              {symbolsForProvider.map((s) => (
+                <option key={s} value={s}>{s}</option>
+              ))}
             </select>
           </div>
-          <div className="field" style={{ margin: 0, minWidth: 150 }}>
-            <label>مقدار</label>
-            <input className="input mono" dir="ltr" value={form.amount} onChange={(e) => set("amount", e.target.value)} placeholder="0" />
+          <div className="field" style={{ margin: 0, minWidth: 160 }}>
+            <label>پرداخت به تأمین‌کننده</label>
+            <input className="input mono" dir="ltr" value={form.quotePaid} onChange={(e) => set("quotePaid", e.target.value)} placeholder="0" />
           </div>
           <div className="field" style={{ margin: 0, minWidth: 160 }}>
             <label>توضیحات</label>
@@ -122,7 +136,8 @@ export default function ProviderFinancePage() {
         </form>
         {settle.isError && <div className="error-text">{apiError(settle.error)}</div>}
         <div className="muted" style={{ fontSize: 12, marginTop: 8 }}>
-          «دریافت» موجودی بدهکار تأمین‌کننده را کم می‌کند، «پرداخت» بدهی ما به تأمین‌کننده را کم می‌کند.
+          هر دو عملیات به‌صورت همزمان ثبت می‌شود: «دریافت طلا از تأمین‌کننده» از طلایی که به او بدهکاریم کم می‌کند و
+          «پرداخت ارز به تأمین‌کننده» از ارزی که تأمین‌کننده به ما بدهکار است کم می‌کند.
         </div>
       </Card>
 

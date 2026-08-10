@@ -2,6 +2,7 @@ import { Body, Controller, Get, Param, Post, Query, Req, UseGuards } from "@nest
 import { ApiBearerAuth, ApiOperation, ApiTags } from "@nestjs/swagger";
 import { ProviderFinanceService } from "./provider-finance.service";
 import { SettleDto } from "./dto/settle.dto";
+import { SettlePairDto } from "./dto/settle-pair.dto";
 import { AdminAuthGuard } from "../admin/auth/Guard/admin.guard";
 import { AdminRolesGuard } from "../admin/auth/Guard/admin.role.guard";
 import { AdminRoles } from "../admin/role/admin.role.decorator";
@@ -31,6 +32,14 @@ export class ProviderFinanceController {
   @ApiOperation({ summary: "Record a settlement with a provider" })
   async settle(@Body() dto: SettleDto, @Req() req: AdminExpressRequest) {
     return { data: await this.service.settle(dto, req.admin?.id) };
+  }
+
+  // Combined two-leg settlement: gold received FROM the provider (XAU) and
+  // currency given TO the provider (IRR), written atomically in one transaction.
+  @Post("settle-pair")
+  @ApiOperation({ summary: "Settle both legs (gold received + currency paid) atomically" })
+  async settlePair(@Body() dto: SettlePairDto, @Req() req: AdminExpressRequest) {
+    return { data: await this.service.settlePair(dto, req.admin?.id) };
   }
 
   @Get("settlements")

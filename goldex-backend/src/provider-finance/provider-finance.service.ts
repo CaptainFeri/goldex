@@ -1,11 +1,12 @@
 import { Injectable } from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
-import { Repository } from "typeorm";
+import { DataSource, Repository } from "typeorm";
 import { ProviderDealSnapshotEntity } from "../financial/entity/provider-deal-snapshot.entity";
 import { SystemLedgerEntity } from "../financial/entity/system-ledger.entity";
 import { SymbolEntity } from "../admin-symbol/entity/symbol.entity";
 import { ProviderSettlementEntity, SettlementDirection } from "./entity/provider-settlement.entity";
 import { SettleDto } from "./dto/settle.dto";
+import { SettlePairDto } from "./dto/settle-pair.dto";
 
 // Signed contribution of a settlement to the running balance:
 //  RECEIVE (we take the asset from the provider) reduces what they owe us → negative.
@@ -24,7 +25,8 @@ export class ProviderFinanceService {
     @InjectRepository(SystemLedgerEntity)
     private readonly ledgerRepo: Repository<SystemLedgerEntity>,
     @InjectRepository(SymbolEntity)
-    private readonly symbolRepo: Repository<SymbolEntity>
+    private readonly symbolRepo: Repository<SymbolEntity>,
+    private readonly dataSource: DataSource,
   ) {}
 
   // Accrued platform profit per provider, per symbol, from the system ledger.
@@ -118,6 +120,52 @@ export class ProviderFinanceService {
       adminId: adminId ?? null,
     });
     return await this.settlementRepo.save(row);
+  }
+
+  /**
+   * Combined two-leg settlement, both legs written atomically:
+   *   baseReceived → BASE  RECEIVE (we physically took base asset from the provider)
+   *   quotePaid    → QUOTE PAY     (we physically gave quote asset to the provider)
+   *
+   * The two legs always land in the same transaction, so the manager never has
+   * to remember to record both halves separately.
+   */
+  async settlePair(dto: SettlePairDto, adminId?: string) {
+    const queryRunner = this.dataSource.createQueryRunner();
+    await queryRunner.connect();
+    await queryRunner.startTransaction();
+
+    try {
+      const baseSymbol = dto.baseSymbol.toUpperCase();
+      const quoteSymbol = dto.quoteSymbol.toUpperCase();
+      const legs = [
+        queryRunner.manager.create(ProviderSettlementEntity, {
+          providerKey: dto.providerKey,
+          symbol: baseSymbol,
+          direction: SettlementDirection.RECEIVE,
+          amount: dto.baseReceived,
+          note: dto.note ?? null,
+          adminId: adminId ?? null,
+        }),
+        queryRunner.manager.create(ProviderSettlementEntity, {
+          providerKey: dto.providerKey,
+          symbol: quoteSymbol,
+          direction: SettlementDirection.PAY,
+          amount: dto.quotePaid,
+          note: dto.note ?? null,
+          adminId: adminId ?? null,
+        }),
+      ];
+
+      const saved = await queryRunner.manager.save(legs);
+      await queryRunner.commitTransaction();
+      return saved;
+    } catch (error) {
+      await queryRunner.rollbackTransaction();
+      throw error;
+    } finally {
+      await queryRunner.release();
+    }
   }
 
   async getSettlements(providerKey?: string) {
