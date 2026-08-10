@@ -18,32 +18,39 @@ interface ProviderRow {
   profit?: { symbol: string; amount: number }[];
 }
 
-function balanceCell(s: SymBalance) {
-  if (s.outstanding > 0)
+// "we received" = the provider delivered the symbol to us → reduces outstanding.
+// "they received" = we delivered the symbol to the provider → increases outstanding.
+function signedDelta(direction: "RECEIVE" | "PAY", amount: number) {
+  return direction === "RECEIVE" ? -amount : amount;
+}
+
+function BalanceBadge({ value, decimals }: { value: number; decimals: number }) {
+  if (value > 0)
     return (
       <span>
-        <Badge kind="green">بدهکار</Badge>{" "}
-        <span className="mono">{fmtNum(s.bedehkar, s.symbol === "XAU" ? 4 : 0)}</span>
+        <Badge kind="green">بدهکار</Badge> <span className="mono">{fmtNum(value, decimals)}</span>
       </span>
     );
-  if (s.outstanding < 0)
+  if (value < 0)
     return (
       <span>
-        <Badge kind="red">بستانکار</Badge>{" "}
-        <span className="mono">{fmtNum(s.bestankar, s.symbol === "XAU" ? 4 : 0)}</span>
+        <Badge kind="red">بستانکار</Badge> <span className="mono">{fmtNum(-value, decimals)}</span>
       </span>
     );
   return <Badge kind="gray">تسویه</Badge>;
+}
+
+function balanceCell(s: SymBalance) {
+  return <BalanceBadge value={s.outstanding} decimals={s.symbol === "XAU" ? 4 : 0} />;
 }
 
 export default function ProviderFinancePage() {
   const qc = useQueryClient();
   const [form, setForm] = useState({
     providerKey: "",
-    baseSymbol: "XAU",
-    quoteSymbol: "IRR",
-    baseReceived: "",
-    quotePaid: "",
+    symbol: "XAU",
+    direction: "RECEIVE" as "RECEIVE" | "PAY",
+    amount: "",
     note: "",
   });
   const set = (k: string, v: any) => setForm((f) => ({ ...f, [k]: v }));
@@ -58,11 +65,11 @@ export default function ProviderFinancePage() {
   });
 
   const settle = useMutation({
-    mutationFn: (p: any) => api.post("/admin/provider-finance/settle-pair", p),
+    mutationFn: (p: any) => api.post("/admin/provider-finance/settle", p),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["pf-overview"] });
       qc.invalidateQueries({ queryKey: ["pf-settlements"] });
-      setForm((f) => ({ ...f, baseReceived: "", quotePaid: "", note: "" }));
+      setForm((f) => ({ ...f, amount: "", note: "" }));
     },
   });
 
@@ -74,27 +81,37 @@ export default function ProviderFinancePage() {
     return [...syms];
   }, [overview.data, form.providerKey]);
 
+  const currentCell = useMemo(() => {
+    if (!form.providerKey) return null;
+    const p = overview.data?.find((x) => x.providerKey === form.providerKey);
+    return p?.symbols.find((s) => s.symbol === form.symbol) ?? null;
+  }, [overview.data, form.providerKey, form.symbol]);
+
+  const amount = Number(form.amount);
+  const currentOut = currentCell?.outstanding ?? 0;
+  const delta = Number.isFinite(amount) && amount > 0 ? signedDelta(form.direction, amount) : 0;
+  const afterOut = Number((currentOut + delta).toFixed(8));
+  const decimals = form.symbol === "XAU" ? 4 : 0;
+  const directionLabel = form.direction === "RECEIVE" ? "ما دریافت کردیم" : "آنها دریافت کردند";
+
   function submit(e: React.FormEvent) {
     e.preventDefault();
-    const base = Number(form.baseReceived);
-    const quote = Number(form.quotePaid);
-    if (!form.providerKey || Number.isNaN(base) || base <= 0 || Number.isNaN(quote) || quote <= 0) return;
+    if (!form.providerKey || !Number.isFinite(amount) || amount <= 0) return;
     settle.mutate({
       providerKey: form.providerKey,
-      baseSymbol: form.baseSymbol,
-      quoteSymbol: form.quoteSymbol,
-      baseReceived: base,
-      quotePaid: quote,
+      symbol: form.symbol,
+      direction: form.direction,
+      amount,
       note: form.note || undefined,
     });
   }
 
   return (
     <>
-      <Card title="ثبت تسویه با تأمین‌کننده">
+      <Card title="ثبت دریافت/پرداخت با تأمین‌کننده">
         <form onSubmit={submit} className="toolbar" style={{ alignItems: "flex-end" }}>
           <div className="field" style={{ margin: 0, minWidth: 180 }}>
-            <label>تأمین‌کننده</label>
+            <label>۱. تأمین‌کننده</label>
             <select className="select" value={form.providerKey} onChange={(e) => set("providerKey", e.target.value)}>
               <option value="">انتخاب کنید…</option>
               {providers.map((p) => (
@@ -102,42 +119,61 @@ export default function ProviderFinancePage() {
               ))}
             </select>
           </div>
-          <div className="field" style={{ margin: 0, minWidth: 110 }}>
-            <label>نماد پایه (طلا)</label>
-            <select className="select" value={form.baseSymbol} onChange={(e) => set("baseSymbol", e.target.value)}>
+          <div className="field" style={{ margin: 0, minWidth: 120 }}>
+            <label>۲. نماد</label>
+            <select className="select" value={form.symbol} onChange={(e) => set("symbol", e.target.value)}>
               {symbolsForProvider.map((s) => (
                 <option key={s} value={s}>{s}</option>
               ))}
             </select>
           </div>
-          <div className="field" style={{ margin: 0, minWidth: 160 }}>
-            <label>دریافت از تأمین‌کننده</label>
-            <input className="input mono" dir="ltr" value={form.baseReceived} onChange={(e) => set("baseReceived", e.target.value)} placeholder="0" />
-          </div>
-          <div className="field" style={{ margin: 0, minWidth: 110 }}>
-            <label>نماد ارز (ریال)</label>
-            <select className="select" value={form.quoteSymbol} onChange={(e) => set("quoteSymbol", e.target.value)}>
-              {symbolsForProvider.map((s) => (
-                <option key={s} value={s}>{s}</option>
-              ))}
+          <div className="field" style={{ margin: 0, minWidth: 170 }}>
+            <label>۳. طرف دریافت</label>
+            <select
+              className="select"
+              value={form.direction}
+              onChange={(e) => set("direction", e.target.value as "RECEIVE" | "PAY")}
+            >
+              <option value="RECEIVE">ما دریافت کردیم</option>
+              <option value="PAY">آنها دریافت کردند</option>
             </select>
           </div>
-          <div className="field" style={{ margin: 0, minWidth: 160 }}>
-            <label>پرداخت به تأمین‌کننده</label>
-            <input className="input mono" dir="ltr" value={form.quotePaid} onChange={(e) => set("quotePaid", e.target.value)} placeholder="0" />
+          <div className="field" style={{ margin: 0, minWidth: 150 }}>
+            <label>مقدار ({form.symbol})</label>
+            <input className="input mono" dir="ltr" value={form.amount} onChange={(e) => set("amount", e.target.value)} placeholder="0" />
           </div>
           <div className="field" style={{ margin: 0, minWidth: 160 }}>
             <label>توضیحات</label>
             <input className="input" value={form.note} onChange={(e) => set("note", e.target.value)} />
           </div>
-          <button className="btn primary" disabled={settle.isPending}>
-            {settle.isPending ? <span className="spin" /> : "ثبت تسویه"}
+          <button className="btn primary" disabled={settle.isPending || !form.providerKey || !(amount > 0)}>
+            {settle.isPending ? <span className="spin" /> : "ثبت"}
           </button>
         </form>
         {settle.isError && <div className="error-text">{apiError(settle.error)}</div>}
+
+        {/* Live effect of this entry on the (selected provider, symbol) balance */}
+        <div className="card" style={{ marginTop: 12, padding: "12px 16px", display: "flex", gap: 24, flexWrap: "wrap", alignItems: "center" }}>
+          <div style={{ fontSize: 13, fontWeight: 600 }}>
+            اثر ثبت بر مانده <Badge kind="gold">{form.symbol}</Badge>
+          </div>
+          <div className="row" style={{ gap: 8, alignItems: "center" }}>
+            <span className="muted" style={{ fontSize: 12 }}>مانده فعلی:</span>
+            <BalanceBadge value={currentOut} decimals={decimals} />
+            <span style={{ color: "var(--text-faint)" }}>←</span>
+            <span className="muted" style={{ fontSize: 12 }}>مانده پس از ثبت:</span>
+            <BalanceBadge value={afterOut} decimals={decimals} />
+            {amount > 0 && (
+              <span className="muted" style={{ fontSize: 12 }}>
+                ({signedDelta(form.direction, amount) < 0 ? "کاهش" : "افزایش"} با مقدار واردشده)
+              </span>
+            )}
+          </div>
+        </div>
+
         <div className="muted" style={{ fontSize: 12, marginTop: 8 }}>
-          هر دو عملیات به‌صورت همزمان ثبت می‌شود: «دریافت طلا از تأمین‌کننده» از طلایی که به او بدهکاریم کم می‌کند و
-          «پرداخت ارز به تأمین‌کننده» از ارزی که تأمین‌کننده به ما بدهکار است کم می‌کند.
+          اگر تأمین‌کننده به ما بدهکار است: «ما دریافت کردیم» مانده را کم و «آنها دریافت کردند» مانده را زیاد می‌کند.
+          اگر ما به تأمین‌کننده بدهکاریم: «ما دریافت کردیم» مانده را زیاد و «آنها دریافت کردند» مانده را کم می‌کند.
         </div>
       </Card>
 
@@ -213,9 +249,9 @@ export default function ProviderFinancePage() {
                     <td><Badge kind="gold">{s.symbol}</Badge></td>
                     <td>
                       {s.direction === "RECEIVE" ? (
-                        <Badge kind="green">دریافت</Badge>
+                        <Badge kind="green">ما دریافت کردیم</Badge>
                       ) : (
-                        <Badge kind="red">پرداخت</Badge>
+                        <Badge kind="red">آنها دریافت کردند</Badge>
                       )}
                     </td>
                     <td className="mono">{fmtNum(s.amount, s.symbol === "XAU" ? 4 : 0)}</td>
