@@ -12,12 +12,27 @@ import { MESQAL_TO_GRAM } from "../common/constants";
 const PROVIDER_LOT_SIZE = 100;
 const PROVIDER_TOTAL_LOTS = 10;
 
+/**
+ * Provider liquidity for a pair, split into two single-side books.
+ *
+ * The asks book holds provider SELL orders (the platform can BUY at
+ * bestBuyPrice) and the bids book holds provider BUY orders (the platform
+ * can SELL at bestSellPrice).  Because bestSellPrice > bestBuyPrice in a
+ * healthy market, resting both sides inside a single order book would make
+ * them cross immediately and annihilate each other.  Keeping each side in
+ * its own book guarantees seeds and replenishments never self-match.
+ */
+interface ProviderBookSet {
+  asks: OrderBook;
+  bids: OrderBook;
+}
+
 
 @Injectable()
 export class OrderBookService implements OnModuleInit {
   private readonly logger = new Logger(OrderBookService.name);
 
-  private providerBooks = new Map<string, OrderBook>();
+  private providerBooks = new Map<string, ProviderBookSet>();
   private customerBooks = new Map<string, OrderBook>();
 
   constructor(
@@ -60,7 +75,8 @@ export class OrderBookService implements OnModuleInit {
     filledSize: number;
     remainingSize: number;
   } {
-    const book = this.providerBooks.get(pairId);
+    const set = this.providerBooks.get(pairId);
+    const book = side === Side.BUY ? set?.asks : set?.bids;
     if (!book) {
       throw new Error(`No provider order book for pair ${pairId}`);
     }
@@ -112,15 +128,15 @@ export class OrderBookService implements OnModuleInit {
     orderId: string,
   ): { matchedOrders: MatchedOrder[]; remainingSize: number } {
     const customerBook = this.customerBooks.get(pairId);
-    const providerBook = this.providerBooks.get(pairId);
-    if (!customerBook || !providerBook) {
+    const providerSet = this.providerBooks.get(pairId);
+    if (!customerBook || !providerSet) {
       throw new Error(`No order books for pair ${pairId}`);
     }
 
     // Provider book depth: [asks, bids]
     //   asks = providers SELL → platform BUYS   (bestBuy price)
     //   bids = providers BUY  → platform SELLS  (bestSell price)
-    const [pAsks, pBids] = providerBook.depth();
+    const [pAsks, pBids] = this.providerDepth(pairId);
     const providerMarketPrice =
       side === Side.BUY
         ? (pAsks.length > 0 ? pAsks[0][0] : 0)    // cheapest provider ask
@@ -173,7 +189,8 @@ export class OrderBookService implements OnModuleInit {
 
     // ── Phase 2: match remaining against provider book ─────────────────────
     if (remaining > 0) {
-      const provResult = providerBook.market({ side, size: remaining });
+      const provBook = side === Side.BUY ? providerSet.asks : providerSet.bids;
+      const provResult = provBook.market({ side, size: remaining });
 
       for (const done of provResult.done) {
         const makerP = (done as any).price ?? 0;
@@ -226,8 +243,8 @@ export class OrderBookService implements OnModuleInit {
     orderId: string,
   ): { matchedOrders: MatchedOrder[]; restingSize: number } {
     const customerBook = this.customerBooks.get(pairId);
-    const providerBook = this.providerBooks.get(pairId);
-    if (!customerBook || !providerBook) {
+    const providerSet = this.providerBooks.get(pairId);
+    if (!customerBook || !providerSet) {
       throw new Error(`No order books for pair ${pairId}`);
     }
 
@@ -292,7 +309,7 @@ export class OrderBookService implements OnModuleInit {
       if (fillable > 0) {
         customerBook.cancel(orderId);
         const fillSize = Math.min(remaining, fillable);
-        const provResult = providerBook.market({ side, size: fillSize });
+        const provResult = (isBuy ? providerSet.asks : providerSet.bids).market({ side, size: fillSize });
 
         for (const done of provResult.done) {
           const makerP = (done as any).price ?? 0;
@@ -357,7 +374,6 @@ export class OrderBookService implements OnModuleInit {
    * Get combined depth from both books.
    */
   getDepth(pairId: string): { bids: DepthLevel[]; asks: DepthLevel[] } {
-    const providerBook = this.providerBooks.get(pairId);
     const customerBook = this.customerBooks.get(pairId);
 
     const bids: DepthLevel[] = [];
@@ -365,14 +381,12 @@ export class OrderBookService implements OnModuleInit {
 
     const toDisplay = (price: number) => Number((price * MESQAL_TO_GRAM).toFixed(4));
 
-    if (providerBook) {
-      const [pAsks, pBids] = providerBook.depth();
-      for (const [price, size] of pBids) {
-        if (size > 0) bids.push({ price: toDisplay(price), size, orderCount: 0, source: OrderSource.PROVIDER });
-      }
-      for (const [price, size] of pAsks) {
-        if (size > 0) asks.push({ price: toDisplay(price), size, orderCount: 0, source: OrderSource.PROVIDER });
-      }
+    const [pAsks, pBids] = this.providerDepth(pairId);
+    for (const [price, size] of pBids) {
+      if (size > 0) bids.push({ price: toDisplay(price), size, orderCount: 0, source: OrderSource.PROVIDER });
+    }
+    for (const [price, size] of pAsks) {
+      if (size > 0) asks.push({ price: toDisplay(price), size, orderCount: 0, source: OrderSource.PROVIDER });
     }
 
     if (customerBook) {
@@ -395,7 +409,6 @@ export class OrderBookService implements OnModuleInit {
    * Update provider prices for a pair — re-seed the provider book.
    */
   updateProviderPrices(pairId: string, bestBuyPrice: number, bestSellPrice: number): void {
-    const pair = this.pricePairRepo.create({ id: pairId });
     this.seedProviderBook(pairId, bestBuyPrice, bestSellPrice);
     this.logger.log(`Provider book re-seeded for pair ${pairId}: buy=${bestBuyPrice} sell=${bestSellPrice}`);
   }
@@ -419,9 +432,7 @@ export class OrderBookService implements OnModuleInit {
    * (i.e. the provider book has overlapping bid/ask prices).
    */
   checkArbitrage(pairId: string): boolean {
-    const book = this.providerBooks.get(pairId);
-    if (!book) return false;
-    const [pAsks, pBids] = book.depth();
+    const [pAsks, pBids] = this.providerDepth(pairId);
     const bestBid = pBids.length > 0 ? pBids[0][0] : 0;
     const bestAsk = pAsks.length > 0 ? pAsks[0][0] : 0;
     if (bestBid > 0 && bestAsk > 0 && bestBid >= bestAsk) {
@@ -437,9 +448,8 @@ export class OrderBookService implements OnModuleInit {
    * Return current arbitrage status for a pair (provider bid ≥ provider ask).
    */
   getArbitrageStatus(pairId: string): { arbitrage: boolean; bestBid: number; bestAsk: number } | null {
-    const book = this.providerBooks.get(pairId);
-    if (!book) return null;
-    const [pAsks, pBids] = book.depth();
+    const [pAsks, pBids] = this.providerDepth(pairId);
+    if (pAsks.length === 0 && pBids.length === 0) return null;
     const bestBid = pBids.length > 0 ? pBids[0][0] : 0;
     const bestAsk = pAsks.length > 0 ? pAsks[0][0] : 0;
     return {
@@ -461,8 +471,9 @@ export class OrderBookService implements OnModuleInit {
   }
 
   private seedProviderBook(pairId: string, bestBuyPrice: number, bestSellPrice: number): void {
-    const book = new OrderBook();
-    this.providerBooks.set(pairId, book);
+    const askBook = new OrderBook();
+    const bidBook = new OrderBook();
+    this.providerBooks.set(pairId, { asks: askBook, bids: bidBook });
 
     const buyGram = bestBuyPrice / MESQAL_TO_GRAM;
     const sellGram = bestSellPrice / MESQAL_TO_GRAM;
@@ -471,12 +482,11 @@ export class OrderBookService implements OnModuleInit {
     // This means providers SELL at that price → ASK side of the book
     if (buyGram > 0) {
       for (let i = 0; i < PROVIDER_TOTAL_LOTS; i++) {
-        book.limit({
+        askBook.limit({
           id: `provider:${pairId}:ask:${i}`,
           side: Side.SELL,
           size: PROVIDER_LOT_SIZE,
           price: buyGram,
-
         });
       }
     }
@@ -485,12 +495,11 @@ export class OrderBookService implements OnModuleInit {
     // This means providers BUY at that price → BID side of the book
     if (sellGram > 0) {
       for (let i = 0; i < PROVIDER_TOTAL_LOTS; i++) {
-        book.limit({
+        bidBook.limit({
           id: `provider:${pairId}:bid:${i}`,
           side: Side.BUY,
           size: PROVIDER_LOT_SIZE,
           price: sellGram,
-
         });
       }
     }
@@ -504,8 +513,11 @@ export class OrderBookService implements OnModuleInit {
     const side = label === "ask" ? Side.SELL : Side.BUY;
     const index = parseInt(parts[3], 10);
 
-    const book = this.providerBooks.get(pairId);
-    if (!book) return;
+    const set = this.providerBooks.get(pairId);
+    if (!set) return;
+    // Each side book only contains orders of one side, so re-adding a lot
+    // can never cross-match the other provider side.
+    const book = label === "ask" ? set.asks : set.bids;
 
     const fullId = `provider:${pairId}:${label}:${index}`;
     const price = book.order(fullId)?.price;
@@ -516,8 +528,16 @@ export class OrderBookService implements OnModuleInit {
       side,
       size: PROVIDER_LOT_SIZE,
       price,
-
     });
+  }
+
+  /**
+   * Combined provider depth as [asks, bids] from the two single-side books.
+   */
+  private providerDepth(pairId: string): [Array<[number, number]>, Array<[number, number]>] {
+    const set = this.providerBooks.get(pairId);
+    if (!set) return [[], []];
+    return [set.asks.depth()[0], set.bids.depth()[1]];
   }
 
   /**
@@ -527,20 +547,24 @@ export class OrderBookService implements OnModuleInit {
    * Library depth() returns [asks, bids].
    */
   private calculateProviderFillable(pairId: string, side: Side, limitPrice: number): number {
-    const book = this.providerBooks.get(pairId);
-    if (!book) return 0;
+    const set = this.providerBooks.get(pairId);
+    if (!set) return 0;
 
-    const [pAsks, pBids] = book.depth();
+    // BUY → checks provider asks (sellers) with price <= limit.
+    // SELL → checks provider bids (buyers) with price >= limit.
+    const book = side === Side.BUY ? set.asks : set.bids;
+    const isAskSide = side === Side.BUY;
+    const levels = book.depth()[isAskSide ? 0 : 1];
 
     let fillable = 0;
 
     if (side === Side.BUY) {
-      for (const [price, size] of pAsks) {
+      for (const [price, size] of levels) {
         if (price <= limitPrice) fillable += size;
         else break;
       }
     } else {
-      for (const [price, size] of pBids) {
+      for (const [price, size] of levels) {
         if (price >= limitPrice) fillable += size;
         else break;
       }
