@@ -11,12 +11,14 @@ import { SnapshotConsumer } from "../rabbitmq/consumers/snapshot.consumer";
 import { OrderStatusConsumer } from "../rabbitmq/consumers/order-status.consumer";
 import { RedisModule } from "../redis/redis.module";
 import { WalletCoreModule } from "../wallet/wallet-core.module";
+import { OrderBookModule } from "../order-book/order-book.module";
 
 @Module({
   imports: [
     TypeOrmModule.forFeature([ProviderPairMappingEntity, PricePairEntity, PricePairHistoryEntity, OrderEntity]),
     RedisModule,
     WalletCoreModule,
+    OrderBookModule,
   ],
   providers: [ProviderPairMappingService, PairPriceConsumer, SnapshotConsumer, OrderStatusConsumer],
   controllers: [ProviderPairMappingController],
