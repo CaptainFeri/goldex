@@ -50,12 +50,14 @@ export class ProviderDealConsumer implements OnModuleInit {
       if (!data?.providerKey || !data.doneDeals) return;
       const a = data.doneDeals;
 
-      // The pricing engine computes netVolume = buyVolume - sellVolume using the
-      // provider API's convention (e.g. Talaab returns 'فروش' for a platform buy,
-      // so buyVolume=0, sellVolume=vol, netVolume=-vol).  Negate both net fields
-      // so that a platform buy always yields a positive net position.
-      const netVolume = -(a.netVolume ?? 0);
-      const netValue = -(a.netValue ?? 0);
+      // netVolume/netValue arrive from the pricing-engine already normalized to
+      // the platform's perspective: a platform buy (we take gold from the
+      // provider) is always positive netVolume and negative netValue. The engine
+      // classifies deals from dealTypeStr; Talaab's inverted raw titles are
+      // normalized when its transactions are stored, so no extra flip is needed
+      // here.
+      const netVolume = a.netVolume ?? 0;
+      const netValue = a.netValue ?? 0;
 
       // Resolve the item to its real base/quote pair symbols. Unmapped/legacy
       // messages fall back to XAU/IRR (the historical assumption).
