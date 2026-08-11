@@ -675,17 +675,16 @@ function RequestProcessModal({
           <label>اقدام</label>
           <select className="input" value={status} onChange={(e) => setStatus(e.target.value)} required>
             <option value="">انتخاب…</option>
-            <option value="APPROVED">تایید</option>
+            {!isOutput && <option value="APPROVED">تایید (واریز مواد)</option>}
             <option value="REJECTED">رد</option>
             {isOutput && <option value="COMPLETED">تکمیل (برداشت شده)</option>}
-            {!isOutput && <option value="COMPLETED">تکمیل (واریز شده)</option>}
           </select>
         </div>
         <div className="field">
           <label>یادداشت</label>
           <textarea className="input" value={notes} onChange={(e) => setNotes(e.target.value)} rows={2} />
         </div>
-        {(status === "APPROVED" && isOutput) || status === "COMPLETED" ? (
+        {(status === "APPROVED" || status === "COMPLETED") && (
           <>
             <div className="field">
               <label>تاریخ تحویل</label>
@@ -700,7 +699,7 @@ function RequestProcessModal({
               <input className="input" value={deliveryLocation} onChange={(e) => setDeliveryLocation(e.target.value)} />
             </div>
           </>
-        ) : null}
+        )}
         <div className="row" style={{ justifyContent: "flex-end", gap: 8, marginTop: 12 }}>
           <button className="btn ghost" type="button" onClick={onClose}>انصراف</button>
           <button className="btn primary" disabled={process.isPending}>{process.isPending ? "در حال پردازش…" : "ثبت"}</button>

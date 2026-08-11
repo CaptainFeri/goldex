@@ -27,7 +27,7 @@ const http = axios.create({ baseURL: BASE })
 // token, password-reset token).
 http.interceptors.request.use((config) => {
   config.headers = config.headers ?? {}
-  config.headers['Accept-Language'] = 'en'
+  config.headers['Accept-Language'] = localStorage.getItem('lang') || 'fa'
   const token = tokens.access
   if (token && !config.skipAuth && !config.headers.Authorization) {
     config.headers.Authorization = `Bearer ${token}`

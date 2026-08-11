@@ -51,7 +51,9 @@ export class HttpExceptionFilter<T> extends TranslateHandler implements Exceptio
       if (message?.includes?.("Cannot")) {
         result.message = message;
       } else if (typeof message === "string") {
-        result.message = this.getMessage(message);
+        const translated = this.getMessage(message);
+        result.message =
+          translated && translated.startsWith("message.") ? message : translated;
       } else {
         result.message = this.getMessage(exception.getResponse()["error"]);
         result.errors = message;

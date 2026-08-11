@@ -9,8 +9,7 @@ function applyLang(lng) {
   localStorage.setItem('lang', lng)
 }
 
-const saved = 'en'
-localStorage.setItem('lang', 'en')
+const saved = localStorage.getItem('lang') || 'fa'
 applyLang(saved)
 
 i18n.use(initReactI18next).init({

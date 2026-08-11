@@ -729,11 +729,7 @@ export class UserService {
       if (user.devices.length <= 2) {
         for (let i = 0; i < user.devices.length; i++) {
           const { deviceType, userAgent } = user.devices[i];
-          if (
-            ipAddress == user.devices[i].ipAddress &&
-            deviceInfo.ua == userAgent &&
-            deviceType == deviceInfo.os.name
-          ) {
+          if (deviceInfo.ua == userAgent && deviceType == deviceInfo.os.name) {
             fundedDevice = user.devices[i];
           }
         }
@@ -773,7 +769,6 @@ export class UserService {
           const device = await this.createNewDeviceForUser(user, request, new Date());
           const refreshToken = await this.createRefreshTokenForDevice(user, device);
           await this.saveLoginHistory(request, UserLoginHistoryEnum.SUCCESS, user.id);
-          await this.saveLoginHistory(request, UserLoginHistoryEnum.SUCCESS, user.id);
           return {
             access_token: await this.makeJwtToken(user.id, user.role),
             refresh_token: refreshToken.token,
@@ -810,11 +805,7 @@ export class UserService {
         if (user.devices.length <= 2) {
           for (let i = 0; i < user.devices.length; i++) {
             const { deviceType, userAgent } = user.devices[i];
-            if (
-              ipAddress == user.devices[i].ipAddress &&
-              deviceInfo.ua == userAgent &&
-              deviceType == deviceInfo.os.name
-            ) {
+            if (deviceInfo.ua == userAgent && deviceType == deviceInfo.os.name) {
               fundedDevice = user.devices[i];
             }
           }
@@ -904,8 +895,8 @@ export class UserService {
                   : (await this.getLoginHistory(100, 0, user.id)).totalItems,
               currentDevice: currentDevice,
             };
-          } else throw new BadRequestException();
-        } else throw new BadRequestException("BAD_REQUEST");
+          } else throw new BadRequestException("DEVICE_LIMIT_REACHED");
+        } else throw new BadRequestException("DEVICE_LIMIT_REACHED");
       } else {
         await this.saveLoginHistory(request, UserLoginHistoryEnum.FAILURE, user.id);
         throw new BadRequestException("PASSWORD.INVALID");
@@ -968,7 +959,6 @@ export class UserService {
     if (user.devices.length <= 5) {
       for (let i = 0; i < user.devices.length; i++) {
         if (
-          ipAddress == user.devices[i].ipAddress &&
           deviceInfo.ua == user.devices[i].userAgent &&
           user.devices[i].deviceType == deviceInfo.os.name
         ) {
@@ -1024,7 +1014,7 @@ export class UserService {
               : (await this.getLoginHistory(100, 0, user.id)).totalItems,
           currentDevice,
         };
-      } else if (user.devices.length <= 5) {
+      } else if (user.devices.length < 5) {
         const device = await this.createNewDeviceForUser(user, request, new Date());
         const refreshToken = await this.createRefreshTokenForDevice(user, device);
         await this.saveLoginHistory(request, UserLoginHistoryEnum.SUCCESS, user.id);
@@ -1064,10 +1054,10 @@ export class UserService {
           currentDevice,
         };
       } else {
-        throw new BadRequestException();
+        throw new BadRequestException("DEVICE_LIMIT_REACHED");
       }
     } else {
-      throw new BadRequestException("BAD_REQUEST");
+      throw new BadRequestException("DEVICE_LIMIT_REACHED");
     }
   }
 
@@ -1197,7 +1187,6 @@ export class UserService {
 
         for (let i = 0; i < user.refreshes.length; i++) {
           if (
-            ipAddress == user.refreshes[i].device.ipAddress &&
             user.refreshes[i].device.deviceType == deviceInfo.os.name &&
             deviceInfo.ua == user.refreshes[i].device.userAgent &&
             user.refreshes[i].token != null

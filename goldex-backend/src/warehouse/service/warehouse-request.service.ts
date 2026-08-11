@@ -445,9 +445,7 @@ export class WarehouseRequestService {
           }
         } else if (request.type === RequestTypeEnum.OUTPUT) {
           if (!request.packet) {
-            throw new BadRequestException(
-              "SELECT_PACKET: choose a packet first via approve-withdraw (user packet to split or orphan packet) before approving"
-            );
+            throw new BadRequestException("SELECT_PACKET");
           }
           await this.processOutputApproval(queryRunner, request, dto);
         }
@@ -521,10 +519,12 @@ export class WarehouseRequestService {
     request.packet = savedPacket;
 
     if (warehouse) {
-      const deliveryInfo = this.getDeliveryInfoFromWarehouse(warehouse);
-      request.deliveryDate = deliveryInfo.date;
-      request.deliveryTime = deliveryInfo.time || warehouse.timeLimit || null;
-      request.deliveryLocation = warehouse.location || null;
+      if (!request.deliveryDate) {
+        const deliveryInfo = this.getDeliveryInfoFromWarehouse(warehouse);
+        request.deliveryDate = deliveryInfo.date;
+        request.deliveryTime = request.deliveryTime || deliveryInfo.time || warehouse.timeLimit || null;
+      }
+      request.deliveryLocation = request.deliveryLocation || warehouse.location || null;
     }
 
     await this.addHistory(queryRunner, {
@@ -595,9 +595,7 @@ export class WarehouseRequestService {
     const packet = request.packet;
 
     if (!packet) {
-      throw new BadRequestException(
-        "SELECT_PACKET: choose a packet first via approve-withdraw (user packet to split or orphan packet) before approving"
-      );
+      throw new BadRequestException("SELECT_PACKET");
     }
 
     if (packet.status !== PacketStatusEnum.IN_WAREHOUSE) {
@@ -1132,9 +1130,7 @@ export class WarehouseRequestService {
         throw new BadRequestException(`Only PENDING requests can be approved (status: ${request.status})`);
       }
       if (!dto.packetId) {
-        throw new BadRequestException(
-          "SELECT_PACKET: choose the user's packet (it will be split) or an orphan packet to assign"
-        );
+        throw new BadRequestException("SELECT_PACKET");
       }
 
       const packet = await queryRunner.manager.findOne(PacketEntity, {
