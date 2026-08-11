@@ -1,0 +1,26 @@
+<mxfile host="app.diagrams.net" agent="opencode" version="24.0.0" type="device">
+  <diagram id="sms-arch" name="Architecture + Flow">
+    <mxGraphModel dx="1000" dy="700" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1200" pageHeight="800" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="app" value="SmsForwarderApp" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontStyle=1;" vertex="1" parent="1"><mxGeometry x="40" y="30" width="160" height="50" as="geometry" /></mxCell>
+        <mxCell id="ui" value="MainActivity + ProviderListAdapter" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;" vertex="1" parent="1"><mxGeometry x="40" y="150" width="220" height="50" as="geometry" /></mxCell>
+        <mxCell id="nl" value="OtpNotificationListener" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;" vertex="1" parent="1"><mxGeometry x="320" y="150" width="180" height="50" as="geometry" /></mxCell>
+        <mxCell id="retro" value="RetrofitClient + PricingEngineApi" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;" vertex="1" parent="1"><mxGeometry x="600" y="150" width="210" height="50" as="geometry" /></mxCell>
+        <mxCell id="prefs" value="PreferencesManager" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;" vertex="1" parent="1"><mxGeometry x="870" y="150" width="160" height="50" as="geometry" /></mxCell>
+        <mxCell id="auth" value="ProviderAuthController" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;" vertex="1" parent="1"><mxGeometry x="320" y="280" width="180" height="50" as="geometry" /></mxCell>
+        <mxCell id="pe" value="goldex-pricing-engine" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;" vertex="1" parent="1"><mxGeometry x="600" y="280" width="190" height="50" as="geometry" /></mxCell>
+
+        <mxCell id="e1" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;" edge="1" parent="1" source="app" target="ui"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e2" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;" edge="1" parent="1" source="app" target="nl"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e3" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;" edge="1" parent="1" source="app" target="retro"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e4" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;" edge="1" parent="1" source="app" target="prefs"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e5" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;" edge="1" parent="1" source="ui" target="auth"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e6" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;" edge="1" parent="1" source="auth" target="retro"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e7" value="POST /providers/:id/send-otp / verify-otp" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;exitX=0.5;exitY=0;entryX=0.5;entryY=0.5;" edge="1" parent="1" source="retro" target="pe"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e8" value="OTP_CAPTURED broadcast" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;dashed=1;exitX=0;exitY=1;entryX=1;entryY=0.5;" edge="1" parent="1" source="nl" target="auth"><mxGeometry relative="1" as="geometry" /></mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>
