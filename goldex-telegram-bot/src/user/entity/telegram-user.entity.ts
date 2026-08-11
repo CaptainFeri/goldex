@@ -1,5 +1,10 @@
-import { Entity, Column, Index } from 'typeorm';
+import { Entity, Column, Index, ValueTransformer } from 'typeorm';
 import { myBaseEntity } from '../../shared/entity/base.entity';
+
+const bigintToNumber: ValueTransformer = {
+  to: (value?: number) => value,
+  from: (value?: string) => (value == null ? value : Number(value)),
+};
 
 export enum UserState {
   IDLE = 'idle',
@@ -17,7 +22,7 @@ export enum UserState {
 @Entity('telegram_users')
 export class TelegramUserEntity extends myBaseEntity {
   @Index({ unique: true })
-  @Column({ name: 'telegram_chat_id', type: 'bigint' })
+  @Column({ name: 'telegram_chat_id', type: 'bigint', transformer: bigintToNumber })
   telegramChatId: number;
 
   @Column({ name: 'phone', nullable: true, length: 15 })

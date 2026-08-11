@@ -1,0 +1,80 @@
+Project goldex-pricing-engine {
+  database_type: 'PostgreSQL'
+  Note: 'Auto-generated from TypeORM entities (tools/generate-erd-dbml.js). Import to dbdiagram.io'
+}
+
+Table provider_balances {
+  id uuid
+  providerKey varchar
+  providerCategory varchar
+  goldBalance decimal(18,4)
+  goldUnit varchar
+  rialBalance decimal(18,0)
+  rialUnit varchar
+  totalTaraz decimal(18,0)
+  snapshotDate varchar
+  rawData jsonb
+  createdAt timestamptz
+  indexes {
+    (providerKey, snapshotDate) [unique]
+    (providerCategory)
+  }
+}
+
+Table provider_deals {
+  id uuid
+  providerKey varchar
+  providerCategory varchar
+  orderId varchar
+  orderCode varchar
+  factorCode int
+  itemName varchar
+  itemId int
+  count decimal(18,4)
+  totalPrice decimal(18,0)
+  inputPrice decimal(20,8)
+  customerPrice decimal(20,8)
+  customerGramPrice decimal(20,8)
+  gramVolume decimal(20,8)
+  gramPrice decimal(20,8)
+  mesghalPrice decimal(20,8)
+  filledPrice decimal(20,8)
+  dealType int
+  dealTypeStr varchar
+  dealStatus int
+  orderStatusStr varchar
+  mazane decimal(18,0)
+  mazaneStr varchar
+  orderDate timestamp
+  orderDateStr varchar
+  carat int
+  weight750 decimal(18,4)
+  rawData jsonb
+  createdAt timestamptz
+  updatedAt timestamptz
+  indexes {
+    (providerKey, orderId) [unique]
+    (providerKey, orderDate)
+    (providerCategory)
+  }
+}
+
+Table providers {
+  id uuid
+  key varchar [unique]
+  category varchar
+  baseUrl text
+  apiBaseUrl text
+  persianName varchar
+  webPanelUrl text
+  phone varchar
+  sendOtpUrl text
+  verifyCodeUrl text
+  auth jsonb [default: '{}']
+  config jsonb [default: '{}']
+  active boolean [default: 'false']
+  metadataRefreshIntervalMs int [default: 60000]
+  createdAt timestamptz
+  updatedAt timestamptz
+}
+

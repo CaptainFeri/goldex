@@ -1,0 +1,88 @@
+Project goldex-cbp {
+  database_type: 'PostgreSQL'
+  Note: 'Auto-generated from TypeORM entities (tools/generate-erd-dbml.js). Import to dbdiagram.io'
+}
+
+Enum PaymentOperationEnum {
+  DEPOSIT [note: 'deposit']
+  WITHDRAW [note: 'withdraw']
+}
+
+Enum PaymentCategoryEnum {
+  RIAL [note: 'rial']
+  FIAT [note: 'fiat']
+  CRYPTO [note: 'crypto']
+  MATERIAL [note: 'material']
+}
+
+Enum PaymentGatewayKindEnum {
+  FORMAL [note: 'formal']
+  INFORMAL [note: 'informal']
+}
+
+Enum PaymentStatusEnum {
+  PENDING [note: 'pending']
+  PROCESSING [note: 'processing']
+  SUCCEEDED [note: 'succeeded']
+  FAILED [note: 'failed']
+  REJECTED [note: 'rejected']
+  CANCELLED [note: 'cancelled']
+  REVERSED [note: 'reversed']
+}
+
+Enum SymbolTypeEnum {
+  RIAL [note: 'rial']
+  FIAT [note: 'fiat']
+  CRYPTO [note: 'crypto']
+  MATERIAL [note: 'material']
+}
+
+Table payment {
+  id uuid
+  user_id varchar
+  external_reference varchar
+  symbol_id varchar
+  operation PaymentOperationEnum
+  category PaymentCategoryEnum
+  gateway_kind PaymentGatewayKindEnum
+  gateway_code varchar
+  type varchar
+  amount decimal(20,8)
+  currency varchar
+  status PaymentStatusEnum [default: 'pending']
+  identifier varchar [unique]
+  stan varchar
+  ipg_reference varchar
+  gateway_url varchar
+  callback_url varchar
+  picture_path varchar
+  notes varchar
+  admin_id varchar
+  metadata jsonb
+  raw_request jsonb
+  raw_response jsonb
+  completed_at timestamp
+  created_at timestamptz
+  updated_at timestamptz
+  deleted_at timestamptz
+}
+
+Table payment_symbol {
+  id uuid
+  name varchar [unique]
+  slug varchar [unique]
+  symbol_type SymbolTypeEnum [default: 'fiat']
+  has_payment_gateway boolean [default: 'false']
+  is_active boolean [default: 'false']
+  deposit_types jsonb [default: '[]']
+  withdraw_types jsonb [default: '[]']
+  deposit_gateways jsonb [default: '[]']
+  withdraw_gateways jsonb [default: '[]']
+  default_deposit_gateway varchar
+  default_withdraw_gateway varchar
+  created_at timestamptz
+  updated_at timestamptz
+  deleted_at timestamptz
+}
+
+Ref: payment.symbol_id > payment_symbol.id

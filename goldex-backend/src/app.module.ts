@@ -88,6 +88,7 @@ import { ScheduleModule } from "@nestjs/schedule";
           password: postgresConfig.password,
           database: postgresConfig.dbname,
           entities: ["dist/**/*.entity{.ts,.js}"],
+          autoLoadEntities: true,
           migrations: ["dist/migrations/**/*{.ts,.js}"],
           synchronize: false,
           migrationsRun: true,

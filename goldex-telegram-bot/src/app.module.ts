@@ -24,6 +24,7 @@ import { ChannelModule } from './channel/channel.module';
           password: pgConfig.password,
           database: pgConfig.dbname,
           entities: ['dist/**/*.entity{.ts,.js}'],
+          autoLoadEntities: true,
           synchronize: true,
           logging: ['warn', 'error'],
           retryAttempts: 30,

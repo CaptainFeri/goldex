@@ -1,0 +1,1231 @@
+Project goldex-backend {
+  database_type: 'PostgreSQL'
+  Note: 'Auto-generated from TypeORM entities (tools/generate-erd-dbml.js). Import to dbdiagram.io'
+}
+
+Enum AdminRole {
+  SUPER_ADMIN [note: 'superAdmin']
+  ADMIN [note: 'admin']
+  FINANCE [note: 'finance']
+  WAREHOUSE [note: 'warehouse']
+}
+
+Enum CommunicationChannelEnum {
+  EMAIL [note: 'EMAIL']
+  SMS [note: 'SMS']
+  TELEGRAM [note: 'TELEGRAM']
+  IN_APP [note: 'IN_APP']
+  PHONE [note: 'PHONE']
+}
+
+Enum CommunicationDirectionEnum {
+  OUTBOUND [note: 'OUTBOUND']
+  INBOUND [note: 'INBOUND']
+}
+
+Enum CommunicationStatusEnum {
+  SENT [note: 'SENT']
+  DELIVERED [note: 'DELIVERED']
+  FAILED [note: 'FAILED']
+  BOUNCED [note: 'BOUNCED']
+}
+
+Enum CreditStatusEnum {
+  PENDING [note: 'PENDING']
+  ACTIVE [note: 'ACTIVE']
+  SETTLED [note: 'SETTLED']
+  EXPIRED [note: 'EXPIRED']
+  CANCELLED [note: 'CANCELLED']
+}
+
+Enum CreditNotificationTypeEnum {
+  REMINDER [note: 'REMINDER']
+  MARGIN_CALL [note: 'MARGIN_CALL']
+  EXPIRY_WARNING [note: 'EXPIRY_WARNING']
+  SETTLEMENT [note: 'SETTLEMENT']
+  EXPIRED [note: 'EXPIRED']
+}
+
+Enum CreditOrderStatusEnum {
+  ACTIVE [note: 'ACTIVE']
+  MARGIN_CALLED [note: 'MARGIN_CALLED']
+  COMPLETED [note: 'COMPLETED']
+  CANCELLED [note: 'CANCELLED']
+}
+
+Enum NoteCategoryEnum {
+  GENERAL [note: 'GENERAL']
+  SUPPORT [note: 'SUPPORT']
+  COMPLIANCE [note: 'COMPLIANCE']
+  SALES [note: 'SALES']
+  COMPLAINT [note: 'COMPLAINT']
+}
+
+Enum DepositStatusEnum {
+  PENDING [note: 'PENDING']
+  PROCESSING [note: 'PROCESSING']
+  COMPLETED [note: 'COMPLETED']
+  FAILED [note: 'FAILED']
+  CANCELLED [note: 'CANCELLED']
+}
+
+Enum CreditActionEnum {
+  CREDIT_CREATED [note: 'CREDIT_CREATED']
+  CREDIT_ACTIVATED [note: 'CREDIT_ACTIVATED']
+  CREDIT_SETTLED [note: 'CREDIT_SETTLED']
+  CREDIT_EXPIRED [note: 'CREDIT_EXPIRED']
+  CREDIT_CANCELLED [note: 'CREDIT_CANCELLED']
+  WALLET_FROZEN [note: 'WALLET_FROZEN']
+  WALLET_UNFROZEN [note: 'WALLET_UNFROZEN']
+  BALANCE_INCREASED [note: 'BALANCE_INCREASED']
+  BALANCE_FROZEN_FOR_CREDIT [note: 'BALANCE_FROZEN_FOR_CREDIT']
+  BALANCE_UNFROZEN_FOR_CREDIT [note: 'BALANCE_UNFROZEN_FOR_CREDIT']
+  MATERIAL_FREEZE [note: 'MATERIAL_FREEZE']
+  LIQUIDATION [note: 'LIQUIDATION']
+  ORDER_CANCELLED_MARGIN [note: 'ORDER_CANCELLED_MARGIN']
+  EXPIRY_FREEZE_ALL [note: 'EXPIRY_FREEZE_ALL']
+  USER_STATUS_CHANGED [note: 'USER_STATUS_CHANGED']
+  ALL_WALLETS_FROZEN [note: 'ALL_WALLETS_FROZEN']
+  REMINDER_SENT [note: 'REMINDER_SENT']
+}
+
+Enum FileTargetEnum {
+  OFFICIALNEWSPAPER [note: 'official-news-paper']
+  LICENCE [note: 'licence']
+  LASTCHANGES [note: 'last-changes']
+  SUBLICENCE [note: 'sub-licence']
+}
+
+Enum KycDocumentStatus {
+  PENDING [note: 'pending']
+  APPROVED [note: 'approved']
+  REJECTED [note: 'rejected']
+}
+
+Enum NotificationChannelEnum {
+  IN_APP [note: 'IN_APP']
+  EMAIL [note: 'EMAIL']
+  SMS [note: 'SMS']
+  TELEGRAM [note: 'TELEGRAM']
+  PUSH [note: 'PUSH']
+}
+
+Enum NotificationCategoryEnum {
+  TRADE [note: 'TRADE']
+  CREDIT [note: 'CREDIT']
+  KYC [note: 'KYC']
+  SECURITY [note: 'SECURITY']
+  PROMOTION [note: 'PROMOTION']
+  SYSTEM [note: 'SYSTEM']
+}
+
+Enum NotificationTypeEnum {
+  INFO [note: 'INFO']
+  SUCCESS [note: 'SUCCESS']
+  WARNING [note: 'WARNING']
+  ERROR [note: 'ERROR']
+  PROMOTION [note: 'PROMOTION']
+  SYSTEM [note: 'SYSTEM']
+}
+
+Enum NotificationStatusEnum {
+  PENDING [note: 'PENDING']
+  SENT [note: 'SENT']
+  DELIVERED [note: 'DELIVERED']
+  READ [note: 'READ']
+  FAILED [note: 'FAILED']
+}
+
+Enum OrderSideEnum {
+  BUY [note: 'BUY']
+  SELL [note: 'SELL']
+}
+
+Enum OrderTypeEnum {
+  MARKET [note: 'MARKET']
+  LIMIT [note: 'LIMIT']
+  QUOTE [note: 'QUOTE']
+}
+
+Enum OrderStatusEnum {
+  PENDING [note: 'PENDING']
+  PARTIALLY_COMPLETED [note: 'PARTIALLY_COMPLETED']
+  COMPLETED [note: 'COMPLETED']
+  CANCELLED [note: 'CANCELLED']
+  REJECTED [note: 'REJECTED']
+}
+
+Enum PacketStatusEnum {
+  PENDING [note: 'PENDING']
+  IN_WAREHOUSE [note: 'IN_WAREHOUSE']
+  RELEASED [note: 'RELEASED']
+  WITHDRAWN [note: 'WITHDRAWN']
+  ORPHAN [note: 'ORPHAN']
+}
+
+Enum SettlementDirection {
+  RECEIVE [note: 'RECEIVE']
+  PAY [note: 'PAY']
+}
+
+Enum TicketPriorityEnum {
+  LOW [note: 'LOW']
+  MEDIUM [note: 'MEDIUM']
+  HIGH [note: 'HIGH']
+  URGENT [note: 'URGENT']
+}
+
+Enum TicketStatusEnum {
+  OPEN [note: 'OPEN']
+  IN_PROGRESS [note: 'IN_PROGRESS']
+  WAITING_ON_CUSTOMER [note: 'WAITING_ON_CUSTOMER']
+  RESOLVED [note: 'RESOLVED']
+  CLOSED [note: 'CLOSED']
+}
+
+Enum TicketCategoryEnum {
+  TRADING [note: 'TRADING']
+  KYC [note: 'KYC']
+  WITHDRAWAL [note: 'WITHDRAWAL']
+  DEPOSIT [note: 'DEPOSIT']
+  ACCOUNT [note: 'ACCOUNT']
+  TECHNICAL [note: 'TECHNICAL']
+  OTHER [note: 'OTHER']
+}
+
+Enum TicketSourceEnum {
+  USER_PANEL [note: 'USER_PANEL']
+  TELEGRAM [note: 'TELEGRAM']
+  ADMIN [note: 'ADMIN']
+  EMAIL [note: 'EMAIL']
+  PHONE [note: 'PHONE']
+}
+
+Enum MarketTypeEnum {
+  FORMAL [note: 'formal']
+  INFORMAL [note: 'informal']
+}
+
+Enum SystemLedgerType {
+  COMMISSION_BUY [note: 'COMMISSION_BUY']
+  COMMISSION_SELL [note: 'COMMISSION_SELL']
+  ADJUSTMENT [note: 'ADJUSTMENT']
+}
+
+Enum TransactionTypeEnum {
+  DEPOSIT [note: 'DEPOSIT']
+  WITHDRAWAL [note: 'WITHDRAWAL']
+  BUY [note: 'BUY']
+  SELL [note: 'SELL']
+  ADMIN_ADJUSTMENT [note: 'ADMIN_ADJUSTMENT']
+  FEE [note: 'FEE']
+  REFERRAL [note: 'REFERRAL']
+  ORDER [note: 'ORDER']
+  ORDER_CANCEL [note: 'ORDER_CANCEL']
+  ORDER_REJECTED [note: 'ORDER_REJECTED']
+  MATERIAL_DEPOSIT [note: 'MATERIAL_DEPOSIT']
+  MATERIAL_WITHDRAW [note: 'MATERIAL_WITHDRAW']
+  CREDIT_DEPOSIT [note: 'CREDIT_DEPOSIT']
+  CREDIT_WITHDRAWAL [note: 'CREDIT_WITHDRAWAL']
+  CREDIT_LIQUIDATION [note: 'CREDIT_LIQUIDATION']
+  CREDIT_SETTLEMENT [note: 'CREDIT_SETTLEMENT']
+  MATERIAL_FREEZE [note: 'MATERIAL_FREEZE']
+  MATERIAL_UNFREEZE [note: 'MATERIAL_UNFREEZE']
+}
+
+Enum TransactionStatusEnum {
+  PENDING [note: 'pending']
+  PROCESSING [note: 'processing']
+  COMPLETED [note: 'completed']
+  FAILED [note: 'failed']
+  CANCELLED [note: 'cancelled']
+  REFUNDED [note: 'refunded']
+}
+
+Enum MarketKindEnum {
+  MARKET [note: 'MARKET']
+  LIMIT [note: 'LIMIT']
+  OFFER [note: 'OFFER']
+}
+
+Enum WalletStatusEnum {
+  ACTIVE [note: 'ACTIVE']
+  FROZEN [note: 'FROZEN']
+  SUSPENDED [note: 'SUSPENDED']
+  CLOSED [note: 'CLOSED']
+}
+
+Enum WarehouseStatusEnum {
+  ACTIVE [note: 'ACTIVE']
+  INACTIVE [note: 'INACTIVE']
+  MAINTENANCE [note: 'MAINTENANCE']
+  FULL [note: 'FULL']
+}
+
+Enum RequestTypeEnum {
+  INPUT [note: 'INPUT']
+  OUTPUT [note: 'OUTPUT']
+}
+
+Enum RequestStatusEnum {
+  PENDING [note: 'PENDING']
+  APPROVED [note: 'APPROVED']
+  REJECTED [note: 'REJECTED']
+  COMPLETED [note: 'COMPLETED']
+  CANCELLED [note: 'CANCELLED']
+}
+
+Enum WithdrawStatusEnum {
+  PENDING [note: 'PENDING']
+  PROCESSING [note: 'PROCESSING']
+  COMPLETED [note: 'COMPLETED']
+  FAILED [note: 'FAILED']
+  CANCELLED [note: 'CANCELLED']
+}
+
+Table admin {
+  id uuid
+  phone varchar [unique]
+  email varchar [unique]
+  hash_password varchar
+  role AdminRole [default: 'admin']
+  is_suspended boolean [default: 'false']
+  suspended_at timestamp
+  suspended_by uuid
+  last_login_at timestamp
+  created_at timestamptz
+  updated_at timestamptz
+  deleted_at timestamptz
+}
+
+Table admin_schedule {
+  id uuid
+  admin_id varchar
+  day_of_week int
+  day_label varchar(20)
+  start_time varchar(5)
+  end_time varchar(5)
+  is_active boolean [default: 'true']
+  timezone varchar(50) [default: 'Asia/Tehran']
+  created_at timestamptz
+  updated_at timestamptz
+  deleted_at timestamptz
+}
+
+Table admin_wallet_logs {
+  id uuid
+  admin_id uuid
+  wallet_id uuid
+  action varchar(50)
+  metadata jsonb
+  created_at timestamptz
+  updated_at timestamptz
+  deleted_at timestamptz
+}
+
+Table communication_logs {
+  id uuid
+  user_id varchar
+  channel CommunicationChannelEnum
+  direction CommunicationDirectionEnum
+  subject varchar(255)
+  body text
+  template_slug varchar(100)
+  status CommunicationStatusEnum [default: 'SENT']
+  external_id varchar(255)
+  admin_id varchar
+  sent_at timestamptz
+  created_at timestamptz
+  updated_at timestamptz
+  deleted_at timestamptz
+}
+
+Table country {
+  id int
+  primary_name varchar
+  secondary_name varchar
+  iso_code varchar
+  iso_code_2 varchar
+  region varchar
+  svg_flag varchar
+  png_flag varchar
+  google_maps varchar
+  open_street_maps varchar
+  timezone varchar
+  lat varchar
+  long varchar
+  created_at timestamptz
+  updated_at timestamptz
+  deleted_at timestamptz
+}
+
+Table credit {
+  id uuid
+  user_id varchar
+  admin_id uuid
+  credit_code varchar(50) [unique]
+  amount decimal(20,8)
+  status CreditStatusEnum [default: 'PENDING']
+  has_call_margin boolean [default: 'false']
+  call_margin_percent decimal(5,2)
+  reminder_timer_hours int [default: 24]
+  reminder_last_sent_at timestamptz
+  expire_at timestamptz
+  activated_at timestamptz
+  settled_at timestamptz
+  notes text
+  settle_image_path varchar(255)
+  settled_by_admin_id varchar(50)
+  max_execution_trade_level int
+  executed_trade_level int [default: 0]
+  metadata jsonb
+  created_at timestamptz
+  updated_at timestamptz
+  deleted_at timestamptz
+}
+
+Table credit_notification {
+  id uuid
+  user_id varchar
+  credit_id varchar
+  type CreditNotificationTypeEnum
+  message text
+  is_read boolean [default: 'false']
+  read_at timestamptz
+  sent_at timestamptz
+  created_at timestamptz
+  updated_at timestamptz
+  deleted_at timestamptz
+}
+
+Table credit_order {
+  id uuid
+  credit_id varchar
+  order_id varchar
+  price_at_order_time decimal(20,8)
+  status CreditOrderStatusEnum [default: 'ACTIVE']
+  drawdown_percent decimal(5,2)
+  current_price decimal(20,8)
+  margin_called_at timestamptz
+  created_at timestamptz
+  updated_at timestamptz
+  deleted_at timestamptz
+}
+
+Table customer_notes {
+  id uuid
+  user_id varchar
+  admin_id varchar
+  content text
+  category NoteCategoryEnum [default: 'GENERAL']
+  is_pinned boolean [default: 'false']
+  created_at timestamptz
+  updated_at timestamptz
+  deleted_at timestamptz
+}
+
+Table customer_segment_assignments {
+  assigned_at timestamptz
+  segment_id uuid
+  user_id uuid
+}
+
+Table customer_segments {
+  id uuid
+  description text
+  criteria jsonb
+  is_dynamic boolean [default: 'false']
+  created_by varchar
+  created_at timestamptz
+  updated_at timestamptz
+}
+
+Table customer_tag_assignments {
+  id uuid
+  user_id varchar
+  tag_id varchar
+  assigned_by varchar
+  assigned_at timestamptz
+  created_at timestamptz
+  updated_at timestamptz
+  deleted_at timestamptz
+}
+
+Table customer_tags {
+  id uuid
+  color varchar(7)
+  created_at timestamptz
+}
+
+Table deposit {
+  id uuid
+  user_id varchar
+  symbol_id varchar
+  type varchar
+  amount decimal(20,8)
+  status DepositStatusEnum [default: 'PENDING']
+  admin_id varchar
+  notes varchar
+  picture_path varchar
+  metadata jsonb
+  gateway_code varchar
+  completed_at timestamp
+  warehouse_request_id uuid
+  created_at timestamptz
+  updated_at timestamptz
+  deleted_at timestamptz
+}
+
+Table discount_coupon {
+  id int
+  code varchar
+  coupon_type varchar
+  discount_amount decimal(22,2) [default: 0]
+  discount_percentage decimal(22,2) [default: 0]
+  max_discount int
+  usage_count int
+  usage_limit int
+  is_active boolean
+  expired_at timestamp
+  admin_id varchar
+  created_at timestamptz
+  updated_at timestamptz
+  deleted_at timestamptz
+}
+
+Table finance_log {
+  id uuid
+  admin_id uuid
+  user_id uuid
+  credit_id uuid
+  wallet_id uuid
+  order_id uuid
+  action_type CreditActionEnum
+  description text
+  metadata jsonb
+  action_time timestamptz
+  created_at timestamptz
+  updated_at timestamptz
+  deleted_at timestamptz
+}
+
+Table kyc_documents {
+  id uuid
+  user_id uuid
+  file_target FileTargetEnum
+  file_name varchar
+  file_url varchar
+  file_size int
+  mime_type varchar
+  etag varchar
+  status KycDocumentStatus [default: 'pending']
+  rejection_reason text
+  metadata jsonb [default: '{}']
+  reviewed_by uuid
+  reviewed_at timestamp
+  created_at timestamptz
+  updated_at timestamptz
+  deleted_at timestamptz
+  indexes {
+    (user_id, status)
+    (status, created_at)
+    (user_id)
+  }
+}
+
+Table language {
+  id int
+  locale varchar
+  name varchar
+  native_name varchar
+  is_active boolean
+  created_at timestamptz
+  updated_at timestamptz
+  deleted_at timestamptz
+}
+
+Table notification_preferences {
+  id uuid
+  user_id varchar
+  channel NotificationChannelEnum
+  category NotificationCategoryEnum
+  enabled boolean [default: 'true']
+  created_at timestamptz
+  updated_at timestamptz
+  deleted_at timestamptz
+}
+
+Table notification_templates {
+  id uuid
+  title varchar(255)
+  channels_config jsonb
+  created_at timestamptz
+  updated_at timestamptz
+}
+
+Table notifications {
+  id uuid
+  user_id varchar
+  type NotificationTypeEnum
+  category NotificationCategoryEnum [default: 'SYSTEM']
+  channel NotificationChannelEnum
+  title varchar(255)
+  body text
+  metadata jsonb
+  status NotificationStatusEnum [default: 'PENDING']
+  read_at timestamptz
+  sent_at timestamptz
+  delivered_at timestamptz
+  failed_at timestamptz
+  error_message text
+  created_at timestamptz
+  updated_at timestamptz
+  deleted_at timestamptz
+}
+
+Table order {
+  id uuid
+  user_id uuid
+  price_pair_id uuid
+  order_code varchar(50) [unique]
+  side OrderSideEnum
+  order_type OrderTypeEnum
+  status OrderStatusEnum [default: 'PENDING']
+  quantity decimal(20,8)
+  executed_quantity decimal(20,8) [default: 0]
+  price decimal(20,8)
+  customer_price decimal(20,8)
+  mesghal_price decimal(20,8)
+  average_price decimal(20,8) [default: 0]
+  total_value decimal(20,8) [default: 0]
+  commission decimal(10,2) [default: 0]
+  completed_at timestamp
+  cancelled_at timestamp
+  notes text
+  metadata jsonb
+  provider_order_id varchar(255)
+  created_at timestamptz
+  updated_at timestamptz
+  deleted_at timestamptz
+}
+
+Table packet {
+  id uuid
+  warehouse_id uuid
+  pure_weight decimal(20,8)
+  id_secure varchar(255) [unique]
+  date_time timestamptz
+  delivery_time timestamptz
+  status PacketStatusEnum [default: 'PENDING']
+  warehouse_index_position varchar(100)
+  ang decimal(10,4)
+  ayar decimal(10,4)
+  apparent_weight decimal(20,8)
+  wastage decimal(20,8)
+  parent_id uuid
+  picture varchar(500)
+  user_id uuid
+  qr_code varchar(500)
+  is_orphan boolean [default: 'false']
+  batch_number varchar(100)
+  metadata jsonb
+  created_at timestamptz
+  updated_at timestamptz
+  deleted_at timestamptz
+}
+
+Table price_pair_histories {
+  id uuid
+  pair_id uuid
+  provider_key varchar(50)
+  provider_item_id int
+  buy_price decimal(20,8)
+  sell_price decimal(20,8)
+  buy_gram_price decimal(20,8)
+  sell_gram_price decimal(20,8)
+  created_at timestamptz
+  indexes {
+    (pair_id, provider_key, provider_item_id)
+  }
+}
+
+Table price_pairs {
+  id uuid
+  base_id uuid
+  quote_id uuid
+  price decimal(20,8)
+  last_updated timestamp
+  best_buy_price decimal(20,8)
+  best_sell_price decimal(20,8)
+  best_buy_gram_price decimal(20,8)
+  best_sell_gram_price decimal(20,8)
+  best_buy_provider varchar(50)
+  best_sell_provider varchar(50)
+  is_valid boolean [default: 'false']
+  buy_commission decimal(10,2) [default: 0]
+  sell_commission decimal(10,2) [default: 0]
+  trading_view_symbol varchar(50)
+  min_buy decimal(20,8)
+  max_buy decimal(20,8)
+  min_sell decimal(20,8)
+  max_sell decimal(20,8)
+  decimals int [default: 2]
+  created_at timestamptz
+  updated_at timestamptz
+  deleted_at timestamptz
+  indexes {
+    (base_id, quote_id) [unique]
+  }
+}
+
+Table promotion {
+  id int
+  title varchar
+  description varchar
+  promotion_type varchar
+  promotion_amount decimal(22,2) [default: 0]
+  promotion_percentage decimal(22,2) [default: 0]
+  usage_limit int
+  max_promotion int [default: 0]
+  usage_count int
+  is_active boolean
+  start_at timestamp
+  expired_at timestamp
+  admin_id varchar
+  is_expired boolean
+  coupon_type varchar
+  created_at timestamptz
+  updated_at timestamptz
+  deleted_at timestamptz
+}
+
+Table provider_balance_snapshots {
+  id uuid
+  provider_key varchar [unique]
+  gold_balance decimal(20,8)
+  rial_balance decimal(20,2)
+  updated_at timestamptz
+}
+
+Table provider_deal_snapshots {
+  id uuid
+  provider_key varchar
+  item_id int
+  base_symbol varchar(20)
+  quote_symbol varchar(20)
+  deal_count int [default: 0]
+  total_volume decimal(24,8) [default: 0]
+  total_value decimal(24,2) [default: 0]
+  buy_volume decimal(24,8) [default: 0]
+  sell_volume decimal(24,8) [default: 0]
+  net_volume decimal(24,8) [default: 0]
+  buy_value decimal(24,2) [default: 0]
+  sell_value decimal(24,2) [default: 0]
+  net_value decimal(24,2) [default: 0]
+  last_deal_at timestamptz
+  updated_at timestamptz
+  indexes {
+    (provider_key, item_id) [unique]
+    (provider_key)
+  }
+}
+
+Table provider_pair_mappings {
+  id uuid
+  pair_id uuid
+  provider_key varchar(50)
+  provider_item_id int
+  use_buy_price boolean [default: 'true']
+  use_sell_price boolean [default: 'true']
+  created_at timestamptz
+  updated_at timestamptz
+  deleted_at timestamptz
+}
+
+Table provider_settlements {
+  id uuid
+  provider_key varchar
+  symbol varchar
+  direction SettlementDirection
+  amount decimal(24,8)
+  note varchar
+  admin_id uuid
+  created_at timestamptz
+  indexes {
+    (provider_key, symbol)
+  }
+}
+
+Table quote_request {
+  id uuid
+  user_id uuid
+  price_pair_id uuid
+  side OrderSideEnum
+  quantity decimal(20,8)
+  price decimal(20,8)
+  status varchar(20) [default: 'PENDING']
+  matched_user_id uuid
+  matched_at timestamp
+  notes text
+  channel_chat_id varchar(255)
+  channel_message_id varchar(255)
+  created_at timestamptz
+  updated_at timestamptz
+  deleted_at timestamptz
+}
+
+Table shahin_accounts {
+  id int
+  userId varchar
+  accountNumber varchar(50)
+  iban varchar(50)
+  ownerName varchar(100)
+  bankName varchar(100)
+  bankCode varchar(10)
+  nationalCode varchar(20)
+  balance decimal(18,2)
+  accountStatus varchar(20) [default: 'active']
+  accountType varchar(20)
+  lastAccessedAt timestamp
+  createdAt timestamptz
+  updatedAt timestamptz
+  metadata jsonb
+  indexes {
+    (accountNumber, bankCode) [unique]
+  }
+}
+
+Table shahin_entries {
+  id uuid
+  userId varchar
+  accountId int
+  type varchar(50)
+  status varchar(20) [default: 'pending']
+  endpoint varchar(200)
+  method varchar(10)
+  statusCode int
+  requestData jsonb
+  responseData jsonb
+  errorMessage text
+  errorCode varchar(50)
+  transactionId varchar(100)
+  transactionUuid varchar(100)
+  amount decimal(18,2)
+  currency varchar(10)
+  createdAt timestamptz
+  metadata jsonb
+  indexes {
+    (userId, createdAt)
+    (accountId, createdAt)
+    (type, status)
+  }
+}
+
+Table support_tickets {
+  id uuid
+  user_id varchar
+  subject varchar(255)
+  description text
+  priority TicketPriorityEnum [default: 'MEDIUM']
+  status TicketStatusEnum [default: 'OPEN']
+  category TicketCategoryEnum [default: 'OTHER']
+  assigned_to varchar
+  source TicketSourceEnum [default: 'USER_PANEL']
+  resolved_at timestamptz
+  closed_at timestamptz
+  first_response_at timestamptz
+  satisfaction_score int
+  created_at timestamptz
+  updated_at timestamptz
+  deleted_at timestamptz
+}
+
+Table symbol {
+  id uuid
+  name varchar
+  slug varchar
+  market_type MarketTypeEnum [default: 'formal']
+  payment_gateway_type varchar [default: 'up']
+  pic_path varchar
+  gain decimal(20,8)
+  gain_type varchar [default: 'number']
+  symbol_type varchar [default: 'fiat']
+  unit_type varchar [default: 'number']
+  has_payment_gateway boolean [default: 'false']
+  is_active boolean [default: 'false']
+  deposit_types jsonb [default: '[]']
+  withdraw_types jsonb [default: '[]']
+  deposit_gateways jsonb [default: '[]']
+  withdraw_gateways jsonb [default: '[]']
+  default_deposit_gateway varchar
+  default_withdraw_gateway varchar
+  created_at timestamptz
+  updated_at timestamptz
+  deleted_at timestamptz
+}
+
+Table system_ledger {
+  id uuid
+  symbol_id uuid
+  type SystemLedgerType
+  amount decimal(20,8)
+  order_id uuid
+  user_id uuid
+  provider_key varchar
+  description varchar
+  created_at timestamptz
+  indexes {
+    (symbol_id, created_at)
+  }
+}
+
+Table ticket_messages {
+  id uuid
+  ticket_id varchar
+  sender_id varchar
+  sender_type enum
+  message text
+  attachments jsonb
+  is_internal boolean [default: 'false']
+  created_at timestamptz
+  updated_at timestamptz
+  deleted_at timestamptz
+}
+
+Table transaction {
+  id uuid
+  wallet_id varchar
+  order_id uuid
+  transaction_id varchar(100) [unique]
+  transaction_type TransactionTypeEnum
+  status TransactionStatusEnum [default: 'pending']
+  amount decimal(20,8)
+  fee decimal(20,8) [default: 0]
+  price decimal(20,8)
+  description text
+  metadata jsonb
+  completed_at timestamp
+  created_at timestamptz
+  updated_at timestamptz
+  deleted_at timestamptz
+}
+
+Table user {
+  id uuid
+  first_name varchar
+  last_name varchar
+  password varchar
+  email varchar
+  email_verified_at timestamp
+  two_factor_activated_at timestamp
+  registered_at timestamp
+  blocked_at timestamp
+  active_until timestamp
+  role int [default: 'NEW_USER']
+  two_factor_secret varchar
+  two_factor_url varchar
+  is_authenticated_by_google boolean [default: 'false']
+  referral_code varchar
+  phone varchar
+  referral_id varchar
+  level_id varchar
+  level_assigned_at timestamptz
+  level_expires_at timestamptz
+  created_at timestamptz
+  updated_at timestamptz
+  deleted_at timestamptz
+  profile_id uuid
+}
+
+Table user_2fa_setting {
+  id int
+  withdrawal_activated_at timestamp
+  login_activated_at timestamp
+  created_at timestamptz
+  updated_at timestamptz
+  deleted_at timestamptz
+  user_id uuid
+}
+
+Table user_bank_account {
+  id uuid
+  iban varchar
+  bank_name varchar
+  deposit_number varchar
+  user_id varchar [unique]
+  verified_at timestamp
+  created_at timestamptz
+  updated_at timestamptz
+  deleted_at timestamptz
+}
+
+Table user_device {
+  id uuid
+  ip_address varchar
+  device_id varchar
+  device_type varchar
+  user_agent varchar
+  last_login timestamp
+  created_at timestamptz
+  updated_at timestamptz
+  deleted_at timestamptz
+  user_id uuid
+}
+
+Table user_kyc {
+  id uuid
+  user_id varchar [unique]
+  national_id varchar
+  birth_date varchar
+  level int [default: 0]
+  status int [default: 0]
+  verified_at timestamp
+  reject_reason varchar
+  created_at timestamptz
+  updated_at timestamptz
+  deleted_at timestamptz
+}
+
+Table user_kyc_history {
+  id uuid
+  userId varchar
+  level int [default: 0]
+  status int [default: 0]
+  reason varchar
+  created_at timestamptz
+  user_id uuid
+}
+
+Table user_level {
+  id uuid
+  name varchar(100) [unique]
+  slug varchar(100) [unique]
+  description text
+  priority int [default: 0]
+  is_default boolean [default: 'false']
+  features jsonb [default: '{}']
+  created_at timestamptz
+  updated_at timestamptz
+  deleted_at timestamptz
+}
+
+Table user_login_history {
+  id uuid
+  status int
+  ip_address varchar
+  user_id varchar
+  device_info varchar
+  created_at timestamptz
+  updated_at timestamptz
+  deleted_at timestamptz
+}
+
+Table user_market_kinds {
+  id uuid
+  user_id uuid
+  market_kind MarketKindEnum
+  created_at timestamptz
+  updated_at timestamptz
+  deleted_at timestamptz
+}
+
+Table user_market_types {
+  id uuid
+  user_id uuid
+  market_type MarketTypeEnum
+  created_at timestamptz
+  updated_at timestamptz
+  deleted_at timestamptz
+}
+
+Table user_profile {
+  id uuid
+  avatar_img_path varchar
+  postal_code varchar
+  address varchar
+  gender int [default: 'NOT_SET']
+  country_id int
+  created_at timestamptz
+  updated_at timestamptz
+  deleted_at timestamptz
+}
+
+Table user_refresh_token {
+  id int
+  token varchar
+  expired_at timestamp
+  created_at timestamptz
+  updated_at timestamptz
+  deleted_at timestamptz
+  user_id uuid
+  device_id uuid
+}
+
+Table user_setting {
+  id int
+  user_id varchar
+  default_language_id int [default: 'English']
+  is_email_notification_enabled boolean [default: 'false']
+  created_at timestamptz
+  updated_at timestamptz
+  deleted_at timestamptz
+}
+
+Table user_telegram {
+  id uuid
+  telegram_id int8 [unique]
+  user_id varchar
+  created_at timestamptz
+  updated_at timestamptz
+  deleted_at timestamptz
+}
+
+Table wallet {
+  id uuid
+  user_id varchar
+  symbol_id varchar
+  free_balance decimal(20,8) [default: 0]
+  locked_balance decimal(20,8) [default: 0]
+  status WalletStatusEnum [default: 'ACTIVE']
+  frozen_free_balance decimal(20,8) [default: 0]
+  frozen_locked_balance decimal(20,8) [default: 0]
+  frozen_at timestamp
+  admin_note text
+  created_at timestamptz
+  updated_at timestamptz
+  deleted_at timestamptz
+}
+
+Table warehouse {
+  id uuid
+  name varchar(255)
+  description text
+  location varchar(255)
+  capacity_total decimal(20,8) [default: 0]
+  capacity_used decimal(20,8) [default: 0]
+  capacity_remaining decimal(20,8) [default: 0]
+  delivery_dates jsonb
+  delivery_schedule jsonb
+  time_limit varchar(100)
+  status WarehouseStatusEnum [default: 'ACTIVE']
+  created_at timestamptz
+  updated_at timestamptz
+  deleted_at timestamptz
+}
+
+Table warehouse_history {
+  id int
+  warehouse_id uuid
+  packet_id uuid
+  request_id uuid
+  action varchar(100)
+  description text
+  performed_by varchar(100)
+  performed_role varchar(50)
+  metadata jsonb
+  created_at timestamptz
+  updated_at timestamptz
+  deleted_at timestamptz
+}
+
+Table warehouse_request {
+  id uuid
+  type RequestTypeEnum
+  status RequestStatusEnum [default: 'PENDING']
+  user_id uuid
+  packet_id uuid
+  warehouse_id uuid
+  admin_id uuid
+  weight decimal(20,8)
+  symbol_id uuid
+  delivery_date timestamptz
+  delivery_time varchar(100)
+  delivery_location varchar(500)
+  notes text
+  processed_at timestamptz
+  metadata jsonb
+  created_at timestamptz
+  updated_at timestamptz
+  deleted_at timestamptz
+}
+
+Table withdraw {
+  id uuid
+  user_id varchar
+  symbol_id varchar
+  type varchar
+  amount decimal(20,8)
+  status WithdrawStatusEnum [default: 'PENDING']
+  admin_id varchar
+  notes varchar
+  picture_path varchar
+  metadata jsonb
+  gateway_code varchar
+  completed_at timestamp
+  warehouse_request_id uuid
+  created_at timestamptz
+  updated_at timestamptz
+  deleted_at timestamptz
+}
+
+Ref: admin_schedule.admin_id > admin.id
+Ref: admin_wallet_logs.wallet_id > wallet.id
+Ref: communication_logs.admin_id > admin.id
+Ref: communication_logs.user_id > user.id
+Ref: credit.user_id > user.id
+Ref: credit_notification.credit_id > credit.id
+Ref: credit_notification.user_id > user.id
+Ref: credit_order.credit_id > credit.id
+Ref: credit_order.order_id > order.id
+Ref: customer_notes.admin_id > admin.id
+Ref: customer_notes.user_id > user.id
+Ref: customer_segment_assignments.segment_id > customer_segments.id
+Ref: customer_segment_assignments.user_id > user.id
+Ref: customer_segments.created_by > admin.id
+Ref: customer_tag_assignments.assigned_by > admin.id
+Ref: customer_tag_assignments.tag_id > customer_tags.id
+Ref: customer_tag_assignments.user_id > user.id
+Ref: deposit.symbol_id > symbol.id
+Ref: deposit.user_id > user.id
+Ref: finance_log.admin_id > admin.id
+Ref: kyc_documents.user_id > user.id
+Ref: notification_preferences.user_id > user.id
+Ref: notifications.user_id > user.id
+Ref: order.price_pair_id > price_pairs.id
+Ref: order.user_id > user.id
+Ref: packet.user_id > user.id
+Ref: packet.warehouse_id > warehouse.id
+Ref: price_pairs.base_id > symbol.id
+Ref: price_pairs.quote_id > symbol.id
+Ref: provider_pair_mappings.pair_id > price_pairs.id
+Ref: quote_request.price_pair_id > price_pairs.id
+Ref: quote_request.user_id > user.id
+Ref: shahin_accounts.userId > user.id
+Ref: shahin_entries.accountId > shahin_accounts.id
+Ref: shahin_entries.userId > user.id
+Ref: support_tickets.assigned_to > admin.id
+Ref: support_tickets.user_id > user.id
+Ref: system_ledger.symbol_id > symbol.id
+Ref: ticket_messages.ticket_id > support_tickets.id
+Ref: transaction.order_id > order.id
+Ref: transaction.wallet_id > wallet.id
+Ref: user.level_id > user_level.id
+Ref: user.profile_id > user_profile.id
+Ref: user_2fa_setting.user_id > user.id
+Ref: user_bank_account.user_id > user.id
+Ref: user_device.user_id > user.id
+Ref: user_kyc.user_id > user.id
+Ref: user_kyc_history.user_id > user.id
+Ref: user_market_kinds.user_id > user.id
+Ref: user_market_types.user_id > user.id
+Ref: user_refresh_token.device_id > user_device.id
+Ref: user_refresh_token.user_id > user.id
+Ref: user_telegram.user_id > user.id
+Ref: wallet.symbol_id > symbol.id
+Ref: wallet.user_id > user.id
+Ref: warehouse_request.admin_id > admin.id
+Ref: warehouse_request.packet_id > packet.id
+Ref: warehouse_request.user_id > user.id
+Ref: warehouse_request.warehouse_id > warehouse.id
+Ref: withdraw.symbol_id > symbol.id
+Ref: withdraw.user_id > user.id

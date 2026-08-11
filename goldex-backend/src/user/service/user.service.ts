@@ -791,7 +791,7 @@ export class UserService {
       relations: { devices: true, refreshes: true },
     });
     if (user && user.blockedAt == null) {
-      const passed = await bcrypt.compare(data.password, user.password);
+      const passed = user.password != null && (await bcrypt.compare(data.password, user.password));
       if (passed) {
         const ipAddress =
           request.headers["x-forwarded-for"] != undefined
