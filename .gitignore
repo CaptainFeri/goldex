@@ -45,6 +45,7 @@ server-password.txt
 .env.test.local
 .env.production.local
 .env.local
+.proxy.env
 
 # temp directory
 .temp
