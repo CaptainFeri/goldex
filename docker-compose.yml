@@ -285,7 +285,6 @@ services:
         condition: service_healthy
     env_file:
       - .env
-      - ./goldex-cbp/.proxy.env
     environment:
       PAYMENT_DB_HOST: postgres
       PAYMENT_DB_PORT: 5432
