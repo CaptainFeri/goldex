@@ -135,20 +135,10 @@ export class ShahinGatewayService implements IPaymentGateway {
     );
 
     this.logger.debug(`Shahin response ${res.status}: ${JSON.stringify(res.data)}`);
-    const data = res.data?.data ?? res.data;
-
-    if (this.isProviderFailure(res.data)) {
-      const message =
-        data?.respObject?.message ??
-        data?.respObject?.errorCode ??
-        data?.message ??
-        "Shahin provider failure";
-      this.logger.warn(`Shahin failure: ${JSON.stringify(data)}`);
-      const e = new Error(String(message)) as Error & { shahinProviderData?: any };
-      e.shahinProviderData = data;
-      throw e;
-    }
-    return data;
+    // Return the raw shahin envelope as-is (mirrors the backend proxy's
+    // forwardRequest which returns the body on both SUCCESS and CORE_FAILED).
+    // The caller decides success/failure from the `transactionState` field.
+    return res.data?.data ?? res.data;
   }
 
   async deposit(_params: DepositParams): Promise<any> {
@@ -188,6 +178,21 @@ export class ShahinGatewayService implements IPaymentGateway {
     }
 
     const data = await this.post("/batch-transfer", dto);
+
+    // The post() now returns the raw envelope; decide success/failure here so
+    // the payment stays consistent with the backend proxy's CORE_FAILED shape.
+    if (this.isProviderFailure(data)) {
+      const message =
+        data?.respObject?.message ??
+        data?.respObject?.errorCode ??
+        data?.message ??
+        "Shahin provider failure";
+      this.logger.warn(`Shahin failure: ${JSON.stringify(data)}`);
+      const e = new Error(String(message)) as Error & { shahinProviderData?: any };
+      e.shahinProviderData = data;
+      throw e;
+    }
+
     return {
       ...data,
       _localDate: localDate,
@@ -220,7 +225,11 @@ export class ShahinGatewayService implements IPaymentGateway {
         bank: this.cfg().bankCode,
         nationalCode: this.cfg().companyNationalCode,
       });
-      return { success: !(result && (result.success === false || result.error)), raw: result };
+      const success =
+        result?.transactionState === "SUCCESS" &&
+        result?.statusCode >= 200 &&
+        result?.statusCode < 300;
+      return { success, raw: result };
     } catch (err: any) {
       return { success: false, error: err.message };
     }
