@@ -47,7 +47,7 @@ export class ShahinGatewayService implements IPaymentGateway {
   private cfg() {
     const sh = this.config.get<Record<string, any>>("app", { infer: true })?.shahin ?? {};
     return {
-      baseUrl: (sh.baseUrl ?? "https://9eb6cj.parszargar.com").replace(/\/+$/, ""),
+      baseUrl: (sh.baseUrl ?? "https://app.ardekanigold.ir").replace(/\/+$/, ""),
       apiKey: sh.apiKey ?? "",
       bankCode: sh.bankCode ?? "BKV",
       companyNationalCode: sh.companyNationalCode ?? "",

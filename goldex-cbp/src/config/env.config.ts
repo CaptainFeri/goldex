@@ -32,7 +32,7 @@ export default registerAs("app", () => ({
       "/rest/channel/wallet/v1/chargeWallet/pay",
   },
   shahin: {
-    baseUrl: process.env.SHAHIN_SERVICE_URL ?? "https://9eb6cj.parszargar.com",
+    baseUrl: process.env.SHAHIN_SERVICE_URL ?? "https://app.ardekanigold.ir",
     apiKey: process.env.SHAHIN_SERVICE_API_KEY ?? "",
     bankCode: process.env.SHAHIN_BANK_CODE ?? "BKV",
     companyNationalCode: process.env.SHAHIN_COMPANY_NATIONAL_CODE ?? "",
