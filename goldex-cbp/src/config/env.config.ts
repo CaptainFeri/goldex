@@ -39,4 +39,12 @@ export default registerAs("app", () => ({
     sourceAccount: process.env.SHAHIN_SOURCE_ACCOUNT ?? "",
     timeoutMs: process.env.SHAHIN_REQUEST_TIMEOUT ?? "60000",
   },
+  // Outbound HTTP(S) proxy used to reach Iranian payment gateways (kaino,
+  // shahin) from an egress outside Iran. Empty host disables the proxy.
+  proxy: {
+    host: process.env.CBP_PROXY_HOST ?? "",
+    port: parseInt(process.env.CBP_PROXY_PORT ?? "29180", 10),
+    username: process.env.CBP_PROXY_USERNAME ?? "",
+    password: process.env.CBP_PROXY_PASSWORD ?? "",
+  },
 }));
