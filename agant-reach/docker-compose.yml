@@ -7,15 +7,15 @@ services:
     container_name: agent-reach
     restart: unless-stopped
     ports:
-      - "3000:3000"
+      - "9999:9999"
     environment:
       - NODE_ENV=production
-      - PORT=3000
+      - PORT=9999
       - TZ=UTC
     volumes:
       - agentreach-config:/home/agentreach/.agent-reach
     healthcheck:
-      test: ["CMD", "node", "-e", "fetch('http://localhost:3000/reach/doctor').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      test: ["CMD", "node", "-e", "fetch('http://localhost:9999/reach/doctor').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
       interval: 30s
       timeout: 10s
       retries: 3
