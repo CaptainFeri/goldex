@@ -22,6 +22,12 @@ export class seedAdmin1000000000003 implements MigrationInterface {
       return;
     }
 
+    // The `phone` column is defined on the entity but may not have been created
+    // by an earlier migration on some databases. Ensure it exists before use.
+    await queryRunner.query(
+      `ALTER TABLE admin ADD COLUMN IF NOT EXISTS phone varchar(255)`,
+    );
+
     const username = process.env.GOLDEX_AUTH_SUPER_ADMIN_USERNAME;
     const password = process.env.GOLDEX_AUTH_SUPER_ADMIN_PASSWORD;
 
