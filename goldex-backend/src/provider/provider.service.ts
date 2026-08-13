@@ -3,6 +3,7 @@ import {
   ConflictException,
   Injectable,
   NotFoundException,
+  OnModuleInit,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
@@ -19,6 +20,20 @@ export class ProviderService {
     private readonly providerRepo: Repository<ProviderEntity>,
     private readonly rmq: RabbitMQService,
   ) {}
+
+  /**
+   * On boot, ask the pricing-engine for a full provider snapshot so the admin
+   * mirror seeds itself with providers that already exist in the engine (and
+   * not just ones created through the panel). Delayed so RabbitMQ is ready.
+   */
+  onModuleInit() {
+    setTimeout(() => {
+      void this.rmq.publishCommand(
+        MessagePatterns.PROVIDER_COMMAND_RECONCILE,
+        {},
+      );
+    }, 5000);
+  }
 
   async create(dto: CreateProviderDto): Promise<ProviderEntity> {
     const existing = await this.providerRepo.findOne({

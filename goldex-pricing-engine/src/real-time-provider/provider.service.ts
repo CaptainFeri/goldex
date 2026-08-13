@@ -38,6 +38,24 @@ export class ProviderService {
     return this.providerRepo.find();
   }
 
+  /**
+   * Broadcast every provider's full entity back on the shared stream so the
+   * backend's admin mirror can (re)seed itself. Idempotent — the backend upserts
+   * by `key`. Called after a reconcile so existing providers (e.g. the mocks)
+   * appear in the panel even though they were never "created" via a command.
+   */
+  async broadcastAll(): Promise<void> {
+    if (!this.rabbitMQService) return;
+    const entities = await this.providerRepo.find();
+    for (const entity of entities) {
+      await this.rabbitMQService.publish(
+        MessagePatterns.PROVIDER_CREATED,
+        entity,
+        entity.key,
+      );
+    }
+  }
+
   async findOne(id: string): Promise<ProviderEntity> {
     const provider = await this.providerRepo.findOne({ where: { id } });
     if (!provider) throw new NotFoundException('Provider not found');

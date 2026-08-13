@@ -124,6 +124,10 @@ export class ProviderManageConsumer implements OnApplicationBootstrap {
   private async handleReconcile(): Promise<void> {
     try {
       await this.providerManager.reconcileProviders();
+      // Re-broadcast the full provider set so the backend mirror stays in sync
+      // with providers that predate this architecture (created directly in the
+      // engine's DB, never through a backend command).
+      await this.providerService.broadcastAll();
     } catch (err) {
       this.logger.error(`provider.reconcile failed: ${this.err(err)}`);
     }
