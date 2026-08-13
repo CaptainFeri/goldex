@@ -104,6 +104,16 @@ export class PricingRedisService implements OnModuleDestroy {
       .filter((x): x is ProviderPriceData => x !== null);
   }
 
+  /** Item metadata rows for a provider (keys `item:metadata:{provider}:*`). */
+  async getProviderItems(providerKey: string): Promise<ProviderPriceData[]> {
+    const keys = await this.client.keys(`item:metadata:${providerKey}:*`);
+    if (!keys.length) return [];
+    const values = await this.client.mget(...keys);
+    return values
+      .map((v) => (v ? this.safeParse(v) : null))
+      .filter((x): x is ProviderPriceData => x !== null);
+  }
+
   async isConnected(): Promise<boolean> {
     try {
       return (await this.client.ping()) === "PONG";

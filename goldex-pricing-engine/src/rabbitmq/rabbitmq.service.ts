@@ -13,6 +13,7 @@ import {
   RABBITMQ_EXCHANGE,
   RABBITMQ_EXCHANGE_TYPE,
   RABBITMQ_QUEUE,
+  RABBITMQ_COMMAND_QUEUE,
   MessagePattern,
   MessagePatterns,
   getRoutingKey,
@@ -33,6 +34,10 @@ export class RabbitMQService implements OnModuleInit, OnApplicationBootstrap, On
   private consumers: Map<string, (msg: RabbitMQMessage) => void> = new Map();
   private consumerTag: string | null = null;
   private consuming = false;
+  /** Backend -> engine provider-management command consumers (command queue). */
+  private commandConsumers: Map<string, (msg: RabbitMQMessage) => void> = new Map();
+  private commandConsumerTag: string | null = null;
+  private commandConsuming = false;
   /** Ensures the "messaging unavailable" hint is logged once, not on every publish. */
   private unavailableHinted = false;
   private reconnectTimer: NodeJS.Timeout | null = null;
@@ -71,6 +76,8 @@ export class RabbitMQService implements OnModuleInit, OnApplicationBootstrap, On
       this.channel = null;
       this.consumerTag = null;
       this.consuming = false;
+      this.commandConsumerTag = null;
+      this.commandConsuming = false;
       this.unavailableHinted = false;
       if (this.shouldRetry) this.scheduleReconnect();
     });
@@ -101,6 +108,7 @@ export class RabbitMQService implements OnModuleInit, OnApplicationBootstrap, On
     this.registerModelHandlers(model);
     await this.setupChannel();
     if (this.consumers.size > 0) await this.startConsuming();
+    if (this.commandConsumers.size > 0) await this.startCommandConsuming();
     this.reconnectAttempt = 0;
     this.logger.log('RabbitMQ reconnected');
   }
@@ -119,12 +127,15 @@ export class RabbitMQService implements OnModuleInit, OnApplicationBootstrap, On
         this.channel = null;
         this.consumerTag = null;
         this.consuming = false;
+        this.commandConsumerTag = null;
+        this.commandConsuming = false;
       });
 
       await this.channel.assertExchange(RABBITMQ_EXCHANGE, RABBITMQ_EXCHANGE_TYPE, {
         durable: true,
       });
       await this.channel.assertQueue(RABBITMQ_QUEUE, { durable: true });
+      await this.channel.assertQueue(RABBITMQ_COMMAND_QUEUE, { durable: true });
       this.unavailableHinted = false;
       this.logger.log('RabbitMQ channel initialized');
     } catch (error) {
@@ -181,6 +192,65 @@ export class RabbitMQService implements OnModuleInit, OnApplicationBootstrap, On
     }
   }
 
+  /** Subscribe to a backend -> engine command on the dedicated command queue. */
+  async subscribeCommand(
+    pattern: MessagePattern,
+    callback: (msg: RabbitMQMessage) => void,
+  ): Promise<void> {
+    this.commandConsumers.set(pattern, callback);
+    if (this.channel) {
+      await this.channel.bindQueue(
+        RABBITMQ_COMMAND_QUEUE,
+        RABBITMQ_EXCHANGE,
+        getRoutingKey(pattern),
+      );
+    }
+  }
+
+  private async startCommandConsuming(): Promise<void> {
+    if (!this.channel) return;
+
+    if (this.commandConsumerTag) {
+      try {
+        await this.channel.cancel(this.commandConsumerTag);
+      } catch {
+        // ignore cancel errors during reconnect
+      }
+      this.commandConsumerTag = null;
+    }
+
+    for (const [pattern] of this.commandConsumers) {
+      await this.channel.bindQueue(
+        RABBITMQ_COMMAND_QUEUE,
+        RABBITMQ_EXCHANGE,
+        getRoutingKey(pattern as MessagePattern),
+      );
+    }
+
+    const { consumerTag } = await this.channel.consume(
+      RABBITMQ_COMMAND_QUEUE,
+      (msg: ConsumeMessage | null) => {
+        if (!msg) return;
+        try {
+          const parsed: RabbitMQMessage = JSON.parse(msg.content.toString());
+          const callback = this.commandConsumers.get(parsed.pattern);
+          if (callback) {
+            callback(parsed);
+          }
+          this.channel?.ack(msg);
+        } catch (error) {
+          this.logger.error('Error processing command message', error);
+          this.channel?.nack(msg, false, false);
+        }
+      },
+      { noAck: false },
+    );
+
+    this.commandConsumerTag = consumerTag;
+    this.commandConsuming = true;
+    this.logger.log('RabbitMQ command consumer started');
+  }
+
   async startConsuming(): Promise<void> {
     if (!this.channel) return;
 
@@ -229,6 +299,9 @@ export class RabbitMQService implements OnModuleInit, OnApplicationBootstrap, On
     if (this.model && this.consumers.size > 0) {
       await this.startConsuming();
     }
+    if (this.model && this.commandConsumers.size > 0) {
+      await this.startCommandConsuming();
+    }
   }
 
   async onModuleDestroy(): Promise<void> {
@@ -240,6 +313,9 @@ export class RabbitMQService implements OnModuleInit, OnApplicationBootstrap, On
     try {
       if (this.consumerTag && this.channel) {
         await this.channel.cancel(this.consumerTag);
+      }
+      if (this.commandConsumerTag && this.channel) {
+        await this.channel.cancel(this.commandConsumerTag);
       }
       if (this.channel) {
         await this.channel.close();

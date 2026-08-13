@@ -148,6 +148,41 @@ export class RabbitMQService implements OnModuleDestroy {
     }
   }
 
+  /**
+   * Publish a provider-management command to the pricing-engine on the command
+   * routing key. The engine binds its dedicated command queue to these keys.
+   */
+  async publishCommand(
+    pattern: string,
+    data: unknown,
+    providerKey?: string,
+  ): Promise<void> {
+    if (!this.channel) {
+      this.logger.warn('RabbitMQ not connected, skipping command publish');
+      return;
+    }
+
+    const message: RabbitMQMessage = {
+      pattern,
+      data,
+      timestamp: new Date().toISOString(),
+      providerKey,
+    };
+
+    try {
+      this.channel.publish(
+        this.exchange,
+        pattern,
+        Buffer.from(JSON.stringify(message)),
+        { persistent: true },
+      );
+    } catch (err) {
+      this.logger.error(
+        `Failed to publish command ${pattern}: ${(err as Error).message}`,
+      );
+    }
+  }
+
   async subscribe(
     pattern: string,
     callback: (msg: RabbitMQMessage) => void,

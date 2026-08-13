@@ -38,6 +38,24 @@ export class AdminMonitoringController {
     return { data: await this.monitoringService.getCurrent(provider) };
   }
 
+  // Best buy/sell per item across all providers (aggregated from engine Redis).
+  @Get("best-prices")
+  async bestPrices() {
+    return { data: await this.monitoringService.getBestPrices() };
+  }
+
+  // Per-provider item + price map (aggregated from engine Redis).
+  @Get("market-map")
+  async marketMap() {
+    return { data: await this.monitoringService.getMarketMap() };
+  }
+
+  // Consolidated market grouped by category (coins/molten/silver).
+  @Get("consolidated-market")
+  async consolidatedMarket() {
+    return { data: await this.monitoringService.getConsolidatedMarket() };
+  }
+
   // The comparable-chart endpoint: multi-provider series for a configured pair.
   @Get("pairs/:pairId/compare")
   async compare(

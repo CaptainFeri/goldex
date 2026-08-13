@@ -51,6 +51,9 @@ import { PaymentBusModule } from "./payment-bus/payment-bus.module";
 import { PaymentCallbackModule } from "./payment-callback/payment-callback.module";
 import { ShahinModule } from "./shahin/shahin.module";
 import { CbpAdminModule } from "./cbp-admin/cbp-admin.module";
+import { ProviderModule } from "./provider/provider.module";
+import { MarketStatusModule } from "./market-status/market-status.module";
+import { AdminArbitrageModule } from "./admin-arbitrage/admin-arbitrage.module";
 import { ScheduleModule } from "@nestjs/schedule";
 
 @Module({
@@ -162,6 +165,9 @@ import { ScheduleModule } from "@nestjs/schedule";
     PaymentCallbackModule,
     ShahinModule,
     CbpAdminModule,
+    ProviderModule,
+    MarketStatusModule,
+    AdminArbitrageModule,
   ],
   providers: [WinstonLoggerService],
   controllers: [PublicFileController],

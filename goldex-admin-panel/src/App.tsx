@@ -34,6 +34,9 @@ import CrmTagsPage from "./pages/crm/CrmTagsPage";
 import CrmSegmentsPage from "./pages/crm/CrmSegmentsPage";
 import CrmUsersPage from "./pages/crm/CrmUsersPage";
 import CrmUser360Page from "./pages/crm/CrmUser360Page";
+import ProvidersPage from "./pages/ProvidersPage";
+import MarketStatusPage from "./pages/MarketStatusPage";
+import ArbitragePage from "./pages/ArbitragePage";
 
 function RequireAuth({ children }: { children: JSX.Element }) {
   const { token, checkSession } = useAuth();
@@ -62,6 +65,9 @@ export default function App() {
       >
         <Route index element={<DashboardPage />} />
         <Route path="/compare" element={<ComparePage />} />
+        <Route path="/providers" element={<ProvidersPage />} />
+        <Route path="/market-status" element={<MarketStatusPage />} />
+        <Route path="/arbitrage" element={<ArbitragePage />} />
         <Route path="/users" element={<UsersPage />} />
         <Route path="/kyc" element={<KycPage />} />
         <Route path="/wallets" element={<WalletsPage />} />

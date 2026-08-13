@@ -9,6 +9,6 @@ import { ProviderPairMappingModule } from "../provider-pair-mapping/provider-pai
   imports: [ConfigModule, ProviderPairMappingModule],
   controllers: [AdminMonitoringController],
   providers: [AdminMonitoringService, PricingRedisService],
-  exports: [AdminMonitoringService],
+  exports: [AdminMonitoringService, PricingRedisService],
 })
 export class AdminMonitoringModule {}

@@ -35,6 +35,22 @@ export enum MessagePatterns {
   // CBP admin RPC (request -> cbp, cbp replies on the response pattern)
   CBP_ADMIN_REQUEST = 'cbp.admin.request',
   CBP_ADMIN_RESPONSE = 'cbp.admin.response',
+
+  // Backend -> pricing-engine provider management commands (command queue)
+  PROVIDER_COMMAND_CREATE = 'provider.command.create',
+  PROVIDER_COMMAND_UPDATE = 'provider.command.update',
+  PROVIDER_COMMAND_TOGGLE_ACTIVE = 'provider.command.toggle-active',
+  PROVIDER_COMMAND_SEND_OTP = 'provider.command.send-otp',
+  PROVIDER_COMMAND_VERIFY_OTP = 'provider.command.verify-otp',
+  PROVIDER_COMMAND_RECONCILE = 'provider.command.reconcile',
+  PROVIDER_COMMAND_REFRESH = 'provider.command.refresh',
+  PROVIDER_COMMAND_FETCH_ORDERS = 'provider.command.fetch-orders',
+  PROVIDER_COMMAND_FETCH_BALANCE = 'provider.command.fetch-balance',
+  PROVIDER_COMMAND_PLACE_ORDER = 'provider.command.place-order',
+
+  // Arbitrage (published by the pricing-engine)
+  ARBITRAGE_SCAN = 'arbitrage.scan',
+  ARBITRAGE_SIGNAL = 'arbitrage.signal',
 }
 
 export interface RabbitMQMessage {
@@ -72,6 +88,13 @@ export interface PriceData {
 }
 
 export const RABBITMQ_CLIENT = 'RABBITMQ_CLIENT';
+
+/**
+ * Queue bound on the pricing-engine side for backend -> engine provider
+ * management commands. Kept separate from the shared price/status stream and
+ * from the engine's order-consumer queue to avoid interception.
+ */
+export const RABBITMQ_COMMAND_QUEUE = 'signalr.providers.commands';
 
 export interface PricePairUpdateMessage {
   pairId: string;

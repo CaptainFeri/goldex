@@ -160,6 +160,28 @@ export class OrderBookService implements OnModuleInit {
   }
 
   /**
+   * Evict every resting order from a pair's book (used when the LIMIT pool is
+   * closed). Returns the removed order ids.
+   */
+  clearRestingForPair(pairId: string): string[] {
+    const book = this.limitBooks.get(pairId);
+    if (!book) return [];
+
+    const ids: string[] = [];
+    const snap: any = book.snapshot();
+    const levels = [...(snap.bids ?? []), ...(snap.asks ?? [])];
+    for (const level of levels) {
+      for (const order of level.orders ?? []) {
+        if (order?.id) {
+          ids.push(order.id);
+          book.cancel(order.id);
+        }
+      }
+    }
+    return ids;
+  }
+
+  /**
    * Get depth of the Limit Market book (real customer orders only).
    * Prices are per gram, converted to mesghal for display.
    */

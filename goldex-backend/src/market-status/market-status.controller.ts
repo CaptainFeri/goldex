@@ -1,0 +1,53 @@
+import {
+  Body,
+  Controller,
+  Get,
+  Param,
+  ParseEnumPipe,
+  ParseUUIDPipe,
+  Patch,
+  UseGuards,
+} from '@nestjs/common';
+import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
+import { MarketStatusService } from './market-status.service';
+import { MarketPoolType, MarketStatus } from './entity/pair-pool-status.entity';
+import { SetOverrideDto } from './dto/set-override.dto';
+import { AdminAuthGuard } from '../admin/auth/Guard/admin.guard';
+import { AdminRolesGuard } from '../admin/auth/Guard/admin.role.guard';
+import { AdminRoles } from '../admin/role/admin.role.decorator';
+import { AdminRole } from '../admin/role/admin.roles.enum';
+
+@ApiTags('Admin-Market-Status')
+@ApiBearerAuth()
+@Controller('admin/market-status')
+@UseGuards(AdminAuthGuard, AdminRolesGuard)
+@AdminRoles(AdminRole.ADMIN, AdminRole.SUPER_ADMIN)
+export class MarketStatusController {
+  constructor(private readonly statusService: MarketStatusService) {}
+
+  @Get()
+  getAll() {
+    return this.statusService.getAll();
+  }
+
+  @Get('pairs/:pairId')
+  getForPair(@Param('pairId', ParseUUIDPipe) pairId: string) {
+    return this.statusService.getForPair(pairId);
+  }
+
+  /**
+   * Set (or clear, with status='null') the admin override for a pool on a pair.
+   */
+  @Patch('pairs/:pairId/:poolType/override')
+  async setOverride(
+    @Param('pairId', ParseUUIDPipe) pairId: string,
+    @Param('poolType', new ParseEnumPipe(MarketPoolType)) poolType: MarketPoolType,
+    @Body() dto: SetOverrideDto,
+  ) {
+    const status =
+      dto.status === 'null' || dto.status == null
+        ? null
+        : (dto.status as MarketStatus);
+    return this.statusService.setOverride(pairId, poolType, status);
+  }
+}
