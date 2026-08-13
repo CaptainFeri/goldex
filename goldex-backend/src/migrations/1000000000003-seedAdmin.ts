@@ -2,12 +2,14 @@ import { MigrationInterface, QueryRunner } from "typeorm";
 import * as bcrypt from "bcryptjs";
 import { AdminRole } from "../admin/role/admin.roles.enum";
 
+/** Seeded mobile number for the super admin (OTP login identity). */
+const SEED_PHONE = "09106299465";
+
 export class seedAdmin1000000000003 implements MigrationInterface {
   name?: "seedAdmin1000000000003";
   transaction?: true;
 
   public async up(queryRunner: QueryRunner): Promise<any> {
-    // Check if admin table exists
     const tableExists = await queryRunner.query(`
       SELECT EXISTS (
         SELECT FROM information_schema.tables 
@@ -33,6 +35,11 @@ export class seedAdmin1000000000003 implements MigrationInterface {
     ]);
 
     if (existingAdmin.length > 0) {
+      // Ensure the super admin also has the seeded mobile number so OTP login works.
+      await queryRunner.query(
+        `UPDATE admin SET phone = $1 WHERE email = $2 AND deleted_at IS NULL AND (phone IS NULL OR phone <> $1)`,
+        [SEED_PHONE, username],
+      );
       console.log("Admin already exists. Skipping insertion.");
       return;
     }
@@ -42,18 +49,19 @@ export class seedAdmin1000000000003 implements MigrationInterface {
     // Insert admin with all new fields
     await queryRunner.query(
       `INSERT INTO admin (
-        email, 
-        hash_password, 
-        role, 
-        is_suspended, 
-        suspended_at, 
-        suspended_by, 
-        last_login_at, 
-        created_at, 
-        updated_at, 
+        email,
+        phone,
+        hash_password,
+        role,
+        is_suspended,
+        suspended_at,
+        suspended_by,
+        last_login_at,
+        created_at,
+        updated_at,
         deleted_at
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, NOW(), NOW(), $8)`,
-      [username, hashedPassword, AdminRole.SUPER_ADMIN, false, null, null, null, null]
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW(), NOW(), $9)`,
+      [username, SEED_PHONE, hashedPassword, AdminRole.SUPER_ADMIN, false, null, null, null, null]
     );
 
     console.log(`Super admin ${username} created successfully`);
