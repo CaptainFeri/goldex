@@ -25,16 +25,24 @@ export class ProviderService {
 
   /**
    * On boot, ask the pricing-engine for a full provider snapshot so the admin
-   * mirror seeds itself with providers that already exist in the engine (and
-   * not just ones created through the panel). Delayed so RabbitMQ is ready.
+   * mirror seeds itself with providers that already exist in the engine (active
+   * and inactive) — not just ones created through the panel. Retried until the
+   * mirror has rows (or a max number of attempts) so it works even when
+   * RabbitMQ connects after the first attempt.
    */
   onModuleInit() {
-    setTimeout(() => {
-      void this.rmq.publishCommand(
-        MessagePatterns.PROVIDER_COMMAND_RECONCILE,
-        {},
-      );
-    }, 5000);
+    const attempt = async (remaining: number): Promise<void> => {
+      if (remaining <= 0) return;
+      try {
+        const count = await this.providerRepo.count();
+        if (count > 0) return; // already seeded
+      } catch {
+        /* table may not be ready yet */
+      }
+      await this.rmq.publishCommand(MessagePatterns.PROVIDER_COMMAND_RECONCILE, {});
+      setTimeout(() => void attempt(remaining - 1), 10000);
+    };
+    setTimeout(() => void attempt(20), 3000);
   }
 
   async create(dto: CreateProviderDto): Promise<ProviderEntity> {

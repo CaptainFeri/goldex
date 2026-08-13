@@ -181,11 +181,13 @@ export class MarketStatusService implements OnModuleInit {
   /**
    * Periodic staleness sweep: when a provider stops reporting, no new price
    * message arrives, so we re-derive every pair's MARKET pool from lastUpdated
-   * and close it if it has gone stale (transition handled in reconcile).
+   * and close it if it has gone stale (transition handled in reconcile). Sweeps
+   * ALL pairs — including those with no provider mapping — so a pair that has no
+   * relation with any provider is closed rather than left OPEN.
    */
   @Cron(CronExpression.EVERY_30_SECONDS)
   private async sweepStaleMarkets(): Promise<void> {
-    const pairs = await this.pairRepo.find({ where: { isValid: true } });
+    const pairs = await this.pairRepo.find();
     for (const pair of pairs) {
       await this.recomputeForPair(pair.id);
     }
