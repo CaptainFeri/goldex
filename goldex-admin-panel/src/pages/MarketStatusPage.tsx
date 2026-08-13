@@ -98,13 +98,14 @@ export default function MarketStatusPage() {
 
   const statusMap = useMemo(() => {
     const m = new Map<string, PoolStatus>();
-    for (const s of statuses.data ?? []) m.set(`${s.pairId}::${s.poolType}`, s);
+    for (const s of Array.isArray(statuses.data) ? statuses.data : [])
+      m.set(`${s.pairId}::${s.poolType}`, s);
     return m;
   }, [statuses.data]);
 
   const rows = useMemo(() => {
     const all: { pair: PricePair; pool: PoolType; status?: PoolStatus }[] = [];
-    for (const p of pairs.data ?? []) {
+    for (const p of Array.isArray(pairs.data) ? pairs.data : []) {
       for (const pool of ["MARKET", "LIMIT", "QUOTE"] as PoolType[]) {
         all.push({ pair: p, pool, status: statusMap.get(`${p.id}::${pool}`) });
       }

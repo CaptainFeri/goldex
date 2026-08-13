@@ -90,9 +90,12 @@ export default function ArbitragePage() {
   if (loading) return <Loading label="در حال دریافت فرصت‌های آربیتراژ…" />;
   if (error) return <ErrorState message={(error as any)?.message ?? "خطا در دریافت داده‌ها"} />;
 
-  const opps = opp.data ?? [];
-  const alertList = alerts.data ?? [];
-  const last = scan.data ?? {};
+  const opps = Array.isArray(opp.data) ? opp.data : [];
+  const alertList = Array.isArray(alerts.data) ? alerts.data : [];
+  const last =
+    scan.data && typeof scan.data === "object" && !Array.isArray(scan.data)
+      ? scan.data
+      : {};
   const best = opps.reduce((m, s) => Math.max(m, s.profitToman ?? 0), 0);
 
   return (

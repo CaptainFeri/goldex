@@ -12,6 +12,7 @@ import { CreateProviderDto } from './dto/create-provider.dto';
 import { UpdateProviderDto } from './dto/update-provider.dto';
 import { RabbitMQService } from '../rabbitmq/rabbitmq.service';
 import { MessagePatterns } from '../rabbitmq/interfaces/rabbitmq.interfaces';
+import { PricingRedisService } from '../admin-monitoring/pricing-redis.service';
 
 @Injectable()
 export class ProviderService {
@@ -19,6 +20,7 @@ export class ProviderService {
     @InjectRepository(ProviderEntity)
     private readonly providerRepo: Repository<ProviderEntity>,
     private readonly rmq: RabbitMQService,
+    private readonly pricingRedis: PricingRedisService,
   ) {}
 
   /**
@@ -70,7 +72,33 @@ export class ProviderService {
   }
 
   async findAll(): Promise<ProviderEntity[]> {
-    return this.providerRepo.find({ order: { createAt: 'ASC' } });
+    const mirror = await this.providerRepo.find({ order: { createAt: 'ASC' } });
+
+    // Augment the mirror with providers that are currently reporting prices to
+    // the pricing-engine Redis. This guarantees providers that are alive (e.g.
+    // the mocks) show up immediately, even before the RabbitMQ mirror-seed has
+    // populated the `provider` table.
+    let redisKeys: string[] = [];
+    try {
+      redisKeys = await this.pricingRedis.getProviders();
+    } catch {
+      redisKeys = [];
+    }
+    const present = new Set(mirror.map((p) => p.key));
+    const missing = redisKeys.filter((k) => !present.has(k));
+    if (missing.length === 0) return mirror;
+
+    const extras = missing.map((key) =>
+      this.providerRepo.create({
+        key,
+        category: 'unknown',
+        baseUrl: '',
+        active: true,
+        status: 'connected',
+        metadataRefreshIntervalMs: 60000,
+      }),
+    );
+    return [...mirror, ...extras];
   }
 
   async findOne(id: string): Promise<ProviderEntity> {
