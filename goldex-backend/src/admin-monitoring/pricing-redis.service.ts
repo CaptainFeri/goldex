@@ -67,6 +67,22 @@ export class PricingRedisService implements OnModuleDestroy {
     return keys.map((k) => k.replace("price:current:providers:", "")).sort();
   }
 
+  /**
+   * Full provider registry written by the pricing-engine (active AND inactive),
+   * key `providers:registry`. Falls back to an empty array if unavailable so
+   * callers always get a list.
+   */
+  async getRegistry(): Promise<Record<string, any>[]> {
+    const raw = await this.client.get("providers:registry");
+    if (!raw) return [];
+    try {
+      const arr = JSON.parse(raw) as unknown;
+      return Array.isArray(arr) ? (arr as Record<string, any>[]) : [];
+    } catch {
+      return [];
+    }
+  }
+
   /** Most-recent-first price history for a single (provider, itemId). */
   async getHistory(providerKey: string, itemId: number, limit = 200): Promise<ProviderPriceData[]> {
     const key = `price:history:${providerKey}:${itemId}`;

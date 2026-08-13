@@ -1,4 +1,10 @@
-import { Injectable, NotFoundException, BadRequestException, Inject } from '@nestjs/common';
+import {
+  Injectable,
+  NotFoundException,
+  BadRequestException,
+  Inject,
+  OnApplicationBootstrap,
+} from '@nestjs/common';
 import { ConsoleFormatterService } from '../common/console-formatter.service';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
@@ -6,10 +12,11 @@ import { ProviderEntity } from './entity/provider.entity';
 import { CreateProviderDto } from './dto/create-provider.dto';
 import { ProviderManagerService } from './provider-manage.service';
 import { OtpHandler } from './types/otp.types';
+import { RedisService } from '../redis/redis.service';
 import { RabbitMQService, MessagePatterns } from '../rabbitmq/rabbitmq.module';
 
 @Injectable()
-export class ProviderService {
+export class ProviderService implements OnApplicationBootstrap {
   constructor(
     @InjectRepository(ProviderEntity)
     private providerRepo: Repository<ProviderEntity>,
@@ -17,8 +24,27 @@ export class ProviderService {
     @Inject('OTP_HANDLERS')
     private readonly otpHandlers: Map<string, OtpHandler>,
     private readonly formatter: ConsoleFormatterService,
+    private readonly redisService: RedisService,
     private readonly rabbitMQService?: RabbitMQService,
   ) {}
+
+  async onApplicationBootstrap(): Promise<void> {
+    // Keep the admin panel's provider registry fresh regardless of whether any
+    // RabbitMQ reconcile message arrives. Written directly to the shared pricing
+    // Redis so the backend can list ALL providers (active AND inactive).
+    await this.publishRegistry().catch(() => undefined);
+    setInterval(() => void this.publishRegistry().catch(() => undefined), 30000);
+  }
+
+  /**
+   * Writes the full provider set (active + inactive) into the pricing Redis under
+   * `providers:registry`, so the backend's admin mirror can show and manage every
+   * provider without depending on ephemeral RabbitMQ events.
+   */
+  async publishRegistry(): Promise<void> {
+    const entities = await this.providerRepo.find();
+    await this.redisService.setJson('providers:registry', entities, 3600);
+  }
 
   async create(data: CreateProviderDto): Promise<ProviderEntity> {
     const provider = this.providerRepo.create({
@@ -54,6 +80,7 @@ export class ProviderService {
         entity.key,
       );
     }
+    await this.publishRegistry().catch(() => undefined);
   }
 
   async findOne(id: string): Promise<ProviderEntity> {

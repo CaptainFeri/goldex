@@ -82,31 +82,74 @@ export class ProviderService {
   async findAll(): Promise<ProviderEntity[]> {
     const mirror = await this.providerRepo.find({ order: { createAt: 'ASC' } });
 
-    // Augment the mirror with providers that are currently reporting prices to
-    // the pricing-engine Redis. This guarantees providers that are alive (e.g.
-    // the mocks) show up immediately, even before the RabbitMQ mirror-seed has
-    // populated the `provider` table.
-    let redisKeys: string[] = [];
+    // Merge three sources so EVERY provider is listed — active and inactive:
+    //  1. `providers:registry` — the pricing-engine's authoritative full list
+    //     (all providers in its DB, written to Redis on an interval).
+    //  2. the local mirror (`provider` table) — includes providers created
+    //     through the panel that may not be in the engine yet.
+    //  3. pricing-Redis keys of providers currently reporting prices.
+    let liveKeys: string[] = [];
+    let registry: Record<string, any>[] = [];
     try {
-      redisKeys = await this.pricingRedis.getProviders();
+      liveKeys = await this.pricingRedis.getProviders();
+      registry = await this.pricingRedis.getRegistry();
     } catch {
-      redisKeys = [];
+      /* pricing redis unavailable */
     }
-    const present = new Set(mirror.map((p) => p.key));
-    const missing = redisKeys.filter((k) => !present.has(k));
-    if (missing.length === 0) return mirror;
+    const liveSet = new Set(liveKeys);
+    const mirrorByKey = new Map(mirror.map((p) => [p.key, p]));
+    const seen = new Set<string>();
+    const result: ProviderEntity[] = [];
 
-    const extras = missing.map((key) =>
-      this.providerRepo.create({
+    for (const reg of registry) {
+      const key = reg?.key;
+      if (!key) continue;
+      const m = mirrorByKey.get(key);
+      const entity = this.providerRepo.create({
+        id: m?.id,
         key,
-        category: 'unknown',
-        baseUrl: '',
-        active: true,
-        status: 'connected',
-        metadataRefreshIntervalMs: 60000,
-      }),
-    );
-    return [...mirror, ...extras];
+        category: reg.category ?? m?.category ?? 'unknown',
+        baseUrl: reg.baseUrl ?? m?.baseUrl ?? '',
+        apiBaseUrl: reg.apiBaseUrl ?? m?.apiBaseUrl,
+        persianName: reg.persianName ?? m?.persianName,
+        webPanelUrl: reg.webPanelUrl ?? m?.webPanelUrl,
+        phone: reg.phone ?? m?.phone,
+        sendOtpUrl: reg.sendOtpUrl ?? m?.sendOtpUrl,
+        verifyCodeUrl: reg.verifyCodeUrl ?? m?.verifyCodeUrl,
+        auth: reg.auth ?? m?.auth ?? {},
+        config: reg.config ?? m?.config ?? {},
+        active: reg.active ?? m?.active ?? false,
+        metadataRefreshIntervalMs:
+          reg.metadataRefreshIntervalMs ?? m?.metadataRefreshIntervalMs ?? 60000,
+        status: m?.status ?? (liveSet.has(key) ? 'connected' : 'disconnected'),
+        lastStatusChangeAt: m?.lastStatusChangeAt,
+      });
+      result.push(entity);
+      seen.add(key);
+    }
+
+    for (const m of mirror) {
+      if (seen.has(m.key)) continue;
+      result.push(m);
+      seen.add(m.key);
+    }
+
+    for (const key of liveKeys) {
+      if (seen.has(key)) continue;
+      result.push(
+        this.providerRepo.create({
+          key,
+          category: 'unknown',
+          baseUrl: '',
+          active: true,
+          status: 'connected',
+          metadataRefreshIntervalMs: 60000,
+        }),
+      );
+      seen.add(key);
+    }
+
+    return result;
   }
 
   async findOne(id: string): Promise<ProviderEntity> {
