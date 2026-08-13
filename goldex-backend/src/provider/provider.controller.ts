@@ -39,48 +39,48 @@ export class ProviderController {
   ) {}
 
   @Post()
-  create(@Body() dto: CreateProviderDto) {
-    return this.providerService.create(dto);
+  async create(@Body() dto: CreateProviderDto) {
+    return { data: await this.providerService.create(dto) };
   }
 
   @Get()
-  findAll() {
-    return this.providerService.findAll();
+  async findAll() {
+    return { data: await this.providerService.findAll() };
   }
 
   @Get(':id')
-  findOne(@Param('id', ParseUUIDPipe) id: string) {
-    return this.providerService.findOne(id);
+  async findOne(@Param('id', ParseUUIDPipe) id: string) {
+    return { data: await this.providerService.findOne(id) };
   }
 
   @Patch(':id')
-  update(@Param('id', ParseUUIDPipe) id: string, @Body() dto: UpdateProviderDto) {
-    return this.providerService.update(id, dto);
+  async update(@Param('id', ParseUUIDPipe) id: string, @Body() dto: UpdateProviderDto) {
+    return { data: await this.providerService.update(id, dto) };
   }
 
   @Post(':id/toggle-active')
-  toggleActive(@Param('id', ParseUUIDPipe) id: string) {
-    return this.providerService.toggleActive(id);
+  async toggleActive(@Param('id', ParseUUIDPipe) id: string) {
+    return { data: await this.providerService.toggleActive(id) };
   }
 
   @Post(':id/send-otp')
-  sendOtp(@Param('id', ParseUUIDPipe) id: string, @Body('phone') phone: string) {
-    return this.providerService.sendOtp(id, phone);
+  async sendOtp(@Param('id', ParseUUIDPipe) id: string, @Body('phone') phone: string) {
+    return { data: await this.providerService.sendOtp(id, phone) };
   }
 
   @Post(':id/verify-otp')
-  verifyOtp(@Param('id', ParseUUIDPipe) id: string, @Body('otp') otp: string) {
-    return this.providerService.verifyOtp(id, otp);
+  async verifyOtp(@Param('id', ParseUUIDPipe) id: string, @Body('otp') otp: string) {
+    return { data: await this.providerService.verifyOtp(id, otp) };
   }
 
   @Post('reconcile')
-  reconcile() {
-    return this.providerService.reconcile();
+  async reconcile() {
+    return { data: await this.providerService.reconcile() };
   }
 
   @Post(':providerKey/refresh')
-  refresh(@Param('providerKey') providerKey: string) {
-    return this.providerService.refresh(providerKey);
+  async refresh(@Param('providerKey') providerKey: string) {
+    return { data: await this.providerService.refresh(providerKey) };
   }
 
   @Get(':providerKey/items')
@@ -98,8 +98,8 @@ export class ProviderController {
   }
 
   @Post(':providerKey/fetch-orders')
-  fetchOrders(@Param('providerKey') providerKey: string) {
-    return this.providerService.fetchOrders(providerKey);
+  async fetchOrders(@Param('providerKey') providerKey: string) {
+    return { data: await this.providerService.fetchOrders(providerKey) };
   }
 
   @Get(':providerKey/balance')
@@ -111,8 +111,8 @@ export class ProviderController {
   }
 
   @Post(':providerKey/fetch-balance')
-  fetchBalance(@Param('providerKey') providerKey: string) {
-    return this.providerService.fetchBalance(providerKey);
+  async fetchBalance(@Param('providerKey') providerKey: string) {
+    return { data: await this.providerService.fetchBalance(providerKey) };
   }
 
   @Get(':providerKey/status')

@@ -26,13 +26,13 @@ export class MarketStatusController {
   constructor(private readonly statusService: MarketStatusService) {}
 
   @Get()
-  getAll() {
-    return this.statusService.getAll();
+  async getAll() {
+    return { data: await this.statusService.getAll() };
   }
 
   @Get('pairs/:pairId')
-  getForPair(@Param('pairId', ParseUUIDPipe) pairId: string) {
-    return this.statusService.getForPair(pairId);
+  async getForPair(@Param('pairId', ParseUUIDPipe) pairId: string) {
+    return { data: await this.statusService.getForPair(pairId) };
   }
 
   /**
@@ -48,6 +48,6 @@ export class MarketStatusController {
       dto.status === 'null' || dto.status == null
         ? null
         : (dto.status as MarketStatus);
-    return this.statusService.setOverride(pairId, poolType, status);
+    return { data: await this.statusService.setOverride(pairId, poolType, status) };
   }
 }

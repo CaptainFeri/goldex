@@ -15,17 +15,17 @@ export class AdminArbitrageController {
   constructor(private readonly arbitrageService: AdminArbitrageService) {}
 
   @Get('opportunities')
-  opportunities() {
-    return this.arbitrageService.getOpportunities();
+  async opportunities() {
+    return { data: await this.arbitrageService.getOpportunities() };
   }
 
   @Get('alerts')
-  alerts() {
-    return this.arbitrageService.getAlerts();
+  async alerts() {
+    return { data: await this.arbitrageService.getAlerts() };
   }
 
   @Get('last-scan')
-  lastScan() {
-    return this.arbitrageService.getLastScan();
+  async lastScan() {
+    return { data: await this.arbitrageService.getLastScan() };
   }
 }
