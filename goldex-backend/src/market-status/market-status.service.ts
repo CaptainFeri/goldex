@@ -22,6 +22,27 @@ const ALL_POOLS = [
 export class MarketStatusService implements OnModuleInit {
   private readonly logger = new Logger(MarketStatusService.name);
 
+  /**
+   * Per-key promise chain that serializes mutations for the same pair/pool so
+   * concurrent recomputes (price-update handler + periodic sweep) never race on
+   * the find-then-insert of a `pair_pool_status` row (composite PK). The map is
+   * keyed by a bounded set of pairs, so it never grows unbounded.
+   */
+  private readonly mutexes = new Map<string, Promise<unknown>>();
+
+  private withMutex<T>(key: string, fn: () => Promise<T>): Promise<T> {
+    const prev = this.mutexes.get(key) ?? Promise.resolve();
+    const run = prev.then(fn, fn);
+    this.mutexes.set(
+      key,
+      run.then(
+        () => undefined,
+        () => undefined,
+      ),
+    );
+    return run;
+  }
+
   constructor(
     @InjectRepository(PairPoolStatusEntity)
     private readonly statusRepo: Repository<PairPoolStatusEntity>,
@@ -79,70 +100,74 @@ export class MarketStatusService implements OnModuleInit {
     return hasBestPrice && fresh ? MarketStatus.OPEN : MarketStatus.CLOSED;
   }
 
-  private async reconcile(
+  private reconcile(
     pairId: string,
     poolType: MarketPoolType,
     derived: MarketStatus,
   ): Promise<void> {
-    let row = await this.statusRepo.findOne({
-      where: { pairId, poolType },
-    });
-
-    if (!row) {
-      row = this.statusRepo.create({
-        pairId,
-        poolType,
-        derivedStatus: derived,
-        adminOverride: null,
-        effectiveStatus: derived,
+    return this.withMutex(`${pairId}:${poolType}`, async () => {
+      let row = await this.statusRepo.findOne({
+        where: { pairId, poolType },
       });
+
+      if (!row) {
+        row = this.statusRepo.create({
+          pairId,
+          poolType,
+          derivedStatus: derived,
+          adminOverride: null,
+          effectiveStatus: derived,
+        });
+        await this.statusRepo.save(row);
+        return;
+      }
+
+      const prevEffective = row.effectiveStatus;
+      row.derivedStatus = derived;
+      row.effectiveStatus = row.adminOverride ?? derived;
       await this.statusRepo.save(row);
-      return;
-    }
 
-    const prevEffective = row.effectiveStatus;
-    row.derivedStatus = derived;
-    row.effectiveStatus = row.adminOverride ?? derived;
-    await this.statusRepo.save(row);
-
-    // Only act on an OPEN -> CLOSED transition.
-    if (prevEffective === MarketStatus.OPEN && row.effectiveStatus === MarketStatus.CLOSED) {
-      this.logger.warn(`Market ${poolType} CLOSED for pair ${pairId} — closing pending orders`);
-      await this.closeService.closePool(pairId, poolType);
-    }
+      // Only act on an OPEN -> CLOSED transition.
+      if (prevEffective === MarketStatus.OPEN && row.effectiveStatus === MarketStatus.CLOSED) {
+        this.logger.warn(`Market ${poolType} CLOSED for pair ${pairId} — closing pending orders`);
+        await this.closeService.closePool(pairId, poolType);
+      }
+    });
   }
 
   /** Set (or clear) the admin override for a pool on a pair. */
-  async setOverride(
+  setOverride(
     pairId: string,
     poolType: MarketPoolType,
     status: MarketStatus | null,
   ): Promise<PairPoolStatusEntity> {
-    const pair = await this.pairRepo.findOne({ where: { id: pairId } });
-    if (!pair) throw new Error('Pair not found');
+    return this.withMutex(`${pairId}:${poolType}`, async () => {
+      const pair = await this.pairRepo.findOne({ where: { id: pairId } });
+      if (!pair) throw new Error('Pair not found');
 
-    let row = await this.statusRepo.findOne({ where: { pairId, poolType } });
-    if (!row) {
-      row = this.statusRepo.create({
-        pairId,
-        poolType,
-        derivedStatus: this.deriveStatus(pair, poolType),
-        adminOverride: null,
-        effectiveStatus: this.deriveStatus(pair, poolType),
-      });
-    }
+      let row = await this.statusRepo.findOne({ where: { pairId, poolType } });
+      if (!row) {
+        row = this.statusRepo.create({
+          pairId,
+          poolType,
+          derivedStatus: this.deriveStatus(pair, poolType),
+          adminOverride: null,
+          effectiveStatus: this.deriveStatus(pair, poolType),
+        });
+      }
 
-    const prevEffective = row.effectiveStatus;
-    row.adminOverride = status;
-    row.effectiveStatus = status ?? this.deriveStatus(pair, poolType);
-    await this.statusRepo.save(row);
+      const prevEffective = row.effectiveStatus;
+      row.adminOverride = status;
+      row.effectiveStatus = status ?? this.deriveStatus(pair, poolType);
+      await this.statusRepo.save(row);
 
-    if (prevEffective === MarketStatus.OPEN && row.effectiveStatus === MarketStatus.CLOSED) {
-      this.logger.warn(`Admin closed ${poolType} for pair ${pairId} — closing pending orders`);
-      await this.closeService.closePool(pairId, poolType);
-    }
+      if (prevEffective === MarketStatus.OPEN && row.effectiveStatus === MarketStatus.CLOSED) {
+        this.logger.warn(`Admin closed ${poolType} for pair ${pairId} — closing pending orders`);
+        await this.closeService.closePool(pairId, poolType);
+      }
 
-    return row;
+      return row;
+    });
   }
 
   async getForPair(pairId: string): Promise<PairPoolStatusEntity[]> {
