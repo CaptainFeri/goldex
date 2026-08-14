@@ -14,7 +14,7 @@ export class EmailChannelService implements NotificationChannel {
     try {
       const subject = notification.title;
       const body = notification.body;
-      const userEmail = (notification as any).userEmail || (notification.metadata as any)?.email;
+      const userEmail = notification.metadata?.email;
 
       if (!userEmail) {
         return { success: false, error: "No email address available" };

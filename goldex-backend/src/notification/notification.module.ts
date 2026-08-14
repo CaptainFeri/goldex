@@ -8,20 +8,25 @@ import { NotificationDispatcher } from "./notification-dispatcher.service";
 import { NotificationController } from "./notification.controller";
 import { NotificationPreferenceController } from "./notification-preference.controller";
 import { AdminNotificationController } from "./admin-notification.controller";
+import { NotificationTemplateController } from "./notification-template.controller";
 import { InAppChannelService } from "./channels/in-app.channel.service";
 import { EmailChannelService } from "./channels/email.channel.service";
 import { SmsChannelService } from "./channels/sms.channel.service";
 import { TelegramChannelService } from "./channels/telegram.channel.service";
+import { NotificationTemplateService } from "./notification-template.service";
+import { NotificationBroadcastService } from "./notification-broadcast.service";
 import { CreditEventListener } from "./listeners/credit-event.listener";
 import { KycEventListener } from "./listeners/kyc-event.listener";
 import { OrderEventListener } from "./listeners/order-event.listener";
 import { UserEventListener } from "./listeners/user-event.listener";
+import { TicketEventListener } from "./listeners/ticket-event.listener";
 import { NotificationGateway } from "./notification.gateway";
 import { SmsModule } from "../sms/sms.module";
 import { MailModule } from "../mail/mail.module";
 import { TelegramNotifierModule } from "../telegram-notifier/telegram-notifier.module";
 import { UserTelegramEntity } from "../user-telegram/user-telegram.entity";
 import { RedisModule } from "../redis/redis.module";
+import { CrmModule } from "../crm/crm.module";
 import { JwtModule } from "@nestjs/jwt";
 import { ConfigModule, ConfigService } from "@nestjs/config";
 
@@ -37,6 +42,7 @@ import { ConfigModule, ConfigService } from "@nestjs/config";
     MailModule,
     TelegramNotifierModule,
     RedisModule,
+    CrmModule,
     JwtModule.registerAsync({
       imports: [ConfigModule],
       useFactory: async (configService: ConfigService) => ({
@@ -46,10 +52,12 @@ import { ConfigModule, ConfigService } from "@nestjs/config";
       inject: [ConfigService],
     }),
   ],
-  controllers: [NotificationController, NotificationPreferenceController, AdminNotificationController],
+  controllers: [NotificationController, NotificationPreferenceController, AdminNotificationController, NotificationTemplateController],
   providers: [
     NotificationService,
     NotificationDispatcher,
+    NotificationTemplateService,
+    NotificationBroadcastService,
     InAppChannelService,
     EmailChannelService,
     SmsChannelService,
@@ -58,6 +66,7 @@ import { ConfigModule, ConfigService } from "@nestjs/config";
     KycEventListener,
     OrderEventListener,
     UserEventListener,
+    TicketEventListener,
     NotificationGateway,
   ],
   exports: [NotificationService],

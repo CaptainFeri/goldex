@@ -1,16 +1,17 @@
 import { useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
-import { api, unwrap, apiError } from "../../api/client";
+import { apiError } from "../../api/client";
+import { crmApi, SupportTicket, TicketMessage, TicketStatus } from "../../api/crm";
 import { Loading, Card } from "../../components/ui";
 
-const fmtDate = (d: string) =>
+const fmtDate = (d?: string) =>
   d ? new Date(d).toLocaleDateString("fa-IR", { year: "numeric", month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }) : "—";
 
 export default function CrmTicketDetailPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const [ticket, setTicket] = useState<any>(null);
-  const [messages, setMessages] = useState<any[]>([]);
+  const [ticket, setTicket] = useState<SupportTicket | null>(null);
+  const [messages, setMessages] = useState<TicketMessage[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [newMsg, setNewMsg] = useState("");
@@ -21,8 +22,7 @@ export default function CrmTicketDetailPage() {
   useEffect(() => {
     const load = async () => {
       try {
-        const res = await api.get(`/admin/crm/tickets/${id}`);
-        const data: any = unwrap(res.data);
+        const data = await crmApi.getTicket(id!);
         setTicket(data);
         setMessages(data.messages || []);
         setNewStatus(data.status);
@@ -39,8 +39,7 @@ export default function CrmTicketDetailPage() {
     if (!newMsg.trim()) return;
     setSending(true);
     try {
-      const res = await api.post(`/admin/crm/tickets/${id}/messages`, { message: newMsg, isInternal });
-      const msg: any = unwrap(res.data);
+      const msg = await crmApi.addTicketMessage(id!, { message: newMsg, isInternal });
       setMessages((prev) => [...prev, msg]);
       setNewMsg("");
     } catch (err: any) {
@@ -52,8 +51,8 @@ export default function CrmTicketDetailPage() {
 
   const updateStatus = async (status: string) => {
     try {
-      await api.patch(`/admin/crm/tickets/${id}/status`, { status });
-      setTicket((prev: any) => ({ ...prev, status }));
+      await crmApi.updateTicketStatus(id!, status as TicketStatus);
+      setTicket((prev) => (prev ? { ...prev, status: status as TicketStatus } : prev));
       setNewStatus(status);
     } catch (err: any) {
       alert(apiError(err));
@@ -62,7 +61,7 @@ export default function CrmTicketDetailPage() {
 
   const assignToMe = async () => {
     try {
-      await api.patch(`/admin/crm/tickets/${id}/assign`);
+      await crmApi.assignTicket(id!);
       alert("تیکت به شما اختصاص یافت");
     } catch (err: any) {
       alert(apiError(err));
@@ -84,10 +83,10 @@ export default function CrmTicketDetailPage() {
         <div>
           <Card title="پیام‌ها">
             <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem", maxHeight: 400, overflowY: "auto", marginBottom: "1rem" }}>
-              {messages.filter((m: any) => !m.isInternal).length === 0 ? (
+              {messages.filter((m) => !m.isInternal).length === 0 ? (
                 <div className="empty-state">هنوز پیامی ثبت نشده</div>
               ) : (
-                messages.filter((m: any) => !m.isInternal).map((m: any) => (
+                messages.filter((m) => !m.isInternal).map((m) => (
                   <div key={m.id} style={{
                     padding: "0.75rem",
                     background: m.senderType === "ADMIN" ? "var(--bg-active)" : "var(--bg)",
@@ -126,9 +125,9 @@ export default function CrmTicketDetailPage() {
             </div>
           </Card>
 
-          {messages.some((m: any) => m.isInternal) && (
+          {messages.some((m) => m.isInternal) && (
             <Card title="یادداشت‌های داخلی" style={{ marginTop: "1rem" }}>
-              {messages.filter((m: any) => m.isInternal).map((m: any) => (
+              {messages.filter((m) => m.isInternal).map((m) => (
                 <div key={m.id} style={{ padding: "0.5rem 0", borderBottom: "1px solid var(--border)", fontSize: "0.85rem", color: "var(--text-faint)" }}>
                   <div>{fmtDate(m.createAt)}</div>
                   <div>{m.message}</div>

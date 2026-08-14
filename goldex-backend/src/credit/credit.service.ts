@@ -1,5 +1,6 @@
 import { Injectable, NotFoundException, BadRequestException, Logger } from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
+import { EventEmitter2 } from "@nestjs/event-emitter";
 import { Repository, DataSource, LessThan, IsNull } from "typeorm";
 import Decimal from "decimal.js";
 import { CreditEntity } from "./entity/credit.entity";
@@ -23,6 +24,7 @@ import { OrderEntity } from "../order/order.entity";
 import { FinanceLogEntity } from "../finance-log/entity/finance-log.entity";
 import { CreditActionEnum } from "./enum/credit-action.enum";
 import { WalletStatusEnum } from "../wallet/enum/wallet-status.enum";
+import { CreditEvents } from "../shared/constants/events.constants";
 
 Decimal.set({ precision: 20, rounding: Decimal.ROUND_HALF_UP, toExpNeg: -7, toExpPos: 21 });
 
@@ -48,6 +50,7 @@ export class CreditService {
     @InjectRepository(FinanceLogEntity)
     private financeLogRepository: Repository<FinanceLogEntity>,
     private dataSource: DataSource,
+    private readonly eventEmitter: EventEmitter2,
   ) {}
 
   async createCredit(adminId: string, dto: CreateCreditDto): Promise<CreditEntity> {
@@ -310,6 +313,12 @@ export class CreditService {
       creditOrder.marginCalledAt = new Date();
       await this.creditOrderRepository.save(creditOrder);
 
+      this.eventEmitter.emit(CreditEvents.MARGIN_CALL, {
+        userId: creditOrder.credit.userId,
+        creditId: creditOrder.creditId,
+        marginPercent: creditOrder.credit.callMarginPercent,
+      });
+
       await this.cancelCreditOrder(creditOrder);
     } else {
       await this.creditOrderRepository.save(creditOrder);
@@ -423,6 +432,11 @@ export class CreditService {
       } as any);
 
       this.logger.log(`Reminder sent for credit ${credit.creditCode} to user ${credit.userId}`);
+      this.eventEmitter.emit(CreditEvents.REMINDER, {
+        userId: credit.userId,
+        creditId: credit.id,
+        daysRemaining,
+      });
     }
   }
 
@@ -473,6 +487,11 @@ export class CreditService {
 
         this.logger.warn(`Credit ${credit.creditCode} expired, all wallets frozen for user ${credit.userId}`);
       });
+      this.eventEmitter.emit(CreditEvents.EXPIRED, {
+        userId: credit.userId,
+        creditId: credit.id,
+        amount: credit.amount,
+      });
     }
   }
 
@@ -492,7 +511,7 @@ export class CreditService {
   }
 
   async settleCredit(adminId: string, creditId: string, description?: string, imagePath?: string): Promise<CreditEntity> {
-    return await this.dataSource.transaction(async (manager) => {
+    const settledCredit = await this.dataSource.transaction(async (manager) => {
       const credit = await manager.findOne(CreditEntity, {
         where: { id: creditId },
         lock: { mode: "pessimistic_write" },
@@ -582,6 +601,12 @@ export class CreditService {
 
       return credit;
     });
+
+    this.eventEmitter.emit(CreditEvents.SETTLED, {
+      userId: settledCredit.userId,
+      creditId: settledCredit.id,
+    });
+    return settledCredit;
   }
 
   async cancelCredit(adminId: string, creditId: string, reason?: string): Promise<CreditEntity> {

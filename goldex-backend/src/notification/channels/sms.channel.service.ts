@@ -12,7 +12,7 @@ export class SmsChannelService implements NotificationChannel {
 
   async send(notification: NotificationEntity): Promise<SendResult> {
     try {
-      const phone = (notification as any).userPhone || (notification.metadata as any)?.phone;
+      const phone = notification.metadata?.phone;
       if (!phone) {
         return { success: false, error: "No phone number available" };
       }

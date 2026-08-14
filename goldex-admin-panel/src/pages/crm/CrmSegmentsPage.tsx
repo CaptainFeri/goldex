@@ -1,21 +1,21 @@
 import { useEffect, useState, useCallback } from "react";
-import { api, unwrap, apiError } from "../../api/client";
+import { apiError } from "../../api/client";
+import { crmApi, CustomerSegment } from "../../api/crm";
 import { Loading, Card } from "../../components/ui";
 
 export default function CrmSegmentsPage() {
-  const [segments, setSegments] = useState<any[]>([]);
+  const [segments, setSegments] = useState<CustomerSegment[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState({ name: "", description: "", criteria: "{}", isDynamic: false });
   const [saving, setSaving] = useState(false);
-  const [evalResult, setEvalResult] = useState<any>(null);
+  const [evalResult, setEvalResult] = useState<string[] | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await api.get("/admin/crm/segments");
-      setSegments(unwrap(res.data) || []);
+      setSegments(await crmApi.getSegments());
     } catch (err: any) {
       setError(apiError(err));
     } finally {
@@ -31,7 +31,7 @@ export default function CrmSegmentsPage() {
     try {
       let criteria: any = {};
       try { criteria = JSON.parse(form.criteria); } catch { criteria = {}; }
-      await api.post("/admin/crm/segments", { ...form, criteria });
+      await crmApi.createSegment({ ...form, criteria });
       setForm({ name: "", description: "", criteria: "{}", isDynamic: false });
       setShowForm(false);
       load();
@@ -44,8 +44,7 @@ export default function CrmSegmentsPage() {
 
   const evaluate = async (id: string) => {
     try {
-      const res = await api.post(`/admin/crm/segments/${id}/evaluate`);
-      setEvalResult(unwrap(res.data));
+      setEvalResult(await crmApi.evaluateSegment(id));
     } catch (err: any) {
       alert(apiError(err));
     }
@@ -54,7 +53,7 @@ export default function CrmSegmentsPage() {
   const deleteSegment = async (id: string) => {
     if (!confirm("حذف شود؟")) return;
     try {
-      await api.delete(`/admin/crm/segments/${id}`);
+      await crmApi.deleteSegment(id);
       load();
     } catch (err: any) {
       alert(apiError(err));
@@ -112,7 +111,7 @@ export default function CrmSegmentsPage() {
               <tr><th>نام</th><th>شرح</th><th>نوع</th><th>عملیات</th></tr>
             </thead>
             <tbody>
-              {segments.map((s: any) => (
+              {segments.map((s) => (
                 <tr key={s.id}>
                   <td style={{ fontWeight: 500 }}>{s.name}</td>
                   <td>{s.description || "—"}</td>

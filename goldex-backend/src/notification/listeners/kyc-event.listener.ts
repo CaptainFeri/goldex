@@ -3,6 +3,7 @@ import { OnEvent } from "@nestjs/event-emitter";
 import { NotificationService } from "../notification.service";
 import { NotificationTypeEnum } from "../enum/notification-type.enum";
 import { NotificationCategoryEnum } from "../enum/notification-category.enum";
+import { KycEvents } from "../../shared/constants/events.constants";
 
 @Injectable()
 export class KycEventListener {
@@ -10,7 +11,7 @@ export class KycEventListener {
 
   constructor(private readonly notificationService: NotificationService) {}
 
-  @OnEvent("kyc.approved")
+  @OnEvent(KycEvents.APPROVED)
   async handleKycApproved(payload: { userId: string; level: number }) {
     this.logger.log(`KYC approved: user=${payload.userId} level=${payload.level}`);
     await this.notificationService.create({
@@ -23,7 +24,7 @@ export class KycEventListener {
     });
   }
 
-  @OnEvent("kyc.rejected")
+  @OnEvent(KycEvents.REJECTED)
   async handleKycRejected(payload: { userId: string; reason: string }) {
     this.logger.log(`KYC rejected: user=${payload.userId}`);
     await this.notificationService.create({
@@ -36,7 +37,7 @@ export class KycEventListener {
     });
   }
 
-  @OnEvent("kyc.document_required")
+  @OnEvent(KycEvents.DOCUMENT_REQUIRED)
   async handleKycDocumentRequired(payload: { userId: string; documentType: string }) {
     await this.notificationService.create({
       userId: payload.userId,

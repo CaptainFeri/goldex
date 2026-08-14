@@ -4,6 +4,7 @@ import { Repository } from "typeorm";
 import { EventEmitter2 } from "@nestjs/event-emitter";
 import { TicketMessageEntity } from "../entity/ticket-message.entity";
 import { SupportTicketEntity } from "../entity/support-ticket.entity";
+import { TicketEvents } from "../../shared/constants/events.constants";
 
 @Injectable()
 export class TicketMessageService {
@@ -36,8 +37,9 @@ export class TicketMessageService {
     });
     const saved = await this.messageRepository.save(msg);
 
-    this.eventEmitter.emit("ticket.message_added", {
+    this.eventEmitter.emit(TicketEvents.MESSAGE_ADDED, {
       ticketId: dto.ticketId,
+      userId: ticket.userId,
       senderType: dto.senderType,
       messageId: saved.id,
     });

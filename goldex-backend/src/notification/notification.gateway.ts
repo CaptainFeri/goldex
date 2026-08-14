@@ -35,7 +35,7 @@ export class NotificationGateway implements OnGatewayConnection, OnGatewayDiscon
         client.disconnect();
         return;
       }
-      const secret = (this.configService.get("user") as any)?.userJwtSecret;
+      const secret = this.configService.get<string>("JWT_SECRET");
       const payload: any = this.jwtService.verify(token, { secret });
       const userId = payload?.userId;
       if (!userId) {
@@ -74,8 +74,9 @@ export class NotificationGateway implements OnGatewayConnection, OnGatewayDiscon
     this.server.to(`user:${userId}`).emit("unread-count", { count: 0 });
   }
 
-  sendNewNotification(userId: string, notification: any) {
+  async sendNewNotification(userId: string, notification: any) {
+    const unreadCount = await this.notificationService.getUnreadCount(userId);
     this.server.to(`user:${userId}`).emit("notification:new", notification);
-    this.server.to(`user:${userId}`).emit("unread-count", { count: notification.unreadCount || 1 });
+    this.server.to(`user:${userId}`).emit("unread-count", { count: unreadCount });
   }
 }

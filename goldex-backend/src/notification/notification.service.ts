@@ -8,6 +8,7 @@ import { NotificationTypeEnum } from "./enum/notification-type.enum";
 import { NotificationChannelEnum } from "./enum/notification-channel.enum";
 import { NotificationStatusEnum } from "./enum/notification-status.enum";
 import { NotificationCategoryEnum } from "./enum/notification-category.enum";
+import { NotificationEvents } from "../shared/constants/events.constants";
 
 export interface CreateNotificationDto {
   userId: string;
@@ -37,6 +38,12 @@ export class NotificationService {
     const category = dto.category || NotificationCategoryEnum.SYSTEM;
     const channels = dto.channels || [NotificationChannelEnum.IN_APP];
     const created: NotificationEntity[] = [];
+    const metadata = {
+      ...(dto.metadata || {}),
+      email: dto.userEmail,
+      phone: dto.userPhone,
+      templateSlug: dto.metadata?.templateSlug,
+    };
 
     for (const channel of channels) {
       const isEnabled = await this.isChannelEnabled(dto.userId, channel, category);
@@ -49,17 +56,14 @@ export class NotificationService {
         channel,
         title: dto.title,
         body: dto.body,
-        metadata: dto.metadata || {},
+        metadata,
         status: NotificationStatusEnum.PENDING,
       });
-
-      if (dto.userEmail) (notification as any).userEmail = dto.userEmail;
-      if (dto.userPhone) (notification as any).userPhone = dto.userPhone;
 
       const saved = await this.notificationRepository.save(notification);
       created.push(saved);
 
-      this.eventEmitter.emit("notification.send", saved);
+      this.eventEmitter.emit(NotificationEvents.SEND, saved);
     }
 
     return created;
@@ -96,7 +100,7 @@ export class NotificationService {
         readAt: new Date(),
       },
     );
-    this.eventEmitter.emit("notification.read", { notificationId, userId });
+    this.eventEmitter.emit(NotificationEvents.READ, { notificationId, userId });
   }
 
   async markAllAsRead(userId: string): Promise<void> {
@@ -107,7 +111,7 @@ export class NotificationService {
         readAt: new Date(),
       },
     );
-    this.eventEmitter.emit("notification.read-all", { userId });
+    this.eventEmitter.emit(NotificationEvents.READ_ALL, { userId });
   }
 
   async getUnreadCount(userId: string): Promise<number> {

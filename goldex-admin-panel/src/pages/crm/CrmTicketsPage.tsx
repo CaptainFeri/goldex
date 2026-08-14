@@ -1,6 +1,7 @@
 import { useEffect, useState, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
-import { api, unwrap, apiError } from "../../api/client";
+import { apiError } from "../../api/client";
+import { crmApi, SupportTicket } from "../../api/crm";
 import { Loading, Card, Badge } from "../../components/ui";
 
 const STATUS_LABELS: Record<string, string> = {
@@ -23,7 +24,7 @@ const fmtDate = (d: string) =>
 
 export default function CrmTicketsPage() {
   const navigate = useNavigate();
-  const [tickets, setTickets] = useState<any[]>([]);
+  const [tickets, setTickets] = useState<SupportTicket[]>([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -34,12 +35,7 @@ export default function CrmTicketsPage() {
     setLoading(true);
     setError("");
     try {
-      const params: any = { pageNumber: page, pageSize: 20 };
-      if (filters.status) params.status = filters.status;
-      if (filters.priority) params.priority = filters.priority;
-      if (filters.search) params.search = filters.search;
-      const res = await api.get("/admin/crm/tickets", { params });
-      const data: any = unwrap(res.data);
+      const data = await crmApi.getTickets({ pageNumber: page, pageSize: 20, status: filters.status, priority: filters.priority, search: filters.search });
       setTickets(data.data || []);
       setTotal(data.total || 0);
     } catch (err: any) {
@@ -106,7 +102,7 @@ export default function CrmTicketsPage() {
                 </tr>
               </thead>
               <tbody>
-                {tickets.map((t: any) => (
+                {tickets.map((t) => (
                   <tr key={t.id}>
                     <td style={{ fontWeight: 500 }}>{t.subject}</td>
                     <td>{t.user?.firstName} {t.user?.lastName}</td>

@@ -6,6 +6,7 @@ import { NotificationTypeEnum } from "./enum/notification-type.enum";
 import { NotificationChannelEnum } from "./enum/notification-channel.enum";
 import { NotificationCategoryEnum } from "./enum/notification-category.enum";
 import { NotificationStatusEnum } from "./enum/notification-status.enum";
+import { NotificationBroadcastService } from "./notification-broadcast.service";
 
 class AdminSendNotificationDto {
   userId: string;
@@ -21,7 +22,10 @@ class AdminSendNotificationDto {
 @Controller("admin/notifications")
 @ApiTags("Admin-Notifications")
 export class AdminNotificationController {
-  constructor(private readonly notificationService: NotificationService) {}
+  constructor(
+    private readonly notificationService: NotificationService,
+    private readonly broadcastService: NotificationBroadcastService,
+  ) {}
 
   @Get()
   @UseGuards(AdminAuthGuard)
@@ -58,6 +62,24 @@ export class AdminNotificationController {
   @ApiOperation({ summary: "Send notification to a user" })
   async sendNotification(@Body() dto: AdminSendNotificationDto) {
     return { data: await this.notificationService.create(dto) };
+  }
+
+  @Post("send-to-segment")
+  @UseGuards(AdminAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: "Broadcast notification to a customer segment" })
+  async sendToSegment(@Body() dto: {
+    segmentId: string;
+    mode?: "dynamic" | "manual";
+    type?: NotificationTypeEnum;
+    category?: NotificationCategoryEnum;
+    title?: string;
+    body?: string;
+    templateSlug?: string;
+    variables?: Record<string, any>;
+    channels?: NotificationChannelEnum[];
+  }) {
+    return { data: await this.broadcastService.sendToSegment(dto) };
   }
 
   @Get("user/:userId")

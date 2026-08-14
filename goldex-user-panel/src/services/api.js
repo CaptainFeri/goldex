@@ -277,6 +277,12 @@ export const notificationApi = {
   getUnreadCount: async () =>
     unwrap(await http.get('/notifications/unread-count')),
 
+  getPreferences: async () =>
+    unwrap(await http.get('/notifications/preferences')),
+
+  savePreferences: async (preferences) =>
+    unwrap(await http.put('/notifications/preferences', { preferences })),
+
   markAsRead: async (id) =>
     unwrap(await http.patch(`/notifications/${id}/read`)),
 

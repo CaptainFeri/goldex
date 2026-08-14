@@ -2,6 +2,7 @@ import { BadRequestException, Injectable, NotFoundException } from "@nestjs/comm
 import * as bcrypt from "bcryptjs";
 import * as crypto from "crypto";
 import * as speakeasy from "speakeasy";
+import { EventEmitter2 } from "@nestjs/event-emitter";
 import { Repository } from "typeorm";
 import { JwtService } from "@nestjs/jwt";
 import { InjectRepository } from "@nestjs/typeorm";
@@ -47,6 +48,7 @@ import { NewPasswordDto } from "../dto/new.password.dto";
 import { SmsService } from "../../sms/sms.service";
 import { UserWalletService } from "../../user-wallet/user-wallet.service";
 import { UserMarketTypeEntity } from "../entity/user.market.type.entity";
+import { UserEvents } from "../../shared/constants/events.constants";
 import { MarketTypeEnum } from "../../admin-pair/enum/market.type.enum";
 
 @Injectable()
@@ -75,7 +77,8 @@ export class UserService {
     private readonly smsService: SmsService,
     private readonly walletService: UserWalletService,
     @InjectRepository(UserMarketTypeEntity)
-    private readonly userMarketTypeRepo: Repository<UserMarketTypeEntity>
+    private readonly userMarketTypeRepo: Repository<UserMarketTypeEntity>,
+    private readonly eventEmitter: EventEmitter2,
   ) {
     this.templatesDir = path.join(process.cwd(), "dist/templates");
   }
@@ -290,6 +293,12 @@ export class UserService {
     await this.userRepository.save(user);
 
     await this.redisService.del(`temp_registration:${userId}`);
+
+    this.eventEmitter.emit(UserEvents.REGISTERED, {
+      userId: user.id,
+      email: user.email,
+      phone: user.phone,
+    });
 
     const access_token = await this.makeJwtToken(user.id, user.role);
     const refresh_token = await this.makeRefreshToken(user.id, user.role);
@@ -566,7 +575,9 @@ export class UserService {
 
     if (await bcrypt.compare(updatePasswordDTO.currentPassword, user.password)) {
       user.password = await bcrypt.hash(updatePasswordDTO.newPassword, 10);
-      return await this.userRepository.save(user);
+      const saved = await this.userRepository.save(user);
+      this.eventEmitter.emit(UserEvents.PASSWORD_CHANGED, { userId });
+      return saved;
     } else throw new BadRequestException("PASSWORD.INVALID");
   }
 

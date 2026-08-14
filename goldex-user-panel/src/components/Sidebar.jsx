@@ -3,6 +3,7 @@ import { useAuth } from '../context/AuthContext'
 import { useNavigate, useLocation } from 'react-router-dom'
 import { BrandHeader, ThemeToggle } from './UI'
 import { levelApi, notificationApi } from '../services/api'
+import { getNotificationSocket } from '../services/socket'
 
 function WarehouseIcon() {
   return (
@@ -167,6 +168,20 @@ export default function Sidebar({ user }) {
       notificationApi.getUnreadCount().then((d) => setUnreadNotifs(d.count || 0)).catch(() => {})
     }, 30000)
     return () => clearInterval(interval)
+  }, [])
+
+  // Realtime unread-count updates over the notifications socket.
+  useEffect(() => {
+    let ns = null
+    try {
+      ns = getNotificationSocket()
+      ns.on('unread-count', (payload) => setUnreadNotifs(payload?.count || 0))
+    } catch {
+      ns = null
+    }
+    return () => {
+      if (ns) ns.off('unread-count')
+    }
   }, [])
 
   const initials = user

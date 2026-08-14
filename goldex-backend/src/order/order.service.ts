@@ -1,5 +1,6 @@
-import { Injectable, NotFoundException, BadRequestException, Logger } from "@nestjs/common";
+import { BadRequestException, Injectable, Logger, NotFoundException } from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
+import { EventEmitter2 } from "@nestjs/event-emitter";
 import { Repository, DataSource } from "typeorm";
 import { OrderEntity } from "./order.entity";
 import { CreateOrderDto } from "./dto/create-order.dto";
@@ -29,6 +30,7 @@ import { CreditEntity } from "../credit/entity/credit.entity";
 import { CreditOrderEntity } from "../credit/entity/credit-order.entity";
 import { CreditStatusEnum } from "../credit/enum/credit-status.enum";
 import { CreditOrderStatusEnum } from "../credit/enum/credit-order-status.enum";
+import { OrderEvents } from "../shared/constants/events.constants";
 
 @Injectable()
 export class OrderService {
@@ -55,6 +57,7 @@ export class OrderService {
     private readonly creditRepo: Repository<CreditEntity>,
     @InjectRepository(CreditOrderEntity)
     private readonly creditOrderRepo: Repository<CreditOrderEntity>,
+    private readonly eventEmitter: EventEmitter2,
   ) {}
 
   async createOrder(userId: string, dto: CreateOrderDto): Promise<OrderEntity> {
@@ -229,6 +232,14 @@ export class OrderService {
       await queryRunner.commitTransaction();
 
       this.logger.log(`Order created: ${orderCode} for user ${userId}`);
+      this.eventEmitter.emit(OrderEvents.PLACED, {
+        userId,
+        orderId: savedOrder.id,
+        symbol: pricePair.baseSymbol?.slug,
+        side: savedOrder.side,
+        quantity: savedOrder.quantity,
+        price: savedOrder.price,
+      });
 
       // Reserve the balance. This runs after the order transaction is
       // committed, so on failure we reject the order instead of leaving it
@@ -413,6 +424,7 @@ export class OrderService {
     }
 
     this.logger.log(`Order ${order.orderCode} cancelled by user ${userId}`);
+    this.eventEmitter.emit(OrderEvents.CANCELLED, { userId, orderId: order.id });
     return this.getOrderById(orderId, userId);
   }
 
@@ -497,6 +509,13 @@ export class OrderService {
       this.logger.log(
         `Limit order ${order.orderCode}: ${totalExecuted}/${qty} matched (${result.restingSize} resting)`,
       );
+      this.eventEmitter.emit(OrderEvents.MATCHED, {
+        userId: order.userId,
+        orderId: order.id,
+        symbol: pricePair.baseSymbol?.slug,
+        quantity: totalExecuted,
+        price: avgPrice,
+      });
     }
   }
 

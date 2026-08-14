@@ -1,9 +1,10 @@
 import { useEffect, useState, useCallback } from "react";
-import { api, unwrap, apiError } from "../../api/client";
-import { Loading, Card, Badge } from "../../components/ui";
+import { apiError } from "../../api/client";
+import { crmApi, CustomerTag } from "../../api/crm";
+import { Loading, Card } from "../../components/ui";
 
 export default function CrmTagsPage() {
-  const [tags, setTags] = useState<any[]>([]);
+  const [tags, setTags] = useState<CustomerTag[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [showForm, setShowForm] = useState(false);
@@ -13,8 +14,7 @@ export default function CrmTagsPage() {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await api.get("/admin/crm/tags");
-      setTags(unwrap(res.data) || []);
+      setTags(await crmApi.getTags());
     } catch (err: any) {
       setError(apiError(err));
     } finally {
@@ -28,7 +28,7 @@ export default function CrmTagsPage() {
     e.preventDefault();
     setSaving(true);
     try {
-      await api.post("/admin/crm/tags", form);
+      await crmApi.createTag(form);
       setForm({ name: "", color: "#6366f1" });
       setShowForm(false);
       load();
@@ -42,7 +42,7 @@ export default function CrmTagsPage() {
   const deleteTag = async (id: string) => {
     if (!confirm("حذف شود؟")) return;
     try {
-      await api.delete(`/admin/crm/tags/${id}`);
+      await crmApi.deleteTag(id);
       load();
     } catch (err: any) {
       alert(apiError(err));
@@ -87,7 +87,7 @@ export default function CrmTagsPage() {
               <tr><th>نام</th><th>رنگ</th><th>عملیات</th></tr>
             </thead>
             <tbody>
-              {tags.map((t: any) => (
+              {tags.map((t) => (
                 <tr key={t.id}>
                   <td style={{ fontWeight: 500 }}>{t.name}</td>
                   <td><span style={{ background: t.color, padding: "2px 12px", borderRadius: 4, color: "#fff" }}>{t.color}</span></td>

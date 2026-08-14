@@ -1,7 +1,7 @@
 import { useEffect, useState, useCallback } from 'react'
 import { useTranslation } from 'react-i18next'
 import { notificationApi } from '../services/api'
-import http from '../services/http'
+import { getNotificationSocket } from '../services/socket'
 import { Spinner, Alert, Button } from '../components/UI'
 
 const fmtDate = (d) =>
@@ -37,8 +37,8 @@ function PreferencesTab() {
   const loadPrefs = useCallback(async () => {
     setLoading(true)
     try {
-      const res = await http.get('/notifications/preferences')
-      setPrefs(res.data.data || [])
+      const data = await notificationApi.getPreferences()
+      setPrefs(data || [])
     } catch { } finally {
       setLoading(false)
     }
@@ -64,15 +64,14 @@ function PreferencesTab() {
   const savePrefs = async () => {
     setSaving(true)
     try {
-      const payload = { preferences: [] }
+      const preferences = []
       for (const ch of CHANNELS) {
         for (const cat of CATEGORIES) {
-          const enabled = getPref(ch, cat)
-          payload.preferences.push({ channel: ch, category: cat, enabled })
+          preferences.push({ channel: ch, category: cat, enabled: getPref(ch, cat) })
         }
       }
-      const res = await http.put('/notifications/preferences', payload)
-      setPrefs(res.data.data || [])
+      const data = await notificationApi.savePreferences(preferences)
+      setPrefs(data || [])
     } catch { } finally {
       setSaving(false)
     }
@@ -148,6 +147,24 @@ export default function NotificationPage() {
   }, [page])
 
   useEffect(() => { load() }, [load])
+
+  // Realtime refresh when a new notification arrives over the socket.
+  useEffect(() => {
+    let ns = null
+    try {
+      ns = getNotificationSocket()
+      ns.on('notification:new', () => load())
+      ns.on('unread-count', () => load())
+    } catch {
+      ns = null
+    }
+    return () => {
+      if (ns) {
+        ns.off('notification:new')
+        ns.off('unread-count')
+      }
+    }
+  }, [load])
 
   const handleMarkRead = async (id) => {
     try {

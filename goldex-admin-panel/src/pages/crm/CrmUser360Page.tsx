@@ -1,31 +1,31 @@
 import { useEffect, useState, useCallback } from "react";
 import { useParams, useNavigate } from "react-router-dom";
-import { api, unwrap, apiError } from "../../api/client";
+import { apiError } from "../../api/client";
+import { crmApi, Customer360, CustomerTag, CustomerSegment } from "../../api/crm";
 import { Loading, Card, Badge } from "../../components/ui";
 
-const fmtDate = (d: string) =>
+const fmtDate = (d?: string) =>
   d ? new Date(d).toLocaleDateString("fa-IR", { year: "numeric", month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }) : "—";
 
 export default function CrmUser360Page() {
   const { userId } = useParams<{ userId: string }>();
   const navigate = useNavigate();
-  const [data, setData] = useState<any>(null);
+  const [data, setData] = useState<Customer360 | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
   const [noteText, setNoteText] = useState("");
   const [addingNote, setAddingNote] = useState(false);
 
-  const [allTags, setAllTags] = useState<any[]>([]);
-  const [allSegments, setAllSegments] = useState<any[]>([]);
+  const [allTags, setAllTags] = useState<CustomerTag[]>([]);
+  const [allSegments, setAllSegments] = useState<CustomerSegment[]>([]);
   const [selectedTagId, setSelectedTagId] = useState("");
   const [selectedSegmentId, setSelectedSegmentId] = useState("");
 
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await api.get(`/admin/crm/users/${userId}/360`);
-      setData(unwrap(res.data));
+      setData(await crmApi.getCustomer360(userId!));
     } catch (err: any) {
       setError(apiError(err));
     } finally {
@@ -38,15 +38,15 @@ export default function CrmUser360Page() {
   }, [load]);
 
   useEffect(() => {
-    api.get("/admin/crm/tags").then((res) => setAllTags(unwrap(res.data) || [])).catch(() => {});
-    api.get("/admin/crm/segments").then((res) => setAllSegments(unwrap(res.data) || [])).catch(() => {});
+    crmApi.getTags().then(setAllTags).catch(() => {});
+    crmApi.getSegments().then(setAllSegments).catch(() => {});
   }, []);
 
   const addNote = async () => {
     if (!noteText.trim()) return;
     setAddingNote(true);
     try {
-      await api.post(`/admin/crm/users/${userId}/notes`, { content: noteText });
+      await crmApi.addNote(userId!, { content: noteText });
       setNoteText("");
       load();
     } catch (err: any) {
@@ -59,7 +59,7 @@ export default function CrmUser360Page() {
   const assignTag = async () => {
     if (!selectedTagId) return;
     try {
-      await api.post(`/admin/crm/users/${userId}/tags/${selectedTagId}`);
+      await crmApi.assignTag(userId!, selectedTagId);
       setSelectedTagId("");
       load();
     } catch (err: any) {
@@ -69,7 +69,7 @@ export default function CrmUser360Page() {
 
   const unassignTag = async (tagId: string) => {
     try {
-      await api.delete(`/admin/crm/users/${userId}/tags/${tagId}`);
+      await crmApi.unassignTag(userId!, tagId);
       load();
     } catch (err: any) {
       alert(apiError(err));
@@ -79,7 +79,7 @@ export default function CrmUser360Page() {
   const assignSegment = async () => {
     if (!selectedSegmentId) return;
     try {
-      await api.post(`/admin/crm/users/${userId}/segments/${selectedSegmentId}`);
+      await crmApi.assignUserToSegment(userId!, selectedSegmentId);
       setSelectedSegmentId("");
       load();
     } catch (err: any) {
@@ -89,7 +89,7 @@ export default function CrmUser360Page() {
 
   const unassignSegment = async (segmentId: string) => {
     try {
-      await api.delete(`/admin/crm/users/${userId}/segments/${segmentId}`);
+      await crmApi.unassignUserFromSegment(userId!, segmentId);
       load();
     } catch (err: any) {
       alert(apiError(err));

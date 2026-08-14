@@ -5,4 +5,5 @@ export enum NotificationCategoryEnum {
   SECURITY = "SECURITY",
   PROMOTION = "PROMOTION",
   SYSTEM = "SYSTEM",
+  SUPPORT = "SUPPORT",
 }

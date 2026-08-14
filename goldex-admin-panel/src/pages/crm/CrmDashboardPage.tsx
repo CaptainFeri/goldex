@@ -1,17 +1,17 @@
 import { useEffect, useState } from "react";
-import { api, unwrap, apiError } from "../../api/client";
+import { apiError } from "../../api/client";
+import { crmApi, TicketStats } from "../../api/crm";
 import { Loading, Card, Stat, ErrorState } from "../../components/ui";
 
 export default function CrmDashboardPage() {
-  const [ticketStats, setTicketStats] = useState<any>(null);
+  const [ticketStats, setTicketStats] = useState<TicketStats | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
   useEffect(() => {
     const load = async () => {
       try {
-        const res = await api.get("/admin/crm/tickets/stats");
-        setTicketStats(unwrap(res.data));
+        setTicketStats(await crmApi.getTicketStats());
       } catch (err: any) {
         setError(apiError(err));
       } finally {

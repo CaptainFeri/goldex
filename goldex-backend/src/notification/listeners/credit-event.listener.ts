@@ -4,6 +4,7 @@ import { NotificationService } from "../notification.service";
 import { NotificationTypeEnum } from "../enum/notification-type.enum";
 import { NotificationCategoryEnum } from "../enum/notification-category.enum";
 import { NotificationChannelEnum } from "../enum/notification-channel.enum";
+import { CreditEvents } from "../../shared/constants/events.constants";
 
 @Injectable()
 export class CreditEventListener {
@@ -11,7 +12,7 @@ export class CreditEventListener {
 
   constructor(private readonly notificationService: NotificationService) {}
 
-  @OnEvent("credit.expired")
+  @OnEvent(CreditEvents.EXPIRED)
   async handleCreditExpired(payload: { userId: string; creditId: string; amount: number }) {
     this.logger.log(`Credit expired: user=${payload.userId} credit=${payload.creditId}`);
     await this.notificationService.create({
@@ -25,7 +26,7 @@ export class CreditEventListener {
     });
   }
 
-  @OnEvent("credit.margin_call")
+  @OnEvent(CreditEvents.MARGIN_CALL)
   async handleMarginCall(payload: { userId: string; creditId: string; marginPercent: number }) {
     this.logger.log(`Margin call: user=${payload.userId} credit=${payload.creditId}`);
     await this.notificationService.create({
@@ -39,7 +40,7 @@ export class CreditEventListener {
     });
   }
 
-  @OnEvent("credit.settled")
+  @OnEvent(CreditEvents.SETTLED)
   async handleCreditSettled(payload: { userId: string; creditId: string }) {
     await this.notificationService.create({
       userId: payload.userId,
@@ -51,7 +52,7 @@ export class CreditEventListener {
     });
   }
 
-  @OnEvent("credit.reminder")
+  @OnEvent(CreditEvents.REMINDER)
   async handleCreditReminder(payload: { userId: string; creditId: string; daysRemaining: number }) {
     await this.notificationService.create({
       userId: payload.userId,

@@ -4,6 +4,7 @@ import { NotificationService } from "../notification.service";
 import { NotificationTypeEnum } from "../enum/notification-type.enum";
 import { NotificationCategoryEnum } from "../enum/notification-category.enum";
 import { NotificationChannelEnum } from "../enum/notification-channel.enum";
+import { UserEvents } from "../../shared/constants/events.constants";
 
 @Injectable()
 export class UserEventListener {
@@ -11,7 +12,7 @@ export class UserEventListener {
 
   constructor(private readonly notificationService: NotificationService) {}
 
-  @OnEvent("user.registered")
+  @OnEvent(UserEvents.REGISTERED)
   async handleUserRegistered(payload: { userId: string; email?: string; phone?: string }) {
     this.logger.log(`User registered: ${payload.userId}`);
     await this.notificationService.create({
@@ -26,7 +27,7 @@ export class UserEventListener {
     });
   }
 
-  @OnEvent("user.password_changed")
+  @OnEvent(UserEvents.PASSWORD_CHANGED)
   async handlePasswordChanged(payload: { userId: string }) {
     await this.notificationService.create({
       userId: payload.userId,
@@ -37,7 +38,7 @@ export class UserEventListener {
     });
   }
 
-  @OnEvent("user.blocked")
+  @OnEvent(UserEvents.BLOCKED)
   async handleUserBlocked(payload: { userId: string; reason?: string }) {
     await this.notificationService.create({
       userId: payload.userId,
@@ -48,7 +49,7 @@ export class UserEventListener {
     });
   }
 
-  @OnEvent("user.unblocked")
+  @OnEvent(UserEvents.UNBLOCKED)
   async handleUserUnblocked(payload: { userId: string }) {
     await this.notificationService.create({
       userId: payload.userId,

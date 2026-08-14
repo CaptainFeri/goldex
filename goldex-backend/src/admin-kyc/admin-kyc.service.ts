@@ -1,11 +1,13 @@
 import { BadRequestException, Injectable, NotFoundException } from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
+import { EventEmitter2 } from "@nestjs/event-emitter";
 import { KycDocumentStatus, UserKycDocumentEntity } from "../user/entity/user.kyc.document.entity";
 import { FindOptionsWhere, ILike, In, Repository } from "typeorm";
 import { GetKycDocumentsQueryDto } from "./dto/admin-kyc.dto";
 import { UserKycEntity } from "../user/entity/user.kyc.entity";
 import { KycLevelEnum } from "../baseinfo/enum/kycLevel.enum";
 import { UserEntity } from "../user/entity/user.entity";
+import { KycEvents } from "../shared/constants/events.constants";
 
 @Injectable()
 export class AdminKycService {
@@ -15,7 +17,8 @@ export class AdminKycService {
     @InjectRepository(UserKycEntity)
     private userKycRepo: Repository<UserKycEntity>,
     @InjectRepository(UserEntity)
-    private userRepo: Repository<UserEntity>
+    private userRepo: Repository<UserEntity>,
+    private readonly eventEmitter: EventEmitter2
   ) {}
 
   // Users with their KYC level/status + basic info, for the admin KYC list.
@@ -177,7 +180,8 @@ export class AdminKycService {
     }
 
     for (const document of approvedDocuments) {
-      await this.updateUserKycStatus(document.userId);
+      const level = await this.updateUserKycStatus(document.userId);
+      this.eventEmitter.emit(KycEvents.APPROVED, { userId: document.userId, level });
     }
     return approvedDocuments;
   }
@@ -221,6 +225,7 @@ export class AdminKycService {
 
     const rejectedDocument = await this.kycDocumentRepository.save(document);
     await this.updateUserKycStatus(document.userId);
+    this.eventEmitter.emit(KycEvents.REJECTED, { userId: document.userId, reason });
 
     return rejectedDocument;
   }
@@ -264,12 +269,13 @@ export class AdminKycService {
     const userIds = [...new Set(rejectedDocuments.map((doc) => doc.userId))];
     for (const userId of userIds) {
       await this.updateUserKycStatus(userId);
+      this.eventEmitter.emit(KycEvents.REJECTED, { userId, reason });
     }
 
     return rejectedDocuments;
   }
 
-  private async updateUserKycStatus(userId: string): Promise<void> {
+  private async updateUserKycStatus(userId: string): Promise<KycLevelEnum> {
     const userDocs = await this.kycDocumentRepository.find({ where: { user: { id: userId } } });
 
     const hasApproved = userDocs.some((doc) => doc.status === KycDocumentStatus.APPROVED);
@@ -292,6 +298,8 @@ export class AdminKycService {
         verifiedAt: kycStatus === KycLevelEnum.COMPLETE ? new Date() : null,
       }
     );
+
+    return kycStatus;
   }
 
   private mapToSummary(document: UserKycDocumentEntity): any {

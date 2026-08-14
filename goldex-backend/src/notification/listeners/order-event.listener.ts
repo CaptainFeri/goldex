@@ -3,6 +3,7 @@ import { OnEvent } from "@nestjs/event-emitter";
 import { NotificationService } from "../notification.service";
 import { NotificationTypeEnum } from "../enum/notification-type.enum";
 import { NotificationCategoryEnum } from "../enum/notification-category.enum";
+import { OrderEvents } from "../../shared/constants/events.constants";
 
 @Injectable()
 export class OrderEventListener {
@@ -10,7 +11,7 @@ export class OrderEventListener {
 
   constructor(private readonly notificationService: NotificationService) {}
 
-  @OnEvent("order.placed")
+  @OnEvent(OrderEvents.PLACED)
   async handleOrderPlaced(payload: { userId: string; orderId: string; symbol: string; side: string; quantity: number }) {
     this.logger.log(`Order placed: user=${payload.userId} order=${payload.orderId}`);
     await this.notificationService.create({
@@ -23,7 +24,7 @@ export class OrderEventListener {
     });
   }
 
-  @OnEvent("order.matched")
+  @OnEvent(OrderEvents.MATCHED)
   async handleOrderMatched(payload: { userId: string; orderId: string; symbol: string; quantity: number; price: number }) {
     await this.notificationService.create({
       userId: payload.userId,
@@ -35,7 +36,7 @@ export class OrderEventListener {
     });
   }
 
-  @OnEvent("order.cancelled")
+  @OnEvent(OrderEvents.CANCELLED)
   async handleOrderCancelled(payload: { userId: string; orderId: string }) {
     await this.notificationService.create({
       userId: payload.userId,

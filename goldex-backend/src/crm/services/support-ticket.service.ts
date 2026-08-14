@@ -8,6 +8,7 @@ import { TicketPriorityEnum } from "../enum/ticket-priority.enum";
 import { TicketStatusEnum } from "../enum/ticket-status.enum";
 import { TicketCategoryEnum } from "../enum/ticket-category.enum";
 import { TicketSourceEnum } from "../enum/ticket-source.enum";
+import { TicketEvents } from "../../shared/constants/events.constants";
 
 @Injectable()
 export class SupportTicketService {
@@ -39,7 +40,7 @@ export class SupportTicketService {
       status: TicketStatusEnum.OPEN,
     });
     const saved = await this.ticketRepository.save(ticket);
-    this.eventEmitter.emit("ticket.created", { ticketId: saved.id, userId: saved.userId, subject: saved.subject });
+    this.eventEmitter.emit(TicketEvents.CREATED, { ticketId: saved.id, userId: saved.userId, subject: saved.subject });
     return saved;
   }
 
@@ -97,7 +98,7 @@ export class SupportTicketService {
     ticket.assignedToId = adminId;
     ticket.status = TicketStatusEnum.IN_PROGRESS;
     const saved = await this.ticketRepository.save(ticket);
-    this.eventEmitter.emit("ticket.assigned", { ticketId, adminId, userId: ticket.userId });
+    this.eventEmitter.emit(TicketEvents.ASSIGNED, { ticketId, adminId, userId: ticket.userId });
     return saved;
   }
 
@@ -110,7 +111,7 @@ export class SupportTicketService {
       ticket.firstResponseAt = new Date();
     }
     const saved = await this.ticketRepository.save(ticket);
-    this.eventEmitter.emit("ticket.status_changed", { ticketId, status, userId: ticket.userId });
+    this.eventEmitter.emit(TicketEvents.STATUS_CHANGED, { ticketId, status, userId: ticket.userId });
     return saved;
   }
 

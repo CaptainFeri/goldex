@@ -1,5 +1,6 @@
 import { BadRequestException, Injectable, NotFoundException, Logger } from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
+import { EventEmitter2 } from "@nestjs/event-emitter";
 import * as crypto from "crypto";
 import * as bcrypt from "bcryptjs";
 import { Between, ILike, In, IsNull, MoreThan, Repository } from "typeorm";
@@ -27,6 +28,7 @@ import {
   defaultMarketKindsForRole,
   defaultMarketTypesForRole,
 } from "../shared/market-access.helper";
+import { UserEvents } from "../shared/constants/events.constants";
 
 const ONLINE_SET = "online_users";
 
@@ -54,7 +56,8 @@ export class AdminUserService {
     @InjectRepository(UserMarketKindEntity)
     private readonly userMarketKindRepo: Repository<UserMarketKindEntity>,
     private readonly redisService: RedisService,
-    private readonly baseInfoService: BaseInfoService
+    private readonly baseInfoService: BaseInfoService,
+    private readonly eventEmitter: EventEmitter2
   ) {}
 
   // Create a user (admin-initiated). Accepts an optional role (defaults to PARTNER).
@@ -277,6 +280,10 @@ export class AdminUserService {
     if (user.blockedAt == null) user.blockedAt = new Date();
     else user.blockedAt = null;
     await this.userRepo.save(user);
+    this.eventEmitter.emit(
+      user.blockedAt != null ? UserEvents.BLOCKED : UserEvents.UNBLOCKED,
+      { userId: user.id },
+    );
     return this.createResponseData<AdminUserDto>(
       (user: UserEntity) => ({
         id: user.id,

@@ -1,5 +1,6 @@
 import { Injectable, Logger } from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
+import { EventEmitter2 } from "@nestjs/event-emitter";
 import { Repository, DataSource } from "typeorm";
 import { OrderEntity } from "./order.entity";
 import { OrderTypeEnum } from "./enum/order.type.enum";
@@ -12,6 +13,7 @@ import { TransactionStatusEnum } from "../wallet/enum/transaction.status.enum";
 import { SystemLedgerEntity } from "../financial/entity/system-ledger.entity";
 import { SystemLedgerType } from "../financial/enum/system-ledger-type.enum";
 import * as crypto from "crypto";
+import { OrderEvents } from "../shared/constants/events.constants";
 
 interface MatchResult {
   message: string;
@@ -30,6 +32,7 @@ export class MatchService {
     @InjectRepository(TransactionEntity)
     private readonly transactionRepo: Repository<TransactionEntity>,
     private readonly dataSource: DataSource,
+    private readonly eventEmitter: EventEmitter2,
   ) {}
 
   async requestMatch(orderId: string, requesterUserId: string): Promise<MatchResult> {
@@ -229,6 +232,22 @@ export class MatchService {
       await queryRunner.commitTransaction();
 
       this.logger.log(`P2P match complete: order ${order.orderCode} matched by user ${requesterUserId}`);
+      this.eventEmitter.emit(OrderEvents.MATCHED, {
+        userId: order.userId,
+        orderId: order.id,
+        symbol: pair.baseSymbol?.slug,
+        quantity: qty,
+        price,
+      });
+      if (requesterUserId !== order.userId) {
+        this.eventEmitter.emit(OrderEvents.MATCHED, {
+          userId: requesterUserId,
+          orderId: order.id,
+          symbol: pair.baseSymbol?.slug,
+          quantity: qty,
+          price,
+        });
+      }
       return { message: "✅ تطابق با موفقیت انجام شد", showAlert: false };
     } catch (err) {
       await queryRunner.rollbackTransaction();
