@@ -266,10 +266,12 @@ export class UserService {
     user.registeredAt = new Date();
     user.ReferralId = this.generateReferralCode(user.id);
 
+    let refUserId: string | undefined;
     if (data.referralCode) {
       const refUser = await this.findUserByReferralCode(data.referralCode);
       if (refUser) {
         user.ReferralCode = data.referralCode;
+        refUserId = refUser.id;
       } else {
         throw new BadRequestException("REFERRAL_CODE_NOT_EXIST");
       }
@@ -299,6 +301,14 @@ export class UserService {
       email: user.email,
       phone: user.phone,
     });
+
+    if (user.ReferralCode && refUserId) {
+      this.eventEmitter.emit(UserEvents.REFERRAL, {
+        userId: user.id,
+        referrerId: refUserId,
+        referralCode: user.ReferralCode,
+      });
+    }
 
     const access_token = await this.makeJwtToken(user.id, user.role);
     const refresh_token = await this.makeRefreshToken(user.id, user.role);

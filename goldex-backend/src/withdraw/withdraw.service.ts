@@ -1,6 +1,7 @@
 import { Injectable, NotFoundException, BadRequestException, ForbiddenException, Logger } from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
 import { Repository, DataSource } from "typeorm";
+import { EventEmitter2 } from "@nestjs/event-emitter";
 import { WithdrawEntity } from "./withdraw.entity";
 import { CreateWithdrawDto } from "./dto/create-withdraw.dto";
 import { WithdrawQueryDto } from "./dto/withdraw-query.dto";
@@ -13,6 +14,7 @@ import { TransactionTypeEnum } from "../wallet/enum/transaction.type.enum";
 import { TransactionStatusEnum } from "../wallet/enum/transaction.status.enum";
 import { getDefaultWithdrawTypes, GATEWAY_BOUND_TYPES } from "../admin-symbol/constants/symbol-type-type-map";
 import { PaymentBusService } from "../payment-bus/payment-bus.service";
+import { WithdrawEvents } from "../shared/constants/events.constants";
 
 @Injectable()
 export class WithdrawService {
@@ -29,6 +31,7 @@ export class WithdrawService {
     private transactionRepo: Repository<TransactionEntity>,
     private dataSource: DataSource,
     private readonly paymentBus: PaymentBusService,
+    private readonly eventEmitter: EventEmitter2,
   ) {}
 
   async create(userId: string, dto: CreateWithdrawDto): Promise<WithdrawEntity> {
@@ -94,6 +97,13 @@ export class WithdrawService {
     });
 
     const saved = await this.withdrawRepo.save(withdraw);
+    this.eventEmitter.emit(WithdrawEvents.CREATED, {
+      userId: saved.userId,
+      withdrawId: saved.id,
+      amount: saved.amount,
+      type: saved.type,
+      symbolId: saved.symbolId,
+    });
 
     if (gatewayBound) {
       this.paymentBus.requestWithdraw({
@@ -179,7 +189,13 @@ export class WithdrawService {
       throw new BadRequestException("Only pending withdrawals can be cancelled");
     }
     withdraw.status = WithdrawStatusEnum.CANCELLED;
-    return this.withdrawRepo.save(withdraw);
+    const saved = await this.withdrawRepo.save(withdraw);
+    this.eventEmitter.emit(WithdrawEvents.CANCELLED, {
+      userId: saved.userId,
+      withdrawId: saved.id,
+      amount: saved.amount,
+    });
+    return saved;
   }
 
   async findAll(query: WithdrawQueryDto) {
@@ -253,6 +269,16 @@ export class WithdrawService {
 
       await queryRunner.manager.save(withdraw);
       await queryRunner.commitTransaction();
+
+      this.eventEmitter.emit(
+        dto.status === WithdrawStatusEnum.COMPLETED ? WithdrawEvents.COMPLETED : WithdrawEvents.FAILED,
+        {
+          userId: withdraw.userId,
+          withdrawId: withdraw.id,
+          amount: withdraw.amount,
+          status: dto.status,
+        },
+      );
 
       return this.findById(id);
     } catch (err) {

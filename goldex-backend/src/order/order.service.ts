@@ -297,6 +297,12 @@ export class OrderService {
       } catch (err) {
         savedOrder.status = OrderStatusEnum.REJECTED;
         await this.orderRepository.save(savedOrder);
+        this.eventEmitter.emit(OrderEvents.REJECTED, {
+          userId: savedOrder.userId,
+          orderId: savedOrder.id,
+          orderCode: savedOrder.orderCode,
+          reason: err instanceof Error ? err.message : String(err),
+        });
         const errMsg = err instanceof Error ? err.message : String(err);
         this.logger.error(`Failed to process order ${orderCode}: ${errMsg}`);
         throw err instanceof BadRequestException

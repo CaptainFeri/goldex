@@ -20,6 +20,8 @@ import { KycEventListener } from "./listeners/kyc-event.listener";
 import { OrderEventListener } from "./listeners/order-event.listener";
 import { UserEventListener } from "./listeners/user-event.listener";
 import { TicketEventListener } from "./listeners/ticket-event.listener";
+import { DepositEventListener } from "./listeners/deposit-event.listener";
+import { WithdrawEventListener } from "./listeners/withdraw-event.listener";
 import { NotificationGateway } from "./notification.gateway";
 import { SmsModule } from "../sms/sms.module";
 import { MailModule } from "../mail/mail.module";
@@ -67,6 +69,8 @@ import { ConfigModule, ConfigService } from "@nestjs/config";
     OrderEventListener,
     UserEventListener,
     TicketEventListener,
+    DepositEventListener,
+    WithdrawEventListener,
     NotificationGateway,
   ],
   exports: [NotificationService],

@@ -38,6 +38,43 @@ export class UserEventListener {
     });
   }
 
+  @OnEvent(UserEvents.REFERRAL)
+  async handleUserReferral(payload: { userId: string; referrerId: string; referralCode: string }) {
+    this.logger.log(`User joined via referral: user=${payload.userId} referrer=${payload.referrerId}`);
+    await this.notificationService.create({
+      userId: payload.userId,
+      type: NotificationTypeEnum.SUCCESS,
+      category: NotificationCategoryEnum.PROMOTION,
+      title: "ثبت نام با کد معرف",
+      body: "ثبت نام شما با موفقیت انجام شد. کد معرف اعمال گردید",
+      metadata: { referralCode: payload.referralCode },
+      channels: [NotificationChannelEnum.IN_APP, NotificationChannelEnum.EMAIL],
+    });
+  }
+
+  @OnEvent(UserEvents.LEVEL_CHANGED)
+  async handleLevelChanged(payload: { userId: string; levelId: string; levelName: string; previousLevelId?: string }) {
+    await this.notificationService.create({
+      userId: payload.userId,
+      type: NotificationTypeEnum.SUCCESS,
+      category: NotificationCategoryEnum.SYSTEM,
+      title: "تغییر سطح کاربری",
+      body: `سطح کاربری شما به «${payload.levelName}» ارتقا یافت`,
+      metadata: { levelId: payload.levelId, previousLevelId: payload.previousLevelId },
+    });
+  }
+
+  @OnEvent(UserEvents.LEVEL_UNASSIGNED)
+  async handleLevelUnassigned(payload: { userId: string }) {
+    await this.notificationService.create({
+      userId: payload.userId,
+      type: NotificationTypeEnum.INFO,
+      category: NotificationCategoryEnum.SYSTEM,
+      title: "لغو سطح کاربری",
+      body: "سطح ویژه شما لغو شد",
+    });
+  }
+
   @OnEvent(UserEvents.BLOCKED)
   async handleUserBlocked(payload: { userId: string; reason?: string }) {
     await this.notificationService.create({

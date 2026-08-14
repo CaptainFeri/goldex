@@ -1,11 +1,13 @@
 import { Injectable, NotFoundException, ConflictException, BadRequestException } from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
 import { Repository } from "typeorm";
+import { EventEmitter2 } from "@nestjs/event-emitter";
 import { UserLevelEntity } from "./entity/user-level.entity";
 import { UserEntity } from "../user/entity/user.entity";
 import { CreateLevelDto } from "./dto/create-level.dto";
 import { UpdateLevelDto } from "./dto/update-level.dto";
 import { AssignLevelDto } from "./dto/assign-level.dto";
+import { UserEvents } from "../shared/constants/events.constants";
 
 @Injectable()
 export class UserLevelService {
@@ -14,6 +16,7 @@ export class UserLevelService {
     private readonly levelRepo: Repository<UserLevelEntity>,
     @InjectRepository(UserEntity)
     private readonly userRepo: Repository<UserEntity>,
+    private readonly eventEmitter: EventEmitter2,
   ) {}
 
   async findAll(): Promise<UserLevelEntity[]> {
@@ -73,14 +76,22 @@ export class UserLevelService {
     const user = await this.userRepo.findOne({ where: { id: dto.userId } });
     if (!user) throw new NotFoundException("User not found");
     const level = await this.findById(dto.levelId);
+    const previousLevelId = user.levelId;
     user.levelId = level.id;
     user.levelAssignedAt = new Date();
     user.levelExpiresAt = dto.expiresAt || null;
     await this.userRepo.save(user);
-    return this.userRepo.findOne({
+    const updated = await this.userRepo.findOne({
       where: { id: user.id },
       relations: { level: true },
     });
+    this.eventEmitter.emit(UserEvents.LEVEL_CHANGED, {
+      userId: user.id,
+      levelId: level.id,
+      levelName: level.name,
+      previousLevelId,
+    });
+    return updated;
   }
 
   async unassignLevel(userId: string): Promise<UserEntity> {
@@ -90,10 +101,12 @@ export class UserLevelService {
     user.levelAssignedAt = null;
     user.levelExpiresAt = null;
     await this.userRepo.save(user);
-    return this.userRepo.findOne({
+    const updated = await this.userRepo.findOne({
       where: { id: user.id },
       relations: { level: true },
     });
+    this.eventEmitter.emit(UserEvents.LEVEL_UNASSIGNED, { userId });
+    return updated;
   }
 
   async getUserLevel(userId: string): Promise<UserLevelEntity | null> {

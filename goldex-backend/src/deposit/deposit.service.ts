@@ -1,6 +1,7 @@
 import { Injectable, NotFoundException, BadRequestException, ForbiddenException, Logger } from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
 import { Repository, DataSource } from "typeorm";
+import { EventEmitter2 } from "@nestjs/event-emitter";
 import { DepositEntity } from "./deposit.entity";
 import { CreateDepositDto } from "./dto/create-deposit.dto";
 import { DepositQueryDto } from "./dto/deposit-query.dto";
@@ -14,6 +15,7 @@ import { TransactionStatusEnum } from "../wallet/enum/transaction.status.enum";
 import { WalletStatusEnum } from "../wallet/enum/wallet-status.enum";
 import { getDefaultDepositTypes, GATEWAY_BOUND_TYPES } from "../admin-symbol/constants/symbol-type-type-map";
 import { PaymentBusService } from "../payment-bus/payment-bus.service";
+import { DepositEvents } from "../shared/constants/events.constants";
 
 @Injectable()
 export class DepositService {
@@ -30,6 +32,7 @@ export class DepositService {
     private transactionRepo: Repository<TransactionEntity>,
     private dataSource: DataSource,
     private readonly paymentBus: PaymentBusService,
+    private readonly eventEmitter: EventEmitter2,
   ) {}
 
   async create(userId: string, dto: CreateDepositDto): Promise<DepositEntity> {
@@ -81,6 +84,13 @@ export class DepositService {
     });
 
     const saved = await this.depositRepo.save(deposit);
+    this.eventEmitter.emit(DepositEvents.CREATED, {
+      userId: saved.userId,
+      depositId: saved.id,
+      amount: saved.amount,
+      type: saved.type,
+      symbolId: saved.symbolId,
+    });
 
     if (gatewayBound) {
       this.paymentBus.requestDeposit({
@@ -141,7 +151,13 @@ export class DepositService {
       throw new BadRequestException("Only pending deposits can be cancelled");
     }
     deposit.status = DepositStatusEnum.CANCELLED;
-    return this.depositRepo.save(deposit);
+    const saved = await this.depositRepo.save(deposit);
+    this.eventEmitter.emit(DepositEvents.CANCELLED, {
+      userId: saved.userId,
+      depositId: saved.id,
+      amount: saved.amount,
+    });
+    return saved;
   }
 
   async findAll(query: DepositQueryDto) {
@@ -219,6 +235,16 @@ export class DepositService {
 
       await queryRunner.manager.save(deposit);
       await queryRunner.commitTransaction();
+
+      this.eventEmitter.emit(
+        dto.status === DepositStatusEnum.COMPLETED ? DepositEvents.COMPLETED : DepositEvents.FAILED,
+        {
+          userId: deposit.userId,
+          depositId: deposit.id,
+          amount: deposit.amount,
+          status: dto.status,
+        },
+      );
 
       return this.findById(id);
     } catch (err) {

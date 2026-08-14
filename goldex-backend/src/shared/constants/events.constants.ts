@@ -29,11 +29,29 @@ export const OrderEvents = {
   PLACED: "order.placed",
   MATCHED: "order.matched",
   CANCELLED: "order.cancelled",
+  REJECTED: "order.rejected",
 } as const;
 
 export const UserEvents = {
   REGISTERED: "user.registered",
+  REFERRAL: "user.referral",
   PASSWORD_CHANGED: "user.password_changed",
   BLOCKED: "user.blocked",
   UNBLOCKED: "user.unblocked",
+  LEVEL_CHANGED: "user.level_changed",
+  LEVEL_UNASSIGNED: "user.level_unassigned",
+} as const;
+
+export const DepositEvents = {
+  CREATED: "deposit.created",
+  COMPLETED: "deposit.completed",
+  FAILED: "deposit.failed",
+  CANCELLED: "deposit.cancelled",
+} as const;
+
+export const WithdrawEvents = {
+  CREATED: "withdraw.created",
+  COMPLETED: "withdraw.completed",
+  FAILED: "withdraw.failed",
+  CANCELLED: "withdraw.cancelled",
 } as const;

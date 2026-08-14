@@ -47,4 +47,16 @@ export class OrderEventListener {
       metadata: { orderId: payload.orderId },
     });
   }
+
+  @OnEvent(OrderEvents.REJECTED)
+  async handleOrderRejected(payload: { userId: string; orderId: string; orderCode?: string; reason?: string }) {
+    await this.notificationService.create({
+      userId: payload.userId,
+      type: NotificationTypeEnum.ERROR,
+      category: NotificationCategoryEnum.TRADE,
+      title: "سفارش رد شد",
+      body: payload.reason ? `سفارش شما رد شد. دلیل: ${payload.reason}` : "سفارش شما رد شد",
+      metadata: { orderId: payload.orderId, orderCode: payload.orderCode },
+    });
+  }
 }
