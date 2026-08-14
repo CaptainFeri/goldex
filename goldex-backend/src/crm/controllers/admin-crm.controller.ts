@@ -6,6 +6,7 @@ import { SupportTicketService } from "../services/support-ticket.service";
 import { TicketMessageService } from "../services/ticket-message.service";
 import { CustomerTagService } from "../services/customer-tag.service";
 import { CustomerSegmentService } from "../services/customer-segment.service";
+import { SegmentOperatorEnum } from "../entity/customer-segment-combination.entity";
 import { CommunicationLogService } from "../services/communication-log.service";
 import { Customer360Service } from "../services/customer-360.service";
 import { NoteCategoryEnum } from "../entity/customer-note.entity";
@@ -274,6 +275,80 @@ export class AdminCrmController {
   @ApiOperation({ summary: "Unassign user from segment" })
   async unassignUserFromSegment(@Param("userId") userId: string, @Param("segmentId") segmentId: string) {
     await this.segmentService.unassignUser(segmentId, userId);
+    return { data: { success: true } };
+  }
+
+  @Post("segments/:id/sync")
+  @UseGuards(AdminAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: "Sync dynamic segment with its criteria" })
+  async syncSegment(@Param("id") id: string) {
+    return { data: await this.segmentService.syncSegment(id) };
+  }
+
+  @Get("segments/:id/members")
+  @UseGuards(AdminAuthGuard)
+  @ApiBearerAuth()
+  @ApiQuery({ name: "pageNumber", required: false, type: Number })
+  @ApiQuery({ name: "pageSize", required: false, type: Number })
+  @ApiOperation({ summary: "List segment members with details" })
+  async getSegmentMembers(
+    @Param("id") id: string,
+    @Query("pageNumber", new DefaultValuePipe(1), ParseIntPipe) page: number = 1,
+    @Query("pageSize", new DefaultValuePipe(50), ParseIntPipe) limit: number = 50,
+  ) {
+    return { data: await this.segmentService.getSegmentMembersPaginated(id, page, limit) };
+  }
+
+  @Get("segments/:id/stats")
+  @UseGuards(AdminAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: "Segment statistics and insights" })
+  async getSegmentStats(@Param("id") id: string) {
+    return { data: await this.segmentService.getSegmentStats(id) };
+  }
+
+  @Post("segments/:id/clear")
+  @UseGuards(AdminAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: "Clear all members from a segment" })
+  async clearSegment(@Param("id") id: string) {
+    await this.segmentService.clearMembers(id);
+    return { data: { success: true } };
+  }
+
+  // ---- Segment Combinations ----
+
+  @Get("segment-combinations")
+  @UseGuards(AdminAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: "List segment combinations" })
+  async getCombinations() {
+    return { data: await this.segmentService.findAllCombinations() };
+  }
+
+  @Post("segment-combinations")
+  @UseGuards(AdminAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: "Create a segment combination (union/intersect/difference)" })
+  async createCombination(@Req() req: any, @Body() dto: { name: string; description?: string; segmentIds: string[]; operator: SegmentOperatorEnum }) {
+    return { data: await this.segmentService.createCombination({ ...dto, createdById: req.admin.id }) };
+  }
+
+  @Post("segment-combinations/:id/evaluate")
+  @UseGuards(AdminAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: "Evaluate a segment combination" })
+  async evaluateCombination(@Param("id") id: string) {
+    return { data: await this.segmentService.evaluateCombination(id) };
+  }
+
+  @Delete("segment-combinations/:id")
+  @UseGuards(AdminAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: "Delete a segment combination" })
+  async deleteCombination(@Param("id") id: string) {
+    await this.segmentService.removeCombination(id);
     return { data: { success: true } };
   }
 

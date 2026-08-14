@@ -21,7 +21,50 @@ export interface CustomerSegment {
   criteria: Record<string, any>;
   isDynamic: boolean;
   createdById?: string;
+  lastSyncedAt?: string | null;
   createAt: string;
+}
+
+export type SegmentOperator = "UNION" | "INTERSECT" | "DIFFERENCE";
+
+export interface SegmentCombination {
+  id: string;
+  name: string;
+  description?: string | null;
+  segmentIds: string[];
+  operator: SegmentOperator;
+  createdById?: string;
+  lastSyncedAt?: string | null;
+  createAt: string;
+}
+
+export interface SegmentMember {
+  userId: string;
+  firstName?: string | null;
+  lastName?: string | null;
+  email?: string | null;
+  phone?: string | null;
+  role?: number;
+  registeredAt?: string | null;
+  kycStatus?: number;
+  kycLevel?: number;
+  totalBalance?: number;
+  assignedAt?: string;
+}
+
+export interface SegmentMemberResult {
+  data: SegmentMember[];
+  total: number;
+}
+
+export interface SegmentStats {
+  id: string;
+  name: string;
+  isDynamic: boolean;
+  lastSyncedAt?: string | null;
+  memberCount: number;
+  dynamicMemberCount: number | null;
+  manualMemberCount: number | null;
 }
 
 export interface SupportTicket {
@@ -206,6 +249,22 @@ export const crmApi = {
     const r = await api.post(`${CRM_BASE}/segments/${id}/evaluate`);
     return unwrap<string[]>(r.data);
   },
+  syncSegment: async (id: string): Promise<{ memberCount: number }> => {
+    const r = await api.post(`${CRM_BASE}/segments/${id}/sync`);
+    return unwrap<{ memberCount: number }>(r.data);
+  },
+  getSegmentMembers: async (id: string, pageNumber = 1, pageSize = 50): Promise<SegmentMemberResult> => {
+    const r = await api.get(`${CRM_BASE}/segments/${id}/members`, { params: { pageNumber, pageSize } });
+    return unwrap<SegmentMemberResult>(r.data);
+  },
+  getSegmentStats: async (id: string): Promise<SegmentStats> => {
+    const r = await api.get(`${CRM_BASE}/segments/${id}/stats`);
+    return unwrap<SegmentStats>(r.data);
+  },
+  clearSegment: async (id: string): Promise<{ success: boolean }> => {
+    const r = await api.post(`${CRM_BASE}/segments/${id}/clear`);
+    return unwrap<{ success: boolean }>(r.data);
+  },
   assignSegment: async (id: string, userIds: string[]): Promise<{ success: boolean }> => {
     const r = await api.post(`${CRM_BASE}/segments/${id}/assign`, { userIds });
     return unwrap<{ success: boolean }>(r.data);
@@ -216,6 +275,24 @@ export const crmApi = {
   },
   unassignUserFromSegment: async (userId: string, segmentId: string): Promise<{ success: boolean }> => {
     const r = await api.delete(`${CRM_BASE}/users/${userId}/segments/${segmentId}`);
+    return unwrap<{ success: boolean }>(r.data);
+  },
+
+  // ---- Combinations ----
+  getCombinations: async (): Promise<SegmentCombination[]> => {
+    const r = await api.get(`${CRM_BASE}/segment-combinations`);
+    return unwrap<SegmentCombination[]>(r.data);
+  },
+  createCombination: async (payload: { name: string; description?: string; segmentIds: string[]; operator: SegmentOperator }): Promise<SegmentCombination> => {
+    const r = await api.post(`${CRM_BASE}/segment-combinations`, payload);
+    return unwrap<SegmentCombination>(r.data);
+  },
+  evaluateCombination: async (id: string): Promise<string[]> => {
+    const r = await api.post(`${CRM_BASE}/segment-combinations/${id}/evaluate`);
+    return unwrap<string[]>(r.data);
+  },
+  deleteCombination: async (id: string): Promise<{ success: boolean }> => {
+    const r = await api.delete(`${CRM_BASE}/segment-combinations/${id}`);
     return unwrap<{ success: boolean }>(r.data);
   },
 

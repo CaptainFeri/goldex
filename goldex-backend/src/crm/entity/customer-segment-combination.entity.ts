@@ -1,8 +1,14 @@
 import { Entity, Column, ManyToOne, JoinColumn, CreateDateColumn, UpdateDateColumn, PrimaryGeneratedColumn } from "typeorm";
 import { AdminEntity } from "../../admin/entity/admin.entity";
 
-@Entity("customer_segments")
-export class CustomerSegmentEntity {
+export enum SegmentOperatorEnum {
+  UNION = "UNION",
+  INTERSECT = "INTERSECT",
+  DIFFERENCE = "DIFFERENCE",
+}
+
+@Entity("customer_segment_combinations")
+export class CustomerSegmentCombinationEntity {
   @PrimaryGeneratedColumn("uuid")
   public id: string;
 
@@ -12,14 +18,12 @@ export class CustomerSegmentEntity {
   @Column({ type: "text", nullable: true })
   description: string;
 
+  // Segment ids to combine, in order.
   @Column({ type: "jsonb" })
-  criteria: Record<string, any>;
+  segmentIds: string[];
 
-  @Column({ type: "boolean", default: false, name: "is_dynamic" })
-  isDynamic: boolean;
-
-  @Column({ type: "timestamptz", nullable: true, name: "last_synced_at" })
-  lastSyncedAt: Date;
+  @Column({ type: "enum", enum: SegmentOperatorEnum, name: "operator" })
+  operator: SegmentOperatorEnum;
 
   @ManyToOne(() => AdminEntity)
   @JoinColumn({ name: "created_by" })
@@ -27,6 +31,9 @@ export class CustomerSegmentEntity {
 
   @Column({ name: "created_by" })
   createdById: string;
+
+  @Column({ type: "timestamptz", nullable: true, name: "last_synced_at" })
+  lastSyncedAt: Date;
 
   @CreateDateColumn({ type: "timestamptz", nullable: true, name: "created_at" })
   createAt?: Date;

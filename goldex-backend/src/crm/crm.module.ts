@@ -7,6 +7,7 @@ import { CustomerTagEntity } from "./entity/customer-tag.entity";
 import { CustomerTagAssignmentEntity } from "./entity/customer-tag-assignment.entity";
 import { CustomerSegmentEntity } from "./entity/customer-segment.entity";
 import { CustomerSegmentAssignmentEntity } from "./entity/customer-segment-assignment.entity";
+import { CustomerSegmentCombinationEntity } from "./entity/customer-segment-combination.entity";
 import { CommunicationLogEntity } from "./entity/communication-log.entity";
 import { CustomerNoteService } from "./services/customer-note.service";
 import { SupportTicketService } from "./services/support-ticket.service";
@@ -20,6 +21,9 @@ import { AdminCrmController } from "./controllers/admin-crm.controller";
 import { UserEntity } from "../user/entity/user.entity";
 import { UserKycEntity } from "../user/entity/user.kyc.entity";
 import { WalletEntity } from "../wallet/entities/wallet.entity";
+import { OrderEntity } from "../order/order.entity";
+import { DepositEntity } from "../deposit/deposit.entity";
+import { WithdrawEntity } from "../withdraw/withdraw.entity";
 
 @Module({
   imports: [
@@ -31,10 +35,15 @@ import { WalletEntity } from "../wallet/entities/wallet.entity";
       CustomerTagAssignmentEntity,
       CustomerSegmentEntity,
       CustomerSegmentAssignmentEntity,
+      CustomerSegmentCombinationEntity,
       CommunicationLogEntity,
       UserEntity,
       UserKycEntity,
       WalletEntity,
+      CustomerTagAssignmentEntity,
+      OrderEntity,
+      DepositEntity,
+      WithdrawEntity,
     ]),
   ],
   controllers: [UserTicketController, AdminCrmController],
