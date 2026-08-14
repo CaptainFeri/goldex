@@ -2,7 +2,6 @@ import { MigrationInterface, QueryRunner } from "typeorm";
 
 export class NotificationCrmUpgradeMig1000000000075 implements MigrationInterface {
   name = "NotificationCrmUpgradeMig1000000000075";
-  transaction = false;
 
   public async up(queryRunner: QueryRunner): Promise<void> {
     // Add SUPPORT category used for ticket/support notifications.
