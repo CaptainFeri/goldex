@@ -1,47 +1,87 @@
 import { NavLink, Outlet, useLocation } from "react-router-dom";
+import { useState } from "react";
 import { useAuth } from "../auth/auth";
 import MobileNav from "./MobileNav";
 
-const NAV = [
-  { section: "نمای کلی" },
-  { to: "/", label: "داشبورد", icon: "▦", end: true },
-  { to: "/compare", label: "مقایسه تأمین‌کنندگان", icon: "📈" },
-  { to: "/providers", label: "تأمین‌کنندگان", icon: "🏭" },
-  { to: "/market-status", label: "وضعیت بازار استخرها", icon: "🛒" },
-  { to: "/arbitrage", label: "فرصت‌های آربیتراژ", icon: "⚡" },
-  { section: "CRM" },
-  { to: "/crm", label: "داشبورد CRM", icon: "📊" },
-  { to: "/crm/users", label: "مشتریان", icon: "👥" },
-  { to: "/crm/tickets", label: "تیکت‌ها", icon: "🎫" },
-  { to: "/crm/tags", label: "برچسب‌ها", icon: "🏷️" },
-  { to: "/crm/segments", label: "بخش‌بندی", icon: "📋" },
-  { to: "/notifications", label: "اعلان‌ها", icon: "🔔" },
-  { section: "مدیریت" },
-  { to: "/users", label: "کاربران", icon: "👤" },
-  { to: "/kyc", label: "احراز هویت", icon: "🪪" },
-  { to: "/wallets", label: "کیف‌پول‌ها", icon: "👛" },
-  { to: "/warehouse", label: "انبار", icon: "🏭" },
-  { to: "/finance", label: "مالی", icon: "💰" },
-  { to: "/provider-finance", label: "مالی تأمین‌کنندگان", icon: "🏦" },
-  { to: "/cbp", label: "درگاه‌های پرداخت (CBP)", icon: "💳" },
-  { to: "/credits", label: "اعتبارات", icon: "💳" },
-  { to: "/finance-logs", label: "گزارشات مالی", icon: "📄" },
-  { to: "/deposits", label: "واریزها", icon: "📥" },
-  { to: "/withdraws", label: "برداشت‌ها", icon: "📤" },
-  { to: "/ocr", label: "مدیریت OCR", icon: "🔍" },
-  { section: "بازار" },
-  { to: "/symbols", label: "نمادها", icon: "◈" },
-  { to: "/pairs", label: "جفت‌ارزها", icon: "⇄" },
-  { to: "/mappings", label: "نگاشت تأمین‌کننده", icon: "🔗" },
-  { section: "سفارشات" },
-  { to: "/orders", label: "مدیریت سفارش‌ها", icon: "📋" },
-  { to: "/order-book", label: "دفتر سفارش", icon: "📊" },
-  { to: "/discounts", label: "تخفیف‌ها", icon: "🏷️" },
-  { section: "تلگرام" },
-  { to: "/telegram-market", label: "بازار طلا", icon: "📊" },
-  { section: "سیستم" },
-  { to: "/user-levels", label: "سطوح کاربری", icon: "🎖" },
-  { to: "/admins", label: "مدیران", icon: "👤" },
+type NavGroup = {
+  label: string;
+  icon: string;
+  children: { to: string; label: string; icon: string; end?: boolean }[];
+};
+
+const NAV: NavGroup[] = [
+  {
+    label: "نمای کلی",
+    icon: "▦",
+    children: [
+      { to: "/", label: "داشبورد", icon: "▦", end: true },
+      { to: "/compare", label: "مقایسه تأمین‌کنندگان", icon: "📈" },
+      { to: "/providers", label: "تأمین‌کنندگان", icon: "🏭" },
+      { to: "/market-status", label: "وضعیت بازار استخرها", icon: "🛒" },
+      { to: "/arbitrage", label: "فرصت‌های آربیتراژ", icon: "⚡" },
+    ],
+  },
+  {
+    label: "CRM",
+    icon: "📊",
+    children: [
+      { to: "/crm", label: "داشبورد CRM", icon: "📊" },
+      { to: "/crm/users", label: "مشتریان", icon: "👥" },
+      { to: "/crm/tickets", label: "تیکت‌ها", icon: "🎫" },
+      { to: "/crm/tags", label: "برچسب‌ها", icon: "🏷️" },
+      { to: "/crm/segments", label: "بخش‌بندی", icon: "📋" },
+      { to: "/notifications", label: "اعلان‌ها", icon: "🔔" },
+    ],
+  },
+  {
+    label: "مدیریت",
+    icon: "👤",
+    children: [
+      { to: "/users", label: "کاربران", icon: "👤" },
+      { to: "/kyc", label: "احراز هویت", icon: "🪪" },
+      { to: "/wallets", label: "کیف‌پول‌ها", icon: "👛" },
+      { to: "/warehouse", label: "انبار", icon: "🏭" },
+      { to: "/finance", label: "مالی", icon: "💰" },
+      { to: "/provider-finance", label: "مالی تأمین‌کنندگان", icon: "🏦" },
+      { to: "/cbp", label: "درگاه‌های پرداخت (CBP)", icon: "💳" },
+      { to: "/credits", label: "اعتبارات", icon: "💳" },
+      { to: "/finance-logs", label: "گزارشات مالی", icon: "📄" },
+      { to: "/deposits", label: "واریزها", icon: "📥" },
+      { to: "/withdraws", label: "برداشت‌ها", icon: "📤" },
+      { to: "/ocr", label: "مدیریت OCR", icon: "🔍" },
+    ],
+  },
+  {
+    label: "بازار",
+    icon: "◈",
+    children: [
+      { to: "/symbols", label: "نمادها", icon: "◈" },
+      { to: "/pairs", label: "جفت‌ارزها", icon: "⇄" },
+      { to: "/mappings", label: "نگاشت تأمین‌کننده", icon: "🔗" },
+    ],
+  },
+  {
+    label: "سفارشات",
+    icon: "📋",
+    children: [
+      { to: "/orders", label: "مدیریت سفارش‌ها", icon: "📋" },
+      { to: "/order-book", label: "دفتر سفارش", icon: "📊" },
+      { to: "/discounts", label: "تخفیف‌ها", icon: "🏷️" },
+    ],
+  },
+  {
+    label: "تلگرام",
+    icon: "📊",
+    children: [{ to: "/telegram-market", label: "بازار طلا", icon: "📊" }],
+  },
+  {
+    label: "سیستم",
+    icon: "🎖",
+    children: [
+      { to: "/user-levels", label: "سطوح کاربری", icon: "🎖" },
+      { to: "/admins", label: "مدیران", icon: "👤" },
+    ],
+  },
 ];
 
 const TITLES: Record<string, string> = {
@@ -84,6 +124,18 @@ export default function Layout() {
   const loc = useLocation();
   const title = TITLES[loc.pathname] ?? "Goldex";
 
+  const activeGroup = NAV.findIndex((g) =>
+    g.children.some((c) =>
+      c.end ? loc.pathname === c.to : loc.pathname.startsWith(c.to)
+    )
+  );
+  const [open, setOpen] = useState<number[]>([activeGroup].filter((i) => i >= 0));
+
+  const toggle = (i: number) =>
+    setOpen((prev) =>
+      prev.includes(i) ? prev.filter((x) => x !== i) : [...prev, i]
+    );
+
   return (
     <div className="app-shell">
       <aside className="sidebar">
@@ -95,23 +147,34 @@ export default function Layout() {
           </div>
         </div>
 
-        {NAV.map((item, i) =>
-          "section" in item ? (
-            <div className="nav-section" key={`s-${i}`}>
-              {item.section}
+        {NAV.map((group, i) => {
+          const expanded = open.includes(i);
+          const isActive = i === activeGroup;
+          return (
+            <div key={group.label} className={"nav-group" + (expanded ? " open" : "") + (isActive ? " active" : "")}>
+              <button className="nav-group-btn" onClick={() => toggle(i)}>
+                <span className="ico">{group.icon}</span>
+                <span className="nav-group-label">{group.label}</span>
+                <span className="nav-group-arrow">{expanded ? "▲" : "▼"}</span>
+              </button>
+              {expanded && (
+                <div className="nav-submenu">
+                  {group.children.map((item) => (
+                    <NavLink
+                      key={item.to}
+                      to={item.to}
+                      end={item.end}
+                      className={({ isActive }) => "nav-sub" + (isActive ? " active" : "")}
+                    >
+                      <span className="ico sm">{item.icon}</span>
+                      {item.label}
+                    </NavLink>
+                  ))}
+                </div>
+              )}
             </div>
-          ) : (
-            <NavLink
-              key={item.to}
-              to={item.to!}
-              end={item.end}
-              className={({ isActive }) => "nav-item" + (isActive ? " active" : "")}
-            >
-              <span className="ico">{item.icon}</span>
-              {item.label}
-            </NavLink>
-          )
-        )}
+          );
+        })}
 
         <div className="sidebar-footer">
           <div className="row spread">
