@@ -52,11 +52,16 @@ export class KainoHttpClient {
   }
 
   private async send<T>(exec: () => Promise<AxiosResponse<T>>): Promise<T> {
+    // Only re-login when the failing request actually carried a token. The
+    // login call itself carries none, so a 401 there means bad credentials and
+    // must throw — otherwise invalid creds cause an infinite re-login loop and
+    // the health check hangs until the caller's timeout.
+    const hadToken = !!this.token;
     try {
       const res = await exec();
       return res.data;
     } catch (err) {
-      if ((err as any)?.response?.status === 401 && this.onUnauthorized) {
+      if (hadToken && (err as any)?.response?.status === 401 && this.onUnauthorized) {
         await this.onUnauthorized();
         const res = await exec();
         return res.data;
