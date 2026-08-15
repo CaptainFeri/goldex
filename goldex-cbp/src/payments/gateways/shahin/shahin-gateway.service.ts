@@ -149,8 +149,9 @@ export class ShahinGatewayService implements IPaymentGateway {
   }
 
   /**
-   * Executes an automatic RIAL payout via Shahin `/batch-transfer`
-   * with a single destination entry per withdrawal request.
+   * Executes an automatic RIAL payout via Shahin `/transfer` (single
+   * destination) using the OBH `TransferDto` contract exposed by the
+   * shahin microservice (`/api/shahin/transfer`).
    */
   async withdraw(params: WithdrawParams): Promise<any> {
     const cfg = this.cfg();
@@ -160,18 +161,15 @@ export class ShahinGatewayService implements IPaymentGateway {
       sourceAccount: sh.sourceAccount ?? cfg.sourceAccount,
       bank: sh.bank ?? cfg.bankCode,
       nationalCode: sh.nationalCode ?? cfg.companyNationalCode,
-      destination: [
-        {
-          destinationIban: params.iban,
-          amount: String(Number(params.amount)),
-          ownerName: params.beneficiaryName,
-          nationalCode: params.beneficiaryId,
-          ...(sh.destination ?? {}),
-        },
-      ],
-      description: params.meta?.description,
-      localDate,
-      logYearMonthDay: this.toJalali(String(params.meta?.logDate ?? "")) ?? undefined,
+      destinationAccountNumber: params.iban,
+      destinationBank: sh.destinationBank ?? "MEL",
+      amount: Number(params.amount),
+      destinationAccountName: params.beneficiaryName,
+      transferType: sh.transferType ?? "PAYA",
+      withdrawDescription: params.meta?.description,
+      documentID: sh.documentID ?? params.reference,
+      depositDescription: sh.depositDescription,
+      ...(sh.extra ?? {}),
     };
 
     if (!dto.sourceAccount || !dto.nationalCode) {
@@ -180,7 +178,7 @@ export class ShahinGatewayService implements IPaymentGateway {
       );
     }
 
-    const data = await this.post("/batch-transfer", dto);
+    const data = await this.post("/transfer", dto);
 
     // The post() now returns the raw envelope; decide success/failure here so
     // the payment stays consistent with the backend proxy's CORE_FAILED shape.
