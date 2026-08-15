@@ -3,7 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, unwrap, apiError } from "../api/client";
 import { Card, Loading, ErrorState, Empty, Badge, Modal } from "../components/ui";
 import { fmtNum } from "../lib/format";
-import { GAIN_TYPES, SYMBOL_TYPES, UNIT_TYPES, PAYMENT_GATEWAYS, MARKET_TYPES_ENUM, DEPOSIT_TYPES, WITHDRAW_TYPES, SYMBOL_TYPE_DEPOSIT_MAP, SYMBOL_TYPE_WITHDRAW_MAP, GATEWAY_PROVIDERS } from "../lib/enums";
+import { GAIN_TYPES, SYMBOL_TYPES, UNIT_TYPES, PAYMENT_GATEWAYS, MARKET_TYPES_ENUM, DEPOSIT_TYPES, WITHDRAW_TYPES, SYMBOL_TYPE_DEPOSIT_MAP, SYMBOL_TYPE_WITHDRAW_MAP, SYMBOL_TYPE_DEPOSIT_GATEWAY_MAP, SYMBOL_TYPE_WITHDRAW_GATEWAY_MAP, GATEWAY_PROVIDERS } from "../lib/enums";
 
 function toArray(x: any): any[] {
   if (Array.isArray(x)) return x;
@@ -20,6 +20,14 @@ function getDefaultWithdrawTypes(symbolType: string): string[] {
   return SYMBOL_TYPE_WITHDRAW_MAP[symbolType] ?? ["manual"];
 }
 
+function getDefaultDepositGateways(symbolType: string): string[] {
+  return SYMBOL_TYPE_DEPOSIT_GATEWAY_MAP[symbolType] ?? [];
+}
+
+function getDefaultWithdrawGateways(symbolType: string): string[] {
+  return SYMBOL_TYPE_WITHDRAW_GATEWAY_MAP[symbolType] ?? [];
+}
+
 const EMPTY = {
   name: "",
   slug: "",
@@ -34,8 +42,8 @@ const EMPTY = {
   isActive: true,
   depositTypes: getDefaultDepositTypes("material"),
   withdrawTypes: getDefaultWithdrawTypes("material"),
-  depositGateways: [],
-  withdrawGateways: [],
+  depositGateways: getDefaultDepositGateways("material"),
+  withdrawGateways: getDefaultWithdrawGateways("material"),
   defaultDepositGateway: "",
   defaultWithdrawGateway: "",
 };
@@ -60,11 +68,18 @@ function SymbolForm({ initial, onClose }: { initial?: any; onClose: () => void }
   });
 
   function handleSymbolTypeChange(v: string) {
+    const dGateways = getDefaultDepositGateways(v);
+    const wGateways = getDefaultWithdrawGateways(v);
     setForm((f: any) => ({
       ...f,
       symbolType: v,
+      hasPaymentGateway: v === "rial" ? true : f.hasPaymentGateway,
       depositTypes: getDefaultDepositTypes(v),
       withdrawTypes: getDefaultWithdrawTypes(v),
+      depositGateways: dGateways,
+      withdrawGateways: wGateways,
+      defaultDepositGateway: dGateways.length ? dGateways[0] : "",
+      defaultWithdrawGateway: wGateways.length ? wGateways[0] : "",
     }));
   }
 

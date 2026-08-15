@@ -23,6 +23,34 @@ export const GATEWAY_BOUND_TYPES: ReadonlySet<string> = new Set([
   "auto",
 ]);
 
+/**
+ * Default gateway provider codes per symbol type, for the gateway-bound
+ * deposit/withdraw types (deposit "payment-gateway" -> deposit gateways,
+ * withdraw "auto" -> withdraw gateways).
+ *  - RIAL: deposit via kaino (informal wallet), withdraw via shahin (bank).
+ */
+export const SYMBOL_TYPE_DEPOSIT_GATEWAY_MAP: Record<SymbolTypeEnum, string[]> = {
+  [SymbolTypeEnum.RIAL]: ["kaino-informal"],
+  [SymbolTypeEnum.FIAT]: ["kaino-informal"],
+  [SymbolTypeEnum.CRYPTO]: [],
+  [SymbolTypeEnum.MATERIAL]: [],
+};
+
+export const SYMBOL_TYPE_WITHDRAW_GATEWAY_MAP: Record<SymbolTypeEnum, string[]> = {
+  [SymbolTypeEnum.RIAL]: ["shahin"],
+  [SymbolTypeEnum.FIAT]: ["shahin"],
+  [SymbolTypeEnum.CRYPTO]: [],
+  [SymbolTypeEnum.MATERIAL]: [],
+};
+
+export function getDefaultDepositGateways(symbolType: SymbolTypeEnum): string[] {
+  return [...(SYMBOL_TYPE_DEPOSIT_GATEWAY_MAP[symbolType] ?? [])];
+}
+
+export function getDefaultWithdrawGateways(symbolType: SymbolTypeEnum): string[] {
+  return [...(SYMBOL_TYPE_WITHDRAW_GATEWAY_MAP[symbolType] ?? [])];
+}
+
 export function getDefaultDepositTypes(symbolType: SymbolTypeEnum): string[] {
   return [...(SYMBOL_TYPE_DEPOSIT_MAP[symbolType] ?? [])];
 }

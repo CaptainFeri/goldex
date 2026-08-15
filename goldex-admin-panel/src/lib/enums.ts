@@ -25,7 +25,24 @@ export const PAYMENT_GATEWAYS = [
 // to cbp's registry, add it here so admins can select it on symbols.
 export const GATEWAY_PROVIDERS = [
   { value: "kaino-informal", label: "کاینو (غیررسمی)" },
+  { value: "shahin", label: "شاهین (پارس زرگر)" },
 ];
+
+// Per-symbol-type default gateway provider codes for the gateway-bound
+// deposit/withdraw types (deposit "payment-gateway" / withdraw "auto").
+export const SYMBOL_TYPE_DEPOSIT_GATEWAY_MAP: Record<string, string[]> = {
+  rial: ["kaino-informal"],
+  fiat: ["kaino-informal"],
+  crypto: [],
+  material: [],
+};
+
+export const SYMBOL_TYPE_WITHDRAW_GATEWAY_MAP: Record<string, string[]> = {
+  rial: ["shahin"],
+  fiat: ["shahin"],
+  crypto: [],
+  material: [],
+};
 
 export const MARKET_TYPES_ENUM = [
   { value: "formal", label: "رسمی" },

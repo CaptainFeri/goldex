@@ -9,7 +9,7 @@ import { SymbolTypeEnum } from "./enum/symbol.type.enum";
 import { UserMarketTypeEntity } from "../user/entity/user.market.type.entity";
 import { UserEntity } from "../user/entity/user.entity";
 import { WalletEntity } from "../wallet/entities/wallet.entity";
-import { getDefaultDepositTypes, getDefaultWithdrawTypes, validateDepositTypes, validateWithdrawTypes } from "./constants/symbol-type-type-map";
+import { getDefaultDepositTypes, getDefaultWithdrawTypes, validateDepositTypes, validateWithdrawTypes, getDefaultDepositGateways, getDefaultWithdrawGateways } from "./constants/symbol-type-type-map";
 import { PaymentBusService } from "../payment-bus/payment-bus.service";
 
 @Injectable()
@@ -52,10 +52,29 @@ export class AdminSymbolService {
     return updates;
   }
 
+  private resolveGateways(dto: CreateSymbolDto | UpdateSymbolDto): Partial<SymbolEntity> {
+    const updates: Partial<SymbolEntity> = {};
+    const symbolType = dto.symbolType;
+
+    if (!symbolType) return updates;
+
+    if (dto.hasPaymentGateway !== false) {
+      if (dto.depositGateways === undefined) {
+        updates.depositGateways = getDefaultDepositGateways(symbolType);
+      }
+      if (dto.withdrawGateways === undefined) {
+        updates.withdrawGateways = getDefaultWithdrawGateways(symbolType);
+      }
+    }
+
+    return updates;
+  }
+
   async create(createSymbolDto: CreateSymbolDto): Promise<SymbolEntity> {
     this.validateGateways(createSymbolDto);
     const types = this.resolveTypes(createSymbolDto);
-    const symbol = this.symbolRepository.create({ ...createSymbolDto, ...types });
+    const gateways = this.resolveGateways(createSymbolDto);
+    const symbol = this.symbolRepository.create({ ...createSymbolDto, ...types, ...gateways });
     const saved = await this.symbolRepository.save(symbol);
 
     // Auto-create wallets for users whose market type matches this symbol's market type
@@ -139,6 +158,12 @@ export class AdminSymbolService {
       }
       if (updateSymbolDto.withdrawTypes === undefined) {
         updateSymbolDto.withdrawTypes = getDefaultWithdrawTypes(nextType) as UpdateSymbolDto["withdrawTypes"];
+      }
+      if (updateSymbolDto.depositGateways === undefined) {
+        updateSymbolDto.depositGateways = getDefaultDepositGateways(nextType);
+      }
+      if (updateSymbolDto.withdrawGateways === undefined) {
+        updateSymbolDto.withdrawGateways = getDefaultWithdrawGateways(nextType);
       }
     }
 
