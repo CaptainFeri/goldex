@@ -34,13 +34,17 @@ function proxyAuth(proxy: ProxyOptions): string | undefined {
 }
 
 /**
- * True when the host should bypass the proxy (loopback, the docker mock host,
- * and private ranges). Iranian providers are public hosts and still proxied;
- * local/dev/mock traffic must NOT be routed through the Iran squid proxy.
+ * True when the host should bypass the proxy. This covers loopback, private
+ * ranges, and docker-internal container names (single-label hostnames such as
+ * `mock`, `goldex-pricing-engine-mock`, `redis`). Iranian providers are public
+ * dotted domains and remain proxied; local/dev/mock traffic must NOT be routed
+ * through the Iran squid proxy, which cannot reach internal hostnames/ports.
  */
 export function isProxyBypassHost(host: string): boolean {
   const h = host.toLowerCase();
-  if (!h || h === 'localhost' || h === 'mock') return true;
+  if (!h || h === 'localhost') return true;
+  // Single-label hostnames are docker network names on the same host — no dot.
+  if (!h.includes('.')) return true;
   if (/^\d+\.\d+\.\d+\.\d+$/.test(h)) {
     const [a, b] = h.split('.').map((n) => Number(n));
     if (a === 127) return true;
