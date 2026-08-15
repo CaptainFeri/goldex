@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useAuth } from '../context/AuthContext'
 import { useNavigate, useLocation } from 'react-router-dom'
-import { BrandHeader, ThemeToggle } from './UI'
+import { BrandHeader, ThemeToggle, LangToggle } from './UI'
 import { levelApi, notificationApi } from '../services/api'
 import { getNotificationSocket } from '../services/socket'
 
@@ -242,6 +242,10 @@ export default function Sidebar({ user }) {
       </nav>
 
       <div className="sidebar-footer">
+        <div className="sidebar-theme-row">
+          <span>Language</span>
+          <LangToggle />
+        </div>
         <div className="sidebar-theme-row">
           <span>Theme</span>
           <ThemeToggle />

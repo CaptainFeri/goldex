@@ -1,7 +1,9 @@
 import { NavLink, Outlet, useLocation } from "react-router-dom";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useAuth } from "../auth/auth";
 import MobileNav from "./MobileNav";
+import { adminNotificationSocket } from "../api/admin-socket";
+import { getToken } from "../api/client";
 
 type NavGroup = {
   label: string;
@@ -136,6 +138,30 @@ export default function Layout() {
       prev.includes(i) ? prev.filter((x) => x !== i) : [...prev, i]
     );
 
+  // Real-time pending-item badge on the deposits/withdraws nav links.
+  const [pendingCount, setPendingCount] = useState(0);
+  useEffect(() => {
+    if (!getToken()) return;
+    const cleanup = adminNotificationSocket.connect(() => {
+      setPendingCount((c) => c + 1);
+    });
+    return cleanup;
+  }, []);
+  const navSub = (item: { to: string; label: string; icon: string; end?: boolean }) => (
+    <NavLink
+      key={item.to}
+      to={item.to}
+      end={item.end}
+      className={({ isActive }) => "nav-sub" + (isActive ? " active" : "")}
+    >
+      <span className="ico sm">{item.icon}</span>
+      {item.label}
+      {(item.to === "/deposits" || item.to === "/withdraws") && pendingCount > 0 && (
+        <span className="nav-badge">{pendingCount}</span>
+      )}
+    </NavLink>
+  );
+
   return (
     <div className="app-shell">
       <aside className="sidebar">
@@ -159,17 +185,7 @@ export default function Layout() {
               </button>
               {expanded && (
                 <div className="nav-submenu">
-                  {group.children.map((item) => (
-                    <NavLink
-                      key={item.to}
-                      to={item.to}
-                      end={item.end}
-                      className={({ isActive }) => "nav-sub" + (isActive ? " active" : "")}
-                    >
-                      <span className="ico sm">{item.icon}</span>
-                      {item.label}
-                    </NavLink>
-                  ))}
+                  {group.children.map(navSub)}
                 </div>
               )}
             </div>

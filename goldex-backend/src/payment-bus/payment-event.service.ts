@@ -11,6 +11,8 @@ import { TransactionEntity } from "../wallet/entities/transaction.entity";
 import { TransactionTypeEnum } from "../wallet/enum/transaction.type.enum";
 import { TransactionStatusEnum } from "../wallet/enum/transaction.status.enum";
 import { WalletStatusEnum } from "../wallet/enum/wallet-status.enum";
+import { EventEmitter2 } from "@nestjs/event-emitter";
+import { DepositEvents, WithdrawEvents } from "../shared/constants/events.constants";
 import { PaymentEventMessage } from "../rabbitmq/interfaces/rabbitmq.interfaces";
 
 /**
@@ -35,6 +37,7 @@ export class PaymentEventService {
     @InjectRepository(TransactionEntity)
     private readonly transactionRepo: Repository<TransactionEntity>,
     private readonly dataSource: DataSource,
+    private readonly eventEmitter: EventEmitter2,
   ) {}
 
   async handleEvent(event: PaymentEventMessage): Promise<void> {
@@ -76,11 +79,13 @@ export class PaymentEventService {
         deposit.completedAt = new Date();
         this.mergePaymentMeta(deposit, event);
         await this.depositRepo.save(deposit);
+        this.emitDepositEvent(DepositEvents.FAILED, deposit);
         break;
       case "rejected":
         deposit.status = DepositStatusEnum.CANCELLED;
         this.mergePaymentMeta(deposit, event);
         await this.depositRepo.save(deposit);
+        this.emitDepositEvent(DepositEvents.CANCELLED, deposit);
         break;
       default:
         this.logger.warn(`Unknown deposit event status: ${event.status}`);
@@ -118,11 +123,13 @@ export class PaymentEventService {
         withdraw.completedAt = new Date();
         this.mergePaymentMeta(withdraw, event);
         await this.withdrawRepo.save(withdraw);
+        this.emitWithdrawEvent(WithdrawEvents.FAILED, withdraw);
         break;
       case "rejected":
         withdraw.status = WithdrawStatusEnum.CANCELLED;
         this.mergePaymentMeta(withdraw, event);
         await this.withdrawRepo.save(withdraw);
+        this.emitWithdrawEvent(WithdrawEvents.CANCELLED, withdraw);
         break;
       default:
         this.logger.warn(`Unknown withdraw event status: ${event.status}`);
@@ -135,6 +142,28 @@ export class PaymentEventService {
       status === DepositStatusEnum.FAILED ||
       status === DepositStatusEnum.CANCELLED
     );
+  }
+
+  private emitDepositEvent(event: string, deposit: DepositEntity): void {
+    this.eventEmitter.emit(event, {
+      userId: deposit.userId,
+      depositId: deposit.id,
+      amount: deposit.amount,
+      type: deposit.type,
+      symbolId: deposit.symbolId,
+      status: deposit.status,
+    });
+  }
+
+  private emitWithdrawEvent(event: string, withdraw: WithdrawEntity): void {
+    this.eventEmitter.emit(event, {
+      userId: withdraw.userId,
+      withdrawId: withdraw.id,
+      amount: withdraw.amount,
+      type: withdraw.type,
+      symbolId: withdraw.symbolId,
+      status: withdraw.status,
+    });
   }
 
   private isWithdrawTerminal(status: WithdrawStatusEnum): boolean {
@@ -220,6 +249,7 @@ export class PaymentEventService {
       await queryRunner.commitTransaction();
 
       this.logger.log(`Gateway deposit ${locked.id} completed: ${locked.amount} credited to wallet ${wallet.id}`);
+      this.emitDepositEvent(DepositEvents.COMPLETED, locked);
     } catch (err) {
       await queryRunner.rollbackTransaction();
       throw err;
@@ -285,6 +315,7 @@ export class PaymentEventService {
       await queryRunner.commitTransaction();
 
       this.logger.log(`Gateway withdraw ${locked.id} completed: ${amount} deducted from wallet ${wallet.id}`);
+      this.emitWithdrawEvent(WithdrawEvents.COMPLETED, locked);
     } catch (err) {
       await queryRunner.rollbackTransaction();
       throw err;
