@@ -83,6 +83,34 @@ function SymbolForm({ initial, onClose }: { initial?: any; onClose: () => void }
     }));
   }
 
+  function handleRialDepositMode(v: string) {
+    const gateway = v === "payment-gateway";
+    setForm((f: any) => ({
+      ...f,
+      depositTypes: gateway ? ["manual", "payment-gateway"] : ["manual"],
+      depositGateways: gateway ? getDefaultDepositGateways(f.symbolType) : [],
+      defaultDepositGateway: gateway ? (f.defaultDepositGateway || getDefaultDepositGateways(f.symbolType)[0] || "") : "",
+    }));
+  }
+
+  function handleRialWithdrawMode(v: string) {
+    const gateway = v === "auto";
+    setForm((f: any) => ({
+      ...f,
+      withdrawTypes: gateway ? ["manual", "auto"] : ["manual"],
+      withdrawGateways: gateway ? getDefaultWithdrawGateways(f.symbolType) : [],
+      defaultWithdrawGateway: gateway ? (f.defaultWithdrawGateway || getDefaultWithdrawGateways(f.symbolType)[0] || "") : "",
+    }));
+  }
+
+  function handleRialDepositGateway(g: string) {
+    setForm((f: any) => ({ ...f, defaultDepositGateway: g, depositGateways: g ? [g] : [] }));
+  }
+
+  function handleRialWithdrawGateway(g: string) {
+    setForm((f: any) => ({ ...f, defaultWithdrawGateway: g, withdrawGateways: g ? [g] : [] }));
+  }
+
   function submit(e: React.FormEvent) {
     e.preventDefault();
     const payload: any = {
@@ -168,33 +196,81 @@ function SymbolForm({ initial, onClose }: { initial?: any; onClose: () => void }
         <div className="grid grid-2" style={{ margin: "12px 0" }}>
           <div className="field">
             <label>نوع واریز</label>
-            <div className="checkbox-group">
-              {DEPOSIT_TYPES.map((o) => (
-                <label key={o.value} className="row" style={{ gap: 6, margin: "4px 0" }}>
-                  <input
-                    type="checkbox"
-                    checked={(form.depositTypes || []).includes(o.value)}
-                    onChange={() => set("depositTypes", toggle(form.depositTypes || [], o.value))}
-                  />
-                  {o.label}
+            {form.symbolType === "rial" ? (
+              <div className="checkbox-group">
+                <label className="row" style={{ gap: 6, margin: "4px 0" }}>
+                  <input type="radio" name="dep-mode" checked={(form.depositTypes || []).includes("payment-gateway")} onChange={() => handleRialDepositMode("payment-gateway")} />
+                  درگاه پرداخت
                 </label>
-              ))}
-            </div>
+                <label className="row" style={{ gap: 6, margin: "4px 0" }}>
+                  <input type="radio" name="dep-mode" checked={!(form.depositTypes || []).includes("payment-gateway")} onChange={() => handleRialDepositMode("manual")} />
+                  دستی
+                </label>
+                {(form.depositTypes || []).includes("payment-gateway") && (
+                  <div className="field" style={{ marginTop: 6 }}>
+                    <label style={{ fontSize: 12 }}>انتخاب درگاه واریز</label>
+                    <select className="select" value={form.defaultDepositGateway || ""} onChange={(e) => handleRialDepositGateway(e.target.value)} required>
+                      <option value="">— انتخاب درگاه —</option>
+                      {GATEWAY_PROVIDERS.filter((o) => getDefaultDepositGateways("rial").includes(o.value)).map((o) => (
+                        <option key={o.value} value={o.value}>{o.label}</option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+              </div>
+            ) : (
+              <div className="checkbox-group">
+                {DEPOSIT_TYPES.map((o) => (
+                  <label key={o.value} className="row" style={{ gap: 6, margin: "4px 0" }}>
+                    <input
+                      type="checkbox"
+                      checked={(form.depositTypes || []).includes(o.value)}
+                      onChange={() => set("depositTypes", toggle(form.depositTypes || [], o.value))}
+                    />
+                    {o.label}
+                  </label>
+                ))}
+              </div>
+            )}
           </div>
           <div className="field">
             <label>نوع برداشت</label>
-            <div className="checkbox-group">
-              {WITHDRAW_TYPES.map((o) => (
-                <label key={o.value} className="row" style={{ gap: 6, margin: "4px 0" }}>
-                  <input
-                    type="checkbox"
-                    checked={(form.withdrawTypes || []).includes(o.value)}
-                    onChange={() => set("withdrawTypes", toggle(form.withdrawTypes || [], o.value))}
-                  />
-                  {o.label}
+            {form.symbolType === "rial" ? (
+              <div className="checkbox-group">
+                <label className="row" style={{ gap: 6, margin: "4px 0" }}>
+                  <input type="radio" name="wd-mode" checked={(form.withdrawTypes || []).includes("auto")} onChange={() => handleRialWithdrawMode("auto")} />
+                  درگاه
                 </label>
-              ))}
-            </div>
+                <label className="row" style={{ gap: 6, margin: "4px 0" }}>
+                  <input type="radio" name="wd-mode" checked={!(form.withdrawTypes || []).includes("auto")} onChange={() => handleRialWithdrawMode("manual")} />
+                  دستی
+                </label>
+                {(form.withdrawTypes || []).includes("auto") && (
+                  <div className="field" style={{ marginTop: 6 }}>
+                    <label style={{ fontSize: 12 }}>انتخاب درگاه برداشت</label>
+                    <select className="select" value={form.defaultWithdrawGateway || ""} onChange={(e) => handleRialWithdrawGateway(e.target.value)} required>
+                      <option value="">— انتخاب درگاه —</option>
+                      {GATEWAY_PROVIDERS.filter((o) => getDefaultWithdrawGateways("rial").includes(o.value)).map((o) => (
+                        <option key={o.value} value={o.value}>{o.label}</option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+              </div>
+            ) : (
+              <div className="checkbox-group">
+                {WITHDRAW_TYPES.map((o) => (
+                  <label key={o.value} className="row" style={{ gap: 6, margin: "4px 0" }}>
+                    <input
+                      type="checkbox"
+                      checked={(form.withdrawTypes || []).includes(o.value)}
+                      onChange={() => set("withdrawTypes", toggle(form.withdrawTypes || [], o.value))}
+                    />
+                    {o.label}
+                  </label>
+                ))}
+              </div>
+            )}
           </div>
         </div>
         <div className="row" style={{ gap: 20, margin: "4px 0 16px" }}>
@@ -209,7 +285,7 @@ function SymbolForm({ initial, onClose }: { initial?: any; onClose: () => void }
             فعال
           </label>
         </div>
-        {form.hasPaymentGateway && (
+        {form.hasPaymentGateway && form.symbolType !== "rial" && (
           <div className="grid grid-2" style={{ margin: "0 0 16px" }}>
             <div className="field">
               <label>درگاه‌های واریز</label>
