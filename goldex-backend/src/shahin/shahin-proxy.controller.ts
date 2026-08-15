@@ -38,7 +38,7 @@ export class ShahinProxyController {
     private readonly shahinEntryRepo: Repository<ShahinEntry>,
   ) {
     // Get microservice URL from config, default to the shahin server domain
-    this.microserviceUrl = this.configService.get('SHAHIN_SERVICE_URL', 'https://app.ardekanigold.ir');
+    this.microserviceUrl = this.configService.get('SHAHIN_SERVICE_URL', '');
     this.requestTimeout = parseInt(this.configService.get('SHAHIN_REQUEST_TIMEOUT', '60000'), 10); // Default 60 seconds
     this.apiKey = this.configService.get<string>('SHAHIN_SERVICE_API_KEY', '');
     
@@ -50,7 +50,7 @@ export class ShahinProxyController {
     // Verify URL is not truncated
     if (this.microserviceUrl.length < 50) {
       this.logger.error(`⚠️  WARNING: Microservice URL appears truncated! Length: ${this.microserviceUrl.length}, URL: ${this.microserviceUrl}`);
-      this.logger.error(`Expected full URL: https://app.ardekanigold.ir`);
+      this.logger.error(`Expected a full URL such as https://9eb6cj.parszargar.com`);
     }
   }
 
