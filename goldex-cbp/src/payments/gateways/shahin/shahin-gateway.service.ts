@@ -257,12 +257,23 @@ export class ShahinGatewayService implements IPaymentGateway {
     try {
       const res = await firstValueFrom(
         this.http
-          .get(cfg.baseUrl, {
-            timeout: 10_000,
-            validateStatus: () => true,
-            ...cfg.proxy,
-            headers: { "X-API-Key": cfg.apiKey },
-          })
+          .post(
+            `${cfg.baseUrl}/api/shahin/account/balance`,
+            {
+              bank: cfg.bankCode,
+              nationalCode: cfg.companyNationalCode,
+              sourceAccount: cfg.sourceAccount,
+            },
+            {
+              timeout: 10_000,
+              validateStatus: () => true,
+              ...cfg.proxy,
+              headers: {
+                "Content-Type": "application/json",
+                "X-API-Key": cfg.apiKey,
+              },
+            },
+          )
           .pipe(
             catchError((err: any) => {
               this.logger.error(`Shahin health check failed: ${err.message}`);
@@ -270,6 +281,10 @@ export class ShahinGatewayService implements IPaymentGateway {
             }),
           ),
       );
+      // Reachability is proven as long as the microservice answered (any HTTP
+      // status, including OBH-level 4xx like invalid creds). 5xx means down.
+      const state =
+        res.data?.transactionState ?? (res.data && (res.data as any).statusCode);
       return {
         code: this.metadata.code,
         name: this.metadata.name,
@@ -277,7 +292,10 @@ export class ShahinGatewayService implements IPaymentGateway {
         kind: this.metadata.kind,
         status: res.status < 500 ? "up" : "down",
         latencyMs: Date.now() - start,
-        message: `HTTP ${res.status}`,
+        message:
+          res.status < 500
+            ? `HTTP ${res.status} · ${state ?? "ok"}`
+            : `HTTP ${res.status}`,
         checkedAt: new Date().toISOString(),
       };
     } catch (err: any) {
