@@ -53,6 +53,7 @@ export class AdminSymbolService {
   }
 
   async create(createSymbolDto: CreateSymbolDto): Promise<SymbolEntity> {
+    this.validateGateways(createSymbolDto);
     const types = this.resolveTypes(createSymbolDto);
     const symbol = this.symbolRepository.create({ ...createSymbolDto, ...types });
     const saved = await this.symbolRepository.save(symbol);
@@ -127,24 +128,59 @@ export class AdminSymbolService {
   async update(id: string, updateSymbolDto: UpdateSymbolDto): Promise<SymbolEntity> {
     const symbol = await this.findOne(id);
 
-    const merged = { ...updateSymbolDto };
-    const symbolType = updateSymbolDto.symbolType ?? symbol.symbolType;
-    const depositTypes = updateSymbolDto.depositTypes ?? updateSymbolDto.depositTypes === undefined ? undefined : updateSymbolDto.depositTypes;
-    const withdrawTypes = updateSymbolDto.withdrawTypes ?? updateSymbolDto.withdrawTypes === undefined ? undefined : updateSymbolDto.withdrawTypes;
+    const nextType = updateSymbolDto.symbolType ?? symbol.symbolType;
+    const typeChanged = updateSymbolDto.symbolType !== undefined && updateSymbolDto.symbolType !== symbol.symbolType;
 
-    if (depositTypes) {
-      const err = validateDepositTypes(symbolType, depositTypes as string[]);
+    // If the symbol type changed but deposit/withdraw types were not sent,
+    // re-apply the defaults for the new type so stale/invalid types are not kept.
+    if (typeChanged) {
+      if (updateSymbolDto.depositTypes === undefined) {
+        updateSymbolDto.depositTypes = getDefaultDepositTypes(nextType) as UpdateSymbolDto["depositTypes"];
+      }
+      if (updateSymbolDto.withdrawTypes === undefined) {
+        updateSymbolDto.withdrawTypes = getDefaultWithdrawTypes(nextType) as UpdateSymbolDto["withdrawTypes"];
+      }
+    }
+
+    if (updateSymbolDto.depositTypes !== undefined) {
+      const err = validateDepositTypes(nextType, updateSymbolDto.depositTypes as string[]);
       if (err) throw new BadRequestException(err);
     }
-    if (withdrawTypes) {
-      const err = validateWithdrawTypes(symbolType, withdrawTypes as string[]);
+    if (updateSymbolDto.withdrawTypes !== undefined) {
+      const err = validateWithdrawTypes(nextType, updateSymbolDto.withdrawTypes as string[]);
       if (err) throw new BadRequestException(err);
     }
+
+    this.validateGateways(updateSymbolDto);
 
     Object.assign(symbol, updateSymbolDto);
     const saved = await this.symbolRepository.save(symbol);
     this.paymentBus.syncSymbol(saved);
     return saved;
+  }
+
+  private validateGateways(dto: CreateSymbolDto | UpdateSymbolDto): void {
+    const hasGateway = dto.hasPaymentGateway !== undefined ? dto.hasPaymentGateway : undefined;
+
+    if (dto.depositGateways !== undefined && dto.depositGateways.length > 0 && hasGateway === false) {
+      throw new BadRequestException("Deposit gateways require hasPaymentGateway=true");
+    }
+    if (dto.withdrawGateways !== undefined && dto.withdrawGateways.length > 0 && hasGateway === false) {
+      throw new BadRequestException("Withdraw gateways require hasPaymentGateway=true");
+    }
+
+    const validateDefault = (
+      field: string,
+      def: string | undefined,
+      list: string[] | undefined,
+    ) => {
+      if (def && Array.isArray(list) && list.length > 0 && !list.includes(def)) {
+        throw new BadRequestException(`${field} "${def}" is not in the selectable list: ${list.join(", ")}`);
+      }
+    };
+
+    validateDefault("defaultDepositGateway", dto.defaultDepositGateway, dto.depositGateways);
+    validateDefault("defaultWithdrawGateway", dto.defaultWithdrawGateway, dto.withdrawGateways);
   }
 
   async remove(id: string): Promise<void> {

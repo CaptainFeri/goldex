@@ -60,16 +60,12 @@ function SymbolForm({ initial, onClose }: { initial?: any; onClose: () => void }
   });
 
   function handleSymbolTypeChange(v: string) {
-    if (!editing) {
-      setForm((f: any) => ({
-        ...f,
-        symbolType: v,
-        depositTypes: getDefaultDepositTypes(v),
-        withdrawTypes: getDefaultWithdrawTypes(v),
-      }));
-    } else {
-      set("symbolType", v);
-    }
+    setForm((f: any) => ({
+      ...f,
+      symbolType: v,
+      depositTypes: getDefaultDepositTypes(v),
+      withdrawTypes: getDefaultWithdrawTypes(v),
+    }));
   }
 
   function submit(e: React.FormEvent) {
