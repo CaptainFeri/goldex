@@ -16,10 +16,13 @@ import { ZaryarOtpHandler } from './providers/zaryar-otp.handler';
 import { OtpHandler } from './interfaces/otp-handler.interface';
 import { ConsoleFormatterService } from '../common/console-formatter.service';
 import { ProviderCategory } from './types';
+import { buildHttpProxyConfig } from '../common/http/proxy.config';
 
 @Global()
 @Module({
-  imports: [TypeOrmModule.forFeature([ProviderEntity, ProviderDealEntity, ProviderBalanceEntity]), HttpModule, RedisModule],
+  imports: [TypeOrmModule.forFeature([ProviderEntity, ProviderDealEntity, ProviderBalanceEntity]), HttpModule.registerAsync({
+    useFactory: () => buildHttpProxyConfig(),
+  }), RedisModule],
   controllers: [],
   providers: [
     ProviderManagerService,

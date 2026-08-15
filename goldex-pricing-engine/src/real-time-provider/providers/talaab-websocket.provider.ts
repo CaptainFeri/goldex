@@ -8,6 +8,7 @@ import { RedisService, PriceData } from '../../redis/redis.service';
 import { ItemMetadataService, ItemMetadata } from '../item-metadata.service';
 import { RabbitMQService, MessagePatterns } from '../../rabbitmq/rabbitmq.module';
 import { TalaabPricingCurrency, TalaabFeaturesData } from '../types/talaab.types';
+import { buildWebSocketAgent } from '../../common/http/proxy.config';
 
 @Injectable()
 export class TalaAbWebSocketProvider extends BaseRealtimeProvider {
@@ -201,7 +202,8 @@ export class TalaAbWebSocketProvider extends BaseRealtimeProvider {
 
   private async establishWebSocket(): Promise<void> {
     return new Promise((resolve, reject) => {
-      this.ws = new WebSocket(this.wsUrl);
+      const agent = buildWebSocketAgent(this.wsUrl);
+      this.ws = new WebSocket(this.wsUrl, agent ? { agent } : undefined);
       const timeout = setTimeout(() => reject(new Error('WebSocket connection timeout')), 30000);
       this.ws.on('open', () => {
         clearTimeout(timeout);

@@ -10,6 +10,7 @@ import { DealView } from '../types/deal-view.type';
 import { ItemMetadata, ItemMetadataService } from '../item-metadata.service';
 import { RabbitMQService, MessagePatterns } from '../../rabbitmq/rabbitmq.module';
 import { NegotiateResponse, SignalRMessage, MazaneItem } from '../types/zaryar.types';
+import { buildWebSocketAgent } from '../../common/http/proxy.config';
 
 @Injectable()
 export class ZaryarSignalRProvider extends BaseRealtimeProvider {
@@ -436,7 +437,9 @@ export class ZaryarSignalRProvider extends BaseRealtimeProvider {
     const wsUrl = `${wsProtocol}://${host}/signalr/connect?transport=webSockets&clientProtocol=2.1&uId=${uId}&at=1&sId=${sId}&connectionToken=${encodeURIComponent(this.connectionToken)}&connectionData=${encodeURIComponent(connectionData)}&tid=${Math.floor(Math.random() * 11)}`;
 
     return new Promise((resolve, reject) => {
+      const agent = buildWebSocketAgent(wsUrl);
       this.ws = new WebSocket(wsUrl, {
+        agent: agent as any,
         headers: {
           Origin: this.originUrl,
           Cookie: `shopkeeperId=${sId}; uId=${uId}`,

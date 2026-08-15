@@ -244,6 +244,10 @@ services:
       RABBITMQ_PORT: 5672
       MOCK_HOST: goldex-pricing-engine-mock
       MOCK_PORT: 5000
+      PROXY_HOST: ${PRICING_ENGINE_PROXY_HOST:-}
+      PROXY_PORT: ${PRICING_ENGINE_PROXY_PORT:-29180}
+      PROXY_USERNAME: ${PRICING_ENGINE_PROXY_USERNAME:-}
+      PROXY_PASSWORD: ${PRICING_ENGINE_PROXY_PASSWORD:-}
       PORT: 3000
       NODE_ENV: production
     dns: *default-dns
@@ -285,6 +289,7 @@ services:
         condition: service_healthy
     env_file:
       - .env
+      - ./goldex-cbp/.proxy.env
     environment:
       PAYMENT_DB_HOST: postgres
       PAYMENT_DB_PORT: 5432
