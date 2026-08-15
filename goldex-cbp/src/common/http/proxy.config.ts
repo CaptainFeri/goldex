@@ -8,7 +8,16 @@ import { ConfigService } from "@nestjs/config";
  */
 export function buildHttpProxyConfig(config: ConfigService): Record<string, any> {
   const proxy = config.get<Record<string, any>>("app", { infer: true })?.proxy ?? {};
-  const host = proxy.host?.trim();
+  return buildHttpProxyConfigFrom(proxy);
+}
+
+/**
+ * Builds an axios `proxy` option from an arbitrary proxy object
+ * ({ host, port, username, password }). Returns an empty object when no
+ * host is set, keeping direct (no-proxy) behaviour for that caller.
+ */
+export function buildHttpProxyConfigFrom(proxy: Record<string, any> | undefined): Record<string, any> {
+  const host = proxy?.host?.trim();
   if (!host) {
     return {};
   }

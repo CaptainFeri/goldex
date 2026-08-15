@@ -32,12 +32,18 @@ export default registerAs("app", () => ({
       "/rest/channel/wallet/v1/chargeWallet/pay",
   },
   shahin: {
-    baseUrl: process.env.SHAHIN_SERVICE_URL ?? "https://app.ardekanigold.ir",
+    baseUrl: process.env.SHAHIN_SERVICE_URL ?? "",
     apiKey: process.env.SHAHIN_SERVICE_API_KEY ?? "",
     bankCode: process.env.SHAHIN_BANK_CODE ?? "BKV",
     companyNationalCode: process.env.SHAHIN_COMPANY_NATIONAL_CODE ?? "",
     sourceAccount: process.env.SHAHIN_SOURCE_ACCOUNT ?? "",
     timeoutMs: process.env.SHAHIN_REQUEST_TIMEOUT ?? "60000",
+    proxy: {
+      host: process.env.SHAHIN_PROXY_HOST ?? "",
+      port: parseInt(process.env.SHAHIN_PROXY_PORT ?? "29180", 10),
+      username: process.env.SHAHIN_PROXY_USERNAME ?? "",
+      password: process.env.SHAHIN_PROXY_PASSWORD ?? "",
+    },
   },
   // Outbound HTTP(S) proxy used to reach Iranian payment gateways (kaino,
   // shahin) from an egress outside Iran. Empty host disables the proxy.

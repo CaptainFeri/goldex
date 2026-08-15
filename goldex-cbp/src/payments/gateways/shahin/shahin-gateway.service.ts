@@ -2,6 +2,7 @@ import { Injectable, Logger } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import { HttpService } from "@nestjs/axios";
 import { firstValueFrom, catchError, throwError } from "rxjs";
+import { buildHttpProxyConfigFrom } from "../../../common/http/proxy.config";
 import { PaymentCategoryEnum } from "../../enum/payment-category.enum";
 import { PaymentGatewayKindEnum } from "../../enum/payment-gateway-kind.enum";
 import {
@@ -47,12 +48,13 @@ export class ShahinGatewayService implements IPaymentGateway {
   private cfg() {
     const sh = this.config.get<Record<string, any>>("app", { infer: true })?.shahin ?? {};
     return {
-      baseUrl: (sh.baseUrl ?? "https://app.ardekanigold.ir").replace(/\/+$/, ""),
+      baseUrl: (sh.baseUrl ?? "").replace(/\/+$/, ""),
       apiKey: sh.apiKey ?? "",
       bankCode: sh.bankCode ?? "BKV",
       companyNationalCode: sh.companyNationalCode ?? "",
       sourceAccount: sh.sourceAccount ?? "",
       timeoutMs: parseInt(sh.timeoutMs ?? "60000", 10) || 60000,
+      proxy: buildHttpProxyConfigFrom(sh.proxy),
     };
   }
 
@@ -121,6 +123,7 @@ export class ShahinGatewayService implements IPaymentGateway {
         .post(url, body, {
           timeout: cfg.timeoutMs,
           validateStatus: () => true,
+          ...cfg.proxy,
           headers: {
             "Content-Type": "application/json",
             "X-API-Key": cfg.apiKey,
@@ -259,6 +262,7 @@ export class ShahinGatewayService implements IPaymentGateway {
           .get(cfg.baseUrl, {
             timeout: 10_000,
             validateStatus: () => true,
+            ...cfg.proxy,
             headers: { "X-API-Key": cfg.apiKey },
           })
           .pipe(
