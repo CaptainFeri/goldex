@@ -15,6 +15,8 @@ import { TransactionStatusEnum } from "../wallet/enum/transaction.status.enum";
 import { getDefaultWithdrawTypes, GATEWAY_BOUND_TYPES } from "../admin-symbol/constants/symbol-type-type-map";
 import { PaymentBusService } from "../payment-bus/payment-bus.service";
 import { WithdrawEvents } from "../shared/constants/events.constants";
+import { UserLevelService } from "../user-level/user-level.service";
+import { UserEntity } from "../user/entity/user.entity";
 
 @Injectable()
 export class WithdrawService {
@@ -32,11 +34,16 @@ export class WithdrawService {
     private dataSource: DataSource,
     private readonly paymentBus: PaymentBusService,
     private readonly eventEmitter: EventEmitter2,
+    private readonly userLevelService: UserLevelService,
+    @InjectRepository(UserEntity)
+    private userRepo: Repository<UserEntity>,
   ) {}
 
   async create(userId: string, dto: CreateWithdrawDto): Promise<WithdrawEntity> {
     const symbol = await this.symbolRepo.findOne({ where: { id: dto.symbolId } });
     if (!symbol) throw new NotFoundException("Symbol not found");
+
+    await this.enforceWithdrawCooldown(userId);
 
     const allowed = symbol.withdrawTypes?.length
       ? symbol.withdrawTypes
@@ -286,6 +293,25 @@ export class WithdrawService {
       throw err;
     } finally {
       await queryRunner.release();
+    }
+  }
+
+  // Blocks withdrawal until the user has been registered for the minimum number
+  // of hours defined by their level (WITHDRAW_MIN_HOURS_AFTER_REGISTER).
+  private async enforceWithdrawCooldown(userId: string): Promise<void> {
+    const hours = await this.userLevelService.getFeatureValue(userId, "WITHDRAW_MIN_HOURS_AFTER_REGISTER");
+    const minHours = Number(hours);
+    if (!minHours || minHours <= 0) return;
+
+    const user = await this.userRepo.findOne({ where: { id: userId } });
+    if (!user?.registeredAt) return;
+
+    const elapsedHours = (Date.now() - new Date(user.registeredAt).getTime()) / 3600000;
+    if (elapsedHours < minHours) {
+      const remaining = Math.ceil(minHours - elapsedHours);
+      throw new BadRequestException(
+        `برداشت تا «${minHours}» ساعت پس از ثبت‌نام مجاز نیست. ${remaining} ساعت دیگر مجاز می‌شود.`
+      );
     }
   }
 }

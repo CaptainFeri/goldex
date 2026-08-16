@@ -18,4 +18,7 @@ export class UpdateLevelDto {
 
   @ApiProperty({ required: false })
   features?: Record<string, any>;
+
+  @ApiProperty({ required: false, type: [String] })
+  pairIds?: string[];
 }

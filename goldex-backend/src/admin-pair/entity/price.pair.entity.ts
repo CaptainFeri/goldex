@@ -1,6 +1,7 @@
 import { SymbolEntity } from "../../admin-symbol/entity/symbol.entity";
 import { myBaseEntity } from "../../shared/entity/base.entity";
-import { Entity, Column, ManyToOne, JoinColumn, Index } from "typeorm";
+import { Entity, Column, ManyToOne, JoinColumn, Index, ManyToMany } from "typeorm";
+import { UserLevelEntity } from "../../user-level/entity/user-level.entity";
 
 @Entity("price_pairs")
 @Index(["baseId", "quoteId"], { unique: true })
@@ -69,4 +70,7 @@ export class PricePairEntity extends myBaseEntity {
 
   @Column({ type: "int", default: 2, name: "decimals" })
   decimals: number;
+
+  @ManyToMany(() => UserLevelEntity, (l) => l.pairs)
+  levels: UserLevelEntity[];
 }

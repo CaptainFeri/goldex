@@ -10,13 +10,16 @@ import { TransactionEntity } from "../wallet/entities/transaction.entity";
 import { MinioModule } from "../minio/minio.module";
 import { OcrModule } from "../ocr/ocr.module";
 import { PaymentBusModule } from "../payment-bus/payment-bus.module";
+import { UserLevelModule } from "../user-level/user-level.module";
+import { UserEntity } from "../user/entity/user.entity";
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([WithdrawEntity, SymbolEntity, WalletEntity, TransactionEntity]),
+    TypeOrmModule.forFeature([WithdrawEntity, SymbolEntity, WalletEntity, TransactionEntity, UserEntity]),
     MinioModule,
     OcrModule,
     PaymentBusModule,
+    UserLevelModule,
   ],
   providers: [WithdrawService],
   controllers: [WithdrawController, WithdrawAdminController],

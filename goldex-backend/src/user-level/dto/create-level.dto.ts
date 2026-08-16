@@ -18,4 +18,7 @@ export class CreateLevelDto {
 
   @ApiProperty({ required: false, default: {} })
   features?: Record<string, any>;
+
+  @ApiProperty({ required: false, type: [String] })
+  pairIds?: string[];
 }

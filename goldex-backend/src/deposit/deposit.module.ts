@@ -10,9 +10,10 @@ import { TransactionEntity } from "../wallet/entities/transaction.entity";
 import { MinioModule } from "../minio/minio.module";
 import { OcrModule } from "../ocr/ocr.module";
 import { PaymentBusModule } from "../payment-bus/payment-bus.module";
+import { UserLevelModule } from "../user-level/user-level.module";
 
 @Module({
-  imports: [TypeOrmModule.forFeature([DepositEntity, SymbolEntity, WalletEntity, TransactionEntity]), MinioModule, OcrModule, PaymentBusModule],
+  imports: [TypeOrmModule.forFeature([DepositEntity, SymbolEntity, WalletEntity, TransactionEntity]), MinioModule, OcrModule, PaymentBusModule, UserLevelModule],
   providers: [DepositService],
   controllers: [DepositController, DepositAdminController],
   exports: [DepositService],

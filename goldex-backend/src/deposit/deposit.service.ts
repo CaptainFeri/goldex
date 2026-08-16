@@ -16,6 +16,7 @@ import { WalletStatusEnum } from "../wallet/enum/wallet-status.enum";
 import { getDefaultDepositTypes, GATEWAY_BOUND_TYPES } from "../admin-symbol/constants/symbol-type-type-map";
 import { PaymentBusService } from "../payment-bus/payment-bus.service";
 import { DepositEvents } from "../shared/constants/events.constants";
+import { UserLevelService } from "../user-level/user-level.service";
 
 @Injectable()
 export class DepositService {
@@ -33,6 +34,7 @@ export class DepositService {
     private dataSource: DataSource,
     private readonly paymentBus: PaymentBusService,
     private readonly eventEmitter: EventEmitter2,
+    private readonly userLevelService: UserLevelService,
   ) {}
 
   async create(userId: string, dto: CreateDepositDto): Promise<DepositEntity> {
@@ -197,6 +199,8 @@ export class DepositService {
       }
 
       if (dto.status === DepositStatusEnum.COMPLETED) {
+        await this.enforceDailyDepositLimit(deposit.userId, Number(deposit.amount), queryRunner);
+
         let wallet = await queryRunner.manager.findOne(WalletEntity, {
           where: { userId: deposit.userId, symbolId: deposit.symbolId },
           lock: { mode: "pessimistic_write" },
@@ -252,6 +256,30 @@ export class DepositService {
       throw err;
     } finally {
       await queryRunner.release();
+    }
+  }
+
+  // Enforces the level's WALLET_DAILY_DEPOSIT_LIMIT (amount 0 = unlimited).
+  private async enforceDailyDepositLimit(userId: string, amount: number, queryRunner: any): Promise<void> {
+    const limit = await this.userLevelService.getFeatureValue(userId, "WALLET_DAILY_DEPOSIT_LIMIT");
+    const maxAmount = typeof limit === "object" ? Number(limit?.amount) : Number(limit);
+    if (!maxAmount || maxAmount <= 0) return;
+
+    const start = new Date();
+    start.setHours(0, 0, 0, 0);
+    const [rows] = await queryRunner.manager.query(
+      `SELECT COALESCE(SUM(amount), 0) AS total
+       FROM "transaction"
+       WHERE "wallet_id" IN (SELECT "id" FROM "wallet" WHERE "user_id" = $1)
+         AND "transaction_type" = 'DEPOSIT' AND "status" = 'completed'
+         AND "created_at" >= $2`,
+      [userId, start]
+    );
+    const todayTotal = Number(rows?.total ?? 0);
+    if (todayTotal + amount > maxAmount) {
+      throw new BadRequestException(
+        `سقف واریز روزانه این سطح ${maxAmount.toLocaleString("fa-IR")} ریال است و با این واریز تجاوز می‌شود.`
+      );
     }
   }
 }

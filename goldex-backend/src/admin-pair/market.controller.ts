@@ -13,6 +13,7 @@ import { UserAuthGuard } from "../user/auth/Guard/user.guard";
 import { UserExpressRequest } from "../user/auth/types/user-express-request";
 import { UserMarketTypeEntity } from "../user/entity/user.market.type.entity";
 import { UserMarketKindEntity } from "../user/entity/user.market.kind.entity";
+import { UserLevelService } from "../user-level/user-level.service";
 
 @ApiTags("Market")
 @ApiBearerAuth()
@@ -25,6 +26,7 @@ export class MarketController {
     private readonly userMarketTypeRepo: Repository<UserMarketTypeEntity>,
     @InjectRepository(UserMarketKindEntity)
     private readonly userMarketKindRepo: Repository<UserMarketKindEntity>,
+    private readonly levelService: UserLevelService,
   ) {}
 
   @Get("access")
@@ -39,11 +41,28 @@ export class MarketController {
       : defaultMarketTypesForRole(user.role);
 
     const kindRows = await this.userMarketKindRepo.find({ where: { userId: user.id } });
-    const marketKinds = kindRows.length > 0
+    let marketKinds = kindRows.length > 0
       ? kindRows.map((r) => r.marketKind)
       : defaultMarketKindsForRole(user.role);
 
+    // Order-kind features on the user's level gate which market kinds are usable.
+    const kindGate: [MarketKindEnum, string][] = [
+      [MarketKindEnum.MARKET, "MARKET_ORDER_ENABLED"],
+      [MarketKindEnum.LIMIT, "LIMIT_ORDER_ENABLED"],
+      [MarketKindEnum.OFFER, "QUOTE_REQUEST_ENABLED"],
+    ];
+    marketKinds = marketKinds.filter((k) =>
+      kindGate.some(([kind, key]) => kind === k && this.featureEnabledPromise(user.id, key))
+    );
+
     return { data: { marketTypes, marketKinds } };
+  }
+
+  private async featureEnabledPromise(userId: string, key: string): Promise<boolean> {
+    const value = await this.levelService.getFeatureValue(userId, key);
+    if (typeof value === "object" && "enabled" in value) return value.enabled === true;
+    if (typeof value === "boolean") return value;
+    return true;
   }
 
   @Get("pairs")
@@ -63,6 +82,12 @@ export class MarketController {
           : defaultMarketTypesForRole(user.role)
       );
       visible = pairs.filter((p) => p.baseSymbol && allowed.has(p.baseSymbol.marketType));
+      // Level pairs win: if the user's level explicitly grants pairs, restrict to those.
+      const levelPairIds = await this.levelService.getUserAllowedPairIds(user.id);
+      if (levelPairIds.length > 0) {
+        const levelSet = new Set(levelPairIds);
+        visible = visible.filter((p) => levelSet.has(p.id));
+      }
     } else {
       visible = pairs;
     }
