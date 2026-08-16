@@ -20,6 +20,7 @@ import { TransactionEntity } from "../wallet/entities/transaction.entity";
 import { CreditEntity } from "../credit/entity/credit.entity";
 import { CreditOrderEntity } from "../credit/entity/credit-order.entity";
 import { UserLevelModule } from "../user-level/user-level.module";
+import { UserKycEntity } from "../user/entity/user.kyc.entity";
 
 @Module({
   imports: [
@@ -33,6 +34,7 @@ import { UserLevelModule } from "../user-level/user-level.module";
       TransactionEntity,
       CreditEntity,
       CreditOrderEntity,
+      UserKycEntity,
     ]),
     WalletCoreModule,
     ProviderPairMappingModule,

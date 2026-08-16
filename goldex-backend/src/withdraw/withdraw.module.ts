@@ -12,10 +12,11 @@ import { OcrModule } from "../ocr/ocr.module";
 import { PaymentBusModule } from "../payment-bus/payment-bus.module";
 import { UserLevelModule } from "../user-level/user-level.module";
 import { UserEntity } from "../user/entity/user.entity";
+import { UserKycEntity } from "../user/entity/user.kyc.entity";
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([WithdrawEntity, SymbolEntity, WalletEntity, TransactionEntity, UserEntity]),
+    TypeOrmModule.forFeature([WithdrawEntity, SymbolEntity, WalletEntity, TransactionEntity, UserEntity, UserKycEntity]),
     MinioModule,
     OcrModule,
     PaymentBusModule,

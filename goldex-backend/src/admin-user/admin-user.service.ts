@@ -29,6 +29,7 @@ import {
   defaultMarketTypesForRole,
 } from "../shared/market-access.helper";
 import { UserEvents } from "../shared/constants/events.constants";
+import { UserLevelService } from "../user-level/user-level.service";
 
 const ONLINE_SET = "online_users";
 
@@ -57,7 +58,8 @@ export class AdminUserService {
     private readonly userMarketKindRepo: Repository<UserMarketKindEntity>,
     private readonly redisService: RedisService,
     private readonly baseInfoService: BaseInfoService,
-    private readonly eventEmitter: EventEmitter2
+    private readonly eventEmitter: EventEmitter2,
+    private readonly userLevelService: UserLevelService
   ) {}
 
   // Create a user (admin-initiated). Accepts an optional role (defaults to PARTNER).
@@ -302,6 +304,15 @@ export class AdminUserService {
   async assignUserMarketTypes(userId: string, marketTypes: MarketTypeEnum[]): Promise<MarketTypeEnum[]> {
     const user = await this.userRepo.findOne({ where: { id: userId } });
     if (!user) throw new NotFoundException("USER.NOT_FOUND");
+
+    // Enforce the level's MAX_MARKET_TYPES limit.
+    const maxTypes = await this.userLevelService.getFeatureValue(userId, "MAX_MARKET_TYPES");
+    const maxTypesNum = Number(maxTypes);
+    if (maxTypesNum > 0 && marketTypes.length > maxTypesNum) {
+      throw new BadRequestException(
+        `حداکثر تعداد بازارهای مجاز در سطح شما ${maxTypesNum} است`
+      );
+    }
 
     await this.userMarketTypeRepo.delete({ userId });
 

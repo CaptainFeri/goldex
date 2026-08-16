@@ -13,11 +13,13 @@ import { SymbolEntity } from "../admin-symbol/entity/symbol.entity";
 import { UserMarketTypeEntity } from "../user/entity/user.market.type.entity";
 import { UserMarketKindEntity } from "../user/entity/user.market.kind.entity";
 import { RedisModule } from "../redis/redis.module";
+import { UserLevelModule } from "../user-level/user-level.module";
 
 @Module({
   imports: [
     BaseinfoModule,
     RedisModule,
+    UserLevelModule,
     TypeOrmModule.forFeature([
       UserEntity,
       UserProfileEntity,

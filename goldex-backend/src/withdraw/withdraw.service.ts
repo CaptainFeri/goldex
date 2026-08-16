@@ -17,6 +17,8 @@ import { PaymentBusService } from "../payment-bus/payment-bus.service";
 import { WithdrawEvents } from "../shared/constants/events.constants";
 import { UserLevelService } from "../user-level/user-level.service";
 import { UserEntity } from "../user/entity/user.entity";
+import { UserKycEntity } from "../user/entity/user.kyc.entity";
+import { KycStatusEnum } from "../baseinfo/enum/kycStatus.enum";
 
 @Injectable()
 export class WithdrawService {
@@ -37,13 +39,17 @@ export class WithdrawService {
     private readonly userLevelService: UserLevelService,
     @InjectRepository(UserEntity)
     private userRepo: Repository<UserEntity>,
+    @InjectRepository(UserKycEntity)
+    private kycRepo: Repository<UserKycEntity>,
   ) {}
 
   async create(userId: string, dto: CreateWithdrawDto): Promise<WithdrawEntity> {
     const symbol = await this.symbolRepo.findOne({ where: { id: dto.symbolId } });
     if (!symbol) throw new NotFoundException("Symbol not found");
 
+    await this.enforceKyc(userId);
     await this.enforceWithdrawCooldown(userId);
+    await this.enforceWithdrawalLimits(userId, Number(dto.amount));
 
     const allowed = symbol.withdrawTypes?.length
       ? symbol.withdrawTypes
@@ -296,6 +302,17 @@ export class WithdrawService {
     }
   }
 
+  // Requires the user to be KYC-approved when their level sets KYC_REQUIRED.
+  private async enforceKyc(userId: string): Promise<void> {
+    const kycRequired = await this.userLevelService.getFeatureValue(userId, "KYC_REQUIRED");
+    const enabled = typeof kycRequired === "object" ? kycRequired?.enabled === true : kycRequired === true;
+    if (!enabled) return;
+    const kyc = await this.kycRepo.findOne({ where: { userId } });
+    if (!kyc || kyc.status !== KycStatusEnum.APPROVED) {
+      throw new BadRequestException("برای برداشت ابتدا احراز هویت را تکمیل کنید");
+    }
+  }
+
   // Blocks withdrawal until the user has been registered for the minimum number
   // of hours defined by their level (WITHDRAW_MIN_HOURS_AFTER_REGISTER).
   private async enforceWithdrawCooldown(userId: string): Promise<void> {
@@ -312,6 +329,37 @@ export class WithdrawService {
       throw new BadRequestException(
         `برداشت تا «${minHours}» ساعت پس از ثبت‌نام مجاز نیست. ${remaining} ساعت دیگر مجاز می‌شود.`
       );
+    }
+  }
+
+  // Enforces per-transaction and daily withdrawal limits from the user's level
+  // (amount 0 = unlimited).
+  private async enforceWithdrawalLimits(userId: string, amount: number): Promise<void> {
+    const perTx = await this.userLevelService.getFeatureValue(userId, "WALLET_WITHDRAWAL_PER_TX_LIMIT");
+    const perTxLimit = typeof perTx === "object" ? Number(perTx?.amount) : Number(perTx);
+    if (perTxLimit > 0 && amount > perTxLimit) {
+      throw new BadRequestException(
+        `حداکثر برداشت هر تراکنش در سطح شما ${perTxLimit.toLocaleString("fa-IR")} ریال است`
+      );
+    }
+
+    const daily = await this.userLevelService.getFeatureValue(userId, "WALLET_WITHDRAWAL_DAILY_LIMIT");
+    const dailyLimit = typeof daily === "object" ? Number(daily?.amount) : Number(daily);
+    if (dailyLimit > 0) {
+      const start = new Date();
+      start.setHours(0, 0, 0, 0);
+      const [rows] = await this.withdrawRepo.query(
+        `SELECT COALESCE(SUM(amount), 0) AS total
+         FROM "withdraw"
+         WHERE "user_id" = $1 AND "status" = 'COMPLETED' AND "created_at" >= $2`,
+        [userId, start]
+      );
+      const todayTotal = Number(rows?.[0]?.total ?? 0);
+      if (todayTotal + amount > dailyLimit) {
+        throw new BadRequestException(
+          `سقف برداشت روزانه این سطح ${dailyLimit.toLocaleString("fa-IR")} ریال است`
+        );
+      }
     }
   }
 }

@@ -1,7 +1,7 @@
 import { BadRequestException, Injectable, Logger, NotFoundException } from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
 import { EventEmitter2 } from "@nestjs/event-emitter";
-import { Repository, DataSource } from "typeorm";
+import { Repository, DataSource, In } from "typeorm";
 import { OrderEntity } from "./order.entity";
 import { CreateOrderDto } from "./dto/create-order.dto";
 import { UpdateOrderDto } from "./dto/update-order.dto";
@@ -31,6 +31,9 @@ import { CreditOrderEntity } from "../credit/entity/credit-order.entity";
 import { CreditStatusEnum } from "../credit/enum/credit-status.enum";
 import { CreditOrderStatusEnum } from "../credit/enum/credit-order-status.enum";
 import { OrderEvents } from "../shared/constants/events.constants";
+import { UserLevelService } from "../user-level/user-level.service";
+import { UserKycEntity } from "../user/entity/user.kyc.entity";
+import { KycStatusEnum } from "../baseinfo/enum/kycStatus.enum";
 
 @Injectable()
 export class OrderService {
@@ -58,6 +61,9 @@ export class OrderService {
     @InjectRepository(CreditOrderEntity)
     private readonly creditOrderRepo: Repository<CreditOrderEntity>,
     private readonly eventEmitter: EventEmitter2,
+    private readonly userLevelService: UserLevelService,
+    @InjectRepository(UserKycEntity)
+    private readonly kycRepo: Repository<UserKycEntity>,
   ) {}
 
   async createOrder(userId: string, dto: CreateOrderDto): Promise<OrderEntity> {
@@ -204,6 +210,8 @@ export class OrderService {
         commissionAmt = dto.commission || 0;
       }
 
+      await this.enforceTradingRules(userId, Number(dto.quantity) * gramPrice);
+
       const order = this.orderRepository.create({
         user: { id: userId },
         userId,
@@ -335,6 +343,70 @@ export class OrderService {
     } finally {
       await queryRunner.release();
     }
+  }
+
+  // Enforces the user's level trading rules: KYC requirement, max order value,
+  // max open orders and the daily trading volume limit (amount 0 = unlimited).
+  private async enforceTradingRules(userId: string, orderValue: number): Promise<void> {
+    // KYC required before trading
+    const kycRequired = await this.userLevelService.getFeatureValue(userId, "KYC_REQUIRED");
+    if (this.featureEnabled(kycRequired)) {
+      const kyc = await this.kycRepo.findOne({ where: { userId } });
+      if (!kyc || kyc.status !== KycStatusEnum.APPROVED) {
+        throw new BadRequestException("برای معامله ابتدا احراز هویت را تکمیل کنید");
+      }
+    }
+
+    // Max order value (per order)
+    const maxOrder = await this.userLevelService.getFeatureValue(userId, "TRADING_MAX_ORDER_VALUE");
+    const maxOrderAmount = typeof maxOrder === "object" ? Number(maxOrder?.amount) : Number(maxOrder);
+    if (maxOrderAmount > 0 && orderValue > maxOrderAmount) {
+      throw new BadRequestException(
+        `حداکثر ارزش هر سفارش در سطح شما ${maxOrderAmount.toLocaleString("fa-IR")} ریال است`
+      );
+    }
+
+    // Max open orders
+    const maxOpen = await this.userLevelService.getFeatureValue(userId, "TRADING_MAX_OPEN_ORDERS");
+    const maxOpenOrders = Number(maxOpen);
+    if (maxOpenOrders > 0) {
+      const openCount = await this.orderRepository.count({
+        where: {
+          userId,
+          status: In([OrderStatusEnum.PENDING, OrderStatusEnum.PARTIALLY_COMPLETED]),
+        },
+      });
+      if (openCount >= maxOpenOrders) {
+        throw new BadRequestException(
+          `حداکثر سفارش‌های باز در سطح شما ${maxOpenOrders} عدد است`
+        );
+      }
+    }
+
+    // Daily trading volume limit
+    const daily = await this.userLevelService.getFeatureValue(userId, "TRADING_DAILY_LIMIT");
+    const dailyLimit = typeof daily === "object" ? Number(daily?.amount) : Number(daily);
+    if (dailyLimit > 0) {
+      const start = new Date();
+      start.setHours(0, 0, 0, 0);
+      const { sum } = (await this.orderRepository
+        .createQueryBuilder("order")
+        .select("COALESCE(SUM(order.total_value), 0)", "sum")
+        .where("order.user_id = :userId", { userId })
+        .andWhere("order.created_at >= :start", { start })
+        .getRawOne()) as any;
+      if (Number(sum) + orderValue > dailyLimit) {
+        throw new BadRequestException(
+          `سقف معاملات روزانه این سطح ${dailyLimit.toLocaleString("fa-IR")} ریال است`
+        );
+      }
+    }
+  }
+
+  private featureEnabled(value: any): boolean {
+    if (typeof value === "object" && "enabled" in value) return value.enabled === true;
+    if (typeof value === "boolean") return value;
+    return false;
   }
 
   async getUserOrders(userId: string, query: OrderQueryDto): Promise<{ orders: OrderEntity[]; total: number }> {

@@ -25,6 +25,7 @@ import { FinanceLogEntity } from "../finance-log/entity/finance-log.entity";
 import { CreditActionEnum } from "./enum/credit-action.enum";
 import { WalletStatusEnum } from "../wallet/enum/wallet-status.enum";
 import { CreditEvents } from "../shared/constants/events.constants";
+import { UserLevelService } from "../user-level/user-level.service";
 
 Decimal.set({ precision: 20, rounding: Decimal.ROUND_HALF_UP, toExpNeg: -7, toExpPos: 21 });
 
@@ -51,12 +52,15 @@ export class CreditService {
     private financeLogRepository: Repository<FinanceLogEntity>,
     private dataSource: DataSource,
     private readonly eventEmitter: EventEmitter2,
+    private readonly userLevelService: UserLevelService,
   ) {}
 
   async createCredit(adminId: string, dto: CreateCreditDto): Promise<CreditEntity> {
     return await this.dataSource.transaction(async (manager) => {
       const user = await manager.findOne(UserEntity, { where: { id: dto.userId } });
       if (!user) throw new NotFoundException("User not found");
+
+      await this.enforceCreditLimits(dto.userId, dto.amount, dto.expireAt);
 
       const existingActive = await manager.findOne(CreditEntity, {
         where: { userId: dto.userId, status: CreditStatusEnum.ACTIVE },
@@ -755,5 +759,27 @@ export class CreditService {
       actionTime: new Date(),
     });
     await manager.save(log);
+  }
+
+  // Enforces CREDIT_MAX_AMOUNT and CREDIT_MAX_DURATION_DAYS from the user's level.
+  private async enforceCreditLimits(userId: string, amount: number, expireAt: string): Promise<void> {
+    const maxAmount = await this.userLevelService.getFeatureValue(userId, "CREDIT_MAX_AMOUNT");
+    const maxAmt = typeof maxAmount === "object" ? Number(maxAmount?.amount) : Number(maxAmount);
+    if (maxAmt > 0 && Number(amount) > maxAmt) {
+      throw new BadRequestException(
+        `حداکثر مبلغ اعتبار در سطح شما ${maxAmt.toLocaleString("fa-IR")} ریال است`
+      );
+    }
+
+    const maxDur = await this.userLevelService.getFeatureValue(userId, "CREDIT_MAX_DURATION_DAYS");
+    const maxDays = Number(maxDur);
+    if (maxDays > 0 && expireAt) {
+      const days = Math.ceil((new Date(expireAt).getTime() - Date.now()) / 86400000);
+      if (days > maxDays) {
+        throw new BadRequestException(
+          `حداکثر مدت اعتبار در سطح شما ${maxDays} روز است`
+        );
+      }
+    }
   }
 }
