@@ -32,6 +32,7 @@ import { TransactionEntity } from "../wallet/entities/transaction.entity";
 import { UserWalletService } from "../user-wallet/user-wallet.service";
 import { SymbolEntity } from "../admin-symbol/entity/symbol.entity";
 import { UserMarketTypeEntity } from "./entity/user.market.type.entity";
+import { UserLevelModule } from "../user-level/user-level.module";
 
 @Module({
   imports: [
@@ -41,6 +42,7 @@ import { UserMarketTypeEntity } from "./entity/user.market.type.entity";
     SmsModule,
     HttpModule,
     MinioModule,
+    UserLevelModule,
     TypeOrmModule.forFeature([
       UserEntity,
       UserProfileEntity,
