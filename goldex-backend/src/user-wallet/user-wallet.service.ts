@@ -8,6 +8,7 @@ import { MarketTypeEnum } from "../admin-pair/enum/market.type.enum";
 import { UserRoleEnum } from "../shared/enum/user.role.enum";
 import { WalletEntity } from "../wallet/entities/wallet.entity";
 import { TransactionEntity } from "../wallet/entities/transaction.entity";
+import { UserLevelService } from "../user-level/user-level.service";
 
 @Injectable()
 export class UserWalletService {
@@ -21,7 +22,8 @@ export class UserWalletService {
     @InjectRepository(UserMarketTypeEntity)
     private readonly userMarketTypeRepo: Repository<UserMarketTypeEntity>,
     @InjectRepository(UserEntity)
-    private readonly userRepo: Repository<UserEntity>
+    private readonly userRepo: Repository<UserEntity>,
+    private readonly userLevelService: UserLevelService,
   ) {}
 
   async registerGenerateWallets(user: UserEntity, marketTypes?: string[]) {
@@ -106,19 +108,33 @@ export class UserWalletService {
     };
   }
 
-  // Filter wallets to only include those matching the user's assigned market types.
-  // Mirrors the logic in MarketController.getPairs.
+  // Filter wallets to only include those matching the user's assigned market types
+  // and the symbols covered by the user's level pairs. Mirrors the logic in
+  // MarketController.getPairs.
   private async filterWalletsByMarketType(userId: string, wallets: WalletEntity[]): Promise<WalletEntity[]> {
     const userMts = await this.userMarketTypeRepo.find({ where: { userId } });
+    let filtered: WalletEntity[];
     if (userMts.length > 0) {
       const allowed = new Set(userMts.map((r) => r.marketType));
-      return wallets.filter((w) => w.symbol && allowed.has(w.symbol.marketType));
+      filtered = wallets.filter((w) => w.symbol && allowed.has(w.symbol.marketType));
+    } else {
+      const user = await this.userRepo.findOne({ where: { id: userId } });
+      if (user && user.role === UserRoleEnum.PARTNER) {
+        filtered = wallets;
+      } else {
+        filtered = wallets.filter((w) => w.symbol?.marketType === MarketTypeEnum.FORMAL);
+      }
     }
-    const user = await this.userRepo.findOne({ where: { id: userId } });
-    if (user && user.role === UserRoleEnum.PARTNER) {
-      return wallets;
+
+    // Level pairs win: if the user's level explicitly grants pairs, restrict
+    // wallets to only the symbols covered by those pairs.
+    const allowedSymbolIds = await this.userLevelService.getUserAllowedSymbolIds(userId);
+    if (allowedSymbolIds.length > 0) {
+      const allowed = new Set(allowedSymbolIds);
+      filtered = filtered.filter((w) => w.symbol && allowed.has(w.symbol.id));
     }
-    return wallets.filter((w) => w.symbol?.marketType === MarketTypeEnum.FORMAL);
+
+    return filtered;
   }
 
   private toWalletView(w: WalletEntity) {

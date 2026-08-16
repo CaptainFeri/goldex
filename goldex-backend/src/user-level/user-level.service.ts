@@ -134,7 +134,7 @@ export class UserLevelService {
   async getUserLevel(userId: string): Promise<UserLevelEntity | null> {
     const user = await this.userRepo.findOne({
       where: { id: userId },
-      relations: { level: true },
+      relations: { level: { pairs: { baseSymbol: true, quoteSymbol: true } } },
     });
     if (!user) return null;
     if (user.levelExpiresAt && new Date() > user.levelExpiresAt) {
@@ -180,6 +180,20 @@ export class UserLevelService {
     const level = await this.getUserLevel(userId);
     if (!level?.pairs) return [];
     return level.pairs.map((p) => p.id);
+  }
+
+  // Unique symbol ids (base + quote) covered by the user's level pairs. Empty
+  // array means "no explicit symbol restriction" (callers fall back to their own
+  // default filtering).
+  async getUserAllowedSymbolIds(userId: string): Promise<string[]> {
+    const level = await this.getUserLevel(userId);
+    if (!level?.pairs) return [];
+    const ids = new Set<string>();
+    for (const p of level.pairs) {
+      if (p.baseSymbol) ids.add(p.baseSymbol.id);
+      if (p.quoteSymbol) ids.add(p.quoteSymbol.id);
+    }
+    return Array.from(ids);
   }
 
   async getUsersByLevel(levelId: string, page: number, limit: number): Promise<[UserEntity[], number]> {
