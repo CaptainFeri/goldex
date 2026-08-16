@@ -40,7 +40,6 @@ export const UserEvents = {
   UNBLOCKED: "user.unblocked",
   LEVEL_CHANGED: "user.level_changed",
   LEVEL_UNASSIGNED: "user.level_unassigned",
-  LEVEL_CHANGE_BLOCKED: "user.level_change_blocked",
 } as const;
 
 export const DepositEvents = {

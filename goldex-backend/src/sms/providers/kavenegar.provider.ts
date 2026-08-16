@@ -46,11 +46,11 @@ export class KavenegarProvider implements SmsProvider {
             sender: this.sender,
             receptor: to,
           },
-          (response: any, status: number) => {
+          (response: any, status: number, message: string) => {
             if (status === 200 && response?.entries?.length > 0) {
               resolve(response);
             } else {
-              reject(new Error(`Kavenegar API error: ${JSON.stringify(response)}`));
+              reject(new Error(`Kavenegar API error: ${message || JSON.stringify(response)}`));
             }
           }
         );
@@ -92,11 +92,11 @@ export class KavenegarProvider implements SmsProvider {
             token: code,
             template: template,
           },
-          (response: any, status: number) => {
+          (response: any, status: number, message: string) => {
             if (status === 200) {
               resolve(response);
             } else {
-              reject(new Error(`OTP template failed: ${JSON.stringify(response)}`));
+              reject(new Error(`OTP template failed: ${message || JSON.stringify(response)}`));
             }
           }
         );

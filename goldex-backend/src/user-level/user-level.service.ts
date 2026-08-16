@@ -9,8 +9,6 @@ import { UpdateLevelDto } from "./dto/update-level.dto";
 import { AssignLevelDto } from "./dto/assign-level.dto";
 import { UserEvents } from "../shared/constants/events.constants";
 import { PricePairEntity } from "../admin-pair/entity/price.pair.entity";
-import { WalletEntity } from "../wallet/entities/wallet.entity";
-import { SymbolEntity } from "../admin-symbol/entity/symbol.entity";
 
 @Injectable()
 export class UserLevelService {
@@ -21,10 +19,6 @@ export class UserLevelService {
     private readonly userRepo: Repository<UserEntity>,
     @InjectRepository(PricePairEntity)
     private readonly pairRepo: Repository<PricePairEntity>,
-    @InjectRepository(WalletEntity)
-    private readonly walletRepo: Repository<WalletEntity>,
-    @InjectRepository(SymbolEntity)
-    private readonly symbolRepo: Repository<SymbolEntity>,
     private readonly eventEmitter: EventEmitter2,
   ) {}
 
@@ -104,8 +98,6 @@ export class UserLevelService {
     if (!user) throw new NotFoundException("User not found");
     const level = await this.findById(dto.levelId);
     const previousLevelId = user.levelId;
-
-    await this.syncWalletsForLevel(user.id, level);
 
     user.levelId = level.id;
     user.levelAssignedAt = new Date();
@@ -188,77 +180,6 @@ export class UserLevelService {
     const level = await this.getUserLevel(userId);
     if (!level?.pairs) return [];
     return level.pairs.map((p) => p.id);
-  }
-
-  // Unique symbol ids (base + quote) covered by a level's pairs.
-  async getLevelPairSymbolIds(levelId: string): Promise<string[]> {
-    const level = await this.levelRepo.findOne({
-      where: { id: levelId },
-      relations: { pairs: { baseSymbol: true, quoteSymbol: true } },
-    });
-    if (!level?.pairs) return [];
-    const ids = new Set<string>();
-    for (const p of level.pairs) {
-      if (p.baseSymbol) ids.add(p.baseSymbol.id);
-      if (p.quoteSymbol) ids.add(p.quoteSymbol.id);
-    }
-    return Array.from(ids);
-  }
-
-  // Ensures a user's symbol-wallets match the level's pair coverage:
-  //  - creates missing wallets for the level's symbols
-  //  - BLOCKS the level change if the user holds a positive balance in a symbol
-  //    that the new level's pairs no longer cover (admin must empty it first)
-  private async syncWalletsForLevel(userId: string, level: UserLevelEntity): Promise<void> {
-    const levelSymbolIds = await this.getLevelPairSymbolIds(level.id);
-    if (levelSymbolIds.length === 0) return;
-
-    const wallets = await this.walletRepo.find({
-      where: { userId },
-      relations: { symbol: true },
-    });
-
-    const ownedSymbolIds = new Set(wallets.map((w) => w.symbolId));
-    const allowed = new Set(levelSymbolIds);
-
-    // Block if any owned symbol has a positive balance but is not covered by the new level.
-    const blocked: { symbol: string; balance: number }[] = [];
-    for (const w of wallets) {
-      if (allowed.has(w.symbolId)) continue;
-      const balance = Number(w.freeBalance) + Number(w.lockedBalance) + Number(w.frozenFreeBalance) + Number(w.frozenLockedBalance);
-      if (balance > 0) {
-        blocked.push({ symbol: w.symbol?.slug ?? w.symbolId, balance });
-      }
-    }
-    if (blocked.length > 0) {
-      const detail = blocked.map((b) => `${b.symbol} (${b.balance})`).join("، ");
-      this.eventEmitter.emit(UserEvents.LEVEL_CHANGE_BLOCKED, {
-        userId,
-        levelName: level.name,
-        blocked,
-      });
-      throw new BadRequestException(
-        `امکان تغییر سطح به «${level.name}» وجود ندارد. ابتدا موجودی کیف پول‌های خارج از سطح را خالی کنید: ${detail}`
-      );
-    }
-
-    // Create missing wallets for the new level's symbols.
-    const toCreate = levelSymbolIds.filter((sid) => !ownedSymbolIds.has(sid));
-    if (toCreate.length > 0) {
-      const symbols = await this.symbolRepo.findBy({ id: In(toCreate) });
-      for (const symbol of symbols) {
-        const exists = await this.walletRepo.findOne({ where: { userId, symbolId: symbol.id } });
-        if (exists) continue;
-        const wallet = this.walletRepo.create({
-          userId,
-          symbol,
-          symbolId: symbol.id,
-          freeBalance: 0,
-          lockedBalance: 0,
-        });
-        await this.walletRepo.save(wallet);
-      }
-    }
   }
 
   async getUsersByLevel(levelId: string, page: number, limit: number): Promise<[UserEntity[], number]> {

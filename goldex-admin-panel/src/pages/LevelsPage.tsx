@@ -317,18 +317,17 @@ function LevelFormModal({ title, initial, onClose, onSave, loading }: {
 function PairPicker({ pairs, loading, selected, onToggle, onSet }: {
   pairs: any[]; loading: boolean; selected: string[]; onToggle: (id: string) => void; onSet: (ids: string[]) => void;
 }) {
-  const [quote, setQuote] = useState("all");
   const [baseType, setBaseType] = useState("all");
   const [mkt, setMkt] = useState("all");
 
-  const quoteSlugs = Array.from(new Set(pairs.map((p) => p.quoteSymbol?.slug).filter(Boolean)));
-  const baseTypes = Array.from(new Set(pairs.map((p) => p.baseSymbol?.type ?? p.baseSymbol?.symbolType).filter(Boolean)));
-  const mktTypes = Array.from(new Set(pairs.map((p) => p.baseSymbol?.marketType).filter(Boolean)));
+  const typeLabels: Record<string, string> = { crypto: "ارز دیجیتال", material: "فلز/کالا", fiat: "فیات", rial: "ریال" };
+  const mktLabels: Record<string, string> = { formal: "رسمی", informal: "غیررسمی" };
+
+  const baseTypes = ["crypto", "material", "fiat", "rial"];
+  const mktTypes = ["formal", "informal"];
 
   const filtered = pairs.filter((p) => {
-    if (quote !== "all" && p.quoteSymbol?.slug !== quote) return false;
-    const bt = p.baseSymbol?.type ?? p.baseSymbol?.symbolType;
-    if (baseType !== "all" && bt !== baseType) return false;
+    if (baseType !== "all" && p.baseSymbol?.symbolType !== baseType) return false;
     if (mkt !== "all" && p.baseSymbol?.marketType !== mkt) return false;
     return true;
   });
@@ -336,17 +335,13 @@ function PairPicker({ pairs, loading, selected, onToggle, onSet }: {
   return (
     <div style={{ gridColumn: "1 / -1", border: "1px solid var(--line)", borderRadius: 8, padding: 10 }}>
       <div className="row" style={{ gap: 6, flexWrap: "wrap", marginBottom: 8, fontSize: "0.8rem" }}>
-        <select className="select" style={{ width: 130 }} value={quote} onChange={(e) => setQuote(e.target.value)}>
-          <option value="all">همه ارز مبدا</option>
-          {quoteSlugs.map((q) => <option key={q} value={q}>{q}</option>)}
+        <select className="select" style={{ width: 160 }} value={baseType} onChange={(e) => setBaseType(e.target.value)}>
+          <option value="all">همه نوع دارایی پایه</option>
+          {baseTypes.map((t) => <option key={t} value={t}>{typeLabels[t] ?? t}</option>)}
         </select>
-        <select className="select" style={{ width: 140 }} value={baseType} onChange={(e) => setBaseType(e.target.value)}>
-          <option value="all">همه نوع دارایی</option>
-          {baseTypes.map((t) => <option key={t} value={t}>{t}</option>)}
-        </select>
-        <select className="select" style={{ width: 130 }} value={mkt} onChange={(e) => setMkt(e.target.value)}>
+        <select className="select" style={{ width: 160 }} value={mkt} onChange={(e) => setMkt(e.target.value)}>
           <option value="all">همه بازار</option>
-          {mktTypes.map((t) => <option key={t} value={t}>{t}</option>)}
+          {mktTypes.map((t) => <option key={t} value={t}>{mktLabels[t] ?? t}</option>)}
         </select>
         <button type="button" className="btn sm" onClick={() => {
           const ids = pairs.filter((p) => p.quoteSymbol?.slug === "IRR").map((p) => p.id);
