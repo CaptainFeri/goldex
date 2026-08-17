@@ -30,10 +30,10 @@ export class KainoHttpClient {
     return this.token ? { Authorization: `Bearer ${this.token}` } : {};
   }
 
-  async post<T>(path: string, body: object): Promise<T> {
+  async post<T>(path: string, body: object, baseUrl?: string): Promise<T> {
     return this.send(() =>
       firstValueFrom(
-        this.http.post<T>(`${this.baseUrl}${path}`, body, {
+        this.http.post<T>(`${baseUrl ?? this.baseUrl}${path}`, body, {
           headers: this.headers(),
         }),
       ),

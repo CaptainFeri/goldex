@@ -1,5 +1,6 @@
 import { Injectable, Logger, OnModuleInit } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
+import { SignatureService } from "../../common/signature/signature.service";
 import { KainoHttpClient } from "../kaino-http.client";
 
 @Injectable()
@@ -9,6 +10,7 @@ export class KainoAuthService implements OnModuleInit {
   constructor(
     private readonly client: KainoHttpClient,
     private readonly config: ConfigService,
+    private readonly sig: SignatureService,
   ) {
     this.client.onUnauthorized = () => this.login().then(() => undefined);
   }
@@ -24,11 +26,18 @@ export class KainoAuthService implements OnModuleInit {
   }
 
   async login(): Promise<string> {
-    const { username, password } = this.config.get("app", { infer: true })
-      .kaino;
+    const { loginBaseUrl, loginPath, username, password, secret } = this.config.get(
+      "app",
+      { infer: true },
+    ).kaino;
+    const body = { username, password };
     const res = await this.client.post<Record<string, any>>(
-      "/rest/channel/wallet/v1/login",
-      { username, password },
+      loginPath,
+      {
+        ...body,
+        sign: this.sig.sign(this.sig.build(body, ["username", "password"]), secret),
+      },
+      loginBaseUrl,
     );
     const token =
       res?.token ?? res?.accessToken ?? res?.data?.token ?? res?.value?.token;

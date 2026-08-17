@@ -21,7 +21,11 @@ export default registerAs("app", () => ({
     queue: process.env.CBP_RABBITMQ_QUEUE ?? "goldex.cbp.queue",
   },
   kaino: {
-    baseUrl: process.env.KAINO_BASE_URL ?? "https://wallet.kaino.ir",
+    baseUrl: process.env.KAINO_BASE_URL ?? "https://inopay.done.ir",
+    loginBaseUrl:
+      process.env.KAINO_LOGIN_BASE_URL ?? "https://inopay.done.ir",
+    loginPath:
+      process.env.KAINO_LOGIN_PATH ?? "/rest/accountChannel/wallet/v1/login",
     username: process.env.KAINO_USERNAME ?? "",
     password: process.env.KAINO_PASSWORD ?? "",
     tenant: process.env.KAINO_TENANT ?? "",
