@@ -21,6 +21,7 @@ export class KainoWalletService {
   private readonly tenant: string;
   private readonly secret: string;
   private readonly prefix: string;
+  private readonly chargePrefix: string;
 
   constructor(
     private readonly client: KainoHttpClient,
@@ -31,6 +32,7 @@ export class KainoWalletService {
     this.tenant = kaino.tenant;
     this.secret = kaino.secret;
     this.prefix = kaino.walletPathPrefix;
+    this.chargePrefix = this.prefix.replace(/\/wallet\/v1$/, "");
   }
 
   private p(path: string): string {
@@ -91,7 +93,7 @@ export class KainoWalletService {
       "validCards",
       "description",
     ];
-    return this.signPost<any>(this.p("/chargeWallet"), dto as any, keys);
+    return this.signPost<any>(`${this.chargePrefix}/chargeWallet`, dto as any, keys);
   }
 
   async verifyCharge(dto: VerifyChargeDto) {
