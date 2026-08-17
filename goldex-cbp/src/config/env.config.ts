@@ -31,9 +31,11 @@ export default registerAs("app", () => ({
     tenant: process.env.KAINO_TENANT ?? "",
     secret: process.env.KAINO_SECRET ?? "",
     payerMobile: process.env.KAINO_PAYER_MOBILE ?? "",
+    walletPathPrefix:
+      process.env.KAINO_WALLET_PATH_PREFIX ?? "/rest/accountChannel/wallet/v1",
     ipgPayPath:
       process.env.KAINO_IPG_PAY_PATH ??
-      "/rest/channel/wallet/v1/chargeWallet/pay",
+      "/rest/accountChannel/wallet/v1/chargeWallet/pay",
   },
   shahin: {
     baseUrl: process.env.SHAHIN_SERVICE_URL ?? "",
