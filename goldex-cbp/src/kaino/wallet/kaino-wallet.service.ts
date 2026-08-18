@@ -1,4 +1,4 @@
-import { Injectable } from "@nestjs/common";
+import { Injectable, Logger } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import { SignatureService } from "../../common/signature/signature.service";
 import { KainoHttpClient } from "../kaino-http.client";
@@ -23,6 +23,7 @@ import {
  */
 @Injectable()
 export class KainoWalletService {
+  private readonly logger = new Logger(KainoWalletService.name);
   private readonly tenant: string;
   private readonly channelKey: string;
   private readonly prefix: string;
@@ -95,26 +96,19 @@ export class KainoWalletService {
 
   /**
    * POST /chargeWallet - IPG wallet charge.
-   * The sign is built over the full documented order (dropping empty fields);
-   * only the documented non-empty fields are sent in the body. localDate
-   * participates in the sign only and is not sent.
+   * The sign is built over the keys (in order): tenant, identifier, amount,
+   * callBackUrl, currency, payerMobileNumber, autoVerify — dropping empty
+   * fields. The user is identified by the `identifier` key (not username).
    */
   async chargeWallet(dto: ChargeWalletDto) {
     const keys = [
-      "identifier",
-      "bankDepositIdentifier",
       "tenant",
-      "currency",
+      "identifier",
       "amount",
-      "username",
-      "payerMobileNumber",
-      "accountNumber",
-      "localDate",
       "callBackUrl",
-      "voucherReference",
+      "currency",
+      "payerMobileNumber",
       "autoVerify",
-      "itemText",
-      "description",
     ];
     const body: Record<string, any> = {
       tenant: dto.tenant,
@@ -123,17 +117,18 @@ export class KainoWalletService {
       callBackUrl: dto.callBackUrl,
     };
     if (dto.currency) body.currency = dto.currency;
-    if (dto.username) body.username = dto.username;
     if (dto.payerMobileNumber) body.payerMobileNumber = dto.payerMobileNumber;
-    if (dto.accountNumber) body.accountNumber = dto.accountNumber;
-    if (dto.description) body.description = dto.description;
     if (dto.autoVerify !== undefined) body.autoVerify = dto.autoVerify;
     if (dto.validCards?.length) body.validCards = dto.validCards;
 
-    const signParams = { ...body, localDate: dto.localDate };
+    const signText = this.sig.build(body, keys);
+    const sign = this.sig.sign(signText, this.channelKey);
+    this.logger.log(
+      `chargeWallet identifier=${dto.identifier} signText=${signText} sign=${sign}`,
+    );
     return this.client.post<any>(this.p("/chargeWallet"), {
       ...body,
-      sign: this.buildSign(signParams, keys),
+      sign,
     });
   }
 

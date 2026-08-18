@@ -39,7 +39,7 @@ function mockClient(): { client: KainoHttpClient; bodies: Record<string, any>[] 
 }
 
 describe("KainoWalletService.chargeWallet", () => {
-  it("signs tenant, identifier, amount and callBackUrl in documented order", async () => {
+  it("signs in the documented order and identifies the user by identifier (not username)", async () => {
     const { client, bodies } = mockClient();
     const service = new KainoWalletService(
       client,
@@ -53,37 +53,31 @@ describe("KainoWalletService.chargeWallet", () => {
       currency: "IRR",
       amount: "300000",
       callBackUrl: "https://example.com/callback",
-      username: "user123",
       payerMobileNumber: "09123456789",
-      accountNumber: "100012345678",
       autoVerify: true,
       validCards: ["603799", "627412"],
-      description: "شارژ کیف پول",
-      localDate: "20260810",
     });
 
-    // sign is derived from the full documented order (dropping empty fields);
-    // localDate participates in the sign but is not sent in the body.
+    // sign order: tenant, identifier, amount, callBackUrl, currency,
+    // payerMobileNumber, autoVerify (dropping empty fields).
     const expectedSign = crypto
       .createHmac("sha256", "secret-key")
       .update(
-        "#PAY001#TENANT001#IRR#300000#user123#09123456789#100012345678#20260810#https://example.com/callback#true#شارژ کیف پول#",
+        "#TENANT001#PAY001#300000#https://example.com/callback#IRR#09123456789#true#",
       )
       .digest("hex");
     expect(bodies[0].sign).toBe(expectedSign);
-    // the body contains only the documented non-empty fields (+ sign).
+    // the body uses the identifier key (no username) and only the signed
+    // non-empty fields + validCards.
     expect(bodies[0]).toEqual({
       tenant: "TENANT001",
       identifier: "PAY001",
-      currency: "IRR",
       amount: "300000",
       callBackUrl: "https://example.com/callback",
-      username: "user123",
+      currency: "IRR",
       payerMobileNumber: "09123456789",
-      accountNumber: "100012345678",
       autoVerify: true,
       validCards: ["603799", "627412"],
-      description: "شارژ کیف پول",
       sign: expectedSign,
     });
   });
