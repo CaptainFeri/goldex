@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api, unwrap, apiError } from "../api/client";
 import { Card, Badge, Loading, ErrorState, Empty, Modal } from "../components/ui";
+import { useNotify } from "../notifications/NotifyProvider";
 import type { Credit } from "../api/types";
 
 const STATUS_LABELS: Record<string, string> = {
@@ -35,6 +36,7 @@ export default function CreditsPage() {
   const [modal, setModal] = useState<null | "create" | "settle" | "cancel">(null);
   const [selected, setSelected] = useState<Credit | null>(null);
   const qc = useQueryClient();
+  const notify = useNotify().notify;
 
   const list = useQuery({
     queryKey: ["credits", search, statusFilter],
@@ -48,17 +50,40 @@ export default function CreditsPage() {
 
   const create = useMutation({
     mutationFn: (body: any) => api.post("/admin/credits", body),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ["credits"] }); setModal(null); },
+    onSuccess: () => {
+      notify({ title: "اعتبار با موفقیت ایجاد شد", kind: "success" });
+      qc.invalidateQueries({ queryKey: ["credits"] });
+      setModal(null);
+    },
+    onError: (e: any) => {
+      notify({ title: "خطا در ایجاد اعتبار", body: apiError(e), kind: "error" });
+    },
   });
 
   const settle = useMutation({
     mutationFn: ({ id, ...body }: any) => api.post(`/admin/credits/${id}/settle`, body),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ["credits"] }); setModal(null); setSelected(null); },
+    onSuccess: () => {
+      notify({ title: "اعتبار با موفقیت تسویه شد", kind: "success" });
+      qc.invalidateQueries({ queryKey: ["credits"] });
+      setModal(null);
+      setSelected(null);
+    },
+    onError: (e: any) => {
+      notify({ title: "خطا در تسویه اعتبار", body: apiError(e), kind: "error" });
+    },
   });
 
   const cancel = useMutation({
     mutationFn: ({ id, ...body }: any) => api.post(`/admin/credits/${id}/cancel`, body),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ["credits"] }); setModal(null); setSelected(null); },
+    onSuccess: () => {
+      notify({ title: "اعتبار با موفقیت لغو شد", kind: "success" });
+      qc.invalidateQueries({ queryKey: ["credits"] });
+      setModal(null);
+      setSelected(null);
+    },
+    onError: (e: any) => {
+      notify({ title: "خطا در لغو اعتبار", body: apiError(e), kind: "error" });
+    },
   });
 
   return (
