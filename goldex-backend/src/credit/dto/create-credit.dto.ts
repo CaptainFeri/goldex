@@ -14,6 +14,18 @@ export class FrozenWalletDto {
   amount: number;
 }
 
+export class IncreaseWalletDto {
+  @ApiProperty()
+  @IsUUID()
+  walletId: string;
+
+  @ApiProperty()
+  @IsNumber()
+  @Min(0)
+  @Type(() => Number)
+  amount: number;
+}
+
 export class CreateCreditDto {
   @ApiProperty()
   @IsUUID()
@@ -73,4 +85,13 @@ export class CreateCreditDto {
   @ValidateNested({ each: true })
   @Type(() => FrozenWalletDto)
   frozenWallets?: FrozenWalletDto[];
+
+  // Wallets that receive the credit amount (each with its own amount). When
+  // omitted, creditWalletId+amount is used (single wallet) for backwards
+  // compatibility. The total credit amount is the sum of these allocations.
+  @ApiProperty({ required: false, type: [IncreaseWalletDto], description: "Wallets to receive the credit amount (defaults to creditWalletId/amount)" })
+  @IsOptional()
+  @ValidateNested({ each: true })
+  @Type(() => IncreaseWalletDto)
+  increasedWallets?: IncreaseWalletDto[];
 }

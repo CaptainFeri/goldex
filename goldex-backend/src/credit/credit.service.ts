@@ -72,8 +72,17 @@ export class CreditService {
         throw new BadRequestException("Credit trading is not enabled for this user's level");
       }
 
-      await this.enforceCreditLimits(dto.userId, dto.amount, dto.expireAt);
+      // Total credit amount = sum of the increase-wallet allocations (falls back
+      // to a single dto.amount when no increasedWallets are provided).
+      const totalAmount =
+        dto.increasedWallets?.length
+          ? dto.increasedWallets.reduce((s, w) => s + (w.amount || 0), 0)
+          : dto.amount;
+      if (totalAmount <= 0) {
+        throw new BadRequestException("Credit amount must be greater than zero");
+      }
 
+      await this.enforceCreditLimits(dto.userId, totalAmount, dto.expireAt);
       const existingActive = await manager.findOne(CreditEntity, {
         where: { userId: dto.userId, status: CreditStatusEnum.ACTIVE },
       });
@@ -191,83 +200,138 @@ export class CreditService {
         }
       }
 
-      // Resolve the wallet that receives the credit amount. Defaults to the
-      // user's RIAL wallet; admin may point to another wallet via creditWalletId.
-      let creditWallet: WalletEntity;
-      let creditSymbolName = "RIAL";
+      // Determine the wallets that receive the credit amount. Prefer the explicit
+      // increasedWallets list; otherwise fall back to a single wallet
+      // (creditWalletId, defaulting to the user's RIAL wallet).
+      type IncreaseAlloc = {
+        wallet: WalletEntity;
+        symbolName: string;
+        amount: number;
+        priceAtCreation: number | null;
+      };
+      const increaseAllocs: IncreaseAlloc[] = [];
 
-      if (dto.creditWalletId) {
-        creditWallet = await manager.findOne(WalletEntity, {
-          where: { id: dto.creditWalletId, userId: dto.userId },
-          lock: { mode: "pessimistic_write" },
-        });
-        if (!creditWallet) {
-          throw new NotFoundException(`Credit wallet ${dto.creditWalletId} not found for user`);
+      if (dto.increasedWallets && dto.increasedWallets.length) {
+        for (const iw of dto.increasedWallets) {
+          if (iw.amount <= 0) continue;
+          const wallet = await manager.findOne(WalletEntity, {
+            where: { id: iw.walletId, userId: dto.userId },
+            lock: { mode: "pessimistic_write" },
+          });
+          if (!wallet) throw new NotFoundException(`Increase wallet ${iw.walletId} not found for user`);
+          if (wallet.status !== WalletStatusEnum.ACTIVE) {
+            throw new BadRequestException(`Increase wallet ${iw.walletId} is not active`);
+          }
+          const sym = await manager.findOne(SymbolEntity, { where: { id: wallet.symbolId } });
+          const priceAtCreation = await this.getSymbolRialPrice(manager, wallet.symbolId);
+          increaseAllocs.push({
+            wallet,
+            symbolName: sym?.name || sym?.slug || wallet.symbolId,
+            amount: iw.amount,
+            priceAtCreation,
+          });
         }
-        if (creditWallet.status !== WalletStatusEnum.ACTIVE) {
-          throw new BadRequestException("Credit wallet is not active");
-        }
-        const sym = await manager.findOne(SymbolEntity, { where: { id: creditWallet.symbolId } });
-        creditSymbolName = sym?.name || sym?.slug || creditWallet.symbolId;
       } else {
-        let rialSymbol = await manager.findOne(SymbolEntity, {
-          where: { symbolType: SymbolTypeEnum.RIAL, isActive: true },
-        });
-        if (!rialSymbol) {
-          rialSymbol = manager.create(SymbolEntity, {
-            name: "RIAL",
-            slug: "IRR",
-            symbolType: SymbolTypeEnum.RIAL,
-            marketType: MarketTypeEnum.FORMAL,
-            isActive: true,
-            unitType: UnitTypeEnum.NUMBER,
-            gainType: GainTypeEnum.NUMBER,
-            gain: 0,
-            picPath: "/uploads/symbols/rial.png",
-            hasPaymentGateway: false,
+        // Backwards-compatible single-wallet path.
+        let creditWallet: WalletEntity;
+        let creditSymbolName = "RIAL";
+        if (dto.creditWalletId) {
+          creditWallet = await manager.findOne(WalletEntity, {
+            where: { id: dto.creditWalletId, userId: dto.userId },
+            lock: { mode: "pessimistic_write" },
           });
-          rialSymbol = await manager.save(rialSymbol);
-        }
+          if (!creditWallet) {
+            throw new NotFoundException(`Credit wallet ${dto.creditWalletId} not found for user`);
+          }
+          if (creditWallet.status !== WalletStatusEnum.ACTIVE) {
+            throw new BadRequestException("Credit wallet is not active");
+          }
+          const sym = await manager.findOne(SymbolEntity, { where: { id: creditWallet.symbolId } });
+          creditSymbolName = sym?.name || sym?.slug || creditWallet.symbolId;
+        } else {
+          let rialSymbol = await manager.findOne(SymbolEntity, {
+            where: { symbolType: SymbolTypeEnum.RIAL, isActive: true },
+          });
+          if (!rialSymbol) {
+            rialSymbol = manager.create(SymbolEntity, {
+              name: "RIAL",
+              slug: "IRR",
+              symbolType: SymbolTypeEnum.RIAL,
+              marketType: MarketTypeEnum.FORMAL,
+              isActive: true,
+              unitType: UnitTypeEnum.NUMBER,
+              gainType: GainTypeEnum.NUMBER,
+              gain: 0,
+              picPath: "/uploads/symbols/rial.png",
+              hasPaymentGateway: false,
+            });
+            rialSymbol = await manager.save(rialSymbol);
+          }
 
-        creditWallet = await manager.findOne(WalletEntity, {
-          where: { userId: dto.userId, symbolId: rialSymbol.id },
-          lock: { mode: "pessimistic_write" },
-        });
-        if (!creditWallet) {
-          creditWallet = manager.create(WalletEntity, {
-            userId: dto.userId,
-            symbolId: rialSymbol.id,
-            freeBalance: 0,
-            lockedBalance: 0,
-            status: WalletStatusEnum.ACTIVE,
+          creditWallet = await manager.findOne(WalletEntity, {
+            where: { userId: dto.userId, symbolId: rialSymbol.id },
+            lock: { mode: "pessimistic_write" },
           });
+          if (!creditWallet) {
+            creditWallet = manager.create(WalletEntity, {
+              userId: dto.userId,
+              symbolId: rialSymbol.id,
+              freeBalance: 0,
+              lockedBalance: 0,
+              status: WalletStatusEnum.ACTIVE,
+            });
+          }
+          creditSymbolName = rialSymbol.name || "RIAL";
         }
-        creditSymbolName = rialSymbol.name || "RIAL";
+        const priceAtCreation = await this.getSymbolRialPrice(manager, creditWallet.symbolId);
+        increaseAllocs.push({
+          wallet: creditWallet,
+          symbolName: creditSymbolName,
+          amount: totalAmount,
+          priceAtCreation,
+        });
       }
 
-      creditWallet.freeBalance = new Decimal(creditWallet.freeBalance).plus(dto.amount).toNumber();
-      creditWallet.adminNote = `Credit deposit of ${dto.amount} ${creditSymbolName}`;
-      await manager.save(creditWallet);
+      if (!increaseAllocs.length) {
+        throw new BadRequestException("At least one wallet must receive the credit amount");
+      }
 
-      const transaction = manager.create(TransactionEntity, {
-        walletId: creditWallet.id,
-        transactionId: crypto.randomUUID(),
-        transactionType: TransactionTypeEnum.CREDIT_DEPOSIT,
-        status: TransactionStatusEnum.COMPLETED,
-        amount: dto.amount,
-        fee: 0,
-        description: `Credit balance increase of ${dto.amount} ${creditSymbolName}`,
-        metadata: { adminId, creditCode: `CR-${Date.now().toString(36).toUpperCase()}` },
-        completedAt: new Date(),
-      });
-      await manager.save(transaction);
+      const primaryWallet = increaseAllocs[0].wallet;
+      const primarySymbolName = increaseAllocs[0].symbolName;
+      const increasedMeta = increaseAllocs.map((a) => ({
+        walletId: a.wallet.id,
+        symbolId: a.wallet.symbolId,
+        symbolName: a.symbolName,
+        amount: a.amount,
+        priceAtCreation: a.priceAtCreation,
+      }));
+
+      // Apply the increase to each selected wallet.
+      for (const a of increaseAllocs) {
+        a.wallet.freeBalance = new Decimal(a.wallet.freeBalance).plus(a.amount).toNumber();
+        a.wallet.adminNote = `Credit deposit of ${a.amount} ${a.symbolName}`;
+        await manager.save(a.wallet);
+
+        const transaction = manager.create(TransactionEntity, {
+          walletId: a.wallet.id,
+          transactionId: crypto.randomUUID(),
+          transactionType: TransactionTypeEnum.CREDIT_DEPOSIT,
+          status: TransactionStatusEnum.COMPLETED,
+          amount: a.amount,
+          fee: 0,
+          description: `Credit balance increase of ${a.amount} ${a.symbolName}`,
+          metadata: { adminId, creditCode: `CR-${Date.now().toString(36).toUpperCase()}` },
+          completedAt: new Date(),
+        });
+        await manager.save(transaction);
+      }
 
       const creditCode = `CR-${Date.now().toString(36).toUpperCase()}-${crypto.randomUUID().slice(0, 4).toUpperCase()}`;
       const credit = manager.create(CreditEntity, {
         userId: dto.userId,
         adminId,
         creditCode,
-        amount: dto.amount,
+        amount: totalAmount,
         status: CreditStatusEnum.ACTIVE,
         hasCallMargin: dto.hasCallMargin || false,
         callMarginPercent: dto.callMarginPercent,
@@ -277,7 +341,12 @@ export class CreditService {
         expireAt: new Date(dto.expireAt),
         activatedAt: new Date(),
         notes: dto.notes,
-        metadata: { frozenMaterialSymbols: frozenSymbolNames, creditWalletId: creditWallet.id, creditSymbol: creditSymbolName },
+        metadata: {
+          frozenMaterialSymbols: frozenSymbolNames,
+          creditWalletId: primaryWallet.id,
+          creditSymbol: primarySymbolName,
+          increasedWallets: increasedMeta,
+        },
       });
       const savedCredit = await manager.save(credit);
 
@@ -285,14 +354,15 @@ export class CreditService {
         adminId,
         userId: dto.userId,
         creditId: savedCredit.id,
-        walletId: creditWallet.id,
+        walletId: primaryWallet.id,
         actionType: CreditActionEnum.CREDIT_CREATED,
-        description: `Credit created for ${dto.amount} ${creditSymbolName} on wallet, expireAt: ${dto.expireAt}`,
+        description: `Credit created for ${totalAmount} ${primarySymbolName} on wallet, expireAt: ${dto.expireAt}`,
         metadata: {
           creditCode: savedCredit.creditCode,
-          amount: dto.amount,
-          creditWalletId: creditWallet.id,
-          creditSymbol: creditSymbolName,
+          amount: totalAmount,
+          creditWalletId: primaryWallet.id,
+          creditSymbol: primarySymbolName,
+          increasedWallets: increasedMeta,
           hasCallMargin: dto.hasCallMargin,
           callMarginPercent: dto.callMarginPercent,
           reminderTimerHours: dto.reminderTimerHours,
@@ -300,15 +370,17 @@ export class CreditService {
         },
       });
 
-      await this.logFinanceAction(manager, {
-        adminId,
-        userId: dto.userId,
-        creditId: savedCredit.id,
-        walletId: creditWallet.id,
-        actionType: CreditActionEnum.BALANCE_INCREASED,
-        description: `Balance increased by ${dto.amount} ${creditSymbolName} for credit ${savedCredit.creditCode}`,
-        metadata: { amount: dto.amount, creditCode: savedCredit.creditCode },
-      });
+      for (const a of increaseAllocs) {
+        await this.logFinanceAction(manager, {
+          adminId,
+          userId: dto.userId,
+          creditId: savedCredit.id,
+          walletId: a.wallet.id,
+          actionType: CreditActionEnum.BALANCE_INCREASED,
+          description: `Balance increased by ${a.amount} ${a.symbolName} for credit ${savedCredit.creditCode}`,
+          metadata: { amount: a.amount, creditCode: savedCredit.creditCode },
+        });
+      }
 
       return savedCredit;
     });
@@ -576,6 +648,7 @@ export class CreditService {
 
   async processMarginCallChecks(priceUpdates: Array<{ pricePairId: string; price: number }>): Promise<void> {
     for (const update of priceUpdates) {
+      // Per-order margin checks (existing open positions).
       const activeCreditOrders = await this.creditOrderRepository.find({
         where: { status: CreditOrderStatusEnum.ACTIVE },
         relations: { credit: true, order: { pricePair: true } },
@@ -586,7 +659,119 @@ export class CreditService {
         if (co.order?.pricePairId !== update.pricePairId) continue;
         await this.checkOrderMarginCall(co.id, update.price);
       }
+
+      // Credit-level margin checks: re-value the increase wallets against the
+      // rial price captured at creation. If the drawdown passes the threshold
+      // while call margin is enabled, liquidate the credit.
+      const activeCredits = await this.creditRepository.find({
+        where: { status: CreditStatusEnum.ACTIVE },
+      });
+      for (const credit of activeCredits) {
+        if (!credit.hasCallMargin) continue;
+        await this.checkIncreaseWalletMarginCall(credit, update.pricePairId, update.price);
+      }
     }
+  }
+
+  // Re-values the credit's increase wallets against their creation price. When
+  // the updated price pair belongs to an increase wallet and the adverse move
+  // reaches the call-margin threshold, the credit is force-liquidated.
+  private async checkIncreaseWalletMarginCall(
+    credit: CreditEntity,
+    pricePairId: string,
+    currentPrice: number,
+  ): Promise<void> {
+    const increasedWallets: Array<{ symbolId?: string; priceAtCreation?: number }> =
+      credit.metadata?.increasedWallets || [];
+    if (!increasedWallets.length) return;
+
+    const rialSymbol = await this.symbolRepository.findOne({
+      where: { symbolType: SymbolTypeEnum.RIAL, isActive: true },
+    });
+    if (!rialSymbol) return;
+
+    for (const iw of increasedWallets) {
+      if (!iw.symbolId || !iw.priceAtCreation) continue;
+      const pair = await this.pricePairRepository.findOne({
+        where: { baseId: iw.symbolId, quoteId: rialSymbol.id, isValid: true },
+      });
+      if (!pair || pair.id !== pricePairId) continue;
+
+      const saved = new Decimal(iw.priceAtCreation);
+      if (saved.equals(0)) continue;
+      const drawdown = new Decimal(currentPrice)
+        .minus(saved)
+        .div(saved)
+        .mul(100)
+        .abs();
+      if (drawdown.greaterThanOrEqualTo(credit.callMarginPercent)) {
+        await this.liquidateCreditForMarginCall(credit.id);
+        return;
+      }
+    }
+  }
+
+  // Force-liquidates a credit on margin call: repays the loan (claws back the
+  // increase-wallet balance and liquidates frozen collateral for any shortfall),
+  // cancels open credit orders, blocks the user's wallets and notifies them.
+  private async liquidateCreditForMarginCall(creditId: string): Promise<void> {
+    await this.dataSource.transaction(async (manager) => {
+      const credit = await manager.findOne(CreditEntity, {
+        where: { id: creditId },
+        lock: { mode: "pessimistic_write" },
+      });
+      if (!credit || credit.status !== CreditStatusEnum.ACTIVE) return;
+
+      const creditWallet = await this.resolveCreditWallet(manager, credit);
+      const liquidation = await this.repayAndLiquidate(
+        manager,
+        credit,
+        creditWallet,
+        new Date(),
+      );
+
+      const activeOrders = await this.creditOrderRepository.find({
+        where: { creditId: credit.id, status: CreditOrderStatusEnum.ACTIVE },
+        relations: { order: true },
+      });
+      for (const co of activeOrders) {
+        if (co.order) await this.cancelCreditOrder(co);
+      }
+
+      credit.status = CreditStatusEnum.SETTLED;
+      credit.settledAt = new Date();
+      credit.notes = (credit.notes ? `${credit.notes} ` : "") + "Liquidated on margin call";
+      credit.metadata = {
+        ...(credit.metadata || {}),
+        settleReason: "MARGIN_CALL_LIQUIDATION",
+        marginCallLiquidatedAt: new Date().toISOString(),
+        liquidation,
+      };
+      await manager.save(credit);
+
+      await this.blockUserForMarginCall(credit.userId, credit.id, manager);
+
+      await this.logFinanceAction(manager, {
+        adminId: null,
+        userId: credit.userId,
+        creditId: credit.id,
+        actionType: CreditActionEnum.LIQUIDATION,
+        description: `Credit ${credit.creditCode} liquidated due to margin call`,
+        metadata: { reason: "MARGIN_CALL", liquidation },
+      });
+
+      await this.creditNotificationRepository.save(
+        this.creditNotificationRepository.create({
+          userId: credit.userId,
+          creditId: credit.id,
+          type: CreditNotificationTypeEnum.MARGIN_CALL,
+          message:
+            `Credit ${credit.creditCode} was liquidated due to a margin call. ` +
+            `Your wallets have been frozen. Please contact support.`,
+          sentAt: new Date(),
+        }),
+      );
+    });
   }
 
   async settleCredit(adminId: string, creditId: string, description?: string, imagePath?: string): Promise<CreditEntity> {
@@ -1028,9 +1213,13 @@ export class CreditService {
 
   // Freezes every wallet of the user to block further trading (used on margin
   // call). Unblocking happens via admin settle/cancel which restores ACTIVE.
-  private async blockUserForMarginCall(userId: string, creditId: string): Promise<void> {
-    await this.dataSource.transaction(async (manager) => {
-      const wallets = await manager.find(WalletEntity, {
+  private async blockUserForMarginCall(
+    userId: string,
+    creditId: string,
+    manager?: any,
+  ): Promise<void> {
+    const run = async (em: any) => {
+      const wallets = await em.find(WalletEntity, {
         where: { userId },
         lock: { mode: "pessimistic_write" },
       });
@@ -1040,11 +1229,11 @@ export class CreditService {
           wallet.status = WalletStatusEnum.FROZEN;
           wallet.frozenAt = now;
           wallet.adminNote = `Frozen due to margin call on credit ${creditId}`;
-          await manager.save(wallet);
+          await em.save(wallet);
         }
       }
 
-      await this.logFinanceAction(manager, {
+      await this.logFinanceAction(em, {
         adminId: null,
         userId,
         creditId,
@@ -1052,6 +1241,12 @@ export class CreditService {
         description: `All wallets frozen due to margin call on credit ${creditId}`,
         metadata: { walletCount: wallets.length },
       });
-    });
+    };
+
+    if (manager) {
+      await run(manager);
+    } else {
+      await this.dataSource.transaction(run);
+    }
   }
 }

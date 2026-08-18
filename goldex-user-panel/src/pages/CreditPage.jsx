@@ -142,6 +142,24 @@ export default function CreditPage() {
                   </div>
                 </div>
               )}
+              {activeCredit.metadata?.increasedWallets?.length ? (
+                <div style={{ gridColumn: '1 / -1' }}>
+                  <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: 4 }}>Increased Wallets</div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                    {activeCredit.metadata.increasedWallets.map((iw, idx) => (
+                      <div key={idx} style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.85rem' }}>
+                        <span style={{ fontWeight: 600 }}>{iw.symbolName || iw.symbolId}</span>
+                        <span style={{ fontFamily: 'monospace' }}>{fmtNum(iw.amount)}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ) : (
+                <div>
+                  <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Credit Wallet</div>
+                  <div style={{ fontWeight: 500 }}>{activeCredit.metadata?.creditSymbol || 'RIAL'}</div>
+                </div>
+              )}
               <div style={{ gridColumn: '1 / -1' }}>
                 <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: 4 }}>Auto Reminder</div>
                 <div className="progress-bar" style={{ background: 'var(--border)', borderRadius: 4, height: 8, overflow: 'hidden' }}>

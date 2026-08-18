@@ -155,6 +155,7 @@ function CreateCreditModal({ onClose, onSave, loading }: { onClose: () => void; 
     creditWalletId: "",
   });
   const [frozenWallets, setFrozenWallets] = useState<Record<string, number>>({});
+  const [increasedWallets, setIncreasedWallets] = useState<Record<string, number>>({});
   const [err, setErr] = useState("");
 
   const users = useQuery({
@@ -197,18 +198,31 @@ function CreateCreditModal({ onClose, onSave, loading }: { onClose: () => void; 
     setFrozenWallets({ ...frozenWallets, [walletId]: Math.max(0, Math.min(maxAvail, val || 0)) });
   };
 
+  const toggleIncrease = (w: any) => {
+    const copy = { ...increasedWallets };
+    if (copy[w.id] !== undefined) delete copy[w.id];
+    else copy[w.id] = 0;
+    setIncreasedWallets(copy);
+  };
+
+  const updateIncrease = (walletId: string, val: number) => {
+    setIncreasedWallets({ ...increasedWallets, [walletId]: Math.max(0, val || 0) });
+  };
+
   const handle = () => {
     if (!form.userId) { setErr("لطفاً یک کاربر انتخاب کنید"); return; }
-    if (form.amount <= 0) { setErr("مبلغ باید بیشتر از صفر باشد"); return; }
     if (!form.expireAt) { setErr("لطفاً تاریخ انقضا را وارد کنید"); return; }
     const fw = Object.entries(frozenWallets).filter(([, v]) => v > 0).map(([walletId, amount]) => ({ walletId, amount }));
     if (fw.length === 0) { setErr("حداقل یک دارایی برای مسدود کردن انتخاب کنید"); return; }
+    const inc = Object.entries(increasedWallets).filter(([, v]) => v > 0).map(([walletId, amount]) => ({ walletId, amount }));
+    if (inc.length === 0) { setErr("حداقل یک کیف‌پول برای دریافت اعتبار انتخاب کنید"); return; }
+    const totalAmount = inc.reduce((s, x) => s + x.amount, 0);
     setErr("");
     onSave({
       ...form,
-      amount: Number(form.amount),
+      amount: totalAmount,
       maxExecutionTradeLevel: form.maxExecutionTradeLevel > 0 ? form.maxExecutionTradeLevel : undefined,
-      creditWalletId: form.creditWalletId || undefined,
+      increasedWallets: inc,
       frozenWallets: fw,
     });
   };
@@ -232,19 +246,35 @@ function CreateCreditModal({ onClose, onSave, loading }: { onClose: () => void; 
             </select>
           </div>
 
-          <div className="field">
-            <label>کیف‌پول دریافت اعتبار</label>
-            <select className="select" value={form.creditWalletId} onChange={(e) => setForm({ ...form, creditWalletId: e.target.value })}>
-              <option value="">ریال (پیش‌فرض)</option>
-              {form.userId && creditWalletOptions.map((w: any) => (
-                <option key={w.id} value={w.id}>{w.symbol?.slug || w.symbol?.name}</option>
-              ))}
-            </select>
+          <div className="field" style={{ gridColumn: "1 / -1" }}>
+            <div style={{ fontSize: "0.75rem", color: "var(--text-muted)", marginBottom: 6 }}>کیف‌پول‌هایی که اعتبار به آن‌ها اضافه می‌شود (دریافت اعتبار):</div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+              {form.userId && creditWalletOptions.map((w: any) => {
+                const checked = increasedWallets[w.id] !== undefined;
+                return (
+                  <div key={w.id} style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 10px", background: "var(--bg)", borderRadius: 6, fontSize: "0.85rem" }}>
+                    <input type="checkbox" checked={checked} onChange={() => toggleIncrease(w)} />
+                    <span style={{ fontWeight: 600 }}>{w.symbol?.slug || w.symbol?.name}</span>
+                    {checked && (
+                      <>
+                        <span style={{ color: "var(--text-muted)", marginLeft: "auto" }}>مبلغ:</span>
+                        <input type="number" className="input mono" min={0} dir="ltr"
+                          style={{ width: 120 }} value={increasedWallets[w.id]}
+                          onChange={(e) => updateIncrease(w.id, Number(e.target.value))} />
+                        <span style={{ color: "var(--text-muted)" }}>واحد</span>
+                      </>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
           </div>
 
-          <div className="field">
-            <label>مبلغ</label>
-            <input className="input" type="number" min={0} placeholder="مبلغ اعتبار" value={form.amount} onChange={(e) => setForm({ ...form, amount: +e.target.value })} />
+          <div className="field" style={{ gridColumn: "1 / -1" }}>
+            <label>مبلغ کل اعتبار</label>
+            <div style={{ fontSize: "0.85rem", fontWeight: 700 }} dir="ltr">
+              {Object.values(increasedWallets).filter((v) => v > 0).reduce((s, v) => s + v, 0).toLocaleString("fa-IR")}
+            </div>
           </div>
 
           <div className="field">
