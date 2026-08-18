@@ -50,6 +50,7 @@ describe("KainoWalletService.chargeWallet", () => {
     await service.chargeWallet({
       tenant: "TENANT001",
       identifier: "PAY001",
+      currency: "IRR",
       amount: "300000",
       callBackUrl: "https://example.com/callback",
       username: "user123",
@@ -61,12 +62,12 @@ describe("KainoWalletService.chargeWallet", () => {
       localDate: "20260810",
     });
 
-    // sign is derived from the full 13-field order (dropping empty fields);
+    // sign is derived from the full documented order (dropping empty fields);
     // localDate participates in the sign but is not sent in the body.
     const expectedSign = crypto
       .createHmac("sha256", "secret-key")
       .update(
-        "#PAY001#TENANT001#300000#user123#09123456789#100012345678#20260810#https://example.com/callback#true#شارژ کیف پول#",
+        "#PAY001#TENANT001#IRR#300000#user123#09123456789#100012345678#20260810#https://example.com/callback#true#شارژ کیف پول#",
       )
       .digest("hex");
     expect(bodies[0].sign).toBe(expectedSign);
@@ -74,6 +75,7 @@ describe("KainoWalletService.chargeWallet", () => {
     expect(bodies[0]).toEqual({
       tenant: "TENANT001",
       identifier: "PAY001",
+      currency: "IRR",
       amount: "300000",
       callBackUrl: "https://example.com/callback",
       username: "user123",

@@ -58,13 +58,14 @@ export class KainoGatewayService implements IPaymentGateway {
     const res = await this.wallet.chargeWallet({
       identifier: params.reference,
       tenant: kaino.tenant,
+      currency: "IRR",
       amount: this.plainAmount(params.amount),
       username: params.userId,
       payerMobileNumber:
         params.meta?.mobile ?? kaino.payerMobile ?? undefined,
       accountNumber: params.meta?.accountNumber,
       callBackUrl: params.callbackUrl,
-      autoVerify: params.meta?.autoVerify,
+      autoVerify: true,
       validCards: params.meta?.validCards,
       description: params.meta?.description,
       localDate,

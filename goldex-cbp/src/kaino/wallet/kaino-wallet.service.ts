@@ -95,15 +95,16 @@ export class KainoWalletService {
 
   /**
    * POST /chargeWallet - IPG wallet charge.
-   * The sign is built over the full 13-field order documented by support
-   * (dropping empty fields); only the documented non-empty fields are sent in
-   * the body. localDate participates in the sign only and is not sent.
+   * The sign is built over the full documented order (dropping empty fields);
+   * only the documented non-empty fields are sent in the body. localDate
+   * participates in the sign only and is not sent.
    */
   async chargeWallet(dto: ChargeWalletDto) {
     const keys = [
       "identifier",
       "bankDepositIdentifier",
       "tenant",
+      "currency",
       "amount",
       "username",
       "payerMobileNumber",
@@ -121,6 +122,7 @@ export class KainoWalletService {
       amount: dto.amount,
       callBackUrl: dto.callBackUrl,
     };
+    if (dto.currency) body.currency = dto.currency;
     if (dto.username) body.username = dto.username;
     if (dto.payerMobileNumber) body.payerMobileNumber = dto.payerMobileNumber;
     if (dto.accountNumber) body.accountNumber = dto.accountNumber;
