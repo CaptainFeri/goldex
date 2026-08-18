@@ -33,7 +33,6 @@ export class KainoHttpClient {
   }
 
   private static readonly SECRET_KEYS = [
-    "sign",
     "password",
     "oldPassword",
     "passwordConfirm",
