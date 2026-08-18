@@ -20,7 +20,10 @@ export class SignatureService {
     return `#${parts.join("#")}#`;
   }
 
-  sign(raw: string, secret: string): string {
-    return crypto.createHmac("sha256", secret).update(raw).digest("hex");
+  sign(raw: string, channelKey: string): string {
+    return crypto
+      .createHash("sha256")
+      .update(channelKey + raw)
+      .digest("hex");
   }
 }

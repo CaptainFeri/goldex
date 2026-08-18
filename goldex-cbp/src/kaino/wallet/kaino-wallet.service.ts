@@ -3,25 +3,27 @@ import { ConfigService } from "@nestjs/config";
 import { SignatureService } from "../../common/signature/signature.service";
 import { KainoHttpClient } from "../kaino-http.client";
 import {
+  ChangePasswordDto,
   ChargeWalletDto,
-  InquiryDto,
+  ChargeWalletQueryDto,
   PaymentOrderDto,
-  ReverseDto,
+  PaymentOrderQueryDto,
+  TransactionQueryDto,
   TransferDto,
   VerifyChargeDto,
 } from "./dto";
 
 /**
  * Kaino wallet API client.
- * Every endpoint (except login) is signed with HMAC-SHA256 over a
- * '#param1#param2#' payload built from the exact documented key order.
+ * Every endpoint (except login) is signed with plain SHA-256 over
+ * `channelKey + '#param1#param2#'`, where the payload is built from the
+ * exact documented key order and non-empty params only.
  */
 @Injectable()
 export class KainoWalletService {
   private readonly tenant: string;
-  private readonly secret: string;
+  private readonly channelKey: string;
   private readonly prefix: string;
-  private readonly chargePrefix: string;
 
   constructor(
     private readonly client: KainoHttpClient,
@@ -30,9 +32,8 @@ export class KainoWalletService {
   ) {
     const kaino = this.config.get("app", { infer: true }).kaino;
     this.tenant = kaino.tenant;
-    this.secret = kaino.secret;
+    this.channelKey = kaino.secret;
     this.prefix = kaino.walletPathPrefix;
-    this.chargePrefix = this.prefix.replace(/\/wallet\/v1$/, "");
   }
 
   private p(path: string): string {
@@ -40,7 +41,7 @@ export class KainoWalletService {
   }
 
   private buildSign(params: Record<string, any>, keys: string[]): string {
-    return this.sig.sign(this.sig.build(params, keys), this.secret);
+    return this.sig.sign(this.sig.build(params, keys), this.channelKey);
   }
 
   private signPost<T>(path: string, params: Record<string, any>, keys: string[]): Promise<T> {
@@ -50,61 +51,72 @@ export class KainoWalletService {
     });
   }
 
-  async getBalance(username: string, currency: string) {
-    const p = { username, currency, tenant: this.tenant };
-    return this.client.get(this.p("/balance"), {
-      ...p,
-      sign: this.buildSign(p, ["username", "currency", "tenant"]),
+  private signGet<T>(path: string, params: Record<string, any>, keys: string[]): Promise<T> {
+    return this.client.get<T>(path, {
+      ...params,
+      sign: this.buildSign(params, keys),
     });
   }
 
+  /** POST /transfer - internal wallet transfer. */
   async transfer(dto: TransferDto) {
     const keys = [
-      "channel",
       "fromUsername",
       "fromUsernameTenant",
+      "fromAccountNumber",
+      "toAccountNumber",
       "toUsername",
       "toUsernameTenant",
       "facilityId",
+      "tenant",
       "currency",
       "amount",
       "identifier",
-      "stan",
-      "localDate",
       "person",
+      "description",
+      "channel",
+      "stan",
+      "isCfmTransaction",
       "bankIban",
+      "localDate",
     ];
     return this.signPost<any>(this.p("/transfer"), dto as any, keys);
   }
 
+  /** POST /chargeWallet - IPG wallet charge. */
   async chargeWallet(dto: ChargeWalletDto) {
     const keys = [
-      "identifier",
-      "bankDepositIdentifier",
       "tenant",
+      "identifier",
       "amount",
+      "callBackUrl",
       "username",
+      "currency",
       "payerMobileNumber",
       "accountNumber",
-      "localDate",
-      "callBackUrl",
-      "voucherReference",
+      "ipgTenantCode",
+      "description",
       "autoVerify",
       "validCards",
-      "description",
+      "walletBeneficiaries",
+      "ibanBeneficiaries",
+      "additionalData",
     ];
-    return this.signPost<any>(`${this.chargePrefix}/chargeWallet`, dto as any, keys);
+    return this.signPost<any>(this.p("/chargeWallet"), dto as any, keys);
   }
 
+  /** POST /chargeWallet/verify - final IPG confirmation. */
   async verifyCharge(dto: VerifyChargeDto) {
-    const keys = ["tenant", "identifier", "amount", "reference", "stan", "isVerify"];
+    const keys = ["identifier", "tenant", "amount", "reference", "isVerify", "stan"];
     return this.signPost<any>(this.p("/chargeWallet/verify"), dto as any, keys);
   }
 
+  /** POST /paymentOrder - PAYA transfer. */
   async paymentOrderPaya(dto: PaymentOrderDto) {
     return this.paymentOrder(dto, this.p("/paymentOrder"));
   }
 
+  /** POST /paymentOrder/rtgs - SATNA transfer. */
   async paymentOrderRtgs(dto: PaymentOrderDto) {
     return this.paymentOrder(dto, this.p("/paymentOrder/rtgs"));
   }
@@ -126,14 +138,117 @@ export class KainoWalletService {
     return this.signPost<any>(path, dto as any, keys);
   }
 
-  async inquiry(stan: string, localDate: string) {
-    const dto: InquiryDto = { stan, localDate, tenant: this.tenant };
-    const keys = ["localDate", "stan", "tenant"];
-    return this.signPost<any>(this.p("/inquiry"), dto as any, keys);
+  /** POST /changePassword - change password. */
+  async changePassword(dto: ChangePasswordDto) {
+    const keys = ["oldPassword", "password", "passwordConfirm"];
+    return this.signPost<any>(this.p("/changePassword"), dto as any, keys);
   }
 
-  async reverse(dto: ReverseDto) {
-    const keys = ["amount", "localDate", "stan", "tenant"];
-    return this.signPost<any>(this.p("/reverse"), dto as any, keys);
+  /** GET /balance - simple account balance (Authorization only). */
+  getBalance() {
+    return this.client.get<any>(this.p("/balance"), {});
+  }
+
+  /** GET /balances - full account balance (Authorization only). */
+  getBalances() {
+    return this.client.get<any>(this.p("/balances"), {});
+  }
+
+  /** GET /transaction - paginated wallet transactions. */
+  listTransactions(query: TransactionQueryDto) {
+    const keys = [
+      "tenant",
+      "from",
+      "size",
+      "product",
+      "fromDate",
+      "toDate",
+      "fromTransactionId",
+      "toTransactionId",
+      "transactionTypes",
+      "voucherReference",
+      "invoiceNumber",
+      "includeDone",
+      "includeCanceled",
+      "includePending",
+      "transactionSign",
+      "ascending",
+    ];
+    return this.signGet<any>(this.p("/transaction"), query as any, keys);
+  }
+
+  /** GET /transaction/info/{id} - transaction detail. */
+  transactionInfo(id: number | string, tenant: string = this.tenant) {
+    return this.signGet<any>(`${this.p("/transaction/info")}/${id}`, { tenant }, ["tenant"]);
+  }
+
+  /** GET /transaction/data/{id} - full transaction data with relationships. */
+  transactionData(id: number | string, tenant: string = this.tenant) {
+    return this.signGet<any>(`${this.p("/transaction/data")}/${id}`, { tenant }, ["tenant"]);
+  }
+
+  /** GET /paymentOrder - paginated payment orders (PAYA/SATNA). */
+  listPaymentOrders(query: PaymentOrderQueryDto) {
+    const keys = [
+      "from",
+      "size",
+      "username",
+      "tenantCode",
+      "state",
+      "paymentReference",
+      "fromAmount",
+      "toAmount",
+      "fromStateDate",
+      "toStateDate",
+    ];
+    return this.signGet<any>(this.p("/paymentOrder"), query as any, keys);
+  }
+
+  /** GET /chargeWallet - paginated IPG charges. */
+  listChargeWallets(query: ChargeWalletQueryDto) {
+    const keys = [
+      "tenant",
+      "from",
+      "size",
+      "identifier",
+      "ipgReference",
+      "username",
+      "statusType",
+      "fromDate",
+      "toDate",
+      "fromAmount",
+      "toAmount",
+    ];
+    return this.signGet<any>(this.p("/chargeWallet"), query as any, keys);
+  }
+
+  /** GET /key - user encryption key (Authorization only). */
+  getKey() {
+    return this.client.get<any>(this.p("/key"), {});
+  }
+
+  /** GET /account/owner - account owner name. */
+  getAccountOwner(params: {
+    accountNumber?: string;
+    username?: string;
+    tenantCode?: string;
+    currencyCode?: string;
+  }) {
+    const keys = ["accountNumber", "username", "tenantCode", "currencyCode"];
+    return this.signGet<any>(this.p("/account/owner"), params, keys);
+  }
+
+  /** GET /cashOut/serialNumber/{serialNumber} - cash-out by serial. */
+  cashOutBySerialNumber(serialNumber: string) {
+    return this.signGet<any>(`${this.p("/cashOut/serialNumber")}/${serialNumber}`, {}, []);
+  }
+
+  /** GET /cashOut/externalReference/{externalReference} - cash-out by external ref. */
+  cashOutByExternalReference(externalReference: string) {
+    return this.signGet<any>(
+      `${this.p("/cashOut/externalReference")}/${externalReference}`,
+      {},
+      [],
+    );
   }
 }

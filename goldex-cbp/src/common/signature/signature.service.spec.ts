@@ -23,10 +23,13 @@ describe("SignatureService", () => {
     );
   });
 
-  it("signs with HMAC-SHA256 hex", () => {
+  it("signs with plain SHA-256 over channelKey + payload", () => {
     const raw = "#user#TENANT001#";
-    const secret = "secret-key";
-    const expected = crypto.createHmac("sha256", secret).update(raw).digest("hex");
-    expect(service.sign(raw, secret)).toBe(expected);
+    const channelKey = "secret-key";
+    const expected = crypto
+      .createHash("sha256")
+      .update(channelKey + raw)
+      .digest("hex");
+    expect(service.sign(raw, channelKey)).toBe(expected);
   });
 });

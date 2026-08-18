@@ -1,30 +1,42 @@
+export interface WalletBeneficiary {
+  accountNumber: string;
+  amount: number | string;
+}
+
+export interface IbanBeneficiary {
+  iban: string;
+  amount: number | string;
+}
+
 export class ChargeWalletDto {
-  identifier: string;
-  bankDepositIdentifier?: string;
   tenant: string;
+  identifier: string;
   amount: string | number;
+  callBackUrl: string;
   username?: string;
+  currency?: string;
   payerMobileNumber?: string;
   accountNumber?: string;
-  localDate: string;
-  callBackUrl: string;
-  voucherReference?: string;
+  ipgTenantCode?: string;
+  description?: string;
   autoVerify?: boolean;
   validCards?: string[];
-  description?: string;
+  walletBeneficiaries?: WalletBeneficiary[];
+  ibanBeneficiaries?: IbanBeneficiary[];
+  additionalData?: Record<string, any>;
 }
 
 export class VerifyChargeDto {
-  tenant: string;
   identifier: string;
+  tenant: string;
   amount: string | number;
   reference: string;
+  isVerify?: boolean;
   stan?: string;
-  isVerify: boolean;
 }
 
 export class PaymentOrderDto {
-  sourceAccountNumber?: string;
+  sourceAccountNumber: string;
   amount: string | number;
   beneficiaryId: string;
   beneficiaryName: string;
@@ -39,34 +51,78 @@ export class PaymentOrderDto {
 
 export class TransferDto {
   tenant: string;
-  channel?: string;
-  fromAccountNumber?: string;
-  fromUsername?: string;
-  fromUsernameTenant?: string;
-  toAccountNumber?: string;
-  toUsername?: string;
-  toUsernameTenant?: string;
-  facilityId: string;
   currency: string;
   amount: string | number;
   identifier: string;
-  description?: string;
   stan: string;
   localDate: string;
-  person?: boolean;
-  isCfmTransaction?: boolean;
+  isCfmTransaction: boolean;
+  fromUsername?: string;
+  fromUsernameTenant?: string;
+  fromAccountNumber?: string;
+  toUsername?: string;
+  toUsernameTenant?: string;
+  toAccountNumber?: string;
+  facilityId?: string;
+  person?: string;
+  description?: string;
+  channel?: string;
   bankIban?: string;
 }
 
-export class InquiryDto {
-  localDate: string;
-  stan: string;
-  tenant: string;
+export class ChangePasswordDto {
+  oldPassword: string;
+  password: string;
+  passwordConfirm: string;
 }
 
-export class ReverseDto {
-  amount: string | number;
-  localDate: string;
-  stan: string;
+export interface PageQuery {
+  from: number | string;
+  size: number | string;
+}
+
+export class PaymentOrderQueryDto implements PageQuery {
+  from: number | string;
+  size: number | string;
+  username?: string;
+  tenantCode?: string;
+  state?: string;
+  paymentReference?: string;
+  fromAmount?: number | string;
+  toAmount?: number | string;
+  fromStateDate?: number | string;
+  toStateDate?: number | string;
+}
+
+export class ChargeWalletQueryDto implements PageQuery {
   tenant: string;
+  from: number | string;
+  size: number | string;
+  identifier?: string;
+  ipgReference?: string;
+  username?: string;
+  statusType?: string;
+  fromDate?: string;
+  toDate?: string;
+  fromAmount?: number | string;
+  toAmount?: number | string;
+}
+
+export class TransactionQueryDto implements PageQuery {
+  tenant: string;
+  from: number | string;
+  size: number | string;
+  product?: string;
+  fromDate?: string;
+  toDate?: string;
+  fromTransactionId?: number | string;
+  toTransactionId?: number | string;
+  transactionTypes?: string;
+  voucherReference?: string;
+  invoiceNumber?: string;
+  includeDone?: boolean;
+  includeCanceled?: boolean;
+  includePending?: boolean;
+  transactionSign?: string;
+  ascending?: boolean;
 }

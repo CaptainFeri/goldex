@@ -35,13 +35,11 @@ export class KainoGatewayService implements IPaymentGateway {
     return String(Number(v));
   }
 
-  /** Kaino date format: yyyy/MM/dd HH:mm:ss */
+  /** Kaino date format: yyyyMMdd */
   private now(): string {
     const d = new Date();
     const pad = (n: number) => String(n).padStart(2, "0");
-    return `${d.getFullYear()}/${pad(d.getMonth() + 1)}/${pad(d.getDate())} ${pad(
-      d.getHours(),
-    )}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+    return `${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}`;
   }
 
   private isSuccess(res: any): boolean {
@@ -59,16 +57,13 @@ export class KainoGatewayService implements IPaymentGateway {
     const localDate = this.now();
     const res = await this.wallet.chargeWallet({
       identifier: params.reference,
-      bankDepositIdentifier: params.meta?.bankDepositIdentifier,
       tenant: kaino.tenant,
       amount: this.plainAmount(params.amount),
       username: params.userId,
       payerMobileNumber:
         params.meta?.mobile ?? kaino.payerMobile ?? undefined,
       accountNumber: params.meta?.accountNumber,
-      localDate,
       callBackUrl: params.callbackUrl,
-      voucherReference: params.meta?.voucherReference,
       autoVerify: params.meta?.autoVerify,
       validCards: params.meta?.validCards,
       description: params.meta?.description,
@@ -137,13 +132,15 @@ export class KainoGatewayService implements IPaymentGateway {
   }
 
   async inquiry(payment: GatewayPaymentRef): Promise<GatewayVerifyResult> {
-    const localDate = payment.metadata?.localDate;
-    const stan = payment.stan ?? payment.identifier;
-    if (!localDate) {
-      return { success: false, error: "localDate not stored on payment" };
-    }
-    const res = await this.wallet.inquiry(stan, localDate);
-    return { success: this.isSuccess(res), raw: res };
+    const res = await this.wallet.listTransactions({
+      tenant: this.config.get("app", { infer: true }).kaino.tenant,
+      from: 0,
+      size: 1,
+      voucherReference: payment.identifier,
+    });
+    const items = res?.transactions ?? res?.items ?? [];
+    const found = Array.isArray(items) && items.length > 0 ? items[0] : undefined;
+    return { success: !!found, raw: found };
   }
 
   /**

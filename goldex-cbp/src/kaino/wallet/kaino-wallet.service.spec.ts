@@ -44,16 +44,13 @@ describe("KainoWalletService.chargeWallet", () => {
     const service = new KainoWalletService(client, sig, mockConfig());
 
     await service.chargeWallet({
-      identifier: "PAY001",
-      bankDepositIdentifier: null as any,
       tenant: "TENANT001",
+      identifier: "PAY001",
       amount: "300000",
+      callBackUrl: "https://example.com/callback",
       username: "user123",
       payerMobileNumber: "09123456789",
       accountNumber: "100012345678",
-      localDate: "2026/01/05 12:00:00",
-      callBackUrl: "https://example.com/callback",
-      voucherReference: null as any,
       autoVerify: true,
       validCards: ["603799", "627412"],
       description: "شارژ کیف پول",
@@ -62,19 +59,21 @@ describe("KainoWalletService.chargeWallet", () => {
     expect(buildSpy).toHaveBeenCalledTimes(1);
     const [, keys] = buildSpy.mock.calls[0];
     expect(keys).toEqual([
-      "identifier",
-      "bankDepositIdentifier",
       "tenant",
+      "identifier",
       "amount",
+      "callBackUrl",
       "username",
+      "currency",
       "payerMobileNumber",
       "accountNumber",
-      "localDate",
-      "callBackUrl",
-      "voucherReference",
+      "ipgTenantCode",
+      "description",
       "autoVerify",
       "validCards",
-      "description",
+      "walletBeneficiaries",
+      "ibanBeneficiaries",
+      "additionalData",
     ]);
     expect(
       buildSpy.mock.calls[0][0],
@@ -86,7 +85,7 @@ describe("KainoWalletService.chargeWallet", () => {
     });
   });
 
-  it("signs the raw payload with the configured HMAC-SHA256 secret", async () => {
+  it("signs the raw payload with plain SHA-256 over channelKey + payload", async () => {
     const { client, bodies } = mockClient();
     const service = new KainoWalletService(
       client,
@@ -95,14 +94,13 @@ describe("KainoWalletService.chargeWallet", () => {
     );
 
     await service.chargeWallet({
-      identifier: "PAY001",
       tenant: "TENANT001",
+      identifier: "PAY001",
       amount: "300000",
+      callBackUrl: "https://example.com/callback",
       username: "user123",
       payerMobileNumber: "09123456789",
       accountNumber: "100012345678",
-      localDate: "2026/01/05 12:00:00",
-      callBackUrl: "https://example.com/callback",
       autoVerify: true,
       validCards: ["603799", "627412"],
       description: "شارژ کیف پول",
@@ -110,11 +108,12 @@ describe("KainoWalletService.chargeWallet", () => {
 
     expect(bodies[0].sign).toBe(
       crypto
-        .createHmac("sha256", "secret-key")
+        .createHash("sha256")
         .update(
-          "#PAY001#TENANT001#300000#user123#09123456789#100012345678#" +
-            "2026/01/05 12:00:00#https://example.com/callback#true#" +
-            "603799,627412#شارژ کیف پول#",
+          "secret-key" +
+            "#TENANT001#PAY001#300000#https://example.com/callback#" +
+            "user123#09123456789#100012345678#شارژ کیف پول#true#" +
+            "603799,627412#",
         )
         .digest("hex"),
     );
