@@ -93,10 +93,16 @@ export class KainoWalletService {
     return this.signPost<any>(this.p("/transfer"), dto as any, keys);
   }
 
-  /** POST /chargeWallet - IPG wallet charge. Signs tenant, identifier, amount, callBackUrl. */
+  /** POST /chargeWallet - IPG wallet charge. Sends only tenant, identifier, amount, callBackUrl. */
   async chargeWallet(dto: ChargeWalletDto) {
     const keys = ["tenant", "identifier", "amount", "callBackUrl"];
-    return this.signPost<any>(this.p("/chargeWallet"), dto as any, keys);
+    const params = {
+      tenant: dto.tenant,
+      identifier: dto.identifier,
+      amount: dto.amount,
+      callBackUrl: dto.callBackUrl,
+    };
+    return this.signPost<any>(this.p("/chargeWallet"), params, keys);
   }
 
   /** POST /chargeWallet/verify - final IPG confirmation. */

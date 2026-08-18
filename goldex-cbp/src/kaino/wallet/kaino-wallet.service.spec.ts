@@ -66,12 +66,13 @@ describe("KainoWalletService.chargeWallet", () => {
       .update("#TENANT001#PAY001#300000#https://example.com/callback#")
       .digest("hex");
     expect(bodies[0].sign).toBe(expectedSign);
-    // request params still forwarded unchanged
-    expect(bodies[0]).toMatchObject({
+    // only the documented fields are sent; optional fields are dropped.
+    expect(bodies[0]).toEqual({
       tenant: "TENANT001",
       identifier: "PAY001",
       amount: "300000",
       callBackUrl: "https://example.com/callback",
+      sign: expectedSign,
     });
   });
 });
