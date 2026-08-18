@@ -12,18 +12,13 @@ export class SignatureService {
     const parts = orderedKeys
       .filter(
         (k) =>
-          params[k] !== null &&
-          params[k] !== undefined &&
-          params[k] !== "",
+          params[k] !== null && params[k] !== undefined && params[k] !== "",
       )
-      .map((k) => String(params[k]));
+      .map((k) => params[k]);
     return `#${parts.join("#")}#`;
   }
 
   sign(raw: string, channelKey: string): string {
-    return crypto
-      .createHmac("sha256", channelKey)
-      .update(raw)
-      .digest("hex");
+    return crypto.createHmac("sha256", channelKey).update(raw).digest("hex");
   }
 }
