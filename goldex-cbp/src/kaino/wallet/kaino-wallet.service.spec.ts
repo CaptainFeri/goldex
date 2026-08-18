@@ -39,7 +39,7 @@ function mockClient(): { client: KainoHttpClient; bodies: Record<string, any>[] 
 }
 
 describe("KainoWalletService.chargeWallet", () => {
-  it("signs every request with the constant credential-based sign", async () => {
+  it("signs tenant, identifier, amount and callBackUrl in documented order", async () => {
     const { client, bodies } = mockClient();
     const service = new KainoWalletService(
       client,
@@ -60,10 +60,10 @@ describe("KainoWalletService.chargeWallet", () => {
       description: "شارژ کیف پول",
     });
 
-    // sign is derived from channel username+password, NOT the request params.
+    // sign is derived from the request params, in documented order.
     const expectedSign = crypto
       .createHmac("sha256", "secret-key")
-      .update("#2000004855092#Rr123456@#")
+      .update("#TENANT001#PAY001#300000#https://example.com/callback#")
       .digest("hex");
     expect(bodies[0].sign).toBe(expectedSign);
     // request params still forwarded unchanged
