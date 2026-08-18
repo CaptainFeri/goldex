@@ -85,9 +85,13 @@ export class KainoGatewayService implements IPaymentGateway {
       fallbackReference;
     if (!ipgReference) return undefined;
     const base = this.config.get("app", { infer: true }).kaino;
-    if (res?.payUrl || res?.result?.payUrl || res?.paymentUrl) {
-      return res?.payUrl ?? res?.result?.payUrl ?? res?.paymentUrl;
-    }
+    const link =
+      res?.link ??
+      res?.result?.link ??
+      res?.payUrl ??
+      res?.result?.payUrl ??
+      res?.paymentUrl;
+    if (link) return link;
     return `${base.baseUrl}${base.ipgPayPath}?reference=${encodeURIComponent(ipgReference)}`;
   }
 
