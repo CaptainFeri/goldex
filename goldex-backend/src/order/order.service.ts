@@ -130,9 +130,14 @@ export class OrderService {
         where: { userId, status: CreditStatusEnum.ACTIVE },
       });
       if (activeCredit) {
-        // Credit trading must be allowed by the user's level.
-        const creditEnabled = await this.userLevelService.hasFeature(userId, "CREDIT_TRADING_ENABLED");
-        if (!creditEnabled) {
+        // Credit trading must not be explicitly disabled by the user's level
+        // (absent => allowed, opt-out model).
+        const creditTradingValue = await this.userLevelService.getFeatureValue(userId, "CREDIT_TRADING_ENABLED");
+        const creditTradingDisabled =
+          creditTradingValue !== null &&
+          creditTradingValue !== undefined &&
+          (creditTradingValue === false || creditTradingValue?.enabled === false);
+        if (creditTradingDisabled) {
           throw new BadRequestException("CREDIT_TRADING_DISABLED");
         }
         // Enforce the per-credit max execution (open positions) cap by counting

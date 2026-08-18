@@ -63,8 +63,12 @@ export class CreditService {
       const user = await manager.findOne(UserEntity, { where: { id: dto.userId } });
       if (!user) throw new NotFoundException("User not found");
 
-      const creditTradingEnabled = await this.userLevelService.hasFeature(dto.userId, "CREDIT_TRADING_ENABLED");
-      if (!creditTradingEnabled) {
+      const creditTradingValue = await this.userLevelService.getFeatureValue(dto.userId, "CREDIT_TRADING_ENABLED");
+      const creditTradingDisabled =
+        creditTradingValue !== null &&
+        creditTradingValue !== undefined &&
+        (creditTradingValue === false || creditTradingValue?.enabled === false);
+      if (creditTradingDisabled) {
         throw new BadRequestException("Credit trading is not enabled for this user's level");
       }
 
