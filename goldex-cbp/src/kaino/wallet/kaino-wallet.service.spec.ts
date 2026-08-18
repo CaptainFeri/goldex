@@ -58,20 +58,30 @@ describe("KainoWalletService.chargeWallet", () => {
       autoVerify: true,
       validCards: ["603799", "627412"],
       description: "شارژ کیف پول",
+      localDate: "20260810",
     });
 
-    // sign is derived from the request params, in documented order.
+    // sign is derived from the full 13-field order (dropping empty fields);
+    // localDate participates in the sign but is not sent in the body.
     const expectedSign = crypto
       .createHmac("sha256", "secret-key")
-      .update("#TENANT001#PAY001#300000#https://example.com/callback#")
+      .update(
+        "#PAY001#TENANT001#300000#user123#09123456789#100012345678#20260810#https://example.com/callback#true#شارژ کیف پول#",
+      )
       .digest("hex");
     expect(bodies[0].sign).toBe(expectedSign);
-    // only the documented fields are sent; optional fields are dropped.
+    // the body contains only the documented non-empty fields (+ sign).
     expect(bodies[0]).toEqual({
       tenant: "TENANT001",
       identifier: "PAY001",
       amount: "300000",
       callBackUrl: "https://example.com/callback",
+      username: "user123",
+      payerMobileNumber: "09123456789",
+      accountNumber: "100012345678",
+      autoVerify: true,
+      validCards: ["603799", "627412"],
+      description: "شارژ کیف پول",
       sign: expectedSign,
     });
   });

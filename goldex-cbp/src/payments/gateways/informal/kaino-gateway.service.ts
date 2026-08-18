@@ -67,6 +67,7 @@ export class KainoGatewayService implements IPaymentGateway {
       autoVerify: params.meta?.autoVerify,
       validCards: params.meta?.validCards,
       description: params.meta?.description,
+      localDate,
     });
     return {
       ...res,

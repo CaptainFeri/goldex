@@ -24,6 +24,7 @@ export class ChargeWalletDto {
   walletBeneficiaries?: WalletBeneficiary[];
   ibanBeneficiaries?: IbanBeneficiary[];
   additionalData?: Record<string, any>;
+  localDate?: string;
 }
 
 export class VerifyChargeDto {

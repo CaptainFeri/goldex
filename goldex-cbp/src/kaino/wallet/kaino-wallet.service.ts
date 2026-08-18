@@ -93,16 +93,46 @@ export class KainoWalletService {
     return this.signPost<any>(this.p("/transfer"), dto as any, keys);
   }
 
-  /** POST /chargeWallet - IPG wallet charge. Sends only tenant, identifier, amount, callBackUrl. */
+  /**
+   * POST /chargeWallet - IPG wallet charge.
+   * The sign is built over the full 13-field order documented by support
+   * (dropping empty fields); only the documented non-empty fields are sent in
+   * the body. localDate participates in the sign only and is not sent.
+   */
   async chargeWallet(dto: ChargeWalletDto) {
-    const keys = ["tenant", "identifier", "amount", "callBackUrl"];
-    const params = {
+    const keys = [
+      "identifier",
+      "bankDepositIdentifier",
+      "tenant",
+      "amount",
+      "username",
+      "payerMobileNumber",
+      "accountNumber",
+      "localDate",
+      "callBackUrl",
+      "voucherReference",
+      "autoVerify",
+      "itemText",
+      "description",
+    ];
+    const body: Record<string, any> = {
       tenant: dto.tenant,
       identifier: dto.identifier,
       amount: dto.amount,
       callBackUrl: dto.callBackUrl,
     };
-    return this.signPost<any>(this.p("/chargeWallet"), params, keys);
+    if (dto.username) body.username = dto.username;
+    if (dto.payerMobileNumber) body.payerMobileNumber = dto.payerMobileNumber;
+    if (dto.accountNumber) body.accountNumber = dto.accountNumber;
+    if (dto.description) body.description = dto.description;
+    if (dto.autoVerify !== undefined) body.autoVerify = dto.autoVerify;
+    if (dto.validCards?.length) body.validCards = dto.validCards;
+
+    const signParams = { ...body, localDate: dto.localDate };
+    return this.client.post<any>(this.p("/chargeWallet"), {
+      ...body,
+      sign: this.buildSign(signParams, keys),
+    });
   }
 
   /** POST /chargeWallet/verify - final IPG confirmation. */
