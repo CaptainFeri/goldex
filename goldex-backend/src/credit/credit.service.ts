@@ -910,6 +910,50 @@ export class CreditService {
       credit.notes = reason || credit.notes;
       await manager.save(credit);
 
+      // Claw back the credited amount from every increase wallet (reverse of the
+      // CREDIT_DEPOSIT at creation). Done BEFORE unfreezing collateral so the
+      // just-unfrozen balance isn't mistaken for credit funds.
+      const increasedWallets: Array<{
+        walletId?: string;
+        amount?: number;
+      }> = credit.metadata?.increasedWallets || [];
+      for (const iw of increasedWallets) {
+        if (!iw.walletId || !iw.amount || iw.amount <= 0) continue;
+        const wallet = await manager.findOne(WalletEntity, {
+          where: { id: iw.walletId, userId: credit.userId },
+          lock: { mode: "pessimistic_write" },
+        });
+        if (!wallet || wallet.freeBalance <= 0) continue;
+
+        const clawback = new Decimal(Math.min(wallet.freeBalance, iw.amount));
+        wallet.freeBalance = new Decimal(wallet.freeBalance).minus(clawback).toNumber();
+        wallet.adminNote = `Credit ${credit.creditCode} amount clawed back on cancellation`;
+        await manager.save(wallet);
+
+        const clawbackTxn = manager.create(TransactionEntity, {
+          walletId: wallet.id,
+          transactionId: crypto.randomUUID(),
+          transactionType: TransactionTypeEnum.CREDIT_WITHDRAWAL,
+          status: TransactionStatusEnum.COMPLETED,
+          amount: clawback.toNumber(),
+          fee: 0,
+          description: `Credit ${credit.creditCode} amount of ${clawback.toString()} removed on cancellation`,
+          metadata: { adminId, creditCode: credit.creditCode, creditId: credit.id, reason },
+          completedAt: new Date(),
+        });
+        await manager.save(clawbackTxn);
+
+        await this.logFinanceAction(manager, {
+          adminId,
+          userId: credit.userId,
+          creditId: credit.id,
+          walletId: wallet.id,
+          actionType: CreditActionEnum.CREDIT_CANCELLED,
+          description: `Credit ${credit.creditCode} amount of ${clawback.toString()} clawed back on cancellation`,
+          metadata: { creditCode: credit.creditCode, clawback: clawback.toNumber(), reason },
+        });
+      }
+
       const wallets = await manager.find(WalletEntity, {
         where: { userId: credit.userId },
       });
@@ -1100,14 +1144,33 @@ export class CreditService {
     let repaid = new Decimal(0);
     let liquidated = new Decimal(0);
 
-    // 1. Repay from the credit wallet's free balance.
-    if (creditWallet && owed.greaterThan(0)) {
-      const free = new Decimal(creditWallet.freeBalance);
-      if (free.greaterThan(0)) {
+    // 1. Repay from every increase wallet's free balance (the wallets that
+    //    received the credit at creation), not just the primary one.
+    const increaseWallets: Array<{ walletId?: string; amount?: number }> =
+      credit.metadata?.increasedWallets || [];
+    const increaseWalletIds = new Set(
+      increaseWallets.map((iw) => iw.walletId).filter(Boolean),
+    );
+    // Backwards-compatible fallback: if no increasedWallets metadata exists,
+    // treat the resolved credit wallet as the only increase target.
+    if (!increaseWalletIds.size && creditWallet) {
+      increaseWalletIds.add(creditWallet.id);
+    }
+
+    if (increaseWalletIds.size && owed.greaterThan(0)) {
+      for (const walletId of increaseWalletIds) {
+        if (owed.lessThanOrEqualTo(0)) break;
+        const wallet = await manager.findOne(WalletEntity, {
+          where: { id: walletId as string, userId: credit.userId },
+          lock: { mode: "pessimistic_write" },
+        });
+        if (!wallet) continue;
+        const free = new Decimal(wallet.freeBalance || 0);
+        if (free.lessThanOrEqualTo(0)) continue;
         const repay = Decimal.min(free, owed);
-        creditWallet.freeBalance = free.minus(repay).toNumber();
-        creditWallet.adminNote = `Repaid ${repay.toString()} for credit ${credit.creditCode}`;
-        await manager.save(creditWallet);
+        wallet.freeBalance = free.minus(repay).toNumber();
+        wallet.adminNote = `Repaid ${repay.toString()} for credit ${credit.creditCode}`;
+        await manager.save(wallet);
         owed = owed.minus(repay);
         repaid = repaid.plus(repay);
 
@@ -1115,7 +1178,7 @@ export class CreditService {
           adminId: null,
           userId: credit.userId,
           creditId: credit.id,
-          walletId: creditWallet.id,
+          walletId: wallet.id,
           actionType: CreditActionEnum.CREDIT_SETTLED,
           description: `Credit ${credit.creditCode} repayment of ${repay.toString()} from wallet`,
           metadata: { repay: repay.toString(), creditCode: credit.creditCode },
