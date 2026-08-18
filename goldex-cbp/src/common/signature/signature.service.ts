@@ -22,8 +22,8 @@ export class SignatureService {
 
   sign(raw: string, channelKey: string): string {
     return crypto
-      .createHash("sha256")
-      .update(channelKey + raw)
+      .createHmac("sha256", channelKey)
+      .update(raw)
       .digest("hex");
   }
 }

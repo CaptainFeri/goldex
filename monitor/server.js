@@ -394,6 +394,78 @@ app.get("/api/ocr/train-status", async (_req, res) => {
   }
 });
 
+/**
+ * Parse a Prometheus text exposition payload into { name: value } for
+ * simple single-valued metrics. Multi-line (labels) samples are summed and
+ * tracked per-label under `${name}{label=val}` keys.
+ */
+function parsePrometheus(text) {
+  const out = {};
+  const lastByFamily = {};
+  for (const raw of text.split("\n")) {
+    const line = raw.trim();
+    if (!line || line.startsWith("#")) continue;
+    let name = line.split("{")[0].split(" ")[0];
+    let rest = line.slice(name.length);
+    let labels = {};
+    let value = "0";
+    const lb = rest.match(/^\{([^}]*)\}/);
+    if (lb) {
+      rest = rest.slice(lb[0].length);
+      for (const pair of lb[1].split(",")) {
+        const [k, v] = pair.split("=");
+        if (k) labels[k.trim()] = (v || "").replace(/^"|"$/g, "");
+      }
+    }
+    const vm = rest.trim().match(/^([\d.eE+-]+)/);
+    if (vm) value = vm[1];
+    const n = parseFloat(value) || 0;
+    out[name] = (out[name] || 0) + n;
+    lastByFamily[name] = lastByFamily[name] || {};
+    const labelKey = Object.keys(labels)
+      .map((k) => `${k}=${labels[k]}`)
+      .join(",");
+    if (labelKey) lastByFamily[name][labelKey] = n;
+  }
+  return { totals: out, byLabel: lastByFamily };
+}
+
+function metricSample(parsed, name, labelKey) {
+  return labelKey ? parsed.byLabel[name]?.[labelKey] ?? 0 : parsed.totals[name] ?? 0;
+}
+
+app.get("/api/ocr/usage", async (_req, res) => {
+  try {
+    const text = await new Promise((resolve, reject) => {
+      http
+        .get(`http://${OCR_HOST}:${OCR_PORT}/metrics`, (r) => {
+          let d = "";
+          r.on("data", (c) => (d += c));
+          r.on("end", () => resolve(d));
+        })
+        .on("error", reject);
+    });
+    const parsed = parsePrometheus(text);
+    const total = metricSample(parsed, "ocr_inference_total");
+    const success = metricSample(parsed, "ocr_inference_total", "status=success");
+    const failure = metricSample(parsed, "ocr_inference_total", "status=failure");
+    const durationMs = metricSample(parsed, "ocr_inference_duration_ms_sum");
+    const durationCount = metricSample(parsed, "ocr_inference_duration_ms_count");
+    res.json({
+      total,
+      success,
+      failure,
+      feedback: metricSample(parsed, "ocr_feedback_total"),
+      trainingState: metricSample(parsed, "ocr_training_state"),
+      trainingSamples: metricSample(parsed, "ocr_training_samples"),
+      avgLatencyMs: durationCount ? durationMs / durationCount : 0,
+      inferenceCount: durationCount,
+    });
+  } catch {
+    res.json({ reachable: false });
+  }
+});
+
 app.get("/api/logs/:container", (req, res) => {
   const { container } = req.params;
   if (!/^[a-zA-Z0-9_.-]+$/.test(container)) {
@@ -423,6 +495,109 @@ app.get("/api/debug", (_req, res) => {
         ),
     ),
   ).then((r) => res.json(r));
+});
+
+// ── Test runner ─────────────────────────────────────────────────────────
+
+const REPO_DIR = process.env.REPO_DIR || "/repo";
+const TEST_COMPOSE_FILE =
+  process.env.TEST_COMPOSE_FILE || `${REPO_DIR}/docker-compose.test.yml`;
+
+const TEST_PROJECTS = [
+  { name: "goldex-cbp", dir: `${REPO_DIR}/goldex-cbp`, testCmd: "npx jest --json --outputFile=/tmp/cbp-test.json --coverage --coverageReporters=json-summary --coverageDirectory=/tmp/cbp-cov" },
+  { name: "goldex-backend", dir: `${REPO_DIR}/goldex-backend`, testCmd: "npx jest --json --outputFile=/tmp/backend-test.json --coverage --coverageReporters=json-summary --coverageDirectory=/tmp/backend-cov" },
+  { name: "goldex-pricing-engine", dir: `${REPO_DIR}/goldex-pricing-engine`, testCmd: "npx jest --json --outputFile=/tmp/pricing-test.json --coverage --coverageReporters=json-summary --coverageDirectory=/tmp/pricing-cov" },
+];
+
+let testRun = { running: false, startedAt: null, finishedAt: null, compose: [], projects: [], lastError: null };
+
+function runCmd(cmd, opts = {}) {
+  return new Promise((resolve) => {
+    const { exec } = require("child_process");
+    exec(cmd, { timeout: 300000, maxBuffer: 32 * 1024 * 1024, ...opts }, (err, stdout, stderr) => {
+      resolve({ code: err ? err.code ?? 1 : 0, stdout: stdout || "", stderr: stderr || "", error: err?.message || null });
+    });
+  });
+}
+
+function parseJestJson(jsonFile, covDir) {
+  try {
+    const fs = require("fs");
+    if (!fs.existsSync(jsonFile)) return null;
+    const data = JSON.parse(fs.readFileSync(jsonFile, "utf8"));
+    let summary = null;
+    try {
+      summary = JSON.parse(
+        fs.readFileSync(`${covDir}/coverage-summary.json`, "utf8"),
+      ).total;
+    } catch {}
+    const states = {
+      passed: 0, failed: 0, skipped: 0, pending: 0, total: 0,
+      bySuite: (data.testResults || []).map((suite) => {
+        const passed = (suite.assertionResults || []).filter((t) => t.status === "passed").length;
+        const failed = (suite.assertionResults || []).filter((t) => t.status === "failed").length;
+        const skipped = (suite.assertionResults || []).filter((t) => t.status === "skipped" || t.status === "pending").length;
+        states.passed += passed; states.failed += failed; states.skipped += skipped;
+        states.total += suite.assertionResults?.length || 0;
+        return { name: suite.name, passed, failed, skipped, tests: suite.assertionResults?.length || 0 };
+      }),
+    };
+    states.total = states.passed + states.failed + states.skipped;
+    const cov = summary
+      ? {
+          lines: summary.lines?.pct ?? 0,
+          statements: summary.statements?.pct ?? 0,
+          functions: summary.functions?.pct ?? 0,
+          branches: summary.branches?.pct ?? 0,
+        }
+      : null;
+    return { success: states.failed === 0, numPassed: data.numPassedTests, numFailed: data.numFailedTests, states, coverage: cov, testResults: data.testResults };
+  } catch {
+    return null;
+  }
+}
+
+app.get("/api/tests/state", (_req, res) => {
+  res.json(testRun);
+});
+
+app.post("/api/tests/run", async (_req, res) => {
+  if (testRun.running) {
+    return res.status(409).json({ error: "A test run is already in progress", state: testRun });
+  }
+
+  testRun = { running: true, startedAt: new Date().toISOString(), finishedAt: null, compose: [], projects: [], lastError: null };
+  res.json({ started: true, state: testRun });
+
+  // 1. Bring up the shared test infrastructure.
+  let composeOut = "docker compose unavailable";
+  try {
+    const comp = await runCmd(`docker compose -f "${TEST_COMPOSE_FILE}" up -d --wait`);
+    if (comp.code !== 0) {
+      const legacy = await runCmd(`docker-compose -f "${TEST_COMPOSE_FILE}" up -d`);
+      composeOut = comp.stdout + comp.stderr + (legacy.code === 0 ? "" : "\n" + legacy.stderr);
+    } else {
+      composeOut = comp.stdout + comp.stderr;
+    }
+  } catch (e) {
+    composeOut = `Failed to run compose: ${e.message}`;
+  }
+  testRun.compose = [{ command: "docker compose up -d", output: composeOut }];
+
+  // 2. Run each project's unit tests with coverage.
+  for (const proj of TEST_PROJECTS) {
+    const entry = { name: proj.name, state: "running", code: null, output: "", result: null };
+    testRun.projects.push(entry);
+    const out = await runCmd(proj.testCmd, { cwd: proj.dir });
+    entry.state = "done";
+    entry.code = out.code;
+    entry.output = (out.stdout + "\n" + out.stderr).trim();
+    entry.result = parseJestJson(`/tmp/${proj.name.replace("goldex-", "")}-test.json`, `/tmp/${proj.name.replace("goldex-", "")}-cov`);
+    if (!entry.result) entry.result = { success: false, error: "Could not parse jest JSON output" };
+  }
+
+  testRun.running = false;
+  testRun.finishedAt = new Date().toISOString();
 });
 
 app.listen(PORT, () =>

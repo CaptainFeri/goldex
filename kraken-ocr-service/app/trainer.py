@@ -11,6 +11,7 @@ import uuid
 from pathlib import Path
 
 from app.image import decode_base64
+from app.metrics import training_samples, training_state
 
 logger = logging.getLogger("kraken-ocr")
 
@@ -53,6 +54,7 @@ class SelfTrainer:
             "error": None,
             "sample_count": 0,
         }
+        training_state.set(1)
         logger.info("Self-training started")
 
         try:
@@ -67,6 +69,8 @@ class SelfTrainer:
                 "error": None,
                 "sample_count": result.get("samples", 0),
             }
+            training_state.set(2)
+            training_samples.set(result.get("samples", 0))
             logger.info("Self-training completed: %s", result)
         except Exception as e:
             logger.error("Self-training failed: %s", e, exc_info=True)
@@ -78,6 +82,8 @@ class SelfTrainer:
                 "error": str(e),
                 "sample_count": 0,
             }
+            training_state.set(3)
+            training_samples.set(0)
         finally:
             self._training = False
 

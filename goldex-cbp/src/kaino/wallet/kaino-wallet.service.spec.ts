@@ -85,7 +85,7 @@ describe("KainoWalletService.chargeWallet", () => {
     });
   });
 
-  it("signs the raw payload with plain SHA-256 over channelKey + payload", async () => {
+  it("signs the raw payload with HMAC-SHA256 using the channel key", async () => {
     const { client, bodies } = mockClient();
     const service = new KainoWalletService(
       client,
@@ -108,10 +108,9 @@ describe("KainoWalletService.chargeWallet", () => {
 
     expect(bodies[0].sign).toBe(
       crypto
-        .createHash("sha256")
+        .createHmac("sha256", "secret-key")
         .update(
-          "secret-key" +
-            "#TENANT001#PAY001#300000#https://example.com/callback#" +
+          "#TENANT001#PAY001#300000#https://example.com/callback#" +
             "user123#09123456789#100012345678#شارژ کیف پول#true#" +
             "603799,627412#",
         )

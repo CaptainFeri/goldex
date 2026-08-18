@@ -9,6 +9,7 @@ import aio_pika
 from pydantic import ValidationError
 
 from app.image import decode_base64, open_image, resize_image, validate_image
+from app.metrics import inference_duration, inference_total
 from app.schemas import OCRJobMessage, OCRResultMessage
 
 logger = logging.getLogger("kraken-ocr")
@@ -100,6 +101,8 @@ class OCRWorker:
             texts = await self._model.predict(bw, seg)
 
             elapsed = (time.monotonic() - start) * 1000
+            inference_duration.observe(elapsed)
+            inference_total.labels(status="success").inc()
             return OCRResultMessage(
                 job_id=job.job_id,
                 success=True,
@@ -109,6 +112,8 @@ class OCRWorker:
             )
         except Exception as e:
             elapsed = (time.monotonic() - start) * 1000
+            inference_duration.observe(elapsed)
+            inference_total.labels(status="failure").inc()
             logger.error("Processing error for job %s: %s", job.job_id, e, exc_info=True)
             return OCRResultMessage(
                 job_id=job.job_id,

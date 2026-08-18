@@ -165,6 +165,9 @@ services:
       EXTERNAL_HOST: ${EXTERNAL_HOST:-http://localhost}
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
+      # Read-only mount of the repo so the monitor can run the unit test
+      # suites (jest) for goldex-cbp / goldex-backend / goldex-pricing-engine.
+      - ./:/repo:ro
     networks:
       - goldex-network
     logging: *default-logging

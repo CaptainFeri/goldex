@@ -246,6 +246,13 @@ h1 small{font-size:12px;color:var(--text2);font-weight:400;letter-spacing:0;disp
   background:var(--surface);border:1px solid var(--border);
   padding:4px 10px;border-radius:6px;font-size:11px;color:var(--text3);
 }
+.section button{
+  background:var(--surface);border:1px solid var(--border);
+  color:var(--text2);padding:8px 20px;border-radius:8px;
+  cursor:pointer;font-size:12px;font-weight:600;transition:all .2s;
+}
+.section button:hover:not(:disabled){background:var(--surface2);border-color:var(--blue);color:var(--text)}
+.section button:disabled{opacity:.5;cursor:not-allowed}
 
 /* Responsive */
 @media(max-width:600px){
@@ -289,6 +296,15 @@ h1 small{font-size:12px;color:var(--text2);font-weight:400;letter-spacing:0;disp
 <section class="section">
   <div class="section-title">OCR Service</div>
   <div class="ocr-grid" id="ocrGrid"></div>
+</section>
+
+<section class="section">
+  <div class="section-title">Test Runner</div>
+  <div style="display:flex;gap:10px;align-items:center;margin-bottom:12px">
+    <button id="testRunBtn" onclick="startTestRun()">▶ Run Unit Tests</button>
+    <span id="testRunStatus" style="font-size:12px;color:var(--text2)"></span>
+  </div>
+  <div id="testResults" style="display:grid;gap:12px"></div>
 </section>
 
 <div id="svcSections"></div>
@@ -351,18 +367,19 @@ function updateChart(chart, data) {
 
 async function load() {
   try {
-    const [sys, svcs, history, ocrHealth, ocrTrain] = await Promise.all([
+    const [sys, svcs, history, ocrHealth, ocrTrain, ocrUsage] = await Promise.all([
       fetch("/api/system").then(r => r.json()),
       fetch("/api/services").then(r => r.json()),
       fetch("/api/system/history").then(r => r.json()),
       fetch("/api/ocr/health").then(r => r.json()),
       fetch("/api/ocr/train-status").then(r => r.json()),
+      fetch("/api/ocr/usage").then(r => r.json()),
     ]);
     renderSys(sys);
     updateChart(cpuChart, history.cpu);
     updateChart(memChart, history.mem);
     updateChart(diskChart, history.disk);
-    renderOcr(ocrHealth, ocrTrain);
+    renderOcr(ocrHealth, ocrTrain, ocrUsage);
     renderSvcs(svcs);
     const up = svcs.filter(s => s.alive).length;
     const total = svcs.length;
@@ -378,12 +395,14 @@ async function load() {
   }
 }
 
-function renderOcr(health, train) {
+function renderOcr(health, train, usage) {
   const loaded = health?.model_loaded;
   const state = train?.state || 'unknown';
   const statusDot = loaded ? 'online' : 'offline';
   const stateDot = state === 'training' ? 'training' : state === 'completed' ? 'online' : state === 'failed' ? 'offline' : 'offline';
   const stateLabel = state === 'idle' ? 'Idle' : state === 'training' ? 'Training' : state === 'completed' ? 'Completed' : state === 'failed' ? 'Failed' : state || 'Unreachable';
+  const reachable = usage?.reachable !== false;
+  const avgLat = usage?.avgLatencyMs ?? 0;
 
   document.getElementById('ocrGrid').innerHTML = `
     <div class="ocr-card">
@@ -406,6 +425,21 @@ function renderOcr(health, train) {
       <div class="ocr-label">Last Training</div>
       <div class="ocr-value" style="font-size:15px">${train?.last_train_at ? new Date(train.last_train_at * 1000).toLocaleString() : 'Never'}</div>
       <div class="ocr-sub">${train?.error ? 'Error: ' + train.error : ''}</div>
+    </div>
+    <div class="ocr-card">
+      <div class="ocr-label">Inferences</div>
+      <div class="ocr-value">${reachable ? (usage?.total ?? 0) : '—'}</div>
+      <div class="ocr-sub">${reachable ? (usage?.success ?? 0) + ' success · ' + (usage?.failure ?? 0) + ' failure' : 'Unreachable'}</div>
+    </div>
+    <div class="ocr-card">
+      <div class="ocr-label">Avg Latency</div>
+      <div class="ocr-value" style="font-size:15px">${reachable ? avgLat.toFixed(1) + ' ms' : '—'}</div>
+      <div class="ocr-sub">across ${usage?.inferenceCount ?? 0} inferences</div>
+    </div>
+    <div class="ocr-card">
+      <div class="ocr-label">Feedback Samples</div>
+      <div class="ocr-value">${reachable ? (usage?.feedback ?? 0) : '—'}</div>
+      <div class="ocr-sub">training sample count: ${usage?.trainingSamples ?? 0}</div>
     </div>
   `;
 }
@@ -611,6 +645,117 @@ function fmtBytes(b) {
   while (v >= 1024 && i < units.length - 1) { v /= 1024; i++; }
   return `${v.toFixed(i > 0 ? 1 : 0)} ${units[i]}`;
 }
+
+let testPollTimer = null;
+
+async function startTestRun() {
+  const btn = document.getElementById("testRunBtn");
+  btn.disabled = true;
+  btn.textContent = "▶ Running...";
+  const status = document.getElementById("testRunStatus");
+  status.textContent = "Starting test compose + unit tests...";
+  document.getElementById("testResults").innerHTML = '<div style="color:var(--text2);font-size:12px">Run started. Results appear when finished (jest can take a while).</div>';
+
+  try {
+    const res = await fetch("/api/tests/run", { method: "POST" });
+    if (!res.ok) {
+      const err = await res.json();
+      status.textContent = err.error || "Could not start run";
+      btn.disabled = false; btn.textContent = "▶ Run Unit Tests";
+      return;
+    }
+    pollTestRun();
+  } catch {
+    status.textContent = "Failed to start test run";
+    btn.disabled = false; btn.textContent = "▶ Run Unit Tests";
+  }
+}
+
+function pollTestRun() {
+  clearInterval(testPollTimer);
+  testPollTimer = setInterval(async () => {
+    try {
+      const state = await fetch("/api/tests/state").then(r => r.json());
+      const status = document.getElementById("testRunStatus");
+      if (state.running) {
+        const done = state.projects.filter(p => p.state === 'done').length;
+        status.textContent = `Running... ${done}/${state.projects.length} projects done`;
+        return;
+      }
+      clearInterval(testPollTimer);
+      const btn = document.getElementById("testRunBtn");
+      btn.disabled = false;
+      btn.textContent = "▶ Run Unit Tests";
+      status.textContent = state.finishedAt ? `Finished ${new Date(state.finishedAt).toLocaleTimeString()}` : "";
+      renderTestResults(state);
+    } catch {
+      clearInterval(testPollTimer);
+      const btn = document.getElementById("testRunBtn");
+      btn.disabled = false;
+      btn.textContent = "▶ Run Unit Tests";
+    }
+  }, 2000);
+}
+
+function renderTestResults(state) {
+  const wrap = document.getElementById("testResults");
+  wrap.innerHTML = state.projects.map(p => {
+    const r = p.result;
+    const cov = r?.coverage;
+    const badge = p.state === 'done' ? (r?.success ? '✓ PASS' : '✕ FAIL') : 'running';
+    const badgeColor = r?.success ? 'var(--green)' : 'var(--red)';
+    const covHtml = cov ? `
+      <div style="display:flex;gap:16px;margin-top:6px;font-size:11px;color:var(--text2)">
+        <span>Lines <b>${cov.lines.toFixed(1)}%</b></span>
+        <span>Statements <b>${cov.statements.toFixed(1)}%</b></span>
+        <span>Functions <b>${cov.functions.toFixed(1)}%</b></span>
+        <span>Branches <b>${cov.branches.toFixed(1)}%</b></span>
+      </div>` : '<div style="color:var(--text2);font-size:11px;margin-top:6px">Coverage not available</div>';
+
+    const suites = r?.states?.bySuite?.map(s =>
+      `<div style="display:flex;justify-content:space-between;font-size:11px;padding:3px 0;border-bottom:1px solid var(--border)">
+        <span style="color:var(--text1);word-break:break-all">${escHtml(s.name)}</span>
+        <span style="white-space:nowrap">
+          <span style="color:var(--green)">${s.passed}✓</span>
+          <span style="color:var(--red)">${s.failed}✕</span>
+          <span style="color:var(--text2)">${s.skipped}−</span>
+        </span>
+      </div>`).join('') || '<div style="color:var(--text2);font-size:11px">No suites reported</div>';
+
+    return `
+      <div class="ocr-card" style="padding:14px">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+          <span style="font-weight:700">${escHtml(p.name)}</span>
+          <span style="font-size:11px;font-weight:700;color:${badgeColor}">${badge}</span>
+        </div>
+        ${r ? `
+          <div style="font-size:12px;color:var(--text2)">
+            ${r.numPassed ?? 0} passed · ${r.numFailed ?? 0} failed · ${r.states?.skipped ?? 0} skipped
+          </div>
+          ${covHtml}
+          <details style="margin-top:8px">
+            <summary style="cursor:pointer;font-size:11px;color:var(--blue)">Test suites (${r.states?.bySuite?.length ?? 0})</summary>
+            <div style="margin-top:6px;max-height:220px;overflow:auto">${suites}</div>
+          </details>
+        ` : '<div style="color:var(--red);font-size:12px">' + escHtml(r?.error || 'No result') + '</div>'}
+      </div>`;
+  }).join('');
+
+  const comp = state.compose?.[0];
+  if (comp && comp.output) {
+    const err = document.createElement("details");
+    err.innerHTML = `<summary style="cursor:pointer;font-size:11px;color:var(--amber);margin-top:8px">Test infra (docker compose) output</summary>
+      <pre style="white-space:pre-wrap;font-size:10px;color:var(--text2);max-height:160px;overflow:auto;margin-top:6px">${escHtml(comp.output)}</pre>`;
+    wrap.appendChild(err);
+  }
+}
+
+window.addEventListener('load', async () => {
+  try {
+    const state = await fetch("/api/tests/state").then(r => r.json());
+    if (!state.running) renderTestResults(state);
+  } catch {}
+});
 </script>
 </body>
 </html>

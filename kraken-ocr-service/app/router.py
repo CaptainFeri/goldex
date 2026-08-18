@@ -13,7 +13,12 @@ from app.image import (
     save_feedback_sample,
     validate_image,
 )
-from app.metrics import metrics_endpoint
+from app.metrics import (
+    feedback_total,
+    inference_duration,
+    inference_total,
+    metrics_endpoint,
+)
 from app.schemas import (
     HealthResponse,
     OCRBatchRequest,
@@ -91,11 +96,15 @@ async def ocr(
         texts = await model.predict(bw, seg)
 
         elapsed = (time.monotonic() - start) * 1000
+        inference_duration.observe(elapsed)
+        inference_total.labels(status="success").inc()
         return OCRResponse(
             success=True, texts=texts, processing_time_ms=round(elapsed, 2)
         )
     except Exception as e:
         elapsed = (time.monotonic() - start) * 1000
+        inference_duration.observe(elapsed)
+        inference_total.labels(status="failure").inc()
         logger.error("OCR error: %s", e, exc_info=True)
         return OCRResponse(
             success=False, error=str(e), processing_time_ms=round(elapsed, 2)
@@ -135,6 +144,7 @@ def feedback(
             payload.original_texts,
             payload.corrected_texts,
         )
+        feedback_total.inc()
         logger.info(
             "Feedback saved: sample_id=%s corrections=%d",
             sample_id,
