@@ -15,14 +15,16 @@ import {
 
 /**
  * Kaino wallet API client.
- * Every endpoint (except login) is signed with plain SHA-256 over
- * `channelKey + '#param1#param2#'`, where the payload is built from the
- * exact documented key order and non-empty params only.
+ * Every endpoint (except login) is authenticated with the login token in the
+ * `Authorization` header and signed with a CONSTANT sign computed once from the
+ * channel `username + password` (not the per-request params):
+ *     sign = HMAC-SHA256(channelKey, '#username#password#')
+ * All requests carry this same sign regardless of their parameters.
  */
 @Injectable()
 export class KainoWalletService {
   private readonly tenant: string;
-  private readonly channelKey: string;
+  private readonly sign: string;
   private readonly prefix: string;
 
   constructor(
@@ -32,83 +34,49 @@ export class KainoWalletService {
   ) {
     const kaino = this.config.get("app", { infer: true }).kaino;
     this.tenant = kaino.tenant;
-    this.channelKey = kaino.secret;
     this.prefix = kaino.walletPathPrefix;
+    // The sign is fixed: built from the channel credentials once and reused on
+    // every request (matches the documented #username#password# payload).
+    this.sign = this.sig.sign(
+      this.sig.build({ username: kaino.username, password: kaino.password }, [
+        "username",
+        "password",
+      ]),
+      kaino.secret,
+    );
   }
 
   private p(path: string): string {
     return `${this.prefix}${path}`;
   }
 
-  private buildSign(params: Record<string, any>, keys: string[]): string {
-    return this.sig.sign(this.sig.build(params, keys), this.channelKey);
-  }
-
-  private signPost<T>(path: string, params: Record<string, any>, keys: string[]): Promise<T> {
+  private signPost<T>(path: string, params: Record<string, any>): Promise<T> {
     return this.client.post<T>(path, {
       ...params,
-      sign: this.buildSign(params, keys),
+      sign: this.sign,
     });
   }
 
-  private signGet<T>(path: string, params: Record<string, any>, keys: string[]): Promise<T> {
+  private signGet<T>(path: string, params: Record<string, any>): Promise<T> {
     return this.client.get<T>(path, {
       ...params,
-      sign: this.buildSign(params, keys),
+      sign: this.sign,
     });
   }
 
   /** POST /transfer - internal wallet transfer. */
   async transfer(dto: TransferDto) {
-    const keys = [
-      "fromUsername",
-      "fromUsernameTenant",
-      "fromAccountNumber",
-      "toAccountNumber",
-      "toUsername",
-      "toUsernameTenant",
-      "facilityId",
-      "tenant",
-      "currency",
-      "amount",
-      "identifier",
-      "person",
-      "description",
-      "channel",
-      "stan",
-      "isCfmTransaction",
-      "bankIban",
-      "localDate",
-    ];
-    return this.signPost<any>(this.p("/transfer"), dto as any, keys);
+    return this.signPost<any>(this.p("/transfer"), dto as any);
   }
 
   /** POST /chargeWallet - IPG wallet charge. */
   async chargeWallet(dto: ChargeWalletDto) {
-    const keys = [
-      "tenant",
-      "identifier",
-      "amount",
-      "callBackUrl",
-      "username",
-      "currency",
-      "payerMobileNumber",
-      "accountNumber",
-      "ipgTenantCode",
-      "description",
-      "autoVerify",
-      "validCards",
-      "walletBeneficiaries",
-      "ibanBeneficiaries",
-      "additionalData",
-    ];
-    return this.signPost<any>(this.p("/chargeWallet"), dto as any, keys);
+    return this.signPost<any>(this.p("/chargeWallet"), dto as any);
   }
 
   /** POST /chargeWallet/verify - final IPG confirmation. */
   async verifyCharge(dto: VerifyChargeDto) {
-    const keys = ["identifier", "tenant", "amount", "reference", "isVerify", "stan"];
-    return this.signPost<any>(this.p("/chargeWallet/verify"), dto as any, keys);
+    return this.signPost<any>(this.p("/chargeWallet/verify"), dto as any);
   }
 
   /** POST /paymentOrder - PAYA transfer. */
@@ -122,26 +90,12 @@ export class KainoWalletService {
   }
 
   private paymentOrder(dto: PaymentOrderDto, path: string) {
-    const keys = [
-      "sourceAccountNumber",
-      "amount",
-      "beneficiaryId",
-      "beneficiaryName",
-      "beneficiaryIban",
-      "externalReference",
-      "description",
-      "username",
-      "tenant",
-      "stan",
-      "localDate",
-    ];
-    return this.signPost<any>(path, dto as any, keys);
+    return this.signPost<any>(path, dto as any);
   }
 
   /** POST /changePassword - change password. */
   async changePassword(dto: ChangePasswordDto) {
-    const keys = ["oldPassword", "password", "passwordConfirm"];
-    return this.signPost<any>(this.p("/changePassword"), dto as any, keys);
+    return this.signPost<any>(this.p("/changePassword"), dto as any);
   }
 
   /** GET /balance - simple account balance (Authorization only). */
@@ -156,70 +110,27 @@ export class KainoWalletService {
 
   /** GET /transaction - paginated wallet transactions. */
   listTransactions(query: TransactionQueryDto) {
-    const keys = [
-      "tenant",
-      "from",
-      "size",
-      "product",
-      "fromDate",
-      "toDate",
-      "fromTransactionId",
-      "toTransactionId",
-      "transactionTypes",
-      "voucherReference",
-      "invoiceNumber",
-      "includeDone",
-      "includeCanceled",
-      "includePending",
-      "transactionSign",
-      "ascending",
-    ];
-    return this.signGet<any>(this.p("/transaction"), query as any, keys);
+    return this.signGet<any>(this.p("/transaction"), query as any);
   }
 
   /** GET /transaction/info/{id} - transaction detail. */
   transactionInfo(id: number | string, tenant: string = this.tenant) {
-    return this.signGet<any>(`${this.p("/transaction/info")}/${id}`, { tenant }, ["tenant"]);
+    return this.signGet<any>(`${this.p("/transaction/info")}/${id}`, { tenant });
   }
 
   /** GET /transaction/data/{id} - full transaction data with relationships. */
   transactionData(id: number | string, tenant: string = this.tenant) {
-    return this.signGet<any>(`${this.p("/transaction/data")}/${id}`, { tenant }, ["tenant"]);
+    return this.signGet<any>(`${this.p("/transaction/data")}/${id}`, { tenant });
   }
 
   /** GET /paymentOrder - paginated payment orders (PAYA/SATNA). */
   listPaymentOrders(query: PaymentOrderQueryDto) {
-    const keys = [
-      "from",
-      "size",
-      "username",
-      "tenantCode",
-      "state",
-      "paymentReference",
-      "fromAmount",
-      "toAmount",
-      "fromStateDate",
-      "toStateDate",
-    ];
-    return this.signGet<any>(this.p("/paymentOrder"), query as any, keys);
+    return this.signGet<any>(this.p("/paymentOrder"), query as any);
   }
 
   /** GET /chargeWallet - paginated IPG charges. */
   listChargeWallets(query: ChargeWalletQueryDto) {
-    const keys = [
-      "tenant",
-      "from",
-      "size",
-      "identifier",
-      "ipgReference",
-      "username",
-      "statusType",
-      "fromDate",
-      "toDate",
-      "fromAmount",
-      "toAmount",
-    ];
-    return this.signGet<any>(this.p("/chargeWallet"), query as any, keys);
+    return this.signGet<any>(this.p("/chargeWallet"), query as any);
   }
 
   /** GET /key - user encryption key (Authorization only). */
@@ -234,13 +145,12 @@ export class KainoWalletService {
     tenantCode?: string;
     currencyCode?: string;
   }) {
-    const keys = ["accountNumber", "username", "tenantCode", "currencyCode"];
-    return this.signGet<any>(this.p("/account/owner"), params, keys);
+    return this.signGet<any>(this.p("/account/owner"), params);
   }
 
   /** GET /cashOut/serialNumber/{serialNumber} - cash-out by serial. */
   cashOutBySerialNumber(serialNumber: string) {
-    return this.signGet<any>(`${this.p("/cashOut/serialNumber")}/${serialNumber}`, {}, []);
+    return this.signGet<any>(`${this.p("/cashOut/serialNumber")}/${serialNumber}`, {});
   }
 
   /** GET /cashOut/externalReference/{externalReference} - cash-out by external ref. */
@@ -248,7 +158,6 @@ export class KainoWalletService {
     return this.signGet<any>(
       `${this.p("/cashOut/externalReference")}/${externalReference}`,
       {},
-      [],
     );
   }
 }
