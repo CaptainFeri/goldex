@@ -10,6 +10,7 @@ import { CreditNotificationEntity } from "./entity/credit-notification.entity";
 import { WalletEntity } from "../wallet/entities/wallet.entity";
 import { TransactionEntity } from "../wallet/entities/transaction.entity";
 import { SymbolEntity } from "../admin-symbol/entity/symbol.entity";
+import { PricePairEntity } from "../admin-pair/entity/price.pair.entity";
 import { UserEntity } from "../user/entity/user.entity";
 import { FinanceLogEntity } from "../finance-log/entity/finance-log.entity";
 import { AdminScheduleModule } from "../admin-schedule/admin-schedule.module";
@@ -24,6 +25,7 @@ import { UserLevelModule } from "../user-level/user-level.module";
       WalletEntity,
       TransactionEntity,
       SymbolEntity,
+      PricePairEntity,
       UserEntity,
       FinanceLogEntity,
     ]),

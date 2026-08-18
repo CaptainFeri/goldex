@@ -129,8 +129,22 @@ export class OrderService {
       const activeCredit = await this.creditRepo.findOne({
         where: { userId, status: CreditStatusEnum.ACTIVE },
       });
-      if (activeCredit && activeCredit.maxExecutionTradeLevel != null && activeCredit.executedTradeLevel >= activeCredit.maxExecutionTradeLevel) {
-        throw new BadRequestException("CREDIT_EXECUTION_LIMIT_REACHED");
+      if (activeCredit) {
+        // Credit trading must be allowed by the user's level.
+        const creditEnabled = await this.userLevelService.hasFeature(userId, "CREDIT_TRADING_ENABLED");
+        if (!creditEnabled) {
+          throw new BadRequestException("CREDIT_TRADING_DISABLED");
+        }
+        // Enforce the per-credit max execution (open positions) cap by counting
+        // currently-active credit-linked orders.
+        if (activeCredit.maxExecutionTradeLevel != null) {
+          const activeCount = await this.creditOrderRepo.count({
+            where: { creditId: activeCredit.id, status: CreditOrderStatusEnum.ACTIVE },
+          });
+          if (activeCount >= activeCredit.maxExecutionTradeLevel) {
+            throw new BadRequestException("CREDIT_EXECUTION_LIMIT_REACHED");
+          }
+        }
       }
 
       const orderCode = this.generateOrderCode(dto.side, dto.orderType);

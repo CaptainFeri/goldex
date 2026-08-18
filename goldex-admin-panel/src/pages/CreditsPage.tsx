@@ -23,6 +23,12 @@ const fmtNum = (n: any) => (n ?? 0).toLocaleString("fa-IR");
 const fmtDate = (d: string | null) =>
   d ? new Date(d).toLocaleDateString("fa-IR", { year: "numeric", month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }) : "—";
 
+// A credit that triggered a margin call stays ACTIVE but all the user's wallets
+// are frozen (blocked) until the admin settles/cancels it. Detect it from the
+// linked credit orders.
+const isMarginCalled = (c: Credit) =>
+  c.status === "ACTIVE" && (c.creditOrders || []).some((o) => o?.status === "MARGIN_CALLED");
+
 export default function CreditsPage() {
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
@@ -84,6 +90,7 @@ export default function CreditsPage() {
                 <th>بازه اخطار</th>
                 <th>انقضا</th>
                 <th>فراخوان سرمایه</th>
+                <th>سطح اجرا</th>
                 <th>عملیات</th>
               </tr>
             </thead>
@@ -95,13 +102,23 @@ export default function CreditsPage() {
                     {c.user ? `${c.user.firstName ?? ""} ${c.user.lastName ?? ""}`.trim() || c.user.phone || c.user.email || c.userId : c.userId}
                   </td>
                   <td>{fmtNum(c.amount)}</td>
-                  <td><Badge kind={STATUS_KINDS[c.status] as "green" | "red" | "gold" | "gray"}>{STATUS_LABELS[c.status]}</Badge></td>
+                  <td>
+                    <div style={{ display: "flex", gap: 4, alignItems: "center", flexWrap: "wrap" }}>
+                      <Badge kind={STATUS_KINDS[c.status] as "green" | "red" | "gold" | "gray"}>{STATUS_LABELS[c.status]}</Badge>
+                      {isMarginCalled(c) && <Badge kind="red">مسدود / فراخوان</Badge>}
+                    </div>
+                  </td>
                   <td>{c.reminderTimerHours}h</td>
                   <td>{fmtDate(c.expireAt)}</td>
                   <td>
                     {c.hasCallMargin
                       ? <Badge kind="gold">{c.callMarginPercent ?? "—"}%</Badge>
                       : <Badge kind="gray">ندارد</Badge>}
+                  </td>
+                  <td>
+                    {c.maxExecutionTradeLevel != null
+                      ? `${c.executedTradeLevel ?? 0}/${c.maxExecutionTradeLevel}`
+                      : "—"}
                   </td>
                   <td>
                     <div className="row" style={{ gap: 4 }}>
@@ -134,7 +151,8 @@ export default function CreditsPage() {
 function CreateCreditModal({ onClose, onSave, loading }: { onClose: () => void; onSave: (d: any) => void; loading: boolean }) {
   const [form, setForm] = useState({
     userId: "", amount: 0, hasCallMargin: false, callMarginPercent: 0,
-    reminderTimerHours: 24, expireAt: "", notes: "",
+    reminderTimerHours: 24, expireAt: "", notes: "", maxExecutionTradeLevel: 0,
+    creditWalletId: "",
   });
   const [frozenWallets, setFrozenWallets] = useState<Record<string, number>>({});
   const [err, setErr] = useState("");
@@ -153,14 +171,15 @@ function CreateCreditModal({ onClose, onSave, loading }: { onClose: () => void; 
       const res = await api.get("/admin/wallets/all-wallets");
       const payload = res.data?.data ?? {};
       const list = Array.isArray(payload.data) ? payload.data : [];
-      return list.filter((w: any) =>
-        w.userId === form.userId &&
-        w.symbol?.symbolType === "material" &&
-        Number(w.calculatedStats?.availableBalance ?? w.freeBalance - w.frozenFreeBalance) > 0
-      );
+      return list.filter((w: any) => w.userId === form.userId);
     },
     enabled: !!form.userId,
   });
+
+  // Material wallets that can be frozen as collateral.
+  const materialWallets = (userWallets.data ?? []).filter((w: any) => w.symbol?.symbolType === "material");
+  // All wallets (incl. RIAL) eligible to receive the credit amount.
+  const creditWalletOptions = (userWallets.data ?? []).filter((w: any) => w.symbol?.symbolType !== "material" || true);
 
   const avail = (w: any) => Number(w.calculatedStats?.availableBalance ?? w.freeBalance - w.frozenFreeBalance);
 
@@ -185,7 +204,13 @@ function CreateCreditModal({ onClose, onSave, loading }: { onClose: () => void; 
     const fw = Object.entries(frozenWallets).filter(([, v]) => v > 0).map(([walletId, amount]) => ({ walletId, amount }));
     if (fw.length === 0) { setErr("حداقل یک دارایی برای مسدود کردن انتخاب کنید"); return; }
     setErr("");
-    onSave({ ...form, amount: Number(form.amount), frozenWallets: fw });
+    onSave({
+      ...form,
+      amount: Number(form.amount),
+      maxExecutionTradeLevel: form.maxExecutionTradeLevel > 0 ? form.maxExecutionTradeLevel : undefined,
+      creditWalletId: form.creditWalletId || undefined,
+      frozenWallets: fw,
+    });
   };
 
   return (
@@ -208,8 +233,18 @@ function CreateCreditModal({ onClose, onSave, loading }: { onClose: () => void; 
           </div>
 
           <div className="field">
-            <label>مبلغ (ریال)</label>
-            <input className="input" type="number" min={0} placeholder="مبلغ به ریال" value={form.amount} onChange={(e) => setForm({ ...form, amount: +e.target.value })} />
+            <label>کیف‌پول دریافت اعتبار</label>
+            <select className="select" value={form.creditWalletId} onChange={(e) => setForm({ ...form, creditWalletId: e.target.value })}>
+              <option value="">ریال (پیش‌فرض)</option>
+              {form.userId && creditWalletOptions.map((w: any) => (
+                <option key={w.id} value={w.id}>{w.symbol?.slug || w.symbol?.name}</option>
+              ))}
+            </select>
+          </div>
+
+          <div className="field">
+            <label>مبلغ</label>
+            <input className="input" type="number" min={0} placeholder="مبلغ اعتبار" value={form.amount} onChange={(e) => setForm({ ...form, amount: +e.target.value })} />
           </div>
 
           <div className="field">
@@ -220,6 +255,11 @@ function CreateCreditModal({ onClose, onSave, loading }: { onClose: () => void; 
           <div className="field">
             <label>مدت زمان یادآوری (ساعت)</label>
             <input className="input" type="number" min={1} placeholder="مثال: 24" value={form.reminderTimerHours} onChange={(e) => setForm({ ...form, reminderTimerHours: +e.target.value })} />
+          </div>
+
+          <div className="field">
+            <label>حداکثر سطح اجرا (پوزیشن باز همزمان)</label>
+            <input className="input" type="number" min={0} placeholder="0 = نامحدود" value={form.maxExecutionTradeLevel} onChange={(e) => setForm({ ...form, maxExecutionTradeLevel: +e.target.value })} />
           </div>
 
           <div className="field" style={{ gridColumn: "1 / -1" }}>
@@ -241,11 +281,11 @@ function CreateCreditModal({ onClose, onSave, loading }: { onClose: () => void; 
             <textarea className="input" rows={3} placeholder="توضیحات اضافی…" value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} />
           </div>
 
-          {form.userId && userWallets.data && userWallets.data.length > 0 && (
+          {form.userId && materialWallets.length > 0 && (
             <div className="field" style={{ gridColumn: "1 / -1" }}>
-              <div style={{ fontSize: "0.75rem", color: "var(--text-muted)", marginBottom: 6 }}>انتخاب دارایی‌هایی که مسدود می‌شوند:</div>
+              <div style={{ fontSize: "0.75rem", color: "var(--text-muted)", marginBottom: 6 }}>انتخاب دارایی‌هایی که مسدود می‌شوند (وثیقه):</div>
               <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-                {userWallets.data.map((w: any) => {
+                {materialWallets.map((w: any) => {
                   const a = avail(w);
                   const checked = frozenWallets[w.id] !== undefined;
                   return (
@@ -290,7 +330,9 @@ function SettleCreditModal({ credit, onClose, onSave, loading }: { credit: Credi
     <Modal title={`تسویه اعتبار ${credit.creditCode}`} onClose={onClose}>
       <form className="modal-form" onSubmit={(e) => { e.preventDefault(); onSave({ description: desc, imagePath: imgPath || undefined }); }}>
         <div style={{ background: "var(--bg)", padding: 12, borderRadius: 8, marginBottom: 16, fontSize: 13, color: "var(--text-faint)", lineHeight: 1.6 }}>
-          با تسویه این اعتبار، تمام کیف‌پول‌های کاربر رفع انسداد شده و موجودی‌های مسدود شده آزاد می‌شوند.
+          با تسویه این اعتبار، مبلغ قرض‌گرفته‌شده از کیف‌پول اعتبار بازپس‌گرفته می‌شود؛ در صورت کمبود،
+          دارایی‌های مسدودشده (وثیقه) برای پوشش آن نقد می‌شوند. سپس کیف‌پول‌های کاربر رفع انسداد شده و
+          کاربر می‌تواند دوباره معامله کند. {isMarginCalled(credit) && "این اعتبار به‌دلیل فراخوان سرمایه مسدود شده و تسویه آن کاربر را رفع انسداد می‌کند."}
         </div>
 
         <div className="form-grid">

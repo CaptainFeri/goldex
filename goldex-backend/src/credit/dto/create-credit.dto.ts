@@ -19,6 +19,13 @@ export class CreateCreditDto {
   @IsUUID()
   userId: string;
 
+  // Optional wallet that receives the credit amount. Defaults to the user's RIAL
+  // wallet when omitted. The credit amount is denominated in this wallet's symbol.
+  @ApiProperty({ required: false, description: "Optional wallet to credit the amount into (defaults to RIAL wallet)" })
+  @IsOptional()
+  @IsUUID()
+  creditWalletId?: string;
+
   @ApiProperty()
   @IsNumber()
   @Min(0)

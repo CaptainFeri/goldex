@@ -1,11 +1,13 @@
 import { Injectable, OnModuleInit, Logger } from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
+import { EventEmitter2 } from "@nestjs/event-emitter";
 import { Repository } from "typeorm";
 import { PricePairEntity } from "../admin-pair/entity/price.pair.entity";
 import { SymbolEntity } from "../admin-symbol/entity/symbol.entity";
 import { UserMarketTypeEntity } from "../user/entity/user.market.type.entity";
 import { UserEntity } from "../user/entity/user.entity";
 import { defaultMarketTypesForRole } from "../shared/market-access.helper";
+import { CreditEvents } from "../shared/constants/events.constants";
 import { Cron, CronExpression } from "@nestjs/schedule";
 import { RabbitMQService } from "../rabbitmq/rabbitmq.service";
 import {
@@ -57,6 +59,7 @@ export class MarketService implements OnModuleInit {
     @InjectRepository(UserEntity)
     private readonly userRepo: Repository<UserEntity>,
     private readonly rmq: RabbitMQService,
+    private readonly eventEmitter: EventEmitter2,
   ) {}
 
   async onModuleInit() {
@@ -132,6 +135,10 @@ export class MarketService implements OnModuleInit {
       if (!existing || existing.lastUpdated !== point.lastUpdated) {
         this.priceCache.set(pairKey, point);
         this.notifyListeners(pairKey, point);
+        this.eventEmitter.emit(CreditEvents.PRICE_UPDATE, {
+          pricePairId: pair.id,
+          currentPrice: bestBuyGramPrice,
+        });
       }
     }
 
@@ -171,6 +178,11 @@ export class MarketService implements OnModuleInit {
 
       this.priceCache.set(data.pairKey, point);
       this.notifyListeners(data.pairKey, point);
+
+      this.eventEmitter.emit(CreditEvents.PRICE_UPDATE, {
+        pricePairId: data.pairId,
+        currentPrice: data.bestBuyGramPrice,
+      });
 
       this.logger.log(
         `[REALTIME] ${data.pairKey} buy=${data.displayBuyPrice} sell=${data.displaySellPrice} (provider: ${data.bestBuyProvider || '-'}/${data.bestSellProvider || '-'})`,

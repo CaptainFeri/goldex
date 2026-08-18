@@ -315,6 +315,8 @@ export interface Credit {
   settledAt: string | null;
   notes: string | null;
   settleImagePath: string | null;
+  maxExecutionTradeLevel: number | null;
+  executedTradeLevel: number;
   metadata: any;
   user?: { id: string; firstName?: string; lastName?: string; phone?: string; email?: string };
   creditOrders?: any[];

@@ -17,6 +17,7 @@ export const CreditEvents = {
   MARGIN_CALL: "credit.margin_call",
   SETTLED: "credit.settled",
   REMINDER: "credit.reminder",
+  PRICE_UPDATE: "credit.price_update",
 } as const;
 
 export const KycEvents = {

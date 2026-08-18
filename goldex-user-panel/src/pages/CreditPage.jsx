@@ -77,6 +77,10 @@ export default function CreditPage() {
     )
   }
 
+  // A credit that triggered a margin call stays ACTIVE but the user's wallets
+  // are frozen (blocked) until the admin settles the credit.
+  const blocked = activeCredit && (activeCredit.creditOrders || []).some((o) => o?.status === 'MARGIN_CALLED')
+
   return (
     <div className="animate-fade-in">
       <div className="main-header">
@@ -91,6 +95,13 @@ export default function CreditPage() {
 
       <div className="main-body">
         {error && <Alert type="error">{error}</Alert>}
+
+        {blocked && (
+          <Alert type="error">
+            Your credit triggered a margin call. Your wallets are frozen and you cannot place new orders.
+            Please contact support or ask an admin to settle your credit to resume trading.
+          </Alert>
+        )}
 
         {/* Active Credit Card */}
         {activeCredit ? (
@@ -123,6 +134,14 @@ export default function CreditPage() {
                 <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Reminder Every</div>
                 <div style={{ fontWeight: 500 }}>{activeCredit.reminderTimerHours} hr</div>
               </div>
+              {activeCredit.maxExecutionTradeLevel != null && (
+                <div>
+                  <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Max Execution Level</div>
+                  <div style={{ fontWeight: 500 }}>
+                    {(activeCredit.executedTradeLevel ?? 0)} / {activeCredit.maxExecutionTradeLevel}
+                  </div>
+                </div>
+              )}
               <div style={{ gridColumn: '1 / -1' }}>
                 <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: 4 }}>Auto Reminder</div>
                 <div className="progress-bar" style={{ background: 'var(--border)', borderRadius: 4, height: 8, overflow: 'hidden' }}>
