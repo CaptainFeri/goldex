@@ -41,10 +41,10 @@ export class CreateAdminDto {
   @ApiPropertyOptional()
   email?: string;
 
-  @IsOptional()
+  @IsNotEmpty()
   @MinLength(6)
-  @ApiPropertyOptional({ description: "Optional — admins log in via OTP, not password" })
-  password?: string;
+  @ApiProperty({ description: "Admin login password (verified in step 1 of login, before OTP)" })
+  password: string;
 
   @IsEnum(AdminRole)
   @ApiProperty({ enum: AdminRole })

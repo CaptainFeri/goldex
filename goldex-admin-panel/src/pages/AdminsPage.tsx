@@ -311,9 +311,10 @@ export default function AdminsPage() {
   const { admin: me } = useAuth();
   const [form, setForm] = useState<{
     phone: string;
+    password: string;
     role: AdminRole;
     schedules: ScheduleEntry[];
-  }>({ phone: "", role: "admin", schedules: [] });
+  }>({ phone: "", password: "", role: "admin", schedules: [] });
   const [editing, setEditing] = useState<Admin | null>(null);
   const [detailId, setDetailId] = useState<string | null>(null);
 
@@ -323,11 +324,11 @@ export default function AdminsPage() {
   });
 
   const create = useMutation({
-    mutationFn: (p: { phone: string; role: AdminRole; schedules: ScheduleEntry[] }) =>
+    mutationFn: (p: { phone: string; password: string; role: AdminRole; schedules: ScheduleEntry[] }) =>
       api.post("/admin/accounts", p),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["admins"] });
-      setForm({ phone: "", role: "admin", schedules: [] });
+      setForm({ phone: "", password: "", role: "admin", schedules: [] });
     },
   });
   const suspend = useMutation({
@@ -370,6 +371,7 @@ export default function AdminsPage() {
   function submit(e: React.FormEvent) {
     e.preventDefault();
     if (!/^09[0-9]{9}$/.test(form.phone)) return;
+    if (form.password.length < 6) return;
     create.mutate(form);
   }
 
@@ -385,6 +387,17 @@ export default function AdminsPage() {
               placeholder="09123456789"
               value={form.phone}
               onChange={(e) => setForm({ ...form, phone: e.target.value.trim() })}
+            />
+          </div>
+          <div className="field" style={{ margin: 0, minWidth: 160 }}>
+            <label>رمز عبور</label>
+            <input
+              className="input mono"
+              type="password"
+              dir="ltr"
+              placeholder="حداقل ۶ کاراکتر"
+              value={form.password}
+              onChange={(e) => setForm({ ...form, password: e.target.value })}
             />
           </div>
           <div className="field" style={{ margin: 0, minWidth: 160 }}>
@@ -451,7 +464,7 @@ export default function AdminsPage() {
 
         {create.isError && <div className="error-text">{apiError(create.error)}</div>}
         <div className="muted" style={{ fontSize: 12, marginTop: 8 }}>
-          مدیر جدید با همین شماره و کد یک‌بارمصرف (کاوه‌نگار) وارد می‌شود — بدون رمز عبور.
+          مدیر جدید با این شماره و رمز عبور وارد می‌شود؛ پس از تأیید رمز، کد یک‌بارمصرف (کاوه‌نگار) ارسال می‌شود.
         </div>
       </Card>
 

@@ -6,8 +6,9 @@ import { apiError } from "../api/client";
 export default function LoginPage() {
   const { sendOtp, verifyOtp, token } = useAuth();
   const nav = useNavigate();
-  const [step, setStep] = useState<"phone" | "otp">("phone");
+  const [step, setStep] = useState<"phone" | "password" | "otp">("phone");
   const [phone, setPhone] = useState("");
+  const [password, setPassword] = useState("");
   const [otp, setOtp] = useState("");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
@@ -23,9 +24,19 @@ export default function LoginPage() {
       setErr("شماره موبایل معتبر نیست (۰۹xxxxxxxxx)");
       return;
     }
+    setStep("password");
+  }
+
+  async function submitPassword(e: React.FormEvent) {
+    e.preventDefault();
+    setErr("");
+    if (password.length < 6) {
+      setErr("رمز عبور باید حداقل ۶ کاراکتر باشد");
+      return;
+    }
     setBusy(true);
     try {
-      await sendOtp(phone);
+      await sendOtp(phone, password);
       setStep("otp");
     } catch (e) {
       setErr(apiError(e));
@@ -62,7 +73,7 @@ export default function LoginPage() {
         {step === "phone" ? (
           <form onSubmit={submitPhone}>
             <div className="login-title">ورود مدیران</div>
-            <div className="login-sub">شماره موبایل خود را وارد کنید تا کد یک‌بارمصرف ارسال شود.</div>
+            <div className="login-sub">شماره موبایل خود را وارد کنید.</div>
             <div className="field">
               <label>شماره موبایل</label>
               <input
@@ -75,7 +86,40 @@ export default function LoginPage() {
               />
             </div>
             <button className="btn primary" style={{ width: "100%" }} disabled={busy}>
+              {busy ? <span className="spin" /> : "ادامه"}
+            </button>
+            <div className="error-text">{err}</div>
+          </form>
+        ) : step === "password" ? (
+          <form onSubmit={submitPassword}>
+            <div className="login-title">ورود مدیران</div>
+            <div className="login-sub">رمز عبور حساب خود را وارد کنید تا کد تأیید ارسال شود.</div>
+            <div className="field">
+              <label>رمز عبور</label>
+              <input
+                className="input"
+                type="password"
+                placeholder="••••••"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                autoFocus
+                dir="ltr"
+              />
+            </div>
+            <button className="btn primary" style={{ width: "100%" }} disabled={busy}>
               {busy ? <span className="spin" /> : "ارسال کد"}
+            </button>
+            <button
+              type="button"
+              className="btn ghost sm"
+              style={{ width: "100%", marginTop: 10 }}
+              onClick={() => {
+                setStep("phone");
+                setPassword("");
+                setErr("");
+              }}
+            >
+              تغییر شماره
             </button>
             <div className="error-text">{err}</div>
           </form>
@@ -106,12 +150,12 @@ export default function LoginPage() {
               className="btn ghost sm"
               style={{ width: "100%", marginTop: 10 }}
               onClick={() => {
-                setStep("phone");
+                setStep("password");
                 setOtp("");
                 setErr("");
               }}
             >
-              تغییر شماره
+              تغییر رمز
             </button>
             <div className="error-text">{err}</div>
           </form>

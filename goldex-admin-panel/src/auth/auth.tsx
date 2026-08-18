@@ -8,7 +8,7 @@ interface AuthState {
 }
 
 interface AuthCtx extends AuthState {
-  sendOtp: (phone: string) => Promise<void>;
+  sendOtp: (phone: string, password: string) => Promise<void>;
   verifyOtp: (phone: string, otp: string) => Promise<void>;
   logout: () => void;
   checkSession: () => Promise<boolean>;
@@ -51,8 +51,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
-  async function sendOtp(phone: string) {
-    await api.post("/admin/auth/send-otp", { phone });
+  async function sendOtp(phone: string, password: string) {
+    await api.post("/admin/auth/send-otp", { phone, password });
   }
 
   async function verifyOtp(phone: string, otp: string) {

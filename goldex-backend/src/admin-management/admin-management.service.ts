@@ -54,8 +54,8 @@ export class AdminManagementService {
     const admin = this.adminRepository.create({
       phone: createAdminDto.phone,
       email: createAdminDto.email ?? null,
-      // Password is optional — admins authenticate via OTP. Hash only if provided.
-      hashPassword: createAdminDto.password ? await bcrypt.hash(createAdminDto.password, 10) : null,
+      // Password is required for login step 1 (phone+password) before OTP.
+      hashPassword: await bcrypt.hash(createAdminDto.password, 10),
       role: createAdminDto.role || AdminRole.ADMIN,
     });
 

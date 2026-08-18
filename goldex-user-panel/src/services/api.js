@@ -18,8 +18,13 @@ export const authApi = {
       headers: { Authorization: `Bearer ${tempToken}` }
     })),
 
+  // Step 1: verify phone + password, sends an SMS OTP. Returns { requiresOtp, userId, phone }.
   login: async (phone, password) =>
     unwrap(await http.post('/auth/login', { phone, password }, PUBLIC)),
+
+  // Step 2: verify the SMS OTP and receive access/refresh tokens.
+  loginWithOtp: async (phone, otp) =>
+    unwrap(await http.post('/auth/login-with-otp', { phone, otp }, PUBLIC)),
 
   logout: async (deviceId) =>
     unwrap(await http.post('/auth/logout', { deviceId })),

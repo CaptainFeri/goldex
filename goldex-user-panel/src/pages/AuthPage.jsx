@@ -197,26 +197,88 @@ function RegisterStep({ phone, userId, tempToken, onRegistered }) {
   )
 }
 
-// ─── Login Form ───────────────────────────────────────────
+// ─── Login ────────────────────────────────────────────────
 function LoginForm({ onSuccess, onSwitchToRegister }) {
+  const [step, setStep] = useState('password') // 'password' | 'otp'
   const [phone, setPhone] = useState('')
   const [password, setPassword] = useState('')
+  const [otp, setOtp] = useState('')
   const [showPassword, setShowPassword] = useState(false)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
+  const [resending, setResending] = useState(false)
 
-  const handleSubmit = async (e) => {
+  // Step 1: phone + password. The backend validates and sends an SMS OTP.
+  const handlePasswordSubmit = async (e) => {
     e.preventDefault()
     setLoading(true)
     setError('')
     try {
       const data = await authApi.login(phone, password)
-      onSuccess(data)
+      if (data.requiresOtp) {
+        setStep('otp')
+      } else {
+        onSuccess(data)
+      }
     } catch (err) {
       setError(err.response?.data?.message || 'Invalid credentials. Please try again.')
     } finally {
       setLoading(false)
     }
+  }
+
+  // Step 2: verify the SMS OTP.
+  const handleOtpSubmit = async (e) => {
+    e.preventDefault()
+    setLoading(true)
+    setError('')
+    try {
+      const data = await authApi.loginWithOtp(phone, otp)
+      onSuccess(data)
+    } catch (err) {
+      setError(err.response?.data?.message || 'Invalid code. Please try again.')
+      setOtp('')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const handleResend = async () => {
+    setResending(true)
+    try { await authApi.login(phone, password) } catch (_) {}
+    setResending(false)
+  }
+
+  if (step === 'otp') {
+    return (
+      <div className="animate-fade-up">
+        <h2 className="auth-card-title">Verify Code</h2>
+        <p className="auth-card-sub">Enter the 5-digit code sent to</p>
+
+        <div className="phone-banner">
+          <span className="phone-banner-number">{phone}</span>
+          <button className="btn btn-ghost" style={{ padding: '0.3rem 0.7rem', fontSize: '0.78rem' }} onClick={() => { setStep('password'); setOtp(''); setError('') }}>
+            Change
+          </button>
+        </div>
+
+        {error && <Alert type="error">{error}</Alert>}
+
+        <form onSubmit={handleOtpSubmit}>
+          <OtpInputs value={otp} onChange={setOtp} length={5} />
+
+          <button className="btn btn-primary" type="submit" disabled={loading || otp.length < 5}>
+            {loading ? <Spinner /> : 'Sign In'}
+          </button>
+
+          <div style={{ textAlign: 'center', marginTop: '1rem' }}>
+            <button type="button" className="btn-link" onClick={handleResend} disabled={resending}>
+              {resending ? 'Resending…' : "Didn't receive it? Resend"}
+            </button>
+          </div>
+        </form>
+      </div>
+    )
   }
 
   return (
@@ -226,7 +288,7 @@ function LoginForm({ onSuccess, onSwitchToRegister }) {
 
       {error && <Alert type="error">{error}</Alert>}
 
-      <form onSubmit={handleSubmit}>
+      <form onSubmit={handlePasswordSubmit}>
         <div className="form-group">
           <label className="form-label">Phone Number</label>
           <div className="input-wrapper">
@@ -269,7 +331,7 @@ function LoginForm({ onSuccess, onSwitchToRegister }) {
         </div>
 
         <button className="btn btn-primary" type="submit" disabled={loading}>
-          {loading ? <Spinner /> : 'Sign In'}
+          {loading ? <Spinner /> : 'Continue'}
         </button>
       </form>
 

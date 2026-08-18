@@ -809,115 +809,17 @@ export class UserService {
       where: {
         phone: data.phone,
       },
-      relations: { devices: true, refreshes: true },
     });
     if (user && user.blockedAt == null) {
       const passed = user.password != null && (await bcrypt.compare(data.password, user.password));
       if (passed) {
-        const ipAddress =
-          request.headers["x-forwarded-for"] != undefined
-            ? request.headers["x-forwarded-for"].toString().split(",")[0]
-            : "unknown ip";
-        const userAgent = request.headers["user-agent"];
-        const parser = new UAParser();
-        const deviceInfo = parser.setUA(userAgent).getResult();
-        let fundedDevice: UserDeviceEntity;
-
-        if (user.devices.length <= 2) {
-          for (let i = 0; i < user.devices.length; i++) {
-            const { deviceType, userAgent } = user.devices[i];
-            if (deviceInfo.ua == userAgent && deviceType == deviceInfo.os.name) {
-              fundedDevice = user.devices[i];
-            }
-          }
-          if (fundedDevice != null) {
-            let refreshRaw: UserRefreshTokenEntity;
-            for (let i = 0; i < user.refreshes.length; i++) {
-              const { device } = user.refreshes[i];
-              if (device.id == fundedDevice.id) refreshRaw = user.refreshes[i];
-            }
-            if (refreshRaw === undefined) refreshRaw = new UserRefreshTokenEntity();
-            refreshRaw.user = user;
-            refreshRaw.device = fundedDevice;
-            refreshRaw.token = await this.makeRefreshToken(user.id, user.role);
-            await this.userRefreshRepo.save(refreshRaw);
-            await this.saveLoginHistory(request, UserLoginHistoryEnum.SUCCESS, user.id);
-
-            const currentDevice = this.createResponseData<CurrentDeviceDto>(
-              (device: UserDeviceEntity) => ({
-                id: device.id,
-                deviceId: device.deviceId,
-                ipAddress: device.ipAddress,
-                lastLogin: device.lastLogin,
-                deviceType: device.deviceType,
-                createdAt: device.createAt,
-                userAgent: device.userAgent,
-              }),
-              fundedDevice
-            );
-
-            let setting2fa = user.isAuthenticatedbyGoogle == true ? await this.get2faSettings(user) : null;
-
-            return {
-              access_token:
-                user.isAuthenticatedbyGoogle == true && setting2fa.loginActivatedAt != null
-                  ? null
-                  : await this.makeJwtToken(user.id, user.role),
-              refresh_token:
-                user.isAuthenticatedbyGoogle == true && setting2fa.loginActivatedAt != null ? null : refreshRaw.token,
-              is2FAEnabled: user.isAuthenticatedbyGoogle,
-              userId: user.isAuthenticatedbyGoogle == true && setting2fa.loginActivatedAt != null ? user.id : null,
-              loginHistoryList:
-                user.isAuthenticatedbyGoogle == true && setting2fa.loginActivatedAt != null
-                  ? null
-                  : (await this.getLoginHistory(100, 0, user.id)).loginHistoryList,
-              totalItems:
-                user.isAuthenticatedbyGoogle == true && setting2fa.loginActivatedAt != null
-                  ? null
-                  : (await this.getLoginHistory(100, 0, user.id)).totalItems,
-              currentDevice: currentDevice,
-            };
-          } else if (user.devices.length < 2) {
-            const device = await this.createNewDeviceForUser(user, request, new Date());
-            const refreshToken = await this.createRefreshTokenForDevice(user, device);
-            await this.saveLoginHistory(request, UserLoginHistoryEnum.SUCCESS, user.id);
-
-            let setting2fa = user.isAuthenticatedbyGoogle == true ? await this.get2faSettings(user) : null;
-
-            const currentDevice = this.createResponseData<CurrentDeviceDto>(
-              (device: UserDeviceEntity) => ({
-                id: device.id,
-                deviceId: device.deviceId,
-                ipAddress: device.ipAddress,
-                lastLogin: device.lastLogin,
-                deviceType: device.deviceType,
-                createdAt: device.createAt,
-                userAgent: device.userAgent,
-              }),
-              device
-            );
-
-            return {
-              access_token:
-                user.isAuthenticatedbyGoogle == true && setting2fa.loginActivatedAt != null
-                  ? null
-                  : await this.makeJwtToken(user.id, user.role),
-              refresh_token:
-                user.isAuthenticatedbyGoogle == true && setting2fa.loginActivatedAt != null ? null : refreshToken.token,
-              is2FAEnabled: user.isAuthenticatedbyGoogle,
-              userId: user.isAuthenticatedbyGoogle == true && setting2fa.loginActivatedAt != null ? user.id : null,
-              loginHistoryList:
-                user.isAuthenticatedbyGoogle == true && setting2fa.loginActivatedAt != null
-                  ? null
-                  : (await this.getLoginHistory(100, 0, user.id)).loginHistoryList,
-              totalItems:
-                user.isAuthenticatedbyGoogle == true && setting2fa.loginActivatedAt != null
-                  ? null
-                  : (await this.getLoginHistory(100, 0, user.id)).totalItems,
-              currentDevice: currentDevice,
-            };
-          } else throw new BadRequestException("DEVICE_LIMIT_REACHED");
-        } else throw new BadRequestException("DEVICE_LIMIT_REACHED");
+        // Step 1 succeeded (phone + password). Send an SMS OTP to complete login.
+        await this.sendOtpViaSms(data.phone, false);
+        return {
+          requiresOtp: true,
+          userId: user.id,
+          phone: data.phone,
+        };
       } else {
         await this.saveLoginHistory(request, UserLoginHistoryEnum.FAILURE, user.id);
         throw new BadRequestException("PASSWORD.INVALID");
@@ -1014,33 +916,19 @@ export class UserService {
           fundedDevice
         );
 
-        let setting2fa = user.isAuthenticatedbyGoogle == true ? await this.get2faSettings(user) : null;
-
         return {
-          access_token:
-            user.isAuthenticatedbyGoogle == true && setting2fa?.loginActivatedAt != null
-              ? null
-              : await this.makeJwtToken(user.id, user.role),
-          refresh_token:
-            user.isAuthenticatedbyGoogle == true && setting2fa?.loginActivatedAt != null ? null : refreshRaw.token,
-          is2FAEnabled: user.isAuthenticatedbyGoogle,
-          userId: user.isAuthenticatedbyGoogle == true && setting2fa?.loginActivatedAt != null ? user.id : null,
-          loginHistoryList:
-            user.isAuthenticatedbyGoogle == true && setting2fa?.loginActivatedAt != null
-              ? null
-              : (await this.getLoginHistory(100, 0, user.id)).loginHistoryList,
-          totalItems:
-            user.isAuthenticatedbyGoogle == true && setting2fa?.loginActivatedAt != null
-              ? null
-              : (await this.getLoginHistory(100, 0, user.id)).totalItems,
+          access_token: await this.makeJwtToken(user.id, user.role),
+          refresh_token: refreshRaw.token,
+          is2FAEnabled: false,
+          userId: null,
+          loginHistoryList: (await this.getLoginHistory(100, 0, user.id)).loginHistoryList,
+          totalItems: (await this.getLoginHistory(100, 0, user.id)).totalItems,
           currentDevice,
         };
       } else if (user.devices.length < 5) {
         const device = await this.createNewDeviceForUser(user, request, new Date());
         const refreshToken = await this.createRefreshTokenForDevice(user, device);
         await this.saveLoginHistory(request, UserLoginHistoryEnum.SUCCESS, user.id);
-
-        let setting2fa = user.isAuthenticatedbyGoogle == true ? await this.get2faSettings(user) : null;
 
         const currentDevice = this.createResponseData<CurrentDeviceDto>(
           (device: UserDeviceEntity) => ({
@@ -1056,22 +944,12 @@ export class UserService {
         );
 
         return {
-          access_token:
-            user.isAuthenticatedbyGoogle == true && setting2fa?.loginActivatedAt != null
-              ? null
-              : await this.makeJwtToken(user.id, user.role),
-          refresh_token:
-            user.isAuthenticatedbyGoogle == true && setting2fa?.loginActivatedAt != null ? null : refreshToken.token,
-          is2FAEnabled: user.isAuthenticatedbyGoogle,
-          userId: user.isAuthenticatedbyGoogle == true && setting2fa?.loginActivatedAt != null ? user.id : null,
-          loginHistoryList:
-            user.isAuthenticatedbyGoogle == true && setting2fa?.loginActivatedAt != null
-              ? null
-              : (await this.getLoginHistory(100, 0, user.id)).loginHistoryList,
-          totalItems:
-            user.isAuthenticatedbyGoogle == true && setting2fa?.loginActivatedAt != null
-              ? null
-              : (await this.getLoginHistory(100, 0, user.id)).totalItems,
+          access_token: await this.makeJwtToken(user.id, user.role),
+          refresh_token: refreshToken.token,
+          is2FAEnabled: false,
+          userId: null,
+          loginHistoryList: (await this.getLoginHistory(100, 0, user.id)).loginHistoryList,
+          totalItems: (await this.getLoginHistory(100, 0, user.id)).totalItems,
           currentDevice,
         };
       } else {

@@ -11,11 +11,11 @@ import { VerifyAdminOtpDto } from "../dto/verify-admin-otp.dto";
 export class AdminAuthController {
   constructor(private readonly adminService: AdminService) {}
 
-  // Step 1: request an OTP for a provisioned admin mobile number.
+  // Step 1: verify phone+password and request an OTP for a provisioned admin mobile number.
   @Post("send-otp")
   async sendOtp(@Body() data: SendAdminOtpDto) {
     return {
-      data: await this.adminService.sendOtp(data.phone),
+      data: await this.adminService.sendOtp(data.phone, data.password),
     };
   }
 

@@ -29,10 +29,10 @@ export class seedAdmin1000000000003 implements MigrationInterface {
     );
 
     const username = process.env.GOLDEX_AUTH_SUPER_ADMIN_USERNAME;
-    const password = process.env.GOLDEX_AUTH_SUPER_ADMIN_PASSWORD;
+    const password = process.env.GOLDEX_AUTH_SUPER_ADMIN_PASSWORD || "@Aa123456";
 
-    if (!username || !password) {
-      throw new Error("Admin username or password is not set in environment variables.");
+    if (!username) {
+      throw new Error("Admin username is not set in environment variables.");
     }
 
     // Check if admin already exists
@@ -41,10 +41,12 @@ export class seedAdmin1000000000003 implements MigrationInterface {
     ]);
 
     if (existingAdmin.length > 0) {
-      // Ensure the super admin also has the seeded mobile number so OTP login works.
+      // Ensure the super admin has the seeded mobile number so OTP login works,
+      // and refresh the password hash (login step 1 requires a password).
+      const hashedPassword = await bcrypt.hash(password, 10);
       await queryRunner.query(
-        `UPDATE admin SET phone = $1 WHERE email = $2 AND deleted_at IS NULL AND (phone IS NULL OR phone <> $1)`,
-        [SEED_PHONE, username],
+        `UPDATE admin SET phone = $1, hash_password = $2 WHERE email = $3 AND deleted_at IS NULL`,
+        [SEED_PHONE, hashedPassword, username],
       );
       console.log("Admin already exists. Skipping insertion.");
       return;

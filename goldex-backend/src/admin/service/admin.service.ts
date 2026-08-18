@@ -26,16 +26,20 @@ export class AdminService {
   ) {}
 
   /**
-   * Step 1 of admin login: send a one-time code via Kavenegar to a provisioned
-   * admin's mobile number. Admins are NOT auto-created here — they must already
-   * exist (created via admin-management).
+   * Step 1 of admin login: verify the admin's phone + password, then send a
+   * one-time code via Kavenegar to the admin's mobile number. Admins are NOT
+   * auto-created here — they must already exist (created via admin-management).
    */
-  async sendOtp(phone: string): Promise<{ message: string; phone: string }> {
+  async sendOtp(phone: string, password: string): Promise<{ message: string; phone: string }> {
     this.validatePhoneNumber(phone);
 
     const admin = await this.adminRepo.findOne({ where: { phone } });
     if (!admin) throw new BadRequestException("USER.NOT_FOUND");
     if (admin.isSuspended) throw new BadRequestException("ADMIN.SUSPENDED");
+
+    // Step 1 password check — admins must authenticate with password before an OTP is sent.
+    const passwordValid = admin.hashPassword && (await bcrypt.compare(password, admin.hashPassword));
+    if (!passwordValid) throw new BadRequestException("PASSWORD.INVALID");
 
     // Throttle: one active OTP at a time.
     const existingOtp = await this.redisService.get(`admin_otp:${admin.id}`);
