@@ -152,7 +152,6 @@ function CreateCreditModal({ onClose, onSave, loading }: { onClose: () => void; 
   const [form, setForm] = useState({
     userId: "", amount: 0, hasCallMargin: false, callMarginPercent: 0,
     reminderTimerHours: 24, expireAt: "", notes: "", maxExecutionTradeLevel: 0,
-    creditWalletId: "",
   });
   const [frozenWallets, setFrozenWallets] = useState<Record<string, number>>({});
   const [increasedWallets, setIncreasedWallets] = useState<Record<string, number>>({});

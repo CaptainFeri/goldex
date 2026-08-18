@@ -1,4 +1,4 @@
-import { IsUUID, IsNumber, IsBoolean, IsOptional, IsString, Min, Max, IsDateString, ValidateNested, ArrayMinSize } from "class-validator";
+import { IsUUID, IsNumber, IsBoolean, IsOptional, IsString, Min, Max, IsDateString, ValidateNested, ArrayMinSize, ValidateIf } from "class-validator";
 import { Type } from "class-transformer";
 import { ApiProperty } from "@nestjs/swagger";
 
@@ -35,6 +35,7 @@ export class CreateCreditDto {
   // wallet when omitted. The credit amount is denominated in this wallet's symbol.
   @ApiProperty({ required: false, description: "Optional wallet to credit the amount into (defaults to RIAL wallet)" })
   @IsOptional()
+  @ValidateIf((o) => o.creditWalletId !== "" && o.creditWalletId !== null && o.creditWalletId !== undefined)
   @IsUUID()
   creditWalletId?: string;
 
