@@ -1,7 +1,7 @@
 import { Injectable, NotFoundException, BadRequestException, Logger } from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
 import { EventEmitter2, OnEvent } from "@nestjs/event-emitter";
-import { Repository, DataSource, LessThan, IsNull } from "typeorm";
+import { Repository, DataSource, LessThan, IsNull, Not } from "typeorm";
 import Decimal from "decimal.js";
 import { CreditEntity } from "./entity/credit.entity";
 import { CreditOrderEntity } from "./entity/credit-order.entity";
@@ -9,6 +9,8 @@ import { CreditNotificationEntity } from "./entity/credit-notification.entity";
 import { CreditStatusEnum } from "./enum/credit-status.enum";
 import { CreditOrderStatusEnum } from "./enum/credit-order-status.enum";
 import { CreditNotificationTypeEnum } from "./enum/credit-notification-type.enum";
+import { SettlementStateEnum } from "./enum/settlement-state.enum";
+import { RiskStateEnum } from "./enum/risk-state.enum";
 import { CreateCreditDto } from "./dto/create-credit.dto";
 import { WalletEntity } from "../wallet/entities/wallet.entity";
 import { TransactionEntity } from "../wallet/entities/transaction.entity";
@@ -306,9 +308,10 @@ export class CreditService {
         priceAtCreation: a.priceAtCreation,
       }));
 
-      // Apply the increase to each selected wallet.
+      // Apply the increase to each selected wallet (creditBalance, not freeBalance).
       for (const a of increaseAllocs) {
-        a.wallet.freeBalance = new Decimal(a.wallet.freeBalance).plus(a.amount).toNumber();
+        a.wallet.creditBalance = new Decimal(a.wallet.creditBalance).plus(a.amount).toNumber();
+        a.wallet.freeBalance = new Decimal(a.wallet.availableBalance).plus(a.wallet.creditBalance).toNumber();
         a.wallet.adminNote = `Credit deposit of ${a.amount} ${a.symbolName}`;
         await manager.save(a.wallet);
 
@@ -338,6 +341,16 @@ export class CreditService {
         reminderTimerHours: dto.reminderTimerHours || 24,
         maxExecutionTradeLevel: dto.maxExecutionTradeLevel,
         executedTradeLevel: 0,
+        maxConcurrentOrders: dto.maxConcurrentOrders,
+        maxTradeChainDepth: dto.maxTradeChainDepth,
+        currentTradeChainDepth: 0,
+        settlementState: SettlementStateEnum.GREEN,
+        riskState: RiskStateEnum.NORMAL,
+        greenDurationHours: dto.greenDurationHours || 8,
+        yellowDurationHours: dto.yellowDurationHours || 4,
+        redDurationHours: dto.redDurationHours || 4,
+        outstandingShortfall: 0,
+        isInDefault: false,
         expireAt: new Date(dto.expireAt),
         activatedAt: new Date(),
         notes: dto.notes,
@@ -787,6 +800,7 @@ export class CreditService {
 
       credit.status = CreditStatusEnum.SETTLED;
       credit.settledAt = new Date();
+      credit.settlementState = SettlementStateEnum.SETTLED;
       credit.notes = description || credit.notes;
       credit.settledByAdminId = adminId;
       if (imagePath) {
@@ -825,6 +839,13 @@ export class CreditService {
           wallet.frozenLockedBalance = 0;
           await manager.save(wallet);
         }
+
+        // Sync freeBalance = availableBalance + creditBalance + frozenFreeBalance
+        wallet.freeBalance = new Decimal(wallet.availableBalance)
+          .plus(wallet.creditBalance)
+          .plus(wallet.frozenFreeBalance)
+          .toNumber();
+        await manager.save(wallet);
 
         if (unfrozenAmount > 0) {
           const unfreezeTxn = manager.create(TransactionEntity, {
@@ -907,12 +928,13 @@ export class CreditService {
       }
 
       credit.status = CreditStatusEnum.CANCELLED;
+      credit.settlementState = SettlementStateEnum.SETTLED;
       credit.notes = reason || credit.notes;
       await manager.save(credit);
 
-      // Claw back the credited amount from every increase wallet (reverse of the
-      // CREDIT_DEPOSIT at creation). Done BEFORE unfreezing collateral so the
-      // just-unfrozen balance isn't mistaken for credit funds.
+      // Claw back the credited amount from every increase wallet's creditBalance
+      // (reverse of the CREDIT_DEPOSIT at creation). Done BEFORE unfreezing
+      // collateral so the just-unfrozen balance isn't mistaken for credit funds.
       const increasedWallets: Array<{
         walletId?: string;
         amount?: number;
@@ -923,10 +945,11 @@ export class CreditService {
           where: { id: iw.walletId, userId: credit.userId },
           lock: { mode: "pessimistic_write" },
         });
-        if (!wallet || wallet.freeBalance <= 0) continue;
+        if (!wallet || wallet.creditBalance <= 0) continue;
 
-        const clawback = new Decimal(Math.min(wallet.freeBalance, iw.amount));
-        wallet.freeBalance = new Decimal(wallet.freeBalance).minus(clawback).toNumber();
+        const clawback = new Decimal(Math.min(wallet.creditBalance, iw.amount));
+        wallet.creditBalance = new Decimal(wallet.creditBalance).minus(clawback).toNumber();
+        wallet.freeBalance = new Decimal(wallet.availableBalance).plus(wallet.creditBalance).toNumber();
         wallet.adminNote = `Credit ${credit.creditCode} amount clawed back on cancellation`;
         await manager.save(wallet);
 
@@ -970,7 +993,6 @@ export class CreditService {
 
         if (wallet.frozenFreeBalance > 0) {
           unfrozenAmount += wallet.frozenFreeBalance;
-          wallet.freeBalance = new Decimal(wallet.freeBalance).plus(wallet.frozenFreeBalance).toNumber();
           wallet.frozenFreeBalance = 0;
           await manager.save(wallet);
         }
@@ -979,6 +1001,13 @@ export class CreditService {
           wallet.frozenLockedBalance = 0;
           await manager.save(wallet);
         }
+
+        // Sync freeBalance = availableBalance + creditBalance + frozenFreeBalance
+        wallet.freeBalance = new Decimal(wallet.availableBalance)
+          .plus(wallet.creditBalance)
+          .plus(wallet.frozenFreeBalance)
+          .toNumber();
+        await manager.save(wallet);
 
         if (unfrozenAmount > 0) {
           const unfreezeTxn = manager.create(TransactionEntity, {
@@ -1128,8 +1157,10 @@ export class CreditService {
     });
   }
 
-  // Repays a credit loan: takes back what remains in the credit wallet and
-  // liquidates frozen material collateral (at current price) to cover shortfall.
+  // Repays a credit loan: takes back what remains in the credit wallet's
+  // creditBalance first, then liquidates frozen material collateral (at current
+  // price) to cover shortfall. Implements FULL RECOURSE: user remains liable
+  // for any shortfall after collateral is exhausted.
   // Idempotent — tracks already-repaid amounts in credit.metadata so expiry and a
   // later settlement don't double-charge the user.
   private async repayAndLiquidate(
@@ -1144,7 +1175,7 @@ export class CreditService {
     let repaid = new Decimal(0);
     let liquidated = new Decimal(0);
 
-    // 1. Repay from every increase wallet's free balance (the wallets that
+    // 1. Repay from every increase wallet's creditBalance (the wallets that
     //    received the credit at creation), not just the primary one.
     const increaseWallets: Array<{ walletId?: string; amount?: number }> =
       credit.metadata?.increasedWallets || [];
@@ -1165,10 +1196,13 @@ export class CreditService {
           lock: { mode: "pessimistic_write" },
         });
         if (!wallet) continue;
-        const free = new Decimal(wallet.freeBalance || 0);
-        if (free.lessThanOrEqualTo(0)) continue;
-        const repay = Decimal.min(free, owed);
-        wallet.freeBalance = free.minus(repay).toNumber();
+        const creditBal = new Decimal(wallet.creditBalance || 0);
+        if (creditBal.lessThanOrEqualTo(0)) continue;
+        const repay = Decimal.min(creditBal, owed);
+        wallet.creditBalance = creditBal.minus(repay).toNumber();
+        wallet.freeBalance = new Decimal(wallet.availableBalance)
+          .plus(wallet.creditBalance)
+          .toNumber();
         wallet.adminNote = `Repaid ${repay.toString()} for credit ${credit.creditCode}`;
         await manager.save(wallet);
         owed = owed.minus(repay);
@@ -1180,7 +1214,7 @@ export class CreditService {
           creditId: credit.id,
           walletId: wallet.id,
           actionType: CreditActionEnum.CREDIT_SETTLED,
-          description: `Credit ${credit.creditCode} repayment of ${repay.toString()} from wallet`,
+          description: `Credit ${credit.creditCode} repayment of ${repay.toString()} from creditBalance`,
           metadata: { repay: repay.toString(), creditCode: credit.creditCode },
         });
       }
@@ -1207,6 +1241,10 @@ export class CreditService {
 
         const proceeds = unitsToLiquidate.mul(price);
         wallet.frozenFreeBalance = frozen.minus(unitsToLiquidate).toNumber();
+        wallet.freeBalance = new Decimal(wallet.availableBalance)
+          .plus(wallet.creditBalance)
+          .plus(wallet.frozenFreeBalance)
+          .toNumber();
         await manager.save(wallet);
 
         owed = owed.minus(proceeds);
@@ -1241,20 +1279,29 @@ export class CreditService {
       }
     }
 
-    // 3. Track progress for idempotency and expose any unresolved shortfall.
+    // 3. Full Recourse: track shortfall (user remains liable)
+    const shortfall = owed.greaterThan(0) ? owed.toNumber() : 0;
+    if (shortfall > 0) {
+      credit.outstandingShortfall = shortfall;
+      credit.isInDefault = true;
+      credit.riskState = RiskStateEnum.DEFAULT;
+      credit.metadata.defaultReason = "INSUFFICIENT_COLLATERAL";
+      credit.metadata.defaultAt = now.toISOString();
+    } else {
+      credit.outstandingShortfall = 0;
+      credit.isInDefault = false;
+    }
+
+    // 4. Track progress for idempotency and expose any unresolved shortfall.
     const liquidatedAmount = new Decimal(credit.metadata.liquidatedAmount || 0).plus(liquidated);
     credit.metadata.repaidAmount = new Decimal(credit.metadata.repaidAmount || 0).plus(repaid).toNumber();
     credit.metadata.liquidatedAmount = liquidatedAmount.toNumber();
-    if (owed.greaterThan(0)) {
-      credit.metadata.shortfall = owed.toNumber();
-    } else {
-      credit.metadata.shortfall = 0;
-    }
+    credit.metadata.shortfall = shortfall;
 
     return {
       repaid: repaid.toNumber(),
       liquidated: liquidated.toNumber(),
-      shortfall: owed.greaterThan(0) ? owed.toNumber() : 0,
+      shortfall,
     };
   }
 
@@ -1310,6 +1357,203 @@ export class CreditService {
       await run(manager);
     } else {
       await this.dataSource.transaction(run);
+    }
+  }
+
+  // Settlement Timer State Machine (handoff Section 20):
+  // GREEN = T0 → T+greenDurationHours
+  // YELLOW = T+greenDurationHours → T+greenDurationHours+yellowDurationHours
+  // RED = T+green+yellow → T+green+yellow+redDurationHours
+  // ADMIN_REVIEW = T+green+yellow+red
+  async processSettlementTimers(): Promise<void> {
+    const activeCredits = await this.creditRepository.find({
+      where: { status: CreditStatusEnum.ACTIVE },
+    });
+
+    const now = new Date();
+
+    for (const credit of activeCredits) {
+      if (!credit.activatedAt) continue;
+
+      const activatedAt = new Date(credit.activatedAt);
+      const elapsedMs = now.getTime() - activatedAt.getTime();
+      const elapsedHours = elapsedMs / (1000 * 60 * 60);
+
+      const greenHours = credit.greenDurationHours || 8;
+      const yellowHours = credit.yellowDurationHours || 4;
+      const redHours = credit.redDurationHours || 4;
+
+      const yellowDeadline = greenHours;
+      const redDeadline = greenHours + yellowHours;
+      const adminReviewDeadline = greenHours + yellowHours + redHours;
+
+      let newState: SettlementStateEnum | null = null;
+
+      if (elapsedHours >= adminReviewDeadline && credit.settlementState !== SettlementStateEnum.ADMIN_REVIEW) {
+        newState = SettlementStateEnum.ADMIN_REVIEW;
+      } else if (elapsedHours >= redDeadline && credit.settlementState === SettlementStateEnum.YELLOW) {
+        newState = SettlementStateEnum.RED;
+      } else if (elapsedHours >= yellowDeadline && credit.settlementState === SettlementStateEnum.GREEN) {
+        newState = SettlementStateEnum.YELLOW;
+      }
+
+      if (newState) {
+        credit.settlementState = newState;
+
+        if (newState === SettlementStateEnum.YELLOW && !credit.settlementYellowAt) {
+          credit.settlementYellowAt = now;
+        } else if (newState === SettlementStateEnum.RED && !credit.settlementRedAt) {
+          credit.settlementRedAt = now;
+        } else if (newState === SettlementStateEnum.ADMIN_REVIEW && !credit.settlementAdminReviewAt) {
+          credit.settlementAdminReviewAt = now;
+        }
+
+        await this.creditRepository.save(credit);
+
+        await this.creditNotificationRepository.save(
+          this.creditNotificationRepository.create({
+            userId: credit.userId,
+            creditId: credit.id,
+            type: CreditNotificationTypeEnum.SETTLEMENT,
+            message:
+              `Credit ${credit.creditCode} settlement state changed to ${newState}. ` +
+              (newState === SettlementStateEnum.ADMIN_REVIEW
+                ? "An admin will review your credit shortly."
+                : `Please settle your credit before the deadline.`),
+            sentAt: now,
+          }),
+        );
+
+        this.eventEmitter.emit(CreditEvents.SETTLEMENT_STATE_CHANGED, {
+          userId: credit.userId,
+          creditId: credit.id,
+          previousState: credit.settlementState,
+          newState,
+        });
+
+        this.logger.log(
+          `Credit ${credit.creditCode} settlement state: ${credit.settlementState} → ${newState} ` +
+          `(elapsed ${elapsedHours.toFixed(1)}h)`,
+        );
+      }
+    }
+  }
+
+  // Risk State Machine (handoff Section 19):
+  // Evaluates risk based on collateral value vs credit exposure.
+  // NORMAL: Healthy margin ratio
+  // WARNING: Margin ratio approaching danger zone
+  // MARGIN_CALL: Margin ratio below maintenance threshold
+  async processRiskStateTransitions(): Promise<void> {
+    const activeCredits = await this.creditRepository.find({
+      where: { status: CreditStatusEnum.ACTIVE },
+    });
+
+    for (const credit of activeCredits) {
+      await this.evaluateRiskState(credit);
+    }
+  }
+
+  private async evaluateRiskState(credit: CreditEntity): Promise<void> {
+    const increasedWallets: Array<{
+      walletId?: string;
+      symbolId?: string;
+      amount?: number;
+      priceAtCreation?: number;
+    }> = credit.metadata?.increasedWallets || [];
+
+    if (!increasedWallets.length) return;
+
+    // Calculate total collateral value from frozen wallets
+    let totalCollateralValue = 0;
+    const wallets = await this.walletRepository.find({
+      where: { userId: credit.userId },
+    });
+
+    for (const wallet of wallets) {
+      const frozen = new Decimal(wallet.frozenFreeBalance || 0);
+      if (frozen.greaterThan(0)) {
+        const price = await this.getSymbolRialPrice(this.dataSource.manager, wallet.symbolId);
+        if (price && price > 0) {
+          totalCollateralValue += frozen.mul(price).toNumber();
+        }
+      }
+    }
+
+    // Calculate current value of credit exposure (increase wallets)
+    let currentExposureValue = 0;
+    for (const iw of increasedWallets) {
+      if (!iw.symbolId || !iw.amount) continue;
+      const currentPrice = await this.getSymbolRialPrice(this.dataSource.manager, iw.symbolId);
+      if (currentPrice && currentPrice > 0) {
+        currentExposureValue += iw.amount * currentPrice;
+      }
+    }
+
+    // Calculate equity = collateral value - exposure value (what the user would have left)
+    // For a credit system: equity = collateral value - outstanding loan
+    const equity = totalCollateralValue - credit.amount;
+    
+    // Margin ratio = equity / credit amount (as a percentage)
+    const marginRatio = credit.amount > 0 ? (equity / credit.amount) * 100 : 0;
+
+    // Risk thresholds (configurable per policy)
+    const WARNING_THRESHOLD = 15; // 15% margin ratio
+    const MARGIN_CALL_THRESHOLD = 7.5; // 7.5% margin ratio
+
+    let newRiskState: RiskStateEnum | null = null;
+
+    if (marginRatio <= MARGIN_CALL_THRESHOLD && credit.riskState !== RiskStateEnum.MARGIN_CALL) {
+      newRiskState = RiskStateEnum.MARGIN_CALL;
+    } else if (marginRatio <= WARNING_THRESHOLD && credit.riskState === RiskStateEnum.NORMAL) {
+      newRiskState = RiskStateEnum.WARNING;
+    } else if (marginRatio > WARNING_THRESHOLD && credit.riskState === RiskStateEnum.WARNING) {
+      newRiskState = RiskStateEnum.NORMAL;
+    }
+
+    if (newRiskState) {
+      const previousState = credit.riskState;
+      credit.riskState = newRiskState;
+
+      if (newRiskState === RiskStateEnum.WARNING && !credit.riskWarningAt) {
+        credit.riskWarningAt = new Date();
+      } else if (newRiskState === RiskStateEnum.MARGIN_CALL && !credit.riskMarginCallAt) {
+        credit.riskMarginCallAt = new Date();
+      }
+
+      await this.creditRepository.save(credit);
+
+      await this.creditNotificationRepository.save(
+        this.creditNotificationRepository.create({
+          userId: credit.userId,
+          creditId: credit.id,
+          type: newRiskState === RiskStateEnum.MARGIN_CALL
+            ? CreditNotificationTypeEnum.MARGIN_CALL
+            : CreditNotificationTypeEnum.SETTLEMENT,
+          message:
+            `Credit ${credit.creditCode} risk state changed to ${newRiskState}. ` +
+            `Margin ratio: ${marginRatio.toFixed(2)}%. ` +
+            (newRiskState === RiskStateEnum.MARGIN_CALL
+              ? "Your positions may be liquidated if margin ratio falls further."
+              : "Please monitor your positions carefully."),
+          sentAt: new Date(),
+        }),
+      );
+
+      this.eventEmitter.emit(CreditEvents.RISK_STATE_CHANGED, {
+        userId: credit.userId,
+        creditId: credit.id,
+        previousState,
+        newState: newRiskState,
+        marginRatio,
+        equity,
+        collateralValue: totalCollateralValue,
+      });
+
+      this.logger.log(
+        `Credit ${credit.creditCode} risk state: ${previousState} → ${newRiskState} ` +
+        `(margin ratio: ${marginRatio.toFixed(2)}%)`,
+      );
     }
   }
 }

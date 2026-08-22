@@ -18,6 +18,8 @@ export const CreditEvents = {
   SETTLED: "credit.settled",
   REMINDER: "credit.reminder",
   PRICE_UPDATE: "credit.price_update",
+  SETTLEMENT_STATE_CHANGED: "credit.settlement_state_changed",
+  RISK_STATE_CHANGED: "credit.risk_state_changed",
 } as const;
 
 export const KycEvents = {

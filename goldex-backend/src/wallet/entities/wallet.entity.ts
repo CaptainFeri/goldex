@@ -52,6 +52,24 @@ export class WalletEntity extends myBaseEntity {
     precision: 20,
     scale: 8,
     default: 0,
+    name: "available_balance",
+  })
+  availableBalance: number;
+
+  @Column({
+    type: "decimal",
+    precision: 20,
+    scale: 8,
+    default: 0,
+    name: "credit_balance",
+  })
+  creditBalance: number;
+
+  @Column({
+    type: "decimal",
+    precision: 20,
+    scale: 8,
+    default: 0,
     name: "frozen_free_balance",
   })
   frozenFreeBalance: number;
@@ -89,6 +107,18 @@ export class WalletEntity extends myBaseEntity {
 
   getAvailableBalance(): number {
     return this.freeBalance;
+  }
+
+  getOwnBalance(): number {
+    return Number(this.availableBalance) || 0;
+  }
+
+  getCreditBalance(): number {
+    return Number(this.creditBalance) || 0;
+  }
+
+  getTotalTradeable(): number {
+    return (Number(this.availableBalance) || 0) + (Number(this.creditBalance) || 0);
   }
 
   getFrozenBalance(): number {

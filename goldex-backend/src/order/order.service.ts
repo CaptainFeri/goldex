@@ -150,6 +150,21 @@ export class OrderService {
             throw new BadRequestException("CREDIT_EXECUTION_LIMIT_REACHED");
           }
         }
+        // Reduce-only mode (handoff Section 25): when riskState is WARNING or
+        // MARGIN_CALL, block new/increase orders — only reducing orders allowed.
+        if (
+          activeCredit.riskState === "WARNING" ||
+          activeCredit.riskState === "MARGIN_CALL"
+        ) {
+          // Allow SELL orders (reducing a BUY position) on credit-linked pairs.
+          // Block BUY orders (increasing/opening new positions).
+          if (dto.side === "BUY") {
+            throw new BadRequestException(
+              `CREDIT_REDUCE_ONLY: Credit is in ${activeCredit.riskState} state. ` +
+              `Only reducing (sell) orders are allowed.`
+            );
+          }
+        }
       }
 
       const orderCode = this.generateOrderCode(dto.side, dto.orderType);
@@ -520,6 +535,15 @@ export class OrderService {
       await this.orderRepository.save(order);
     }
 
+    // Update CreditOrderEntity status when order is cancelled
+    const creditOrder = await this.creditOrderRepo.findOne({
+      where: { orderId: order.id, status: CreditOrderStatusEnum.ACTIVE },
+    });
+    if (creditOrder) {
+      creditOrder.status = CreditOrderStatusEnum.CANCELLED;
+      await this.creditOrderRepo.save(creditOrder);
+    }
+
     this.logger.log(`Order ${order.orderCode} cancelled by user ${userId}`);
     this.eventEmitter.emit(OrderEvents.CANCELLED, { userId, orderId: order.id });
     return this.getOrderById(orderId, userId);
@@ -603,6 +627,20 @@ export class OrderService {
       }
 
       await this.orderRepository.save(order);
+
+      // Update CreditOrderEntity status when order completes or is cancelled
+      if (order.status === OrderStatusEnum.COMPLETED || order.status === OrderStatusEnum.CANCELLED) {
+        const creditOrder = await this.creditOrderRepo.findOne({
+          where: { orderId: order.id, status: CreditOrderStatusEnum.ACTIVE },
+        });
+        if (creditOrder) {
+          creditOrder.status = order.status === OrderStatusEnum.COMPLETED
+            ? CreditOrderStatusEnum.COMPLETED
+            : CreditOrderStatusEnum.CANCELLED;
+          await this.creditOrderRepo.save(creditOrder);
+        }
+      }
+
       this.logger.log(
         `Limit order ${order.orderCode}: ${totalExecuted}/${qty} matched (${result.restingSize} resting)`,
       );

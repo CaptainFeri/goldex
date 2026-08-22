@@ -20,6 +20,44 @@ const STATUS_KINDS: Record<string, string> = {
   CANCELLED: "red",
 };
 
+const SETTLEMENT_STATE_LABELS: Record<string, string> = {
+  GREEN: "سبز",
+  YELLOW: "زرد",
+  RED: "قرمز",
+  ADMIN_REVIEW: "بررسی ادمین",
+  AUTO_LIQUIDATION: "نقد خودکار",
+  SETTLED: "تسویه شده",
+};
+const SETTLEMENT_STATE_KINDS: Record<string, string> = {
+  GREEN: "green",
+  YELLOW: "gold",
+  RED: "red",
+  ADMIN_REVIEW: "blue",
+  AUTO_LIQUIDATION: "gray",
+  SETTLED: "blue",
+};
+
+const RISK_STATE_LABELS: Record<string, string> = {
+  NORMAL: "عادی",
+  WARNING: "هشدار",
+  MARGIN_CALL: "فراخوان سرمایه",
+  REDUCING: "کاهش",
+  LIQUIDATING: "نقد شدن",
+  LIQUIDATED: "نقد شده",
+  SETTLED: "تسویه شده",
+  DEFAULT: "پیش‌فرض",
+};
+const RISK_STATE_KINDS: Record<string, string> = {
+  NORMAL: "green",
+  WARNING: "gold",
+  MARGIN_CALL: "red",
+  REDUCING: "gold",
+  LIQUIDATING: "red",
+  LIQUIDATED: "gray",
+  SETTLED: "blue",
+  DEFAULT: "red",
+};
+
 const fmtNum = (n: any) => (n ?? 0).toLocaleString("fa-IR");
 const fmtDate = (d: string | null) =>
   d ? new Date(d).toLocaleDateString("fa-IR", { year: "numeric", month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }) : "—";
@@ -112,6 +150,8 @@ export default function CreditsPage() {
                 <th>کاربر</th>
                 <th>مبلغ</th>
                 <th>وضعیت</th>
+                <th>وضعیت تسویه</th>
+                <th>وضعیت ریسک</th>
                 <th>بازه اخطار</th>
                 <th>انقضا</th>
                 <th>فراخوان سرمایه</th>
@@ -132,6 +172,16 @@ export default function CreditsPage() {
                       <Badge kind={STATUS_KINDS[c.status] as "green" | "red" | "gold" | "gray"}>{STATUS_LABELS[c.status]}</Badge>
                       {isMarginCalled(c) && <Badge kind="red">مسدود / فراخوان</Badge>}
                     </div>
+                  </td>
+                  <td>
+                    <Badge kind={(SETTLEMENT_STATE_KINDS[c.settlementState] || "gray") as any}>
+                      {SETTLEMENT_STATE_LABELS[c.settlementState] || c.settlementState || "—"}
+                    </Badge>
+                  </td>
+                  <td>
+                    <Badge kind={(RISK_STATE_KINDS[c.riskState] || "gray") as any}>
+                      {RISK_STATE_LABELS[c.riskState] || c.riskState || "—"}
+                    </Badge>
                   </td>
                   <td>{c.reminderTimerHours}h</td>
                   <td>{fmtDate(c.expireAt)}</td>

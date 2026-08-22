@@ -34,4 +34,13 @@ export class CreditOrderEntity extends myBaseEntity {
 
   @Column({ type: "timestamptz", nullable: true, name: "margin_called_at" })
   marginCalledAt: Date;
+
+  @Column({ type: "int", default: 1, name: "trade_chain_level" })
+  tradeChainLevel: number;
+
+  @Column({ type: "varchar", length: 50, nullable: true, name: "trade_thread_id" })
+  tradeThreadId: string;
+
+  @Column({ type: "uuid", nullable: true, name: "parent_credit_order_id" })
+  parentCreditOrderId: string;
 }

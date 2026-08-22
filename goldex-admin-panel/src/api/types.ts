@@ -298,6 +298,8 @@ export interface DiscountList {
 
 // ---- Credit ----
 export type CreditStatus = "PENDING" | "ACTIVE" | "SETTLED" | "EXPIRED" | "CANCELLED";
+export type SettlementState = "GREEN" | "YELLOW" | "RED" | "ADMIN_REVIEW" | "AUTO_LIQUIDATION" | "SETTLED";
+export type RiskState = "NORMAL" | "WARNING" | "MARGIN_CALL" | "REDUCING" | "LIQUIDATING" | "LIQUIDATED" | "SETTLED" | "DEFAULT";
 
 export interface Credit {
   id: string;
@@ -317,6 +319,18 @@ export interface Credit {
   settleImagePath: string | null;
   maxExecutionTradeLevel: number | null;
   executedTradeLevel: number;
+  settlementState: SettlementState;
+  riskState: RiskState;
+  greenDurationHours: number;
+  yellowDurationHours: number;
+  redDurationHours: number;
+  settlementYellowAt: string | null;
+  settlementRedAt: string | null;
+  settlementAdminReviewAt: string | null;
+  riskWarningAt: string | null;
+  riskMarginCallAt: string | null;
+  outstandingShortfall: number;
+  isInDefault: boolean;
   metadata: any;
   user?: { id: string; firstName?: string; lastName?: string; phone?: string; email?: string };
   creditOrders?: any[];

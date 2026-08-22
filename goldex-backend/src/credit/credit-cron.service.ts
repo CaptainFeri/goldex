@@ -27,4 +27,24 @@ export class CreditCronService {
       this.logger.error(`Error processing expired credits: ${(error as Error).message}`);
     }
   }
+
+  @Cron(CronExpression.EVERY_10_MINUTES)
+  async handleSettlementTimers() {
+    this.logger.log("Running settlement timer state machine...");
+    try {
+      await this.creditService.processSettlementTimers();
+    } catch (error) {
+      this.logger.error(`Error processing settlement timers: ${(error as Error).message}`);
+    }
+  }
+
+  @Cron(CronExpression.EVERY_5_MINUTES)
+  async handleRiskStateTransitions() {
+    this.logger.log("Running risk state machine...");
+    try {
+      await this.creditService.processRiskStateTransitions();
+    } catch (error) {
+      this.logger.error(`Error processing risk state transitions: ${(error as Error).message}`);
+    }
+  }
 }

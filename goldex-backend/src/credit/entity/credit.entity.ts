@@ -2,6 +2,8 @@ import { Entity, Column, ManyToOne, JoinColumn, OneToMany } from "typeorm";
 import { myBaseEntity } from "../../shared/entity/base.entity";
 import { UserEntity } from "../../user/entity/user.entity";
 import { CreditStatusEnum } from "../enum/credit-status.enum";
+import { SettlementStateEnum } from "../enum/settlement-state.enum";
+import { RiskStateEnum } from "../enum/risk-state.enum";
 import { CreditOrderEntity } from "./credit-order.entity";
 
 @Entity("credit")
@@ -60,6 +62,51 @@ export class CreditEntity extends myBaseEntity {
 
   @Column({ type: "int", default: 0, name: "executed_trade_level" })
   executedTradeLevel: number;
+
+  @Column({ type: "int", nullable: true, name: "max_concurrent_orders" })
+  maxConcurrentOrders: number;
+
+  @Column({ type: "int", nullable: true, name: "max_trade_chain_depth" })
+  maxTradeChainDepth: number;
+
+  @Column({ type: "int", default: 0, name: "current_trade_chain_depth" })
+  currentTradeChainDepth: number;
+
+  @Column({ type: "enum", enum: SettlementStateEnum, default: SettlementStateEnum.GREEN, name: "settlement_state" })
+  settlementState: SettlementStateEnum;
+
+  @Column({ type: "enum", enum: RiskStateEnum, default: RiskStateEnum.NORMAL, name: "risk_state" })
+  riskState: RiskStateEnum;
+
+  @Column({ type: "int", default: 8, name: "green_duration_hours" })
+  greenDurationHours: number;
+
+  @Column({ type: "int", default: 4, name: "yellow_duration_hours" })
+  yellowDurationHours: number;
+
+  @Column({ type: "int", default: 4, name: "red_duration_hours" })
+  redDurationHours: number;
+
+  @Column({ type: "timestamptz", nullable: true, name: "settlement_yellow_at" })
+  settlementYellowAt: Date;
+
+  @Column({ type: "timestamptz", nullable: true, name: "settlement_red_at" })
+  settlementRedAt: Date;
+
+  @Column({ type: "timestamptz", nullable: true, name: "settlement_admin_review_at" })
+  settlementAdminReviewAt: Date;
+
+  @Column({ type: "timestamptz", nullable: true, name: "risk_warning_at" })
+  riskWarningAt: Date;
+
+  @Column({ type: "timestamptz", nullable: true, name: "risk_margin_call_at" })
+  riskMarginCallAt: Date;
+
+  @Column({ type: "decimal", precision: 20, scale: 8, default: 0, name: "outstanding_shortfall" })
+  outstandingShortfall: number;
+
+  @Column({ type: "boolean", default: false, name: "is_in_default" })
+  isInDefault: boolean;
 
   @Column({ type: "jsonb", nullable: true })
   metadata: any;

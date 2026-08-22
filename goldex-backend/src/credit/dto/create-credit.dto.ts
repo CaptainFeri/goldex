@@ -81,6 +81,41 @@ export class CreateCreditDto {
   @Type(() => Number)
   maxExecutionTradeLevel?: number;
 
+  @ApiProperty({ required: false })
+  @IsOptional()
+  @IsNumber()
+  @Min(1)
+  @Type(() => Number)
+  maxConcurrentOrders?: number;
+
+  @ApiProperty({ required: false })
+  @IsOptional()
+  @IsNumber()
+  @Min(1)
+  @Type(() => Number)
+  maxTradeChainDepth?: number;
+
+  @ApiProperty({ required: false, default: 8, description: "Green phase duration in hours" })
+  @IsOptional()
+  @IsNumber()
+  @Min(1)
+  @Type(() => Number)
+  greenDurationHours?: number;
+
+  @ApiProperty({ required: false, default: 4, description: "Yellow phase duration in hours" })
+  @IsOptional()
+  @IsNumber()
+  @Min(1)
+  @Type(() => Number)
+  yellowDurationHours?: number;
+
+  @ApiProperty({ required: false, default: 4, description: "Red phase duration in hours" })
+  @IsOptional()
+  @IsNumber()
+  @Min(1)
+  @Type(() => Number)
+  redDurationHours?: number;
+
   @ApiProperty({ required: false, type: [FrozenWalletDto] })
   @IsOptional()
   @ValidateNested({ each: true })

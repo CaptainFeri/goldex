@@ -12,6 +12,7 @@ import { AdminOrderController } from "./admin-ordeer.controller";
 import { OrderBookService } from "../../order-book/order-book.service";
 import { QuoteRequestEntity } from "../../quote-request/quote-request.entity";
 import { WalletCoreModule } from "../../wallet/wallet-core.module";
+import { CreditOrderEntity } from "../../credit/entity/credit-order.entity";
 
 @Module({
   imports: [
@@ -23,6 +24,7 @@ import { WalletCoreModule } from "../../wallet/wallet-core.module";
       PricePairEntity,
       SymbolEntity,
       QuoteRequestEntity,
+      CreditOrderEntity,
     ]),
     WalletCoreModule,
   ],

@@ -14,6 +14,8 @@ import { OrderSideEnum } from "../enum/order.side.enum";
 import { QuoteRequestEntity, QuoteRequestStatus } from "../../quote-request/quote-request.entity";
 import { WalletOrderService } from "../../wallet/services/wallet-order.service";
 import { OrderBookService } from "../../order-book/order-book.service";
+import { CreditOrderEntity } from "../../credit/entity/credit-order.entity";
+import { CreditOrderStatusEnum } from "../../credit/enum/credit-order-status.enum";
 
 @Injectable()
 export class AdminOrderService {
@@ -32,6 +34,8 @@ export class AdminOrderService {
     private readonly pricePairRepository: Repository<PricePairEntity>,
     @InjectRepository(QuoteRequestEntity)
     private readonly quoteRequestRepository: Repository<QuoteRequestEntity>,
+    @InjectRepository(CreditOrderEntity)
+    private readonly creditOrderRepo: Repository<CreditOrderEntity>,
     private readonly dataSource: DataSource,
     private readonly walletOrderService: WalletOrderService,
     private readonly orderBookService: OrderBookService,
@@ -329,6 +333,17 @@ export class AdminOrderService {
       order.completedAt = new Date();
     } else if (order.executedQuantity > 0) {
       order.status = OrderStatusEnum.PARTIALLY_COMPLETED;
+    }
+
+    // Update CreditOrderEntity status when order completes
+    if (order.status === OrderStatusEnum.COMPLETED) {
+      const creditOrder = await this.creditOrderRepo.findOne({
+        where: { orderId: order.id, status: CreditOrderStatusEnum.ACTIVE },
+      });
+      if (creditOrder) {
+        creditOrder.status = CreditOrderStatusEnum.COMPLETED;
+        await this.creditOrderRepo.save(creditOrder);
+      }
     }
   }
 
