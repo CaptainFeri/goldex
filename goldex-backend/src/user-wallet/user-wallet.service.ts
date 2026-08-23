@@ -51,7 +51,7 @@ export class UserWalletService {
   // Wallets are filtered by the user's assigned market types.
   async getUserWallets(userId: string) {
     const wallets = await this.walletRepo.find({
-      where: { userId, walletType: WalletTypeEnum.DEPOSIT },
+      where: { userId },
       relations: { symbol: true },
       order: { createAt: "ASC" },
     });

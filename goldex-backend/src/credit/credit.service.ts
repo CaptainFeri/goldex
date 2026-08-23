@@ -464,7 +464,7 @@ export class CreditService {
       const collateralPair = await this.pricePairRepository.findOne({
         where: { baseId: depositWallet.symbolId, quoteId: level.creditBaseSymbolId, isValid: true },
       });
-      const collateralPrice = collateralPair ? Number(collateralPair.bestSellPrice) : null;
+      const collateralPrice = collateralPair ? Number(collateralPair.bestSellGramPrice) : null;
       if (!collateralPair || !collateralPrice || collateralPrice <= 0) {
         // Collateral denominated directly in the base symbol (e.g. IRR cash).
         if (depositWallet.symbolId !== level.creditBaseSymbolId) {
@@ -1784,7 +1784,7 @@ export class CreditService {
       const pair = await this.pricePairRepository.findOne({
         where: { baseId: credit.collateralSymbolId, quoteId: credit.creditBaseSymbolId, isValid: true },
       });
-      price = pair ? Number(pair.bestSellPrice) : null;
+      price = pair ? Number(pair.bestSellGramPrice) : null;
     }
     if (!price || price <= 0) {
       return { credit, drawdownPercent: Number(credit.lastDrawdownPercent) || 0 };
