@@ -145,8 +145,8 @@ export default function CreditPage() {
               {activeCredit.drawdownPercent != null && (
                 <div>
                   <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Drawdown</div>
-                  <div style={{ fontWeight: 500, color: (activeCredit.lastDrawdownPercent ?? 0) >= (activeCredit.drawdownPercent ?? 100) ? 'var(--red)' : 'inherit' }}>
-                    {(activeCredit.lastDrawdownPercent ?? 0).toFixed(1)}% / {activeCredit.drawdownPercent}%
+                  <div style={{ fontWeight: 500, color: Number(activeCredit.lastDrawdownPercent ?? 0) >= Number(activeCredit.drawdownPercent ?? 100) ? 'var(--red)' : 'inherit' }}>
+                    {Number(activeCredit.lastDrawdownPercent ?? 0).toFixed(1)}% / {activeCredit.drawdownPercent}%
                   </div>
                 </div>
               )}

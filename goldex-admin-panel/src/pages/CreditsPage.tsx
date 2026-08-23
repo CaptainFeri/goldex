@@ -174,8 +174,8 @@ export default function CreditsPage() {
                   <td className="mono">{fmtNum(c.creditLimit)}</td>
                   <td>
                     {c.drawdownPercent != null ? (
-                      <span style={{ color: (c.lastDrawdownPercent ?? 0) >= (c.drawdownPercent ?? 100) ? "var(--red)" : "inherit" }}>
-                        {c.lastDrawdownPercent?.toFixed(1) ?? "0"}% / {c.drawdownPercent}%
+                      <span style={{ color: Number(c.lastDrawdownPercent ?? 0) >= Number(c.drawdownPercent ?? 100) ? "var(--red)" : "inherit" }}>
+                        {Number(c.lastDrawdownPercent ?? 0).toFixed(1)}% / {c.drawdownPercent}%
                       </span>
                     ) : "—"}
                   </td>
