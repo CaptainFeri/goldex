@@ -503,45 +503,118 @@ export default function WalletPage() {
         {wallets.length === 0 ? (
           <div className="card"><p style={{ color: 'var(--text-muted)', fontSize: '0.9rem' }}>You don't have any wallets yet.</p></div>
         ) : (
-          <div className="wallet-grid animate-fade-up">
-            {wallets.map((w) => {
-              const sym = w.symbol?.slug || w.symbol?.name || '—'
-              return (
-                <div key={w.id} className="wallet-card">
-                  <div className="wallet-card-head">
-                    <div className="wallet-sym-icon">{(sym[0] || '?').toUpperCase()}</div>
-                    <div>
-                      <div className="wallet-sym-name">{sym}</div>
-                      <div className="wallet-sym-sub">{w.symbol?.name || ''}</div>
-                    </div>
-                  </div>
-                  <div className="wallet-total">{fmt(w.totalBalance)}</div>
-                  <div className="wallet-bal-row"><span className="k">Available</span><span className="v">{fmt(w.availableBalance)}</span></div>
-                  <div className="wallet-bal-row"><span className="k">Locked</span><span className="v">{fmt(w.lockedBalance)}</span></div>
-                  {Number(w.frozenFreeBalance) > 0 && (
-                    <div className="wallet-bal-row"><span className="k">Frozen (Credit)</span><span className="v" style={{ color: 'var(--danger)' }}>{fmt(Number(w.frozenFreeBalance) + Number(w.frozenLockedBalance || 0))}</span></div>
-                  )}
-                  {w.status && w.status !== 'ACTIVE' && (
-                    <div style={{ marginTop: '0.6rem' }}>
-                      <span className="badge badge-danger">{w.status}</span>
-                    </div>
-                  )}
-                  <div className="wallet-actions">
-                    {w.symbol?.depositTypes?.length > 0 && (
-                      <Button variant="ghost" onClick={() => setModal({ type: 'deposit', wallet: w })}>
-                        Deposit
-                      </Button>
-                    )}
-                    {w.symbol?.withdrawTypes?.length > 0 && (
-                      <Button variant="ghost" onClick={() => setModal({ type: 'withdraw', wallet: w })}>
-                        Withdraw
-                      </Button>
-                    )}
-                  </div>
+          <>
+            {/* Deposit Wallets */}
+            {wallets.filter(w => !w.walletType || w.walletType === 'DEPOSIT').length > 0 && (
+              <div>
+                <h3 style={{ fontSize: '1rem', fontWeight: 600, marginBottom: '0.75rem', color: 'var(--text-primary)' }}>
+                  Deposit Wallets
+                </h3>
+                <div className="wallet-grid animate-fade-up">
+                  {wallets.filter(w => !w.walletType || w.walletType === 'DEPOSIT').map((w) => {
+                    const sym = w.symbol?.slug || w.symbol?.name || '—'
+                    return (
+                      <div key={w.id} className="wallet-card">
+                        <div className="wallet-card-head">
+                          <div className="wallet-sym-icon">{(sym[0] || '?').toUpperCase()}</div>
+                          <div>
+                            <div className="wallet-sym-name">{sym}</div>
+                            <div className="wallet-sym-sub">{w.symbol?.name || ''}</div>
+                          </div>
+                        </div>
+                        <div className="wallet-total">{fmt(w.totalBalance)}</div>
+                        <div className="wallet-bal-row"><span className="k">Available</span><span className="v">{fmt(w.availableBalance)}</span></div>
+                        <div className="wallet-bal-row"><span className="k">Locked</span><span className="v">{fmt(w.lockedBalance)}</span></div>
+                        {Number(w.frozenFreeBalance) > 0 && (
+                          <div className="wallet-bal-row"><span className="k">Frozen</span><span className="v" style={{ color: 'var(--danger)' }}>{fmt(Number(w.frozenFreeBalance) + Number(w.frozenLockedBalance || 0))}</span></div>
+                        )}
+                        {w.status && w.status !== 'ACTIVE' && (
+                          <div style={{ marginTop: '0.6rem' }}>
+                            <span className="badge badge-danger">{w.status}</span>
+                          </div>
+                        )}
+                        <div className="wallet-actions">
+                          {w.symbol?.depositTypes?.length > 0 && (
+                            <Button variant="ghost" onClick={() => setModal({ type: 'deposit', wallet: w })}>
+                              Deposit
+                            </Button>
+                          )}
+                          {w.symbol?.withdrawTypes?.length > 0 && (
+                            <Button variant="ghost" onClick={() => setModal({ type: 'withdraw', wallet: w })}>
+                              Withdraw
+                            </Button>
+                          )}
+                        </div>
+                      </div>
+                    )
+                  })}
                 </div>
-              )
-            })}
-          </div>
+              </div>
+            )}
+
+            {/* Credit Wallets */}
+            {wallets.filter(w => w.walletType === 'CREDIT').length > 0 && (
+              <div>
+                <h3 style={{ fontSize: '1rem', fontWeight: 600, marginBottom: '0.75rem', color: 'var(--gold)' }}>
+                  Credit Wallets
+                </h3>
+                <div className="wallet-grid animate-fade-up">
+                  {wallets.filter(w => w.walletType === 'CREDIT').map((w) => {
+                    const sym = w.symbol?.slug || w.symbol?.name || '—'
+                    return (
+                      <div key={w.id} className="wallet-card" style={{ borderColor: 'var(--gold)', borderWidth: '2px' }}>
+                        <div className="wallet-card-head">
+                          <div className="wallet-sym-icon" style={{ background: 'var(--gold)', color: '#000' }}>{(sym[0] || '?').toUpperCase()}</div>
+                          <div>
+                            <div className="wallet-sym-name">{sym}</div>
+                            <div className="wallet-sym-sub" style={{ color: 'var(--gold)', fontSize: '0.7rem', fontWeight: 600 }}>CREDIT</div>
+                          </div>
+                        </div>
+                        <div className="wallet-total" style={{ color: 'var(--gold)' }}>{fmt(w.creditBalance || w.totalBalance)}</div>
+                        <div className="wallet-bal-row"><span className="k">Credit Available</span><span className="v" style={{ color: 'var(--gold)' }}>{fmt(w.creditBalance || 0)}</span></div>
+                        <div className="wallet-bal-row"><span className="k">Used</span><span className="v">{fmt(w.lockedBalance)}</span></div>
+                        {w.status && w.status !== 'ACTIVE' && (
+                          <div style={{ marginTop: '0.6rem' }}>
+                            <span className="badge badge-danger">{w.status}</span>
+                          </div>
+                        )}
+                      </div>
+                    )
+                  })}
+                </div>
+              </div>
+            )}
+
+            {/* Collateral Wallets */}
+            {wallets.filter(w => w.walletType === 'COLLATERAL').length > 0 && (
+              <div>
+                <h3 style={{ fontSize: '1rem', fontWeight: 600, marginBottom: '0.75rem', color: 'var(--text-muted)' }}>
+                  Collateral Wallets (Frozen)
+                </h3>
+                <div className="wallet-grid animate-fade-up">
+                  {wallets.filter(w => w.walletType === 'COLLATERAL').map((w) => {
+                    const sym = w.symbol?.slug || w.symbol?.name || '—'
+                    return (
+                      <div key={w.id} className="wallet-card" style={{ borderColor: 'var(--text-muted)', borderWidth: '2px', opacity: 0.8 }}>
+                        <div className="wallet-card-head">
+                          <div className="wallet-sym-icon" style={{ background: 'var(--text-muted)', color: '#fff' }}>{(sym[0] || '?').toUpperCase()}</div>
+                          <div>
+                            <div className="wallet-sym-name">{sym}</div>
+                            <div className="wallet-sym-sub" style={{ color: 'var(--text-muted)', fontSize: '0.7rem', fontWeight: 600 }}>COLLATERAL</div>
+                          </div>
+                        </div>
+                        <div className="wallet-total" style={{ color: 'var(--text-muted)' }}>{fmt(w.totalBalance)}</div>
+                        <div className="wallet-bal-row"><span className="k">Frozen Amount</span><span className="v">{fmt(w.freeBalance)}</span></div>
+                        <div style={{ marginTop: '0.5rem', fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+                          This collateral is frozen as security for your credit facility
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+              </div>
+            )}
+          </>
         )}
 
         <div className="card animate-fade-up">
