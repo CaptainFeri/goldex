@@ -476,7 +476,12 @@ export class CreditService {
 
       const collateralValue = new Decimal(dto.amount).mul(collateralPrice || 1);
       const creditLimit = collateralValue.mul(dto.leverage);
-      await this.enforceCreditLimits(userId, creditLimit.toNumber(), new Date(Date.now() + 3650 * 86400000).toISOString());
+
+      // Get the maximum duration from user-level and calculate expire time
+      const maxDays = Number(await this.userLevelService.getFeatureValue(userId, "CREDIT_MAX_DURATION_DAYS")) || 30;
+      const expireAt = new Date(Date.now() + maxDays * 86400000);
+
+      await this.enforceCreditLimits(userId, creditLimit.toNumber(), expireAt.toISOString());
 
       // 1. Freeze: DEPOSIT → COLLATERAL wallet row.
       depositWallet.freeBalance = new Decimal(depositWallet.freeBalance).minus(dto.amount).toNumber();
@@ -554,7 +559,6 @@ export class CreditService {
 
       // 3. Facility — ACTIVE immediately, with a snapshot of the level's risk
       // settings so later level changes don't affect open facilities.
-      const maxDays = Number(await this.userLevelService.getFeatureValue(userId, "CREDIT_MAX_DURATION_DAYS")) || 30;
       const creditCode = `CR-${Date.now().toString(36).toUpperCase()}-${crypto.randomUUID().slice(0, 4).toUpperCase()}`;
       const credit = manager.create(CreditEntity, {
         userId,
@@ -562,7 +566,7 @@ export class CreditService {
         creditCode,
         amount: creditLimit.toNumber(),
         status: CreditStatusEnum.ACTIVE,
-        expireAt: new Date(Date.now() + maxDays * 86400000),
+        expireAt,
         activatedAt: new Date(),
         leverage: dto.leverage,
         creditLimit: creditLimit.toNumber(),
