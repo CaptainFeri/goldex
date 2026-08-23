@@ -92,6 +92,9 @@ export class CreditV2Mig1000000000081 implements MigrationInterface {
     await queryRunner.query(`ALTER TABLE "price_pairs" ADD COLUMN "sell_warn_hours" integer`);
     await queryRunner.query(`ALTER TABLE "price_pairs" ADD COLUMN "sell_expire_hours" integer`);
     await queryRunner.query(`ALTER TABLE "price_pairs" ADD COLUMN "sell_grace_hours" integer`);
+    
+    // Excluded days from deadline calculation (0=Sunday, 1=Monday, ..., 5=Friday, 6=Saturday)
+    await queryRunner.query(`ALTER TABLE "price_pairs" ADD COLUMN "excluded_days" integer[]`);
 
     // ── 4. Credit-linked request deadline tracking ──────────────────
     await queryRunner.query(`ALTER TABLE "order" ADD COLUMN "is_credit_linked" boolean NOT NULL DEFAULT false`);
@@ -158,6 +161,7 @@ export class CreditV2Mig1000000000081 implements MigrationInterface {
     await queryRunner.query(`ALTER TABLE "order" DROP COLUMN "is_credit_linked"`);
 
     // 3
+    await queryRunner.query(`ALTER TABLE "price_pairs" DROP COLUMN "excluded_days"`);
     await queryRunner.query(`ALTER TABLE "price_pairs" DROP COLUMN "sell_grace_hours"`);
     await queryRunner.query(`ALTER TABLE "price_pairs" DROP COLUMN "sell_expire_hours"`);
     await queryRunner.query(`ALTER TABLE "price_pairs" DROP COLUMN "sell_warn_hours"`);

@@ -9,10 +9,37 @@ export interface PendDeadlines {
 }
 
 /**
+ * Calculate the next valid date/time, skipping excluded days.
+ * @param date - The date to check
+ * @param excludedDays - Array of excluded days (0=Sunday, 1=Monday, ..., 5=Friday, 6=Saturday)
+ * @returns The next valid date/time
+ */
+function getNextValidDate(date: Date, excludedDays: number[] | null): Date {
+  if (!excludedDays || excludedDays.length === 0) {
+    return date;
+  }
+
+  let result = new Date(date);
+  let dayOfWeek = result.getDay();
+
+  // Keep moving forward until we find a non-excluded day
+  while (excludedDays.includes(dayOfWeek)) {
+    result.setDate(result.getDate() + 1);
+    // Set to start of day (00:00:00)
+    result.setHours(0, 0, 0, 0);
+    dayOfWeek = result.getDay();
+  }
+
+  return result;
+}
+
+/**
  * Compute the pend-deadline timestamps for a credit-linked request from the
  * pair's per-side time limits: x = warn hours, y = expire hours,
  * z = post-expire grace hours. Returns null timestamps when the pair has no
  * limit configured for that side.
+ * 
+ * Excluded days (e.g., Friday) are skipped when calculating deadlines.
  */
 export function computePendDeadlines(
   pair: PricePairEntity,
@@ -23,9 +50,13 @@ export function computePendDeadlines(
   const warnHours = isBuy ? pair.buyWarnHours : pair.sellWarnHours;
   const expireHours = isBuy ? pair.buyExpireHours : pair.sellExpireHours;
   const graceHours = isBuy ? pair.buyGraceHours : pair.sellGraceHours;
+  const excludedDays = pair.excludedDays || null;
 
-  const add = (hours: number | null | undefined): Date | null =>
-    hours == null ? null : new Date(now.getTime() + hours * 3600_000);
+  const add = (hours: number | null | undefined): Date | null => {
+    if (hours == null) return null;
+    const date = new Date(now.getTime() + hours * 3600_000);
+    return getNextValidDate(date, excludedDays);
+  };
 
   return {
     warnAt: add(warnHours),

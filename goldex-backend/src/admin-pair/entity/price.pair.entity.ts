@@ -91,6 +91,10 @@ export class PricePairEntity extends myBaseEntity {
   @Column({ type: "int", nullable: true, name: "sell_grace_hours" })
   sellGraceHours: number;
 
+  // Excluded days from deadline calculation (0=Sunday, 1=Monday, ..., 5=Friday, 6=Saturday)
+  @Column({ type: "int", array: true, nullable: true, name: "excluded_days" })
+  excludedDays: number[];
+
   @ManyToMany(() => UserLevelEntity, (l) => l.pairs)
   levels: UserLevelEntity[];
 }

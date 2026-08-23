@@ -30,6 +30,7 @@ const EMPTY = {
   sellWarnHours: "",
   sellExpireHours: "",
   sellGraceHours: "",
+  excludedDays: [] as number[],
 };
 
 function PairForm({ initial, symbols, onClose }: { initial?: any; symbols: any[]; onClose: () => void }) {
@@ -57,6 +58,7 @@ function PairForm({ initial, symbols, onClose }: { initial?: any; symbols: any[]
           sellWarnHours: initial.sellWarnHours ?? "",
           sellExpireHours: initial.sellExpireHours ?? "",
           sellGraceHours: initial.sellGraceHours ?? "",
+          excludedDays: initial.excludedDays ?? [],
         }
       : {}),
   });
@@ -98,6 +100,7 @@ function PairForm({ initial, symbols, onClose }: { initial?: any; symbols: any[]
       sellWarnHours: form.sellWarnHours ? n(form.sellWarnHours) : null,
       sellExpireHours: form.sellExpireHours ? n(form.sellExpireHours) : null,
       sellGraceHours: form.sellGraceHours ? n(form.sellGraceHours) : null,
+      excludedDays: form.excludedDays && form.excludedDays.length > 0 ? form.excludedDays : null,
     });
   }
 
@@ -167,6 +170,36 @@ function PairForm({ initial, symbols, onClose }: { initial?: any; symbols: any[]
             <div className="field">
               <label>فروش — مهلت پس از انقضا (ساعت)</label>
               <input className="input mono" dir="ltr" type="number" min={0} value={form.sellGraceHours} onChange={(e) => set("sellGraceHours", e.target.value)} placeholder="z" />
+            </div>
+          </div>
+          
+          <div className="field" style={{ marginTop: 15 }}>
+            <label>روزهای مستثنی از محاسبه مهلت</label>
+            <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginTop: 5 }}>
+              {[
+                { value: 0, label: "یکشنبه" },
+                { value: 1, label: "دوشنبه" },
+                { value: 2, label: "سه‌شنبه" },
+                { value: 3, label: "چهارشنبه" },
+                { value: 4, label: "پنج‌شنبه" },
+                { value: 5, label: "جمعه" },
+                { value: 6, label: "شنبه" },
+              ].map((day) => (
+                <label key={day.value} style={{ display: "flex", alignItems: "center", gap: 4, fontSize: "0.85rem" }}>
+                  <input
+                    type="checkbox"
+                    checked={form.excludedDays?.includes(day.value) || false}
+                    onChange={(e) => {
+                      const current = form.excludedDays || [];
+                      const updated = e.target.checked
+                        ? [...current, day.value]
+                        : current.filter((d: number) => d !== day.value);
+                      set("excludedDays", updated);
+                    }}
+                  />
+                  {day.label}
+                </label>
+              ))}
             </div>
           </div>
         </details>

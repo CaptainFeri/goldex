@@ -477,9 +477,9 @@ export class CreditService {
       const collateralValue = new Decimal(dto.amount).mul(collateralPrice || 1);
       const creditLimit = collateralValue.mul(dto.leverage);
 
-      // Get the maximum duration from user-level and calculate expire time
-      const maxDays = Number(await this.userLevelService.getFeatureValue(userId, "CREDIT_MAX_DURATION_DAYS")) || 30;
-      const expireAt = new Date(Date.now() + maxDays * 86400000);
+      // Credits don't have expire time - they only close on drawdown or manual settlement
+      // Set expireAt far in the future to avoid triggering expiry logic
+      const expireAt = new Date('2099-12-31T23:59:59.999Z');
 
       await this.enforceCreditLimits(userId, creditLimit.toNumber(), expireAt.toISOString());
 
@@ -1258,6 +1258,105 @@ export class CreditService {
       relations: { creditOrders: { order: true } },
       order: { createAt: "DESC" },
     });
+  }
+
+  async getCreditById(creditId: string): Promise<CreditEntity> {
+    const credit = await this.creditRepository.findOne({
+      where: { id: creditId },
+      relations: {
+        user: true,
+        creditOrders: {
+          order: {
+            pricePair: { baseSymbol: true, quoteSymbol: true },
+          },
+        },
+      },
+    });
+    if (!credit) throw new NotFoundException("Credit not found");
+    return credit;
+  }
+
+  /**
+   * Calculate profit/loss for a credit based on its orders.
+   * For BUY orders: PnL = (currentPrice - entryPrice) * quantity
+   * For SELL orders: PnL = (entryPrice - currentPrice) * quantity
+   */
+  calculateCreditPnL(credit: CreditEntity): {
+    totalPnL: number;
+    realizedPnL: number;
+    unrealizedPnL: number;
+    orders: Array<{
+      orderId: string;
+      side: string;
+      entryPrice: number;
+      currentPrice: number | null;
+      quantity: number;
+      executedQuantity: number;
+      pnl: number;
+      status: string;
+      pairKey: string;
+    }>;
+  } {
+    let realizedPnL = 0;
+    let unrealizedPnL = 0;
+    const orderDetails: Array<{
+      orderId: string;
+      side: string;
+      entryPrice: number;
+      currentPrice: number | null;
+      quantity: number;
+      executedQuantity: number;
+      pnl: number;
+      status: string;
+      pairKey: string;
+    }> = [];
+
+    for (const co of credit.creditOrders || []) {
+      const order = co.order;
+      if (!order) continue;
+
+      const entryPrice = Number(co.priceAtOrderTime) || 0;
+      const currentPrice = co.currentPrice ? Number(co.currentPrice) : null;
+      const quantity = Number(order.quantity) || 0;
+      const executedQuantity = Number(order.executedQuantity) || 0;
+      const pairKey = order.pricePair
+        ? `${order.pricePair.baseSymbol?.slug || "?"}/${order.pricePair.quoteSymbol?.slug || "?"}`
+        : "?";
+
+      let pnl = 0;
+      if (currentPrice && executedQuantity > 0) {
+        if (order.side === "BUY") {
+          pnl = (currentPrice - entryPrice) * executedQuantity;
+        } else {
+          pnl = (entryPrice - currentPrice) * executedQuantity;
+        }
+      }
+
+      if (order.status === "COMPLETED" || order.status === "CANCELLED") {
+        realizedPnL += pnl;
+      } else {
+        unrealizedPnL += pnl;
+      }
+
+      orderDetails.push({
+        orderId: order.id,
+        side: order.side,
+        entryPrice,
+        currentPrice,
+        quantity,
+        executedQuantity,
+        pnl,
+        status: order.status,
+        pairKey,
+      });
+    }
+
+    return {
+      totalPnL: realizedPnL + unrealizedPnL,
+      realizedPnL,
+      unrealizedPnL,
+      orders: orderDetails,
+    };
   }
 
   async getAllCredits(query?: { userId?: string; status?: CreditStatusEnum; search?: string }): Promise<CreditEntity[]> {

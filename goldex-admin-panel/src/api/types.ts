@@ -115,6 +115,7 @@ export interface PricePair {
   sellWarnHours?: number | null;
   sellExpireHours?: number | null;
   sellGraceHours?: number | null;
+  excludedDays?: number[] | null;
   [k: string]: any;
 }
 export interface PairMapping {

@@ -1,4 +1,4 @@
-import { IsString, IsNumber, IsBoolean, IsOptional, IsDecimal, Min, Max } from "class-validator";
+import { IsString, IsNumber, IsBoolean, IsOptional, IsDecimal, Min, Max, IsArray, IsInt } from "class-validator";
 import { Type } from "class-transformer";
 import { ApiProperty } from "@nestjs/swagger";
 
@@ -101,4 +101,13 @@ export class CreatePricePairDto {
   @Type(() => Number)
   @ApiProperty({ required: false })
   sellGraceHours?: number;
+
+  // Excluded days from deadline calculation (0=Sunday, 1=Monday, ..., 5=Friday, 6=Saturday)
+  @IsOptional()
+  @IsArray()
+  @IsInt({ each: true })
+  @Min(0, { each: true })
+  @Max(6, { each: true })
+  @ApiProperty({ required: false, type: [Number], description: "Excluded days (0=Sunday, 1=Monday, ..., 5=Friday, 6=Saturday)" })
+  excludedDays?: number[];
 }

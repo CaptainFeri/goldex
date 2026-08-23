@@ -58,6 +58,21 @@ const RISK_STATE_KINDS: Record<string, string> = {
   DEFAULT: "red",
 };
 
+const ORDER_STATUS_LABELS: Record<string, string> = {
+  PENDING: "در انتظار",
+  PARTIALLY_COMPLETED: "نیمه انجام",
+  COMPLETED: "انجام شده",
+  CANCELLED: "لغو شده",
+  REJECTED: "رد شده",
+};
+
+const CREDIT_ORDER_STATUS_LABELS: Record<string, string> = {
+  ACTIVE: "فعال",
+  MARGIN_CALLED: "فراخوان",
+  COMPLETED: "انجام شده",
+  CANCELLED: "لغو شده",
+};
+
 const fmtNum = (n: any) => (n ?? 0).toLocaleString("fa-IR");
 const fmtDate = (d: string | null) =>
   d ? new Date(d).toLocaleDateString("fa-IR", { year: "numeric", month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }) : "—";
@@ -71,7 +86,7 @@ const isMarginCalled = (c: Credit) =>
 export default function CreditsPage() {
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
-  const [modal, setModal] = useState<null | "create" | "settle" | "cancel">(null);
+  const [modal, setModal] = useState<null | "create" | "settle" | "cancel" | "detail">(null);
   const [selected, setSelected] = useState<Credit | null>(null);
   const qc = useQueryClient();
   const notify = useNotify().notify;
@@ -209,6 +224,7 @@ export default function CreditsPage() {
                   </td>
                   <td>
                     <div className="row" style={{ gap: 4 }}>
+                      <button className="btn sm" onClick={() => { setSelected(c); setModal("detail"); }}>جزئیات</button>
                       {c.status === "ACTIVE" && (
                         <>
                           <button className="btn sm" onClick={() => { setSelected(c); setModal("settle"); }}>تسویه</button>
@@ -230,6 +246,9 @@ export default function CreditsPage() {
       )}
       {modal === "cancel" && selected && (
         <CancelCreditModal credit={selected} onClose={() => { setModal(null); setSelected(null); }} onSave={(d) => cancel.mutate({ id: selected.id, creditId: selected.id, ...d })} loading={cancel.isPending} />
+      )}
+      {modal === "detail" && selected && (
+        <CreditDetailModal credit={selected} onClose={() => { setModal(null); setSelected(null); }} />
       )}
     </Card>
   );
@@ -497,6 +516,217 @@ function CancelCreditModal({ credit, onClose, onSave, loading }: { credit: Credi
           </button>
         </div>
       </form>
+    </Modal>
+  );
+}
+
+function CreditDetailModal({ credit, onClose }: { credit: Credit; onClose: () => void }) {
+  // Fetch full credit details with orders
+  const creditDetail = useQuery({
+    queryKey: ["credit-detail", credit.id],
+    queryFn: async () => unwrap<Credit>((await api.get(`/admin/credits/${credit.id}`)).data),
+  });
+
+  // Fetch PnL calculation
+  const pnl = useQuery({
+    queryKey: ["credit-pnl", credit.id],
+    queryFn: async () => unwrap<{
+      totalPnL: number;
+      realizedPnL: number;
+      unrealizedPnL: number;
+      orders: Array<{
+        orderId: string;
+        side: string;
+        entryPrice: number;
+        currentPrice: number | null;
+        quantity: number;
+        executedQuantity: number;
+        pnl: number;
+        status: string;
+        pairKey: string;
+      }>;
+    }>((await api.get(`/admin/credits/${credit.id}/pnl`)).data),
+  });
+
+  const c = creditDetail.data || credit;
+  const pnlData = pnl.data;
+
+  return (
+    <Modal title={`جزئیات اعتبار ${c.creditCode}`} onClose={onClose} wide>
+      {creditDetail.isLoading ? (
+        <Loading />
+      ) : (
+        <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+          {/* Credit Info */}
+          <div className="kv" style={{ gridTemplateColumns: "1fr 1fr 1fr" }}>
+            <span className="k">کاربر</span>
+            <span className="v" style={{ gridColumn: "2 / -1" }}>
+              {c.user ? `${c.user.firstName ?? ""} ${c.user.lastName ?? ""}`.trim() || c.user.phone || c.user.email : c.userId}
+            </span>
+
+            <span className="k">وضعیت</span>
+            <span className="v">
+              <Badge kind={STATUS_KINDS[c.status] as any}>{STATUS_LABELS[c.status]}</Badge>
+            </span>
+
+            <span className="k">مبلغ اعتبار</span>
+            <span className="v mono">{fmtNum(c.amount)} ریال</span>
+
+            {c.leverage != null && (
+              <>
+                <span className="k">اهرم</span>
+                <span className="v mono">{c.leverage}x</span>
+              </>
+            )}
+
+            {c.creditLimit != null && (
+              <>
+                <span className="k">حد اعتبار</span>
+                <span className="v mono">{fmtNum(c.creditLimit)} ریال</span>
+              </>
+            )}
+
+            {c.collateralAmount != null && (
+              <>
+                <span className="k">وثیقه</span>
+                <span className="v mono">{fmtNum(c.collateralAmount)}</span>
+              </>
+            )}
+
+            {c.drawdownPercent != null && (
+              <>
+                <span className="k">درادون</span>
+                <span className="v">
+                  <span style={{ color: Number(c.lastDrawdownPercent ?? 0) >= Number(c.drawdownPercent ?? 100) ? "var(--red)" : "inherit" }}>
+                    {Number(c.lastDrawdownPercent ?? 0).toFixed(1)}% / {c.drawdownPercent}%
+                  </span>
+                </span>
+              </>
+            )}
+
+            <span className="k">وضعیت ریسک</span>
+            <span className="v">
+              <Badge kind={RISK_STATE_KINDS[c.riskState] as any}>{RISK_STATE_LABELS[c.riskState] || c.riskState}</Badge>
+            </span>
+
+            <span className="k">وضعیت تسویه</span>
+            <span className="v">
+              <Badge kind={SETTLEMENT_STATE_KINDS[c.settlementState] as any}>{SETTLEMENT_STATE_LABELS[c.settlementState] || c.settlementState}</Badge>
+            </span>
+
+            <span className="k">ایجاد</span>
+            <span className="v">{fmtDate(c.createAt)}</span>
+
+            <span className="k">انقضا</span>
+            <span className="v">{fmtDate(c.expireAt)}</span>
+
+            {c.settledAt && (
+              <>
+                <span className="k">تسویه</span>
+                <span className="v">{fmtDate(c.settledAt)}</span>
+              </>
+            )}
+          </div>
+
+          {/* PnL Section */}
+          {pnl.isLoading ? (
+            <Loading />
+          ) : pnlData ? (
+            <div style={{ background: "var(--bg)", padding: 12, borderRadius: 8 }}>
+              <h4 style={{ margin: "0 0 12px 0", fontSize: 14 }}>سود و زیان</h4>
+              <div className="kv" style={{ gridTemplateColumns: "1fr 1fr 1fr" }}>
+                <span className="k">کل سود/زیان</span>
+                <span className="v mono" style={{ color: pnlData.totalPnL >= 0 ? "var(--green)" : "var(--red)", fontWeight: 600 }}>
+                  {pnlData.totalPnL >= 0 ? "+" : ""}{fmtNum(pnlData.totalPnL)} ریال
+                </span>
+
+                <span className="k">سود/زیان محقق شده</span>
+                <span className="v mono" style={{ color: pnlData.realizedPnL >= 0 ? "var(--green)" : "var(--red)" }}>
+                  {pnlData.realizedPnL >= 0 ? "+" : ""}{fmtNum(pnlData.realizedPnL)} ریال
+                </span>
+
+                <span className="k">سود/زیان محقق نشده</span>
+                <span className="v mono" style={{ color: pnlData.unrealizedPnL >= 0 ? "var(--green)" : "var(--red)" }}>
+                  {pnlData.unrealizedPnL >= 0 ? "+" : ""}{fmtNum(pnlData.unrealizedPnL)} ریال
+                </span>
+              </div>
+            </div>
+          ) : null}
+
+          {/* Orders Section */}
+          <div>
+            <h4 style={{ margin: "0 0 8px 0", fontSize: 14 }}>سفارشات اعتباری ({pnlData?.orders.length || 0})</h4>
+            {pnlData?.orders.length === 0 ? (
+              <Empty label="هیچ سفارشی ثبت نشده" />
+            ) : (
+              <div className="table-wrap">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>جفت</th>
+                      <th>جهت</th>
+                      <th>قیمت ورود</th>
+                      <th>قیمت فعلی</th>
+                      <th>مقدار</th>
+                      <th>انجام شده</th>
+                      <th>سود/زیان</th>
+                      <th>وضعیت سفارش</th>
+                      <th>وضعیت اعتبار</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {pnlData?.orders.map((o) => (
+                      <tr key={o.orderId}>
+                        <td className="mono">{o.pairKey}</td>
+                        <td>
+                          <Badge kind={o.side === "BUY" ? "green" : "red"}>
+                            {o.side === "BUY" ? "خرید" : "فروش"}
+                          </Badge>
+                        </td>
+                        <td className="mono">{fmtNum(o.entryPrice)}</td>
+                        <td className="mono">{o.currentPrice ? fmtNum(o.currentPrice) : "—"}</td>
+                        <td className="mono">{fmtNum(o.quantity)}</td>
+                        <td className="mono">{fmtNum(o.executedQuantity)}</td>
+                        <td className="mono" style={{ color: o.pnl >= 0 ? "var(--green)" : "var(--red)", fontWeight: 500 }}>
+                          {o.pnl >= 0 ? "+" : ""}{fmtNum(o.pnl)}
+                        </td>
+                        <td>
+                          <Badge kind={o.status === "COMPLETED" ? "green" : o.status === "CANCELLED" ? "gray" : "gold"}>
+                            {ORDER_STATUS_LABELS[o.status] || o.status}
+                          </Badge>
+                        </td>
+                        <td>
+                          <Badge kind={
+                            c.creditOrders?.find(co => co.orderId === o.orderId)?.status === "ACTIVE" ? "green" :
+                            c.creditOrders?.find(co => co.orderId === o.orderId)?.status === "MARGIN_CALLED" ? "red" :
+                            c.creditOrders?.find(co => co.orderId === o.orderId)?.status === "COMPLETED" ? "gold" : "gray"
+                          }>
+                            {CREDIT_ORDER_STATUS_LABELS[c.creditOrders?.find(co => co.orderId === o.orderId)?.status || ""] || "—"}
+                          </Badge>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+
+          {/* Metadata */}
+          {c.metadata && Object.keys(c.metadata).length > 0 && (
+            <details style={{ fontSize: 12 }}>
+              <summary style={{ cursor: "pointer", color: "var(--text-muted)" }}>متادیتا</summary>
+              <pre style={{ background: "var(--bg)", padding: 8, borderRadius: 4, overflow: "auto", fontSize: 11, direction: "ltr" }}>
+                {JSON.stringify(c.metadata, null, 2)}
+              </pre>
+            </details>
+          )}
+
+          <div className="modal-actions">
+            <button type="button" className="btn ghost" onClick={onClose}>بستن</button>
+          </div>
+        </div>
+      )}
     </Modal>
   );
 }

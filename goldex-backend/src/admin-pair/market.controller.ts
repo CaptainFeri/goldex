@@ -144,6 +144,7 @@ export class MarketController {
       sellWarnHours: p.sellWarnHours ?? null,
       sellExpireHours: p.sellExpireHours ?? null,
       sellGraceHours: p.sellGraceHours ?? null,
+      excludedDays: p.excludedDays ?? null,
     };
   }
 }

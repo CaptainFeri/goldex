@@ -48,8 +48,16 @@ export class CreditAdminController {
 
   @Get(":id")
   @AdminRoles(AdminRole.FINANCE, AdminRole.SUPER_ADMIN, AdminRole.ADMIN)
-  @ApiOperation({ summary: "Get credit details" })
+  @ApiOperation({ summary: "Get credit details with orders" })
   async findOne(@Param("id") id: string) {
-    return { data: await this.creditService.getUserCredits(id) };
+    return { data: await this.creditService.getCreditById(id) };
+  }
+
+  @Get(":id/pnl")
+  @AdminRoles(AdminRole.FINANCE, AdminRole.SUPER_ADMIN, AdminRole.ADMIN)
+  @ApiOperation({ summary: "Get credit profit/loss calculation" })
+  async getPnL(@Param("id") id: string) {
+    const credit = await this.creditService.getCreditById(id);
+    return { data: this.creditService.calculateCreditPnL(credit) };
   }
 }
