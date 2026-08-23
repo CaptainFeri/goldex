@@ -91,6 +91,14 @@ export class AdminPairController {
     return { data: await this.pricePairService.toggleValidity(id) };
   }
 
+  @Get(":id/requests-overview")
+  @UseGuards(AdminAuthGuard)
+  @ApiBearerAuth()
+  @AdminRoles(AdminRole.ADMIN, AdminRole.SUPER_ADMIN)
+  async getRequestsOverview(@Param("id", ParseUUIDPipe) id: string) {
+    return { data: await this.pricePairService.getRequestsOverview(id) };
+  }
+
   @Delete(":id")
   @UseGuards(AdminAuthGuard)
   @ApiBearerAuth()

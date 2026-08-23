@@ -3,6 +3,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, DataSource } from 'typeorm';
 import { WalletEntity } from '../entities/wallet.entity';
 import { WalletStatusEnum } from '../enum/wallet-status.enum';
+import { WalletTypeEnum } from '../enum/wallet-type.enum';
 import { TransactionEntity } from '../entities/transaction.entity';
 import { MESQAL_TO_GRAM } from '../../common/constants';
 import { PricePairEntity } from '../../admin-pair/entity/price.pair.entity';
@@ -37,8 +38,12 @@ export class WalletOrderService {
     await queryRunner.startTransaction();
 
     try {
+      // Credit-linked orders settle against the user's CREDIT wallets; normal
+      // orders use DEPOSIT wallets.
+      const walletType = order.isCreditLinked ? WalletTypeEnum.CREDIT : WalletTypeEnum.DEPOSIT;
+
       if (order.side === OrderSideEnum.BUY) {
-        const quoteWallet = await this.getWallet(queryRunner, order.userId, pricePair.quoteSymbol.id);
+        const quoteWallet = await this.getWallet(queryRunner, order.userId, pricePair.quoteSymbol.id, walletType);
         // Lock the DISPLAY-priced cost (what the user is charged), not the pure price.
         const unitPrice = Number(order.customerPrice) || Number(order.price) || 0;
         let lockAmount = Number(order.quantity) * unitPrice;
@@ -64,7 +69,7 @@ export class WalletOrderService {
         quoteWallet.lockedBalance = Number((quoteWallet.lockedBalance + lockAmount).toFixed(8));
         await queryRunner.manager.save(quoteWallet);
       } else {
-        const baseWallet = await this.getWallet(queryRunner, order.userId, pricePair.baseSymbol.id);
+        const baseWallet = await this.getWallet(queryRunner, order.userId, pricePair.baseSymbol.id, walletType);
         const lockAmount = Number(order.quantity);
 
         if (baseWallet.freeBalance < lockAmount) {
@@ -112,8 +117,9 @@ export class WalletOrderService {
     await queryRunner.startTransaction();
 
     try {
-      const baseWallet = await this.getWallet(queryRunner, order.userId, pricePair.baseSymbol.id);
-      const quoteWallet = await this.getWallet(queryRunner, order.userId, pricePair.quoteSymbol.id);
+      const walletType = order.isCreditLinked ? WalletTypeEnum.CREDIT : WalletTypeEnum.DEPOSIT;
+      const baseWallet = await this.getWallet(queryRunner, order.userId, pricePair.baseSymbol.id, walletType);
+      const quoteWallet = await this.getWallet(queryRunner, order.userId, pricePair.quoteSymbol.id, walletType);
 
       // Settlement model:
       //   MARKET / LIMIT (BUY)  → profit always realised in BASE asset (XAU).
@@ -299,12 +305,13 @@ export class WalletOrderService {
     const verb = isCancel ? 'cancelled' : 'rejected';
 
     try {
+      const walletType = order.isCreditLinked ? WalletTypeEnum.CREDIT : WalletTypeEnum.DEPOSIT;
       // Only unlock the REMAINING quantity — the already-executed portion
       // was already settled and its lock released.
       const remainingQty = Number(order.quantity) - Number(order.executedQuantity);
 
       if (order.side === OrderSideEnum.BUY) {
-        const quoteWallet = await this.getWallet(queryRunner, order.userId, pricePair.quoteSymbol.id);
+        const quoteWallet = await this.getWallet(queryRunner, order.userId, pricePair.quoteSymbol.id, walletType);
         let lockedAmount = Math.max(0, remainingQty) * (Number(order.price) || 0);
 
         // QUOTE BUY: commission was also frozen in the quote wallet.
@@ -322,7 +329,7 @@ export class WalletOrderService {
           description: `Buy order ${order.orderCode} ${verb}: unlocked ${lockedAmount} ${pricePair.quoteSymbol.slug}`,
         });
       } else {
-        const baseWallet = await this.getWallet(queryRunner, order.userId, pricePair.baseSymbol.id);
+        const baseWallet = await this.getWallet(queryRunner, order.userId, pricePair.baseSymbol.id, walletType);
         const lockedAmount = Math.max(0, remainingQty);
 
         baseWallet.lockedBalance = Number((baseWallet.lockedBalance - lockedAmount).toFixed(8));
@@ -373,8 +380,9 @@ export class WalletOrderService {
 
     try {
       // ── Taker side ────────────────────────────────────────────────
-      const takerQuoteWallet = await this.getWallet(queryRunner, takerOrder.userId, pricePair.quoteSymbol.id);
-      const takerBaseWallet = await this.getWallet(queryRunner, takerOrder.userId, pricePair.baseSymbol.id);
+      const takerWalletType = takerOrder.isCreditLinked ? WalletTypeEnum.CREDIT : WalletTypeEnum.DEPOSIT;
+      const takerQuoteWallet = await this.getWallet(queryRunner, takerOrder.userId, pricePair.quoteSymbol.id, takerWalletType);
+      const takerBaseWallet = await this.getWallet(queryRunner, takerOrder.userId, pricePair.baseSymbol.id, takerWalletType);
 
       const cost = Number((matchSize * takerPrice).toFixed(8));
       const netBase = isBuy
@@ -430,8 +438,9 @@ export class WalletOrderService {
         }
 
         const isMakerBuy = makerOrder.side === OrderSideEnum.BUY;
-        const makerQuoteWallet = await this.getWallet(queryRunner, makerOrder.userId, pricePair.quoteSymbol.id);
-        const makerBaseWallet = await this.getWallet(queryRunner, makerOrder.userId, pricePair.baseSymbol.id);
+        const makerWalletType = makerOrder.isCreditLinked ? WalletTypeEnum.CREDIT : WalletTypeEnum.DEPOSIT;
+        const makerQuoteWallet = await this.getWallet(queryRunner, makerOrder.userId, pricePair.quoteSymbol.id, makerWalletType);
+        const makerBaseWallet = await this.getWallet(queryRunner, makerOrder.userId, pricePair.baseSymbol.id, makerWalletType);
 
         if (isMakerBuy) {
           // Maker BUY (taker was SELL): maker locked quote → consumed
@@ -539,9 +548,10 @@ export class WalletOrderService {
     queryRunner: any,
     userId: string,
     symbolId: string,
+    walletType: WalletTypeEnum = WalletTypeEnum.DEPOSIT,
   ): Promise<WalletEntity> {
     let wallet = await queryRunner.manager.findOne(WalletEntity, {
-      where: { userId, symbolId },
+      where: { userId, symbolId, walletType },
       lock: { mode: 'pessimistic_write' },
     });
 
@@ -549,6 +559,7 @@ export class WalletOrderService {
       wallet = queryRunner.manager.create(WalletEntity, {
         userId,
         symbolId,
+        walletType,
         freeBalance: 0,
         lockedBalance: 0,
         status: 'ACTIVE',

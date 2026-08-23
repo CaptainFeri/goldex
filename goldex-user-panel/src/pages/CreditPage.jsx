@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback } from 'react'
 import { useTranslation } from 'react-i18next'
-import { creditApi } from '../services/api'
+import { creditApi, walletApi } from '../services/api'
 import { Spinner, Alert, Button } from '../components/UI'
 
 const fmtNum = (n) => (n ?? 0).toLocaleString('en-US')
@@ -130,6 +130,26 @@ export default function CreditPage() {
                   <span className="badge badge-warning">{activeCredit.callMarginPercent}%</span>
                 </div>
               )}
+              {activeCredit.leverage != null && (
+                <div>
+                  <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Leverage</div>
+                  <div style={{ fontWeight: 600, color: 'var(--gold)' }}>{activeCredit.leverage}x</div>
+                </div>
+              )}
+              {activeCredit.creditLimit != null && (
+                <div>
+                  <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Credit Limit</div>
+                  <div style={{ fontWeight: 600 }}>{fmtNum(activeCredit.creditLimit)} IRR</div>
+                </div>
+              )}
+              {activeCredit.drawdownPercent != null && (
+                <div>
+                  <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Drawdown</div>
+                  <div style={{ fontWeight: 500, color: (activeCredit.lastDrawdownPercent ?? 0) >= (activeCredit.drawdownPercent ?? 100) ? 'var(--red)' : 'inherit' }}>
+                    {(activeCredit.lastDrawdownPercent ?? 0).toFixed(1)}% / {activeCredit.drawdownPercent}%
+                  </div>
+                </div>
+              )}
               <div>
                 <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Reminder Every</div>
                 <div style={{ fontWeight: 500 }}>{activeCredit.reminderTimerHours} hr</div>
@@ -172,15 +192,23 @@ export default function CreditPage() {
                   }} />
                 </div>
               </div>
+              <div style={{ gridColumn: '1 / -1', display: 'flex', justifyContent: 'flex-end', marginTop: '0.5rem' }}>
+                <Button onClick={async () => {
+                  if (!window.confirm('Settle this credit? Your credit debt will be repaid and assets released to your deposit wallet.')) return
+                  try {
+                    await creditApi.settleCredit(activeCredit.id)
+                    await load()
+                  } catch (err) {
+                    alert(err?.response?.data?.message || err.message || 'Settlement failed')
+                  }
+                }}>
+                  Settle Credit
+                </Button>
+              </div>
             </div>
           </div>
         ) : (
-          <div className="card" style={{ marginBottom: '1.5rem' }}>
-            <div className="card-title">Active Credit</div>
-            <div style={{ padding: '2rem', textAlign: 'center', color: 'var(--text-muted)' }}>
-              No active credit
-            </div>
-          </div>
+          <CreditRequestForm onCreated={load} />
         )}
 
         {/* Tabs: History / Notifications */}
@@ -285,6 +313,98 @@ export default function CreditPage() {
           </div>
         )}
       </div>
+    </div>
+  )
+}
+
+function CreditRequestForm({ onCreated }) {
+  const { t } = useTranslation()
+  const [wallets, setWallets] = useState([])
+  const [selectedWallet, setSelectedWallet] = useState('')
+  const [amount, setAmount] = useState('')
+  const [leverage, setLeverage] = useState('')
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState('')
+
+  useEffect(() => {
+    walletApi.getWallets().then((w) => {
+      const depositWallets = (w || []).filter((x) => !x.walletType || x.walletType === 'DEPOSIT')
+      setWallets(depositWallets)
+      if (depositWallets.length > 0) setSelectedWallet(depositWallets[0].id)
+    }).catch(() => {})
+  }, [])
+
+  const handleSubmit = async (e) => {
+    e.preventDefault()
+    if (!selectedWallet || !amount || !leverage) {
+      setError('Please fill all fields')
+      return
+    }
+    setLoading(true)
+    setError('')
+    try {
+      await creditApi.requestCredit({
+        depositWalletId: selectedWallet,
+        amount: Number(amount),
+        leverage: Number(leverage),
+      })
+      onCreated()
+    } catch (err) {
+      setError(err?.response?.data?.message || err.message || 'Failed to create credit')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  return (
+    <div className="card" style={{ marginBottom: '1.5rem' }}>
+      <div className="card-title">Request Credit Facility</div>
+      <form onSubmit={handleSubmit} style={{ padding: '1rem', display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+        {error && <Alert type="error">{error}</Alert>}
+        <div>
+          <label style={{ fontSize: '0.85rem', fontWeight: 500, marginBottom: 4, display: 'block' }}>Collateral Wallet</label>
+          <select
+            className="input"
+            value={selectedWallet}
+            onChange={(e) => setSelectedWallet(e.target.value)}
+            style={{ width: '100%' }}
+          >
+            {wallets.map((w) => (
+              <option key={w.id} value={w.id}>
+                {w.symbol?.name || w.symbol?.slug || w.id} — Free: {fmtNum(w.freeBalance)}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div>
+          <label style={{ fontSize: '0.85rem', fontWeight: 500, marginBottom: 4, display: 'block' }}>Collateral Amount</label>
+          <input
+            className="input"
+            type="number"
+            min="0"
+            step="any"
+            value={amount}
+            onChange={(e) => setAmount(e.target.value)}
+            placeholder="Amount to freeze as collateral"
+          />
+        </div>
+        <div>
+          <label style={{ fontSize: '0.85rem', fontWeight: 500, marginBottom: 4, display: 'block' }}>Leverage</label>
+          <input
+            className="input"
+            type="number"
+            min="1"
+            step="0.1"
+            value={leverage}
+            onChange={(e) => setLeverage(e.target.value)}
+            placeholder="e.g. 10"
+          />
+        </div>
+        <Button type="submit" disabled={loading}>
+          {loading ? <Spinner size={16} /> : null}
+          {loading ? 'Creating...' : 'Request Credit'}
+        </Button>
+      </form>
     </div>
   )
 }

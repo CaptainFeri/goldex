@@ -7,6 +7,7 @@ import { UserMarketTypeEntity } from "../user/entity/user.market.type.entity";
 import { MarketTypeEnum } from "../admin-pair/enum/market.type.enum";
 import { UserRoleEnum } from "../shared/enum/user.role.enum";
 import { WalletEntity } from "../wallet/entities/wallet.entity";
+import { WalletTypeEnum } from "../wallet/enum/wallet-type.enum";
 import { TransactionEntity } from "../wallet/entities/transaction.entity";
 import { UserLevelService } from "../user-level/user-level.service";
 
@@ -37,6 +38,7 @@ export class UserWalletService {
       const newWallet = new WalletEntity();
       newWallet.symbol = availableSymbols[i];
       newWallet.user = user;
+      newWallet.walletType = WalletTypeEnum.DEPOSIT;
       newWallet.freeBalance = 0;
       newWallet.lockedBalance = 0;
       wallets.push(newWallet);
@@ -49,7 +51,7 @@ export class UserWalletService {
   // Wallets are filtered by the user's assigned market types.
   async getUserWallets(userId: string) {
     const wallets = await this.walletRepo.find({
-      where: { userId },
+      where: { userId, walletType: WalletTypeEnum.DEPOSIT },
       relations: { symbol: true },
       order: { createAt: "ASC" },
     });
@@ -142,8 +144,10 @@ export class UserWalletService {
     const locked = Number(w.lockedBalance);
     const frozenFree = Number(w.frozenFreeBalance);
     const frozenLocked = Number(w.frozenLockedBalance);
+    const credit = Number(w.creditBalance);
     return {
       id: w.id,
+      walletType: w.walletType || WalletTypeEnum.DEPOSIT,
       status: w.status,
       symbol: w.symbol
         ? {
@@ -158,6 +162,7 @@ export class UserWalletService {
         : null,
       freeBalance: free,
       lockedBalance: locked,
+      creditBalance: credit,
       frozenFreeBalance: frozenFree,
       frozenLockedBalance: frozenLocked,
       totalBalance: free + locked + frozenFree + frozenLocked,

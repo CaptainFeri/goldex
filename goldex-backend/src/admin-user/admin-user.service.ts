@@ -15,6 +15,7 @@ import { UserLoginHistoryEntity } from "../user/entity/user.login.history.entity
 import { UserSettingEntity } from "../user/entity/user.setting.entity";
 import { UserKycEntity } from "../user/entity/user.kyc.entity";
 import { WalletEntity } from "../wallet/entities/wallet.entity";
+import { WalletTypeEnum } from "../wallet/enum/wallet-type.enum";
 import { SymbolEntity } from "../admin-symbol/entity/symbol.entity";
 import { UserRoleEnum } from "../shared/enum/user.role.enum";
 import { KycStatusEnum } from "../baseinfo/enum/kycStatus.enum";
@@ -331,12 +332,13 @@ export class AdminUserService {
       });
       for (const s of symbols) {
         const existing = await this.walletRepo.findOne({
-          where: { userId, symbolId: s.id },
+          where: { userId, symbolId: s.id, walletType: WalletTypeEnum.DEPOSIT },
         });
         if (!existing) {
           const w = new WalletEntity();
           w.symbol = s;
           w.user = user;
+          w.walletType = WalletTypeEnum.DEPOSIT;
           w.freeBalance = 0;
           w.lockedBalance = 0;
           await this.walletRepo.save(w);

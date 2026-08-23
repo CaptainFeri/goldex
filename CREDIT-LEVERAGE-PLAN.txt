@@ -1,0 +1,116 @@
+CREDIT SYSTEM -> FUTURES / LEVERAGE IMPLEMENTATION PLAN
+========================================================
+
+CONTEXT
+-------
+The credit system lives in goldex-backend/src/credit. Today a credit GRANTS an
+amount to the user's wallet and never takes it back. We are converting it into a
+repayable margin loan (like futures/leverage): borrowed buying power backed by
+frozen collateral, with live margin-call liquidation and a block/unblock flow.
+
+DESIGN DECISIONS (confirmed with user)
+---------------------------------------
+- Repayable loan: on settle/expiry the borrowed amount is clawed back; shortfall
+  is covered by liquidating frozen collateral.
+- maxExecutionLevel stays a per-credit field set by admin; user-level gains a
+  CREDIT_TRADING_ENABLED gate (whether credit trading is allowed at all).
+- Margin call reaction: cancel/liquidate the offending order + block (freeze ALL
+  wallets) + notify.
+- Expiry: forced repayment/liquidation, then freeze ALL wallets (block).
+- Unblock is admin-driven via settling (or cancelling) the credit.
+- Freeze ALL wallets on block (margin call AND expiry).
+- Notifications: in-app CreditNotificationEntity is enough (no extra channel).
+
+BLOCKING MODEL (reused from existing system)
+---------------------------------------------
+- Wallet freeze (wallet.status = FROZEN + frozenAt) already blocks trading:
+  wallet-order.service throws WALLET_FROZEN_CREDIT_EXPIRED for non-ACTIVE wallets.
+  -> this is the mechanism used to "block" credit trading.
+- settleCredit / cancelCredit already restore FROZEN -> ACTIVE.
+- User account block (user.blockedAt) is unrelated and NOT used for credit.
+
+PLAN
+----
+
+1) CREDIT ON A CHOSEN WALLET + PER-WALLET FREEZE
+   Files: src/credit/dto/create-credit.dto.ts, src/credit/credit.service.ts
+   - Add optional creditWalletId (UUID) to CreateCreditDto. Default = RIAL wallet
+     (backward compatible). The credited amount is denominated in that wallet's
+     symbol; owed = amount.
+   - createCredit: resolve target wallet (must belong to userId), credit amount
+     into it (replace hard-coded RIAL logic).
+   - Keep frozenWallets (already supports freezing a specific amount of each
+     wallet) + "freeze all active material" fallback.
+
+2) REPAYABLE SETTLEMENT & FORCED EXPIRY LIQUIDATION
+   Files: src/credit/credit.service.ts, src/credit/credit.module.ts
+   - New private helper repayAndLiquidate(manager, credit, wallet):
+       a. Debit owed = credit.amount from credit wallet freeBalance (repay what's
+          still there).
+       b. If shortfall remains, liquidate frozenFreeBalance of frozen material
+          wallets -> rial at current price to cover it; log LIQUIDATION
+          transactions + finance logs.
+       c. Return leftover collateral / surplus rial; release remaining
+          frozenFreeBalance.
+   - settleCredit: run repayment before unfreezing (replaces unconditional
+     unfreeze).
+   - processExpiredCredits: on expiry run repayment/liquidation, set status
+     EXPIRED, then freeze ALL wallets (block) and leave credit for admin
+     review/settle. Emit credit.expired.
+   - Inject PricePairEntity repo (liquidation price) + add to
+     CreditModule.forFeature.
+   - Liquidation price source: PricePair where base=collateral symbol,
+     quote=RIAL, use bestSellGramPrice. If no rial pair for a collateral symbol,
+     skip liquidation and leave for manual admin settlement (do not fail the
+     whole credit).
+
+3) maxExecutionLevel (per-credit) + CREDIT-TRADING GATE
+   Files: src/order/order.service.ts, src/credit/credit.service.ts
+   - Keep maxExecutionTradeLevel as admin-set per-credit field.
+   - Fix enforcement to count currently-ACTIVE credit-linked orders vs the cap
+     (real "open positions" limit) instead of the never-decremented cumulative
+     counter; keep executedTradeLevel as history.
+   - Add user-level feature key CREDIT_TRADING_ENABLED (boolean):
+       - createCredit rejects if the user's level forbids it.
+       - order.service.createOrder blocks a credit-linked order if the level now
+         forbids it, and if the user's wallets are frozen (block).
+
+4) PRICE-DRIVEN MARGIN CALLS (wire the currently-dead code)
+   Files: src/websocket/market.service.ts, src/credit/credit.service.ts
+   - processMarginCallChecks / checkOrderMarginCall exist but are never called.
+   - In MarketService.handlePairUpdate (realtime) AND refreshPriceCache (30s cron
+     safety net) emit event credit.price_update with { pricePairId, currentPrice }
+     (per-gram price).
+   - Add a listener (@OnEvent) that finds ACTIVE credit orders for that pair whose
+     credit hasCallMargin, then checkOrderMarginCall each.
+   - On trigger: cancel/liquidate the offending order, write a MARGIN_CALL
+     notification, emit CreditEvents.MARGIN_CALL, and freeze ALL wallets (block).
+
+5) UNBLOCK USER FLOW (admin-driven)
+   Block is cleared by settling the credit, not a separate toggle:
+   1. Admin opens the blocked credit (status MARGIN_CALLED or EXPIRED).
+   2. Admin settles: POST /admin/credits/:id/settle -> repayAndLiquidate, set
+      status SETTLED, restore every frozen wallet to ACTIVE -> user can trade
+      again.
+   3. Admin may cancel: POST /admin/credits/:id/cancel -> unfreeze without
+      repayment (for admin errors).
+   4. If whole account was also blockedAt (login block, unrelated), standard
+      admin-user switch-block endpoint unblocks.
+   5. New credit can be created subject to CREDIT_TRADING_ENABLED + no
+      active/pending credit.
+   Guarantees: settlement is idempotent/safe; frozen (blocked) user cannot place
+   orders (wallet-order.service rejects non-ACTIVE wallets); CREDIT_TRADING_ENABLED
+   re-checked at order time.
+
+VERIFICATION
+------------
+- npm run build (tsc) and lint (eslint) in goldex-backend.
+- Targeted tests for credit/order if a harness exists (jest).
+- Manual: create credit -> place credit order -> simulate price drop past margin
+  -> confirm order cancelled, wallets frozen, notification sent; settle -> confirm
+  repayment + unfreeze; expiry -> confirm liquidation + block.
+
+OPEN ITEMS
+----------
+- Exact symbol->rial price lookup helper (PricePair bestSellGramPrice).
+- Ensure CreditModule imported/registered so the @OnEvent listener is active.

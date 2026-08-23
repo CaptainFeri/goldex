@@ -47,4 +47,14 @@ export class CreditCronService {
       this.logger.error(`Error processing risk state transitions: ${(error as Error).message}`);
     }
   }
+
+  @Cron(CronExpression.EVERY_5_MINUTES)
+  async handlePendDeadlines() {
+    this.logger.log("Running pend-deadline checks for credit-linked requests...");
+    try {
+      await this.creditService.processPendDeadlines();
+    } catch (error) {
+      this.logger.error(`Error processing pend deadlines: ${(error as Error).message}`);
+    }
+  }
 }

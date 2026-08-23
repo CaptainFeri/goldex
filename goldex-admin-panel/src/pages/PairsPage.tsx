@@ -24,6 +24,12 @@ const EMPTY = {
   minSell: 0.001,
   maxSell: 100,
   decimals: 2,
+  buyWarnHours: "",
+  buyExpireHours: "",
+  buyGraceHours: "",
+  sellWarnHours: "",
+  sellExpireHours: "",
+  sellGraceHours: "",
 };
 
 function PairForm({ initial, symbols, onClose }: { initial?: any; symbols: any[]; onClose: () => void }) {
@@ -45,6 +51,12 @@ function PairForm({ initial, symbols, onClose }: { initial?: any; symbols: any[]
           minSell: Number(initial.minSell ?? 0.001),
           maxSell: Number(initial.maxSell ?? 100),
           decimals: Number(initial.decimals ?? 2),
+          buyWarnHours: initial.buyWarnHours ?? "",
+          buyExpireHours: initial.buyExpireHours ?? "",
+          buyGraceHours: initial.buyGraceHours ?? "",
+          sellWarnHours: initial.sellWarnHours ?? "",
+          sellExpireHours: initial.sellExpireHours ?? "",
+          sellGraceHours: initial.sellGraceHours ?? "",
         }
       : {}),
   });
@@ -80,6 +92,12 @@ function PairForm({ initial, symbols, onClose }: { initial?: any; symbols: any[]
       minSell: n(form.minSell),
       maxSell: n(form.maxSell),
       decimals: n(form.decimals),
+      buyWarnHours: form.buyWarnHours ? n(form.buyWarnHours) : null,
+      buyExpireHours: form.buyExpireHours ? n(form.buyExpireHours) : null,
+      buyGraceHours: form.buyGraceHours ? n(form.buyGraceHours) : null,
+      sellWarnHours: form.sellWarnHours ? n(form.sellWarnHours) : null,
+      sellExpireHours: form.sellExpireHours ? n(form.sellExpireHours) : null,
+      sellGraceHours: form.sellGraceHours ? n(form.sellGraceHours) : null,
     });
   }
 
@@ -122,6 +140,37 @@ function PairForm({ initial, symbols, onClose }: { initial?: any; symbols: any[]
             <input className="input mono" dir="ltr" value={form.tradingViewSymbol} onChange={(e) => set("tradingViewSymbol", e.target.value)} placeholder="XAUUSD" />
           </div>
         </div>
+
+        <details style={{ margin: "12px 0", padding: 10, border: "1px solid var(--line)", borderRadius: 8 }}>
+          <summary style={{ cursor: "pointer", fontWeight: 500, fontSize: "0.9rem" }}>محدودیت زمانی درخواست‌های اعتباری (Credit Pend Deadlines)</summary>
+          <div className="grid grid-3" style={{ marginTop: 10 }}>
+            <div className="field">
+              <label>خرید — هشدار (ساعت)</label>
+              <input className="input mono" dir="ltr" type="number" min={0} value={form.buyWarnHours} onChange={(e) => set("buyWarnHours", e.target.value)} placeholder="x" />
+            </div>
+            <div className="field">
+              <label>خرید — انقضا (ساعت)</label>
+              <input className="input mono" dir="ltr" type="number" min={0} value={form.buyExpireHours} onChange={(e) => set("buyExpireHours", e.target.value)} placeholder="y" />
+            </div>
+            <div className="field">
+              <label>خرید — مهلت پس از انقضا (ساعت)</label>
+              <input className="input mono" dir="ltr" type="number" min={0} value={form.buyGraceHours} onChange={(e) => set("buyGraceHours", e.target.value)} placeholder="z" />
+            </div>
+            <div className="field">
+              <label>فروش — هشدار (ساعت)</label>
+              <input className="input mono" dir="ltr" type="number" min={0} value={form.sellWarnHours} onChange={(e) => set("sellWarnHours", e.target.value)} placeholder="x" />
+            </div>
+            <div className="field">
+              <label>فروش — انقضا (ساعت)</label>
+              <input className="input mono" dir="ltr" type="number" min={0} value={form.sellExpireHours} onChange={(e) => set("sellExpireHours", e.target.value)} placeholder="y" />
+            </div>
+            <div className="field">
+              <label>فروش — مهلت پس از انقضا (ساعت)</label>
+              <input className="input mono" dir="ltr" type="number" min={0} value={form.sellGraceHours} onChange={(e) => set("sellGraceHours", e.target.value)} placeholder="z" />
+            </div>
+          </div>
+        </details>
+
         <label className="row" style={{ gap: 6, margin: "4px 0 16px" }}>
           <input type="checkbox" checked={form.isValid} onChange={(e) => set("isValid", e.target.checked)} />
           معتبر
@@ -235,6 +284,7 @@ export default function PairsPage() {
   const [form, setForm] = useState<{ open: boolean; initial?: any }>({ open: false });
   const [detailId, setDetailId] = useState<string | null>(null);
   const [priceOverride, setPriceOverride] = useState<any | null>(null);
+  const [overviewPair, setOverviewPair] = useState<any | null>(null);
   const [filterBase, setFilterBase] = useState("");
   const [filterQuote, setFilterQuote] = useState("");
 
@@ -312,6 +362,7 @@ export default function PairsPage() {
                       <button className="btn sm" onClick={() => setDetailId(p.id)}>جزئیات</button>
                       <button className="btn sm" onClick={() => setForm({ open: true, initial: p })}>ویرایش</button>
                       <button className="btn sm" onClick={() => setPriceOverride(p)}>قیمت</button>
+                      <button className="btn sm" onClick={() => setOverviewPair(p)}>درخواست‌ها</button>
                       <button className="btn sm" disabled={toggle.isPending} onClick={() => toggle.mutate(p.id)}>
                         {p.isValid ? "غیرفعال" : "فعال"}
                       </button>
@@ -329,7 +380,71 @@ export default function PairsPage() {
 
       {detailId && <DetailsModal id={detailId} onClose={() => setDetailId(null)} />}
       {priceOverride && <PriceOverrideModal pair={priceOverride} onClose={() => setPriceOverride(null)} />}
+      {overviewPair && <RequestsOverviewModal pair={overviewPair} onClose={() => setOverviewPair(null)} />}
       {form.open && <PairForm initial={form.initial} symbols={symbols.data ?? []} onClose={() => setForm({ open: false })} />}
     </Card>
+  );
+}
+
+function RequestsOverviewModal({ pair, onClose }: { pair: any; onClose: () => void }) {
+  const q = useQuery({
+    queryKey: ["pair-requests-overview", pair.id],
+    queryFn: async () => unwrap<any>((await api.get(`/admin/pair/${pair.id}/requests-overview`)).data),
+  });
+
+  const stateColors: Record<string, "gold" | "gray" | "green" | "red"> = { GREEN: "green", YELLOW: "gold", RED: "red", GRACE: "gold", CLOSED: "gray" };
+  const stateLabels: Record<string, string> = { GREEN: "سبز", YELLOW: "زرد", RED: "قرمز", GRACE: "مهلت", CLOSED: "بسته" };
+
+  return (
+    <Modal wide title={`درخواست‌های اعتباری — ${pairLabel(pair)}`} onClose={onClose}>
+      {q.isLoading ? <Loading /> : q.isError ? <ErrorState message={apiError(q.error)} /> : (
+        <div>
+          <div className="row" style={{ gap: 12, marginBottom: 16, flexWrap: "wrap" }}>
+            <Badge kind="green">خرید: {q.data?.summary?.buy ?? 0}</Badge>
+            <Badge kind="gold">فروش: {q.data?.summary?.sell ?? 0}</Badge>
+            {Object.entries(q.data?.summary?.byState ?? {}).map(([state, count]) => (
+              <Badge key={state} kind={stateColors[state] ?? "gray"}>{stateLabels[state] ?? state}: {count as number}</Badge>
+            ))}
+          </div>
+          {(q.data?.orders?.length > 0 || q.data?.quoteRequests?.length > 0) ? (
+            <div className="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>نوع</th>
+                    <th>کد</th>
+                    <th>جهت</th>
+                    <th>وضعیت</th>
+                    <th>مهلت</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {q.data?.orders?.map((o: any) => (
+                    <tr key={o.id}>
+                      <td>سفارش</td>
+                      <td className="mono">{o.orderCode}</td>
+                      <td>{o.side}</td>
+                      <td><Badge kind={o.status === "PENDING" ? "green" : "gray"}>{o.status}</Badge></td>
+                      <td><Badge kind={stateColors[o.pendDeadlineState] ?? "gray"}>{stateLabels[o.pendDeadlineState] ?? o.pendDeadlineState ?? "—"}</Badge></td>
+                    </tr>
+                  ))}
+                  {q.data?.quoteRequests?.map((qr: any) => (
+                    <tr key={qr.id}>
+                      <td>استعلام</td>
+                      <td className="mono">{qr.id.slice(0, 8)}</td>
+                      <td>{qr.side}</td>
+                      <td><Badge kind={qr.status === "PENDING" ? "green" : "gray"}>{qr.status}</Badge></td>
+                      <td><Badge kind={stateColors[qr.pendDeadlineState] ?? "gray"}>{stateLabels[qr.pendDeadlineState] ?? qr.pendDeadlineState ?? "—"}</Badge></td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ) : (
+            <Empty label="درخواست اعتباری برای این جفت‌ارز وجود ندارد" />
+          )}
+        </div>
+      )}
+    </Modal>
   );
 }

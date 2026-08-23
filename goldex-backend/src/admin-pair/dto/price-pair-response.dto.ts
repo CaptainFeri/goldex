@@ -44,6 +44,24 @@ export class PricePairResponseDto {
   decimals: number;
 
   @Expose()
+  buyWarnHours?: number;
+
+  @Expose()
+  buyExpireHours?: number;
+
+  @Expose()
+  buyGraceHours?: number;
+
+  @Expose()
+  sellWarnHours?: number;
+
+  @Expose()
+  sellExpireHours?: number;
+
+  @Expose()
+  sellGraceHours?: number;
+
+  @Expose()
   createdAt: Date;
 
   @Expose()

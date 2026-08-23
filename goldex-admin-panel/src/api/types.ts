@@ -109,6 +109,12 @@ export interface PricePair {
   isValid?: boolean;
   buyPrice?: number;
   sellPrice?: number;
+  buyWarnHours?: number | null;
+  buyExpireHours?: number | null;
+  buyGraceHours?: number | null;
+  sellWarnHours?: number | null;
+  sellExpireHours?: number | null;
+  sellGraceHours?: number | null;
   [k: string]: any;
 }
 export interface PairMapping {
@@ -304,7 +310,7 @@ export type RiskState = "NORMAL" | "WARNING" | "MARGIN_CALL" | "REDUCING" | "LIQ
 export interface Credit {
   id: string;
   userId: string;
-  adminId: string;
+  adminId: string | null;
   creditCode: string;
   amount: number;
   status: CreditStatus;
@@ -332,6 +338,19 @@ export interface Credit {
   outstandingShortfall: number;
   isInDefault: boolean;
   metadata: any;
+  leverage?: number | null;
+  creditLimit?: number;
+  usedCredit?: number;
+  collateralSymbolId?: string | null;
+  collateralAmount?: number;
+  initialCollateralValue?: number;
+  currentCollateralValue?: number;
+  drawdownPercent?: number | null;
+  lastDrawdownPercent?: number;
+  creditBaseSymbolId?: string | null;
+  enforceOnDrawdown?: "ENFORCE" | "ALERT" | null;
+  enforceOnExpiry?: "ENFORCE" | "ALERT" | null;
+  enforceRequestDeadline?: boolean | null;
   user?: { id: string; firstName?: string; lastName?: string; phone?: string; email?: string };
   creditOrders?: any[];
   createAt: string;

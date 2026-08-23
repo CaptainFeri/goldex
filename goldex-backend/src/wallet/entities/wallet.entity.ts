@@ -4,9 +4,18 @@ import { Column, Entity, ManyToOne, JoinColumn, OneToMany } from "typeorm";
 import { TransactionEntity } from "./transaction.entity";
 import { SymbolEntity } from "../../admin-symbol/entity/symbol.entity";
 import { WalletStatusEnum } from "../enum/wallet-status.enum";
+import { WalletTypeEnum } from "../enum/wallet-type.enum";
 
 @Entity("wallet")
 export class WalletEntity extends myBaseEntity {
+  @Column({
+    type: "enum",
+    enum: WalletTypeEnum,
+    default: WalletTypeEnum.DEPOSIT,
+    name: "wallet_type",
+  })
+  walletType: WalletTypeEnum;
+
   @ManyToOne(() => UserEntity, { onDelete: "CASCADE" })
   @JoinColumn({ name: "user_id" })
   user: UserEntity;
@@ -127,5 +136,17 @@ export class WalletEntity extends myBaseEntity {
 
   isFrozen(): boolean {
     return this.status === WalletStatusEnum.FROZEN;
+  }
+
+  isDeposit(): boolean {
+    return (this.walletType || WalletTypeEnum.DEPOSIT) === WalletTypeEnum.DEPOSIT;
+  }
+
+  isCredit(): boolean {
+    return this.walletType === WalletTypeEnum.CREDIT;
+  }
+
+  isCollateral(): boolean {
+    return this.walletType === WalletTypeEnum.COLLATERAL;
   }
 }

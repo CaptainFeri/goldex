@@ -12,6 +12,7 @@ import { WalletEntity } from "../wallet/entities/wallet.entity";
 import { TransactionEntity } from "../wallet/entities/transaction.entity";
 import { TransactionTypeEnum } from "../wallet/enum/transaction.type.enum";
 import { TransactionStatusEnum } from "../wallet/enum/transaction.status.enum";
+import { WalletTypeEnum } from "../wallet/enum/wallet-type.enum";
 import { getDefaultWithdrawTypes, GATEWAY_BOUND_TYPES } from "../admin-symbol/constants/symbol-type-type-map";
 import { PaymentBusService } from "../payment-bus/payment-bus.service";
 import { WithdrawEvents } from "../shared/constants/events.constants";
@@ -249,7 +250,7 @@ export class WithdrawService {
 
       if (dto.status === WithdrawStatusEnum.COMPLETED) {
         let wallet = await queryRunner.manager.findOne(WalletEntity, {
-          where: { userId: withdraw.userId, symbolId: withdraw.symbolId },
+          where: { userId: withdraw.userId, symbolId: withdraw.symbolId, walletType: WalletTypeEnum.DEPOSIT },
           lock: { mode: "pessimistic_write" },
         });
 

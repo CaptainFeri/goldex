@@ -10,6 +10,7 @@ import { WalletEntity } from "../wallet/entities/wallet.entity";
 import { TransactionEntity } from "../wallet/entities/transaction.entity";
 import { TransactionTypeEnum } from "../wallet/enum/transaction.type.enum";
 import { TransactionStatusEnum } from "../wallet/enum/transaction.status.enum";
+import { WalletTypeEnum } from "../wallet/enum/wallet-type.enum";
 import { SystemLedgerEntity } from "../financial/entity/system-ledger.entity";
 import { SystemLedgerType } from "../financial/enum/system-ledger-type.enum";
 import * as crypto from "crypto";
@@ -264,13 +265,14 @@ export class MatchService {
     symbolId: string,
   ): Promise<WalletEntity> {
     let wallet = await queryRunner.manager.findOne(WalletEntity, {
-      where: { userId, symbolId },
+      where: { userId, symbolId, walletType: WalletTypeEnum.DEPOSIT },
       lock: { mode: "pessimistic_write" },
     });
     if (!wallet) {
       wallet = queryRunner.manager.create(WalletEntity, {
         userId,
         symbolId,
+        walletType: WalletTypeEnum.DEPOSIT,
         freeBalance: 0,
         lockedBalance: 0,
         status: "ACTIVE",

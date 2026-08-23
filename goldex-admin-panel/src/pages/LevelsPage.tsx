@@ -203,9 +203,18 @@ function LevelFormModal({ title, initial, onClose, onSave, loading }: {
     isDefault: initial?.isDefault ?? false,
     features: initFeatures(initial),
     pairs: (initial?.pairs ?? []).map((p: any) => p.id),
+    creditBaseSymbolId: initial?.creditBaseSymbolId ?? "",
+    creditMaxLeverage: initial?.creditMaxLeverage ?? "",
+    creditDrawdownPercent: initial?.creditDrawdownPercent ?? "",
+    creditEnforceOnDrawdown: initial?.creditEnforceOnDrawdown ?? "ENFORCE",
+    creditEnforceOnExpiry: initial?.creditEnforceOnExpiry ?? "ENFORCE",
+    creditEnforceRequestDeadline: initial?.creditEnforceRequestDeadline ?? true,
+    creditMaxParallelRequests: initial?.creditMaxParallelRequests ?? "",
+    creditMaxExecutionLevel: initial?.creditMaxExecutionLevel ?? "",
   });
   const [showFeatures, setShowFeatures] = useState(false);
   const [showPairs, setShowPairs] = useState(false);
+  const [showCredit, setShowCredit] = useState(false);
   const [err, setErr] = useState("");
 
   const pairsQuery = useQuery({
@@ -229,7 +238,24 @@ function LevelFormModal({ title, initial, onClose, onSave, loading }: {
   const handle = () => {
     if (!form.name.trim() || !form.slug.trim()) { setErr("نام و Slug الزامی هستند"); return; }
     setErr("");
-    onSave({ name: form.name, slug: form.slug, description: form.description, priority: form.priority, isDefault: form.isDefault, features: form.features, pairIds: form.pairs });
+    const payload: any = {
+      name: form.name,
+      slug: form.slug,
+      description: form.description,
+      priority: form.priority,
+      isDefault: form.isDefault,
+      features: form.features,
+      pairIds: form.pairs,
+    };
+    if (form.creditBaseSymbolId) payload.creditBaseSymbolId = form.creditBaseSymbolId;
+    if (form.creditMaxLeverage) payload.creditMaxLeverage = +form.creditMaxLeverage;
+    if (form.creditDrawdownPercent) payload.creditDrawdownPercent = +form.creditDrawdownPercent;
+    if (form.creditEnforceOnDrawdown) payload.creditEnforceOnDrawdown = form.creditEnforceOnDrawdown;
+    if (form.creditEnforceOnExpiry) payload.creditEnforceOnExpiry = form.creditEnforceOnExpiry;
+    payload.creditEnforceRequestDeadline = form.creditEnforceRequestDeadline;
+    if (form.creditMaxParallelRequests) payload.creditMaxParallelRequests = +form.creditMaxParallelRequests;
+    if (form.creditMaxExecutionLevel) payload.creditMaxExecutionLevel = +form.creditMaxExecutionLevel;
+    onSave(payload);
   };
 
   return (
@@ -302,6 +328,62 @@ function LevelFormModal({ title, initial, onClose, onSave, loading }: {
           </div>
 
           {showPairs && <PairPicker pairs={pairsQuery.data ?? []} loading={pairsQuery.isLoading} selected={form.pairs} onToggle={togglePair} onSet={setPairs} />}
+
+          <div className="field" style={{ gridColumn: "1 / -1" }}>
+            <button type="button" className="btn ghost" style={{ fontSize: "0.8rem" }} onClick={() => setShowCredit(!showCredit)}>
+              {showCredit ? "▼" : "▶"} تنظیمات اعتبار (Credit v2)
+            </button>
+          </div>
+
+          {showCredit && (
+            <div style={{ gridColumn: "1 / -1", display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, padding: 10, border: "1px solid var(--line)", borderRadius: 8 }}>
+              <div className="field">
+                <label>نماد پایه اعتبار (Credit Currency)</label>
+                <select className="select" value={form.creditBaseSymbolId} onChange={(e) => setForm({ ...form, creditBaseSymbolId: e.target.value })}>
+                  <option value="">انتخاب نشده</option>
+                  {(pairsQuery.data ?? []).filter((p: any) => p.quoteSymbol?.slug === "IRR").map((p: any) => (
+                    <option key={p.quoteSymbol?.id} value={p.quoteSymbol?.id}>{p.quoteSymbol?.name} ({p.quoteSymbol?.slug})</option>
+                  ))}
+                </select>
+              </div>
+              <div className="field">
+                <label>حداکثر اهرم (Leverage)</label>
+                <input className="input mono" type="number" min={1} step={0.1} value={form.creditMaxLeverage} onChange={(e) => setForm({ ...form, creditMaxLeverage: e.target.value })} placeholder="مثال: 10" />
+              </div>
+              <div className="field">
+                <label>درصد درادون (Drawdown %)</label>
+                <input className="input mono" type="number" min={0} max={100} value={form.creditDrawdownPercent} onChange={(e) => setForm({ ...form, creditDrawdownPercent: e.target.value })} placeholder="مثال: 30" />
+              </div>
+              <div className="field">
+                <label>واکنش به درادون</label>
+                <select className="select" value={form.creditEnforceOnDrawdown} onChange={(e) => setForm({ ...form, creditEnforceOnDrawdown: e.target.value })}>
+                  <option value="ENFORCE">اجرا (بستن خودکار)</option>
+                  <option value="ALERT">هشدار</option>
+                </select>
+              </div>
+              <div className="field">
+                <label>واکنش به انقضای تسویه</label>
+                <select className="select" value={form.creditEnforceOnExpiry} onChange={(e) => setForm({ ...form, creditEnforceOnExpiry: e.target.value })}>
+                  <option value="ENFORCE">اجرا</option>
+                  <option value="ALERT">هشدار</option>
+                </select>
+              </div>
+              <div className="field">
+                <label>حداکثر درخواست‌های موازی</label>
+                <input className="input mono" type="number" min={1} value={form.creditMaxParallelRequests} onChange={(e) => setForm({ ...form, creditMaxParallelRequests: e.target.value })} placeholder="مثال: 5" />
+              </div>
+              <div className="field">
+                <label>حداکثر سطح اجرا (Hops)</label>
+                <input className="input mono" type="number" min={1} value={form.creditMaxExecutionLevel} onChange={(e) => setForm({ ...form, creditMaxExecutionLevel: e.target.value })} placeholder="مثال: 2" />
+              </div>
+              <div className="field">
+                <label className="checkbox-label">
+                  <input type="checkbox" checked={form.creditEnforceRequestDeadline} onChange={(e) => setForm({ ...form, creditEnforceRequestDeadline: e.target.checked })} />
+                  <span>بستن خودکار درخواست‌های منقضی‌شده</span>
+                </label>
+              </div>
+            </div>
+          )}
         </div>
         <div className="modal-actions">
           <button type="button" className="btn ghost" onClick={onClose}>انصراف</button>

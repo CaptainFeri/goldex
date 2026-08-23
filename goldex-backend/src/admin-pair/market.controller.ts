@@ -138,6 +138,12 @@ export class MarketController {
       decimals: p.decimals ?? 2,
       marketType: p.baseSymbol?.marketType,
       lastUpdated: p.lastUpdated,
+      buyWarnHours: p.buyWarnHours ?? null,
+      buyExpireHours: p.buyExpireHours ?? null,
+      buyGraceHours: p.buyGraceHours ?? null,
+      sellWarnHours: p.sellWarnHours ?? null,
+      sellExpireHours: p.sellExpireHours ?? null,
+      sellGraceHours: p.sellGraceHours ?? null,
     };
   }
 }

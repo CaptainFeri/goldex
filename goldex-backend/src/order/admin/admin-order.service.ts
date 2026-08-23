@@ -7,6 +7,7 @@ import { TransactionEntity } from "../../wallet/entities/transaction.entity";
 import { PricePairEntity } from "../../admin-pair/entity/price.pair.entity";
 import { TransactionTypeEnum } from "../../wallet/enum/transaction.type.enum";
 import { TransactionStatusEnum } from "../../wallet/enum/transaction.status.enum";
+import { WalletTypeEnum } from "../../wallet/enum/wallet-type.enum";
 import { AdminWalletLogEntity } from "../../admin-wallet/entity/admin-wallet-log.entity";
 import { AdminUpdateOrderDto } from "./dto/admin-update-order.dto";
 import { OrderStatusEnum } from "../enum/order.status.enum";
@@ -532,7 +533,7 @@ export class AdminOrderService {
 
   private async getOrCreateWallet(queryRunner: any, userId: string, symbolId: string): Promise<WalletEntity> {
     let wallet = await queryRunner.manager.findOne(WalletEntity, {
-      where: { userId, symbolId },
+      where: { userId, symbolId, walletType: WalletTypeEnum.DEPOSIT },
       lock: { mode: "pessimistic_write" },
     });
 
@@ -540,6 +541,7 @@ export class AdminOrderService {
       wallet = queryRunner.manager.create(WalletEntity, {
         userId,
         symbolId,
+        walletType: WalletTypeEnum.DEPOSIT,
         symbol: { id: symbolId },
         user: { id: userId },
         freeBalance: 0,

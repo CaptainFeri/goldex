@@ -56,6 +56,7 @@ export class UserLevelService {
     const saved = await this.levelRepo.save(this.levelRepo.create(rest));
     if (pairIds && pairIds.length > 0) {
       const pairs = await this.pairRepo.findBy({ id: In(pairIds) });
+      await this.validateCreditPairs(dto.creditBaseSymbolId, pairs);
       saved.pairs = pairs;
       await this.levelRepo.save(saved);
     }
@@ -73,11 +74,29 @@ export class UserLevelService {
     }
     const { pairIds, ...rest } = dto;
     await this.levelRepo.update(id, rest);
+    const baseSymbolId = dto.creditBaseSymbolId ?? level.creditBaseSymbolId;
     if (pairIds) {
       const pairs = await this.pairRepo.findBy({ id: In(pairIds) });
+      await this.validateCreditPairs(baseSymbolId, pairs);
       await this.levelRepo.save({ id, pairs });
     }
     return this.findById(id);
+  }
+
+  // Every pair of a level must be quoted in the level's credit base symbol
+  // (e.g. XAU/IRR when the credit currency is IRR).
+  private async validateCreditPairs(
+    baseSymbolId: string | undefined,
+    pairs: PricePairEntity[],
+  ): Promise<void> {
+    if (!baseSymbolId || pairs.length === 0) return;
+    const symbol = pairs.find((p) => p.quoteId !== baseSymbolId);
+    if (symbol) {
+      throw new BadRequestException(
+        `Pair "${symbol.baseId}/${symbol.quoteId}" is not quoted in the credit base symbol; ` +
+          "all level pairs must have the base symbol as their quote side",
+      );
+    }
   }
 
   async remove(id: string): Promise<void> {

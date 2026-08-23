@@ -187,6 +187,12 @@ export const creditApi = {
 
   markAsRead: async (id) =>
     unwrap(await http.patch(`/credits/notifications/${id}/read`)),
+
+  requestCredit: async (data) =>
+    unwrap(await http.post('/credits/request', data)),
+
+  settleCredit: async (id) =>
+    unwrap(await http.post(`/credits/${id}/settle`)),
 }
 
 export const baseInfoApi = {

@@ -7,6 +7,7 @@ import { WarehouseHistoryEntity } from "../entity/warehouse-history.entity";
 import { PacketEntity } from "../entity/packet.entity";
 import { WarehouseEntity } from "../entity/warehouse.entity";
 import { WalletEntity } from "../../wallet/entities/wallet.entity";
+import { WalletTypeEnum } from "../../wallet/enum/wallet-type.enum";
 import { TransactionEntity } from "../../wallet/entities/transaction.entity";
 import { DepositEntity } from "../../deposit/deposit.entity";
 import { WithdrawEntity } from "../../withdraw/withdraw.entity";
@@ -1565,7 +1566,7 @@ const user = await queryRunner.manager.findOne<{ id: string; phone?: string }>("
 
   private async getWalletForUpdate(queryRunner: any, userId: string, symbolId: string): Promise<WalletEntity> {
     let wallet = await queryRunner.manager.findOne(WalletEntity, {
-      where: { userId, symbolId },
+      where: { userId, symbolId, walletType: WalletTypeEnum.DEPOSIT },
       lock: { mode: "pessimistic_write" },
     });
 
@@ -1573,6 +1574,7 @@ const user = await queryRunner.manager.findOne<{ id: string; phone?: string }>("
       wallet = queryRunner.manager.create(WalletEntity, {
         userId,
         symbolId,
+        walletType: WalletTypeEnum.DEPOSIT,
         freeBalance: 0,
         lockedBalance: 0,
         status: "ACTIVE",

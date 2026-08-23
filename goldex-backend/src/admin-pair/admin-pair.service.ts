@@ -11,6 +11,9 @@ import { InjectRepository as InjectSymbolRepository } from "@nestjs/typeorm";
 import { Repository } from "typeorm";
 import { CreatePricePairDto } from "./dto/create-pair.dto";
 import { UpdatePricePairDto } from "./dto/update-price-paird.dto";
+import { OrderEntity } from "../order/order.entity";
+import { QuoteRequestEntity } from "../quote-request/quote-request.entity";
+import { PendDeadlineStateEnum } from "../credit/enum/pend-deadline-state.enum";
 
 @Injectable()
 export class AdminPairService {
@@ -142,5 +145,53 @@ export class AdminPairService {
     const pricePair = await this.pricePairRepository.findOne({ where: { id } });
     pricePair.isValid = !pricePair.isValid;
     return this.pricePairRepository.save(pricePair);
+  }
+
+  async getRequestsOverview(pairId: string): Promise<{
+    orders: OrderEntity[];
+    quoteRequests: QuoteRequestEntity[];
+    summary: { buy: number; sell: number; byState: Record<string, number> };
+  }> {
+    const pair = await this.pricePairRepository.findOne({ where: { id: pairId } });
+    if (!pair) throw new NotFoundException("Price pair not found");
+
+    const orders = await this.pricePairRepository.manager.find(OrderEntity, {
+      where: { pricePairId: pairId, isCreditLinked: true },
+      order: { createAt: "DESC" },
+      take: 100,
+    });
+
+    const quoteRequests = await this.pricePairRepository.manager.find(QuoteRequestEntity, {
+      where: { pricePairId: pairId, isCreditLinked: true },
+      order: { createAt: "DESC" },
+      take: 100,
+    });
+
+    const now = new Date();
+    const computeState = (item: { pendDeadlineWarnAt?: Date; pendDeadlineExpireAt?: Date; pendDeadlineGraceEndAt?: Date }): PendDeadlineStateEnum => {
+      if (item.pendDeadlineGraceEndAt && now > new Date(item.pendDeadlineGraceEndAt)) return PendDeadlineStateEnum.CLOSED;
+      if (item.pendDeadlineExpireAt && now > new Date(item.pendDeadlineExpireAt)) return PendDeadlineStateEnum.GRACE;
+      if (item.pendDeadlineWarnAt && now > new Date(item.pendDeadlineWarnAt)) return PendDeadlineStateEnum.RED;
+      return PendDeadlineStateEnum.GREEN;
+    };
+
+    const byState: Record<string, number> = {};
+    let buyCount = 0;
+    let sellCount = 0;
+
+    for (const o of orders) {
+      const state = computeState(o);
+      byState[state] = (byState[state] || 0) + 1;
+      if (o.side === "BUY") buyCount++;
+      else sellCount++;
+    }
+    for (const q of quoteRequests) {
+      const state = computeState(q);
+      byState[state] = (byState[state] || 0) + 1;
+      if (q.side === "BUY") buyCount++;
+      else sellCount++;
+    }
+
+    return { orders, quoteRequests, summary: { buy: buyCount, sell: sellCount, byState } };
   }
 }

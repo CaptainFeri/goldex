@@ -11,6 +11,7 @@ import { TransactionEntity } from "../wallet/entities/transaction.entity";
 import { TransactionTypeEnum } from "../wallet/enum/transaction.type.enum";
 import { TransactionStatusEnum } from "../wallet/enum/transaction.status.enum";
 import { WalletStatusEnum } from "../wallet/enum/wallet-status.enum";
+import { WalletTypeEnum } from "../wallet/enum/wallet-type.enum";
 import { EventEmitter2 } from "@nestjs/event-emitter";
 import { DepositEvents, WithdrawEvents } from "../shared/constants/events.constants";
 import { PaymentEventMessage } from "../rabbitmq/interfaces/rabbitmq.interfaces";
@@ -205,7 +206,7 @@ export class PaymentEventService {
       }
 
       let wallet = await queryRunner.manager.findOne(WalletEntity, {
-        where: { userId: locked.userId, symbolId: locked.symbolId },
+        where: { userId: locked.userId, symbolId: locked.symbolId, walletType: WalletTypeEnum.DEPOSIT },
         lock: { mode: "pessimistic_write" },
       });
 
@@ -215,6 +216,7 @@ export class PaymentEventService {
         wallet = queryRunner.manager.create(WalletEntity, {
           userId: locked.userId,
           symbolId: locked.symbolId,
+          walletType: WalletTypeEnum.DEPOSIT,
           freeBalance: 0,
           lockedBalance: 0,
           status: WalletStatusEnum.ACTIVE,
@@ -275,7 +277,7 @@ export class PaymentEventService {
       }
 
       let wallet = await queryRunner.manager.findOne(WalletEntity, {
-        where: { userId: locked.userId, symbolId: locked.symbolId },
+        where: { userId: locked.userId, symbolId: locked.symbolId, walletType: WalletTypeEnum.DEPOSIT },
         lock: { mode: "pessimistic_write" },
       });
 

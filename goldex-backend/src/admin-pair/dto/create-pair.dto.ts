@@ -57,4 +57,48 @@ export class CreatePricePairDto {
   @IsNumber()
   @ApiProperty()
   decimals: number;
+
+  // ── Credit v2 pend-deadline time limits (per side) ───────────────
+  // x = warn hours, y = expire hours, z = post-expire grace hours.
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  @Type(() => Number)
+  @ApiProperty({ required: false })
+  buyWarnHours?: number;
+
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  @Type(() => Number)
+  @ApiProperty({ required: false })
+  buyExpireHours?: number;
+
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  @Type(() => Number)
+  @ApiProperty({ required: false })
+  buyGraceHours?: number;
+
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  @Type(() => Number)
+  @ApiProperty({ required: false })
+  sellWarnHours?: number;
+
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  @Type(() => Number)
+  @ApiProperty({ required: false })
+  sellExpireHours?: number;
+
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  @Type(() => Number)
+  @ApiProperty({ required: false })
+  sellGraceHours?: number;
 }

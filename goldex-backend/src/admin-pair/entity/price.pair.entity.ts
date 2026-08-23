@@ -71,6 +71,26 @@ export class PricePairEntity extends myBaseEntity {
   @Column({ type: "int", default: 2, name: "decimals" })
   decimals: number;
 
+  // ── Credit v2 pend-deadline time limits (per side) ───────────────
+  // x = warn hours, y = expire hours, z = post-expire grace hours.
+  @Column({ type: "int", nullable: true, name: "buy_warn_hours" })
+  buyWarnHours: number;
+
+  @Column({ type: "int", nullable: true, name: "buy_expire_hours" })
+  buyExpireHours: number;
+
+  @Column({ type: "int", nullable: true, name: "buy_grace_hours" })
+  buyGraceHours: number;
+
+  @Column({ type: "int", nullable: true, name: "sell_warn_hours" })
+  sellWarnHours: number;
+
+  @Column({ type: "int", nullable: true, name: "sell_expire_hours" })
+  sellExpireHours: number;
+
+  @Column({ type: "int", nullable: true, name: "sell_grace_hours" })
+  sellGraceHours: number;
+
   @ManyToMany(() => UserLevelEntity, (l) => l.pairs)
   levels: UserLevelEntity[];
 }

@@ -9,9 +9,13 @@ import { WalletEntity } from "../wallet/entities/wallet.entity";
 import { TransactionEntity } from "../wallet/entities/transaction.entity";
 import { TransactionTypeEnum } from "../wallet/enum/transaction.type.enum";
 import { TransactionStatusEnum } from "../wallet/enum/transaction.status.enum";
+import { WalletTypeEnum } from "../wallet/enum/wallet-type.enum";
 import { SystemLedgerEntity } from "../financial/entity/system-ledger.entity";
 import { SystemLedgerType } from "../financial/enum/system-ledger-type.enum";
 import { PricePairEntity } from "../admin-pair/entity/price.pair.entity";
+import { CreditEntity } from "../credit/entity/credit.entity";
+import { CreditStatusEnum } from "../credit/enum/credit-status.enum";
+import { computePendDeadlines, initialPendDeadlineState } from "../credit/util/pend-deadline.util";
 import * as crypto from "crypto";
 
 interface CreateQuoteRequestResult {
@@ -67,8 +71,22 @@ export class QuoteRequestService {
       // Lock balance with pessimistic lock inside the transaction
       await this.lockBalance(queryRunner, userId, side, pair, quantity, price);
 
-      // Save as PENDING
-      const entity = this.repo.create({ userId, side, pricePairId, quantity, price, notes, status: QuoteRequestStatus.PENDING });
+      // Save as PENDING. Credit-linked requests carry the pair's per-side
+      // pend deadlines (x/y/z hours).
+      const activeCredit = await queryRunner.manager.findOne(CreditEntity, {
+        where: { userId, status: CreditStatusEnum.ACTIVE },
+      });
+      const pendDeadlines = activeCredit
+        ? computePendDeadlines(pair, side)
+        : { warnAt: null, expireAt: null, graceEndAt: null };
+      const entity = this.repo.create({
+        userId, side, pricePairId, quantity, price, notes, status: QuoteRequestStatus.PENDING,
+        isCreditLinked: !!activeCredit,
+        pendDeadlineWarnAt: pendDeadlines.warnAt,
+        pendDeadlineExpireAt: pendDeadlines.expireAt,
+        pendDeadlineGraceEndAt: pendDeadlines.graceEndAt,
+        pendDeadlineState: initialPendDeadlineState(pendDeadlines),
+      });
       const saved = await queryRunner.manager.save(entity);
 
       await queryRunner.commitTransaction();
@@ -491,13 +509,14 @@ export class QuoteRequestService {
     symbolId: string,
   ): Promise<WalletEntity> {
     let wallet = await queryRunner.manager.findOne(WalletEntity, {
-      where: { userId, symbolId },
+      where: { userId, symbolId, walletType: WalletTypeEnum.DEPOSIT },
       lock: { mode: "pessimistic_write" },
     });
     if (!wallet) {
       wallet = queryRunner.manager.create(WalletEntity, {
         userId,
         symbolId,
+        walletType: WalletTypeEnum.DEPOSIT,
         freeBalance: 0,
         lockedBalance: 0,
         status: "ACTIVE",

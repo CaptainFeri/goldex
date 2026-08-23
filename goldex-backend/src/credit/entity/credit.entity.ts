@@ -4,6 +4,7 @@ import { UserEntity } from "../../user/entity/user.entity";
 import { CreditStatusEnum } from "../enum/credit-status.enum";
 import { SettlementStateEnum } from "../enum/settlement-state.enum";
 import { RiskStateEnum } from "../enum/risk-state.enum";
+import { CreditEnforceModeEnum } from "../enum/credit-enforce-mode.enum";
 import { CreditOrderEntity } from "./credit-order.entity";
 
 @Entity("credit")
@@ -15,7 +16,7 @@ export class CreditEntity extends myBaseEntity {
   @Column({ name: "user_id" })
   userId: string;
 
-  @Column({ name: "admin_id", type: "uuid" })
+  @Column({ name: "admin_id", type: "uuid", nullable: true })
   adminId: string;
 
   @Column({ name: "credit_code", type: "varchar", length: 50, unique: true })
@@ -71,6 +72,57 @@ export class CreditEntity extends myBaseEntity {
 
   @Column({ type: "int", default: 0, name: "current_trade_chain_depth" })
   currentTradeChainDepth: number;
+
+  // ── Credit v2 facility fields (user self-service leverage) ─────────
+  @Column({ type: "decimal", precision: 10, scale: 4, nullable: true, name: "leverage" })
+  leverage: number;
+
+  @Column({ type: "decimal", precision: 20, scale: 8, default: 0, name: "credit_limit" })
+  creditLimit: number;
+
+  @Column({ type: "decimal", precision: 20, scale: 8, default: 0, name: "used_credit" })
+  usedCredit: number;
+
+  @Column({ name: "collateral_symbol_id", type: "uuid", nullable: true })
+  collateralSymbolId: string;
+
+  @Column({ type: "decimal", precision: 20, scale: 8, default: 0, name: "collateral_amount" })
+  collateralAmount: number;
+
+  @Column({ type: "decimal", precision: 20, scale: 8, default: 0, name: "initial_collateral_value" })
+  initialCollateralValue: number;
+
+  @Column({ type: "decimal", precision: 20, scale: 8, default: 0, name: "current_collateral_value" })
+  currentCollateralValue: number;
+
+  // Drawdown threshold snapshot (% loss vs frozen collateral) from the level.
+  @Column({ type: "decimal", precision: 5, scale: 2, nullable: true, name: "drawdown_percent" })
+  drawdownPercent: number;
+
+  @Column({ type: "decimal", precision: 5, scale: 2, default: 0, name: "last_drawdown_percent" })
+  lastDrawdownPercent: number;
+
+  @Column({ name: "credit_base_symbol_id", type: "uuid", nullable: true })
+  creditBaseSymbolId: string;
+
+  @Column({
+    type: "enum",
+    enum: CreditEnforceModeEnum,
+    nullable: true,
+    name: "enforce_on_drawdown",
+  })
+  enforceOnDrawdown: CreditEnforceModeEnum;
+
+  @Column({
+    type: "enum",
+    enum: CreditEnforceModeEnum,
+    nullable: true,
+    name: "enforce_on_expiry",
+  })
+  enforceOnExpiry: CreditEnforceModeEnum;
+
+  @Column({ type: "boolean", nullable: true, name: "enforce_request_deadline" })
+  enforceRequestDeadline: boolean;
 
   @Column({ type: "enum", enum: SettlementStateEnum, default: SettlementStateEnum.GREEN, name: "settlement_state" })
   settlementState: SettlementStateEnum;

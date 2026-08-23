@@ -13,6 +13,7 @@ import { TransactionEntity } from "../wallet/entities/transaction.entity";
 import { TransactionTypeEnum } from "../wallet/enum/transaction.type.enum";
 import { TransactionStatusEnum } from "../wallet/enum/transaction.status.enum";
 import { WalletStatusEnum } from "../wallet/enum/wallet-status.enum";
+import { WalletTypeEnum } from "../wallet/enum/wallet-type.enum";
 import { getDefaultDepositTypes, GATEWAY_BOUND_TYPES } from "../admin-symbol/constants/symbol-type-type-map";
 import { PaymentBusService } from "../payment-bus/payment-bus.service";
 import { DepositEvents } from "../shared/constants/events.constants";
@@ -202,7 +203,7 @@ export class DepositService {
         await this.enforceDailyDepositLimit(deposit.userId, Number(deposit.amount), queryRunner);
 
         let wallet = await queryRunner.manager.findOne(WalletEntity, {
-          where: { userId: deposit.userId, symbolId: deposit.symbolId },
+          where: { userId: deposit.userId, symbolId: deposit.symbolId, walletType: WalletTypeEnum.DEPOSIT },
           lock: { mode: "pessimistic_write" },
         });
 
@@ -212,6 +213,7 @@ export class DepositService {
           wallet = queryRunner.manager.create(WalletEntity, {
             userId: deposit.userId,
             symbolId: deposit.symbolId,
+            walletType: WalletTypeEnum.DEPOSIT,
             freeBalance: 0,
             lockedBalance: 0,
             status: WalletStatusEnum.ACTIVE,

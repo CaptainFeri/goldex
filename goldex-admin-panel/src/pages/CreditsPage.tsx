@@ -149,6 +149,9 @@ export default function CreditsPage() {
                 <th>کد اعتبار</th>
                 <th>کاربر</th>
                 <th>مبلغ</th>
+                <th>اهرم</th>
+                <th>حد اعتبار</th>
+                <th>درادون</th>
                 <th>وضعیت</th>
                 <th>وضعیت تسویه</th>
                 <th>وضعیت ریسک</th>
@@ -167,6 +170,15 @@ export default function CreditsPage() {
                     {c.user ? `${c.user.firstName ?? ""} ${c.user.lastName ?? ""}`.trim() || c.user.phone || c.user.email || c.userId : c.userId}
                   </td>
                   <td>{fmtNum(c.amount)}</td>
+                  <td className="mono">{c.leverage != null ? `${c.leverage}x` : "—"}</td>
+                  <td className="mono">{fmtNum(c.creditLimit)}</td>
+                  <td>
+                    {c.drawdownPercent != null ? (
+                      <span style={{ color: (c.lastDrawdownPercent ?? 0) >= (c.drawdownPercent ?? 100) ? "var(--red)" : "inherit" }}>
+                        {c.lastDrawdownPercent?.toFixed(1) ?? "0"}% / {c.drawdownPercent}%
+                      </span>
+                    ) : "—"}
+                  </td>
                   <td>
                     <div style={{ display: "flex", gap: 4, alignItems: "center", flexWrap: "wrap" }}>
                       <Badge kind={STATUS_KINDS[c.status] as "green" | "red" | "gold" | "gray"}>{STATUS_LABELS[c.status]}</Badge>

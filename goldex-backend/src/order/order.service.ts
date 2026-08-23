@@ -30,10 +30,12 @@ import { CreditEntity } from "../credit/entity/credit.entity";
 import { CreditOrderEntity } from "../credit/entity/credit-order.entity";
 import { CreditStatusEnum } from "../credit/enum/credit-status.enum";
 import { CreditOrderStatusEnum } from "../credit/enum/credit-order-status.enum";
+import { CreditService } from "../credit/credit.service";
 import { OrderEvents } from "../shared/constants/events.constants";
 import { UserLevelService } from "../user-level/user-level.service";
 import { UserKycEntity } from "../user/entity/user.kyc.entity";
 import { KycStatusEnum } from "../baseinfo/enum/kycStatus.enum";
+import { computePendDeadlines, initialPendDeadlineState } from "../credit/util/pend-deadline.util";
 
 @Injectable()
 export class OrderService {
@@ -62,6 +64,7 @@ export class OrderService {
     private readonly creditOrderRepo: Repository<CreditOrderEntity>,
     private readonly eventEmitter: EventEmitter2,
     private readonly userLevelService: UserLevelService,
+    private readonly creditService: CreditService,
     @InjectRepository(UserKycEntity)
     private readonly kycRepo: Repository<UserKycEntity>,
   ) {}
@@ -150,6 +153,43 @@ export class OrderService {
             throw new BadRequestException("CREDIT_EXECUTION_LIMIT_REACHED");
           }
         }
+        // Credit v2: parallel-request cap from the facility snapshot.
+        const maxParallel = activeCredit.metadata?.maxParallelRequests;
+        if (maxParallel != null) {
+          const [activeCreditOrders, pendingLinkedOrders] = await Promise.all([
+            this.creditOrderRepo.count({
+              where: { creditId: activeCredit.id, status: CreditOrderStatusEnum.ACTIVE },
+            }),
+            this.orderRepository.count({
+              where: {
+                userId,
+                isCreditLinked: true,
+                status: OrderStatusEnum.PENDING,
+              },
+            }),
+          ]);
+          if (activeCreditOrders + pendingLinkedOrders >= maxParallel) {
+            throw new BadRequestException("CREDIT_MAX_PARALLEL_REQUESTS_REACHED");
+          }
+        }
+        // Credit v2: execution-level (hops) cap from the facility snapshot.
+        const maxHops = activeCredit.metadata?.maxExecutionLevel;
+        if (maxHops != null && activeCredit.usedCredit > 0) {
+          const hops = await this.creditOrderRepo.count({
+            where: { creditId: activeCredit.id, status: CreditOrderStatusEnum.ACTIVE },
+          });
+          if (hops + 1 > maxHops) {
+            throw new BadRequestException("CREDIT_MAX_EXECUTION_LEVEL_REACHED");
+          }
+        }
+        // Credit v2: drawdown check — re-price collateral; ENFORCE liquidates,
+        // ALERT blocks exposure-increasing (BUY) orders.
+        if (activeCredit.drawdownPercent != null) {
+          const { blockBuy } = await this.creditService.enforceDrawdownRules(activeCredit);
+          if (blockBuy && dto.side === OrderSideEnum.BUY) {
+            throw new BadRequestException("CREDIT_DRAWDOWN_BLOCKED");
+          }
+        }
         // Reduce-only mode (handoff Section 25): when riskState is WARNING or
         // MARGIN_CALL, block new/increase orders — only reducing orders allowed.
         if (
@@ -168,6 +208,12 @@ export class OrderService {
       }
 
       const orderCode = this.generateOrderCode(dto.side, dto.orderType);
+
+      // Credit-linked orders carry the pair's per-side pend deadlines (x/y/z).
+      const pendDeadlines = activeCredit
+        ? computePendDeadlines(pricePair, dto.side)
+        : { warnAt: null, expireAt: null, graceEndAt: null };
+
 
       // Only MARKET and QUOTE orders need a provider mapping — LIMIT orders
       // are matched in the order book.
@@ -264,6 +310,11 @@ export class OrderService {
         totalValue: 0,
         commission: commissionAmt,
         notes: dto.notes,
+        isCreditLinked: !!activeCredit,
+        pendDeadlineWarnAt: pendDeadlines.warnAt,
+        pendDeadlineExpireAt: pendDeadlines.expireAt,
+        pendDeadlineGraceEndAt: pendDeadlines.graceEndAt,
+        pendDeadlineState: initialPendDeadlineState(pendDeadlines),
         metadata: {
           ...dto.metadata,
           ...(dto.orderType !== OrderTypeEnum.LIMIT ? { providerKey, providerItemId } : {}),

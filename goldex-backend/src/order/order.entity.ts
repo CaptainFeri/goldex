@@ -166,6 +166,22 @@ export class OrderEntity extends myBaseEntity {
   @VersionColumn({ default: 1 })
   version: number;
 
+  // ── Credit v2 pend-deadline tracking (credit-linked requests only) ──
+  @Column({ type: "boolean", default: false, name: "is_credit_linked" })
+  isCreditLinked: boolean;
+
+  @Column({ type: "timestamptz", nullable: true, name: "pend_deadline_warn_at" })
+  pendDeadlineWarnAt: Date;
+
+  @Column({ type: "timestamptz", nullable: true, name: "pend_deadline_expire_at" })
+  pendDeadlineExpireAt: Date;
+
+  @Column({ type: "timestamptz", nullable: true, name: "pend_deadline_grace_end_at" })
+  pendDeadlineGraceEndAt: Date;
+
+  @Column({ type: "varchar", length: 20, nullable: true, name: "pend_deadline_state" })
+  pendDeadlineState: string;
+
   @OneToMany(() => TransactionEntity, (transaction) => transaction.order)
   transactions: TransactionEntity[];
 

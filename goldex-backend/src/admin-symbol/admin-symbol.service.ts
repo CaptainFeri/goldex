@@ -9,6 +9,7 @@ import { SymbolTypeEnum } from "./enum/symbol.type.enum";
 import { UserMarketTypeEntity } from "../user/entity/user.market.type.entity";
 import { UserEntity } from "../user/entity/user.entity";
 import { WalletEntity } from "../wallet/entities/wallet.entity";
+import { WalletTypeEnum } from "../wallet/enum/wallet-type.enum";
 import { getDefaultDepositTypes, getDefaultWithdrawTypes, validateDepositTypes, validateWithdrawTypes, getDefaultDepositGateways, getDefaultWithdrawGateways } from "./constants/symbol-type-type-map";
 import { PaymentBusService } from "../payment-bus/payment-bus.service";
 
@@ -93,12 +94,13 @@ export class AdminSymbolService {
 
       for (const user of uniqueUsers.values()) {
         const existing = await this.walletRepo.findOne({
-          where: { userId: user.id, symbolId: saved.id },
+          where: { userId: user.id, symbolId: saved.id, walletType: WalletTypeEnum.DEPOSIT },
         });
         if (!existing) {
           const wallet = new WalletEntity();
           wallet.symbol = saved;
           wallet.user = user;
+          wallet.walletType = WalletTypeEnum.DEPOSIT;
           wallet.freeBalance = 0;
           wallet.lockedBalance = 0;
           await this.walletRepo.save(wallet);

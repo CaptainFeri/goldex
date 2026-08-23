@@ -1,6 +1,7 @@
-import { Controller, Get, Patch, Param, Req, UseGuards } from "@nestjs/common";
+import { Controller, Get, Patch, Post, Body, Param, Req, UseGuards } from "@nestjs/common";
 import { ApiTags, ApiOperation, ApiBearerAuth } from "@nestjs/swagger";
 import { CreditService } from "../credit.service";
+import { RequestCreditDto } from "../dto/request-credit.dto";
 import { UserAuthGuard } from "../../user/auth/Guard/user.guard";
 import { UserLevelGuard } from "../../user-level/user-level.guard";
 
@@ -10,6 +11,18 @@ import { UserLevelGuard } from "../../user-level/user-level.guard";
 @ApiBearerAuth()
 export class CreditUserController {
   constructor(private readonly creditService: CreditService) {}
+
+  @Post("request")
+  @ApiOperation({ summary: "Open a self-service credit facility (freeze collateral + leverage)" })
+  async requestCredit(@Req() req: any, @Body() dto: RequestCreditDto) {
+    return { data: await this.creditService.requestCredit(req.user.id, dto) };
+  }
+
+  @Post(":id/settle")
+  @ApiOperation({ summary: "User self-settle: repay credit and release assets to deposit wallet" })
+  async settleCredit(@Req() req: any, @Param("id") id: string) {
+    return { data: await this.creditService.settleFromUser(req.user.id, id) };
+  }
 
   @Get("active")
   @ApiOperation({ summary: "Get user's active credit" })
