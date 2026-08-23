@@ -87,7 +87,7 @@ export class CreditService {
         throw new BadRequestException("Credit amount must be greater than zero");
       }
 
-      await this.enforceCreditLimits(dto.userId, totalAmount, dto.expireAt);
+      await this.enforceCreditLimits(dto.userId, totalAmount);
       const existingActive = await manager.findOne(CreditEntity, {
         where: { userId: dto.userId, status: CreditStatusEnum.ACTIVE },
       });
@@ -355,7 +355,7 @@ export class CreditService {
         redDurationHours: dto.redDurationHours || 4,
         outstandingShortfall: 0,
         isInDefault: false,
-        expireAt: new Date(dto.expireAt),
+        expireAt: dto.expireAt ? new Date(dto.expireAt) : new Date('2099-12-31T23:59:59.999Z'),
         activatedAt: new Date(),
         notes: dto.notes,
         metadata: {
@@ -481,7 +481,7 @@ export class CreditService {
       // Set expireAt far in the future to avoid triggering expiry logic
       const expireAt = new Date('2099-12-31T23:59:59.999Z');
 
-      await this.enforceCreditLimits(userId, creditLimit.toNumber(), expireAt.toISOString());
+      await this.enforceCreditLimits(userId, creditLimit.toNumber());
 
       // 1. Freeze: DEPOSIT → COLLATERAL wallet row.
       depositWallet.freeBalance = new Decimal(depositWallet.freeBalance).minus(dto.amount).toNumber();
@@ -1423,24 +1423,13 @@ export class CreditService {
   }
 
   // Enforces CREDIT_MAX_AMOUNT and CREDIT_MAX_DURATION_DAYS from the user's level.
-  private async enforceCreditLimits(userId: string, amount: number, expireAt: string): Promise<void> {
+  private async enforceCreditLimits(userId: string, amount: number): Promise<void> {
     const maxAmount = await this.userLevelService.getFeatureValue(userId, "CREDIT_MAX_AMOUNT");
     const maxAmt = typeof maxAmount === "object" ? Number(maxAmount?.amount) : Number(maxAmount);
     if (maxAmt > 0 && Number(amount) > maxAmt) {
       throw new BadRequestException(
         `حداکثر مبلغ اعتبار در سطح شما ${maxAmt.toLocaleString("fa-IR")} ریال است`
       );
-    }
-
-    const maxDur = await this.userLevelService.getFeatureValue(userId, "CREDIT_MAX_DURATION_DAYS");
-    const maxDays = Number(maxDur);
-    if (maxDays > 0 && expireAt) {
-      const days = Math.ceil((new Date(expireAt).getTime() - Date.now()) / 86400000);
-      if (days > maxDays) {
-        throw new BadRequestException(
-          `حداکثر مدت اعتبار در سطح شما ${maxDays} روز است`
-        );
-      }
     }
   }
 

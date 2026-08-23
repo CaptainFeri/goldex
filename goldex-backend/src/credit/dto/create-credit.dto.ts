@@ -65,9 +65,10 @@ export class CreateCreditDto {
   @Type(() => Number)
   reminderTimerHours?: number;
 
-  @ApiProperty()
+  @ApiProperty({ required: false, description: "Optional expiry date (credits don't expire by default)" })
+  @IsOptional()
   @IsDateString()
-  expireAt: string;
+  expireAt?: string;
 
   @ApiProperty({ required: false })
   @IsOptional()

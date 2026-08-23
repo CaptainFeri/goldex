@@ -257,7 +257,7 @@ export default function CreditsPage() {
 function CreateCreditModal({ onClose, onSave, loading }: { onClose: () => void; onSave: (d: any) => void; loading: boolean }) {
   const [form, setForm] = useState({
     userId: "", amount: 0, hasCallMargin: false, callMarginPercent: 0,
-    reminderTimerHours: 24, expireAt: "", notes: "", maxExecutionTradeLevel: 0,
+    reminderTimerHours: 24, notes: "", maxExecutionTradeLevel: 0,
   });
   const [frozenWallets, setFrozenWallets] = useState<Record<string, number>>({});
   const [increasedWallets, setIncreasedWallets] = useState<Record<string, number>>({});
@@ -316,7 +316,6 @@ function CreateCreditModal({ onClose, onSave, loading }: { onClose: () => void; 
 
   const handle = () => {
     if (!form.userId) { setErr("لطفاً یک کاربر انتخاب کنید"); return; }
-    if (!form.expireAt) { setErr("لطفاً تاریخ انقضا را وارد کنید"); return; }
     const fw = Object.entries(frozenWallets).filter(([, v]) => v > 0).map(([walletId, amount]) => ({ walletId, amount }));
     if (fw.length === 0) { setErr("حداقل یک دارایی برای مسدود کردن انتخاب کنید"); return; }
     const inc = Object.entries(increasedWallets).filter(([, v]) => v > 0).map(([walletId, amount]) => ({ walletId, amount }));
@@ -380,11 +379,6 @@ function CreateCreditModal({ onClose, onSave, loading }: { onClose: () => void; 
             <div style={{ fontSize: "0.85rem", fontWeight: 700 }} dir="ltr">
               {Object.values(increasedWallets).filter((v) => v > 0).reduce((s, v) => s + v, 0).toLocaleString("fa-IR")}
             </div>
-          </div>
-
-          <div className="field">
-            <label>تاریخ انقضا</label>
-            <input className="input" type="datetime-local" value={form.expireAt} onChange={(e) => setForm({ ...form, expireAt: e.target.value })} />
           </div>
 
           <div className="field">
