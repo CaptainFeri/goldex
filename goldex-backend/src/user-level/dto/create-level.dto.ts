@@ -42,8 +42,8 @@ export class CreateLevelDto {
   features?: Record<string, any>;
 
   @IsOptional()
-  @IsUUID()
-  @ApiProperty({ required: false, type: String })
+  @IsUUID("all", { each: true })
+  @ApiProperty({ required: false, type: [String] })
   pairIds?: string[];
 
   // ── Credit v2 config ──────────────────────────────────────────────
