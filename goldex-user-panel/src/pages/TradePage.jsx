@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useToast } from '../context/ToastContext'
 import { useAuth } from '../context/AuthContext'
-import { marketApi, orderApi, walletApi } from '../services/api'
+import { marketApi, orderApi, walletApi, creditApi } from '../services/api'
 import { useMarketPrices } from '../hooks/useMarketPrices'
 import { Spinner, Alert, Button, Field } from '../components/UI'
 
@@ -46,6 +46,8 @@ export default function TradePage() {
   const [placing, setPlacing] = useState(false)
   const [cancelling, setCancelling] = useState(null)
   const [statusFilter, setStatusFilter] = useState('')
+  const [activeCredit, setActiveCredit] = useState(null)
+  const [useCredit, setUseCredit] = useState(false)
 
   // Live prices over the socket, keyed by pairKey
   const pairKeys = useMemo(() => pairs.map((p) => p.pairKey).filter(Boolean), [pairs])
@@ -67,7 +69,8 @@ export default function TradePage() {
     }
   }
 
-  const walletFor = (symbolId) => wallets.find((w) => w.symbol?.id === symbolId)
+  const walletFor = (symbolId, walletType = 'DEPOSIT') =>
+    wallets.find((w) => w.symbol?.id === symbolId && (!w.walletType || w.walletType === walletType))
 
   const loadOrders = async () => {
     try {
@@ -83,10 +86,19 @@ export default function TradePage() {
     } catch (_) {}
   }
 
+  const loadActiveCredit = async () => {
+    try {
+      const credit = await creditApi.getActiveCredit()
+      setActiveCredit(credit || null)
+    } catch (_) {
+      setActiveCredit(null)
+    }
+  }
+
   useEffect(() => {
     const init = async () => {
       try {
-        const [list] = await Promise.all([marketApi.getPairs(), loadWallets()])
+        const [list] = await Promise.all([marketApi.getPairs(), loadWallets(), loadActiveCredit()])
         let arr = Array.isArray(list) ? list : []
         // The backend already filters by market type; keep a client-side safety
         // net so pairs outside the user's allowed market types never render.
@@ -114,7 +126,7 @@ export default function TradePage() {
   useEffect(() => {
     const hasOpen = orders.some((o) => CANCELLABLE.includes(o.status))
     if (!hasOpen) return
-    const t = setInterval(() => { loadOrders(); loadWallets() }, 4000)
+    const t = setInterval(() => { loadOrders(); loadWallets(); loadActiveCredit() }, 4000)
     return () => clearInterval(t)
   }, [orders])
 
@@ -137,9 +149,12 @@ export default function TradePage() {
     : (selected?.quoteSymbol?.slug || '')
 
   // ── Balance constraints ──────────────────────────────────
-  const baseWallet = selected ? walletFor(selected.baseSymbol?.id) : null
-  const quoteWallet = selected ? walletFor(selected.quoteSymbol?.id) : null
-  const available = side === 'BUY' ? (quoteWallet?.availableBalance ?? 0) : (baseWallet?.availableBalance ?? 0)
+  const walletType = useCredit && activeCredit ? 'CREDIT' : 'DEPOSIT'
+  const baseWallet = selected ? walletFor(selected.baseSymbol?.id, walletType) : null
+  const quoteWallet = selected ? walletFor(selected.quoteSymbol?.id, walletType) : null
+  const available = side === 'BUY'
+    ? (quoteWallet?.creditBalance || quoteWallet?.availableBalance || 0)
+    : (baseWallet?.creditBalance || baseWallet?.availableBalance || 0)
   const availSymbol = side === 'BUY' ? selected?.quoteSymbol?.slug : selected?.baseSymbol?.slug
   const required = side === 'BUY' ? estTotal : qty
   const insufficient = qty > 0 && required > available
@@ -178,7 +193,7 @@ export default function TradePage() {
       })
       toast.success(`${side === 'BUY' ? 'Buy' : 'Sell'} order placed.`)
       setQuantity('')
-      await Promise.all([loadOrders(), loadWallets()])
+      await Promise.all([loadOrders(), loadWallets(), loadActiveCredit()])
     } catch (err) {
       toast.error(err.response?.data?.message || 'Order could not be placed.')
     } finally {
@@ -191,7 +206,7 @@ export default function TradePage() {
     try {
       await orderApi.cancel(id)
       toast.success('Order cancelled.')
-      await Promise.all([loadOrders(), loadWallets()])
+      await Promise.all([loadOrders(), loadWallets(), loadActiveCredit()])
     } catch (err) {
       toast.error(err.response?.data?.message || 'Could not cancel order.')
     } finally {
@@ -288,10 +303,61 @@ export default function TradePage() {
                 <button type="button" className={`type-btn active`}>Market</button>
               </div>
 
+              {/* Credit toggle - only show if user has active credit */}
+              {activeCredit && (
+                <div style={{
+                  padding: '0.75rem',
+                  background: useCredit ? 'rgba(212, 175, 55, 0.1)' : 'var(--bg)',
+                  borderRadius: '8px',
+                  border: useCredit ? '1px solid var(--gold)' : '1px solid var(--border)',
+                  marginBottom: '0.5rem'
+                }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: useCredit ? '0.5rem' : '0' }}>
+                    <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer', margin: 0 }}>
+                      <input
+                        type="checkbox"
+                        checked={useCredit}
+                        onChange={(e) => setUseCredit(e.target.checked)}
+                        style={{ width: '18px', height: '18px', cursor: 'pointer' }}
+                      />
+                      <span style={{ fontWeight: 600, color: useCredit ? 'var(--gold)' : 'inherit' }}>
+                        💳 Use Credit
+                      </span>
+                    </label>
+                    <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+                      {activeCredit.leverage}x leverage
+                    </span>
+                  </div>
+                  {useCredit && (
+                    <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '0.5rem' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.25rem' }}>
+                        <span>Credit Limit:</span>
+                        <span style={{ color: 'var(--gold)', fontWeight: 600 }}>
+                          {fmt(activeCredit.creditLimit || activeCredit.amount, 0)} IRR
+                        </span>
+                      </div>
+                      {activeCredit.drawdownPercent != null && (
+                        <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                          <span>Drawdown:</span>
+                          <span style={{
+                            color: Number(activeCredit.lastDrawdownPercent || 0) >= Number(activeCredit.drawdownPercent || 100)
+                              ? 'var(--danger)' : 'inherit'
+                          }}>
+                            {Number(activeCredit.lastDrawdownPercent || 0).toFixed(1)}% / {activeCredit.drawdownPercent}%
+                          </span>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
+
               {/* Available balance */}
               <div className="ticket-summary">
-                <span className="label">Available</span>
-                <span className="val">
+                <span className="label">
+                  Available {useCredit && activeCredit ? '(Credit)' : ''}
+                </span>
+                <span className="val" style={{ color: useCredit && activeCredit ? 'var(--gold)' : 'inherit' }}>
                   {fmt(available, side === 'BUY' ? 2 : decimals)} {availSymbol || ''}
                   <button type="button" className="btn-link" style={{ marginLeft: 8 }} onClick={setMax}>Max</button>
                 </span>
