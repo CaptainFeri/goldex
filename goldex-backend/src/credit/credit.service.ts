@@ -474,14 +474,9 @@ export class CreditService {
         }
       }
 
-      const collateralValue = new Decimal(dto.amount).mul(collateralPrice || 1);
-      const creditLimit = collateralValue.mul(dto.leverage);
-
-      // Credits don't have expire time - they only close on drawdown or manual settlement
-      // Set expireAt far in the future to avoid triggering expiry logic
+      // Don't calculate credit amount yet - it will be calculated when user creates first order
+      // using the current pair price at that moment
       const expireAt = new Date('2099-12-31T23:59:59.999Z');
-
-      await this.enforceCreditLimits(userId, creditLimit.toNumber());
 
       // 1. Freeze: DEPOSIT → COLLATERAL wallet row.
       depositWallet.freeBalance = new Decimal(depositWallet.freeBalance).minus(dto.amount).toNumber();
@@ -516,20 +511,105 @@ export class CreditService {
         amount: dto.amount,
         fee: 0,
         description: `Collateral freeze for self-service credit`,
-        metadata: { userId, fromWalletId: depositWallet.id, creditAmount: dto.amount },
+        metadata: { userId, fromWalletId: depositWallet.id, collateralAmount: dto.amount },
         completedAt: new Date(),
       });
       await manager.save(freezeTxn);
 
-      // 2. Issue the credit line into a CREDIT wallet row for the base symbol.
+      // 2. Create facility without issuing credit yet - credit will be issued on first order
+      const creditCode = `CR-${Date.now().toString(36).toUpperCase()}-${crypto.randomUUID().slice(0, 4).toUpperCase()}`;
+      const credit = manager.create(CreditEntity, {
+        userId,
+        adminId: null,
+        creditCode,
+        amount: 0, // Will be calculated on first order
+        status: CreditStatusEnum.ACTIVE,
+        expireAt,
+        activatedAt: new Date(),
+        leverage: dto.leverage,
+        creditLimit: 0, // Will be calculated on first order
+        usedCredit: 0,
+        collateralSymbolId: depositWallet.symbolId,
+        collateralAmount: dto.amount,
+        initialCollateralValue: 0, // Will be calculated on first order
+        currentCollateralValue: 0, // Will be calculated on first order
+        drawdownPercent: level.creditDrawdownPercent != null ? Number(level.creditDrawdownPercent) : null,
+        lastDrawdownPercent: 0,
+        creditBaseSymbolId: level.creditBaseSymbolId,
+        enforceOnDrawdown: level.creditEnforceOnDrawdown,
+        enforceOnExpiry: level.creditEnforceOnExpiry,
+        enforceRequestDeadline: level.creditEnforceRequestDeadline,
+        metadata: {
+          selfService: true,
+          collateralWalletId: savedCollateralWallet.id,
+          depositWalletId: depositWallet.id,
+          maxParallelRequests: level.creditMaxParallelRequests,
+          maxExecutionLevel: level.creditMaxExecutionLevel,
+        },
+      });
+      const savedCredit = await manager.save(credit);
+
+      const notification = manager.create(CreditNotificationEntity, {
+        userId: savedCredit.userId,
+        creditId: savedCredit.id,
+        type: CreditNotificationTypeEnum.SETTLEMENT,
+        message: `Credit ${savedCredit.creditCode} opened with leverage ${dto.leverage}x. Credit amount will be calculated when you place your first order.`,
+        isRead: false,
+      });
+      await manager.save(notification);
+
+      return savedCredit;
+    });
+  }
+
+  /**
+   * Calculate credit amount on first order using current pair price.
+   * Called when user places their first credit-linked order.
+   */
+  async calculateAndIssueCreditOnFirstOrder(creditId: string, orderPricePairId: string): Promise<CreditEntity> {
+    return await this.dataSource.transaction(async (manager) => {
+      const credit = await manager.findOne(CreditEntity, {
+        where: { id: creditId, status: CreditStatusEnum.ACTIVE },
+        lock: { mode: "pessimistic_write" },
+      });
+      if (!credit) throw new BadRequestException("Credit not found or not active");
+
+      // If credit already calculated, return as-is
+      if (credit.creditLimit > 0) {
+        return credit;
+      }
+
+      // Get current price of collateral in base symbol currency
+      const collateralPair = await this.pricePairRepository.findOne({
+        where: { baseId: credit.collateralSymbolId, quoteId: credit.creditBaseSymbolId, isValid: true },
+      });
+
+      let collateralPrice: number;
+      if (credit.collateralSymbolId === credit.creditBaseSymbolId) {
+        collateralPrice = 1;
+      } else if (collateralPair) {
+        collateralPrice = Number(collateralPair.bestSellGramPrice) || Number(collateralPair.bestSellPrice) || 0;
+      } else {
+        throw new BadRequestException("Cannot determine collateral price for credit calculation");
+      }
+
+      if (collateralPrice <= 0) {
+        throw new BadRequestException("Invalid collateral price");
+      }
+
+      // Calculate credit amount: collateral amount × price × leverage
+      const collateralValue = new Decimal(credit.collateralAmount || 0).mul(collateralPrice);
+      const creditLimit = collateralValue.mul(credit.leverage || 1);
+
+      // Issue credit to CREDIT wallet
       let creditWallet = await manager.findOne(WalletEntity, {
-        where: { userId, symbolId: level.creditBaseSymbolId, walletType: WalletTypeEnum.CREDIT },
+        where: { userId: credit.userId, symbolId: credit.creditBaseSymbolId, walletType: WalletTypeEnum.CREDIT },
         lock: { mode: "pessimistic_write" },
       });
       if (!creditWallet) {
         creditWallet = manager.create(WalletEntity, {
-          userId,
-          symbolId: level.creditBaseSymbolId,
+          userId: credit.userId,
+          symbolId: credit.creditBaseSymbolId,
           walletType: WalletTypeEnum.CREDIT,
           status: WalletStatusEnum.ACTIVE,
           freeBalance: 0,
@@ -551,55 +631,36 @@ export class CreditService {
         status: TransactionStatusEnum.COMPLETED,
         amount: creditLimit.toNumber(),
         fee: 0,
-        description: `Credit line issued against collateral`,
-        metadata: { userId, collateralWalletId: savedCollateralWallet.id, leverage: dto.leverage },
+        description: `Credit line issued on first order`,
+        metadata: { creditId: credit.id, leverage: credit.leverage, collateralPrice },
         completedAt: new Date(),
       });
       await manager.save(issueTxn);
 
-      // 3. Facility — ACTIVE immediately, with a snapshot of the level's risk
-      // settings so later level changes don't affect open facilities.
-      const creditCode = `CR-${Date.now().toString(36).toUpperCase()}-${crypto.randomUUID().slice(0, 4).toUpperCase()}`;
-      const credit = manager.create(CreditEntity, {
-        userId,
-        adminId: null,
-        creditCode,
-        amount: creditLimit.toNumber(),
-        status: CreditStatusEnum.ACTIVE,
-        expireAt,
-        activatedAt: new Date(),
-        leverage: dto.leverage,
-        creditLimit: creditLimit.toNumber(),
-        usedCredit: 0,
-        collateralSymbolId: depositWallet.symbolId,
-        collateralAmount: dto.amount,
-        initialCollateralValue: collateralValue.toNumber(),
-        currentCollateralValue: collateralValue.toNumber(),
-        drawdownPercent: level.creditDrawdownPercent != null ? Number(level.creditDrawdownPercent) : null,
-        lastDrawdownPercent: 0,
-        creditBaseSymbolId: level.creditBaseSymbolId,
-        enforceOnDrawdown: level.creditEnforceOnDrawdown,
-        enforceOnExpiry: level.creditEnforceOnExpiry,
-        enforceRequestDeadline: level.creditEnforceRequestDeadline,
-        metadata: {
-          selfService: true,
-          collateralWalletId: savedCollateralWallet.id,
-          creditWalletId: savedCreditWallet.id,
-          depositWalletId: depositWallet.id,
-          maxParallelRequests: level.creditMaxParallelRequests,
-          maxExecutionLevel: level.creditMaxExecutionLevel,
-        },
-      });
+      // Update credit entity with calculated values
+      credit.amount = creditLimit.toNumber();
+      credit.creditLimit = creditLimit.toNumber();
+      credit.initialCollateralValue = collateralValue.toNumber();
+      credit.currentCollateralValue = collateralValue.toNumber();
+      credit.metadata = {
+        ...(credit.metadata || {}),
+        creditWalletId: savedCreditWallet.id,
+        creditCalculatedAt: new Date().toISOString(),
+        collateralPriceAtCalculation: collateralPrice,
+      };
+
       const savedCredit = await manager.save(credit);
 
-      const notification = manager.create(CreditNotificationEntity, {
-        userId: savedCredit.userId,
-        creditId: savedCredit.id,
-        type: CreditNotificationTypeEnum.SETTLEMENT,
-        message: `Credit ${savedCredit.creditCode} opened with leverage ${dto.leverage}x. Credit limit: ${creditLimit.toFixed(0)}.`,
-        isRead: false,
-      });
-      await manager.save(notification);
+      // Send notification
+      await manager.save(
+        manager.create(CreditNotificationEntity, {
+          userId: credit.userId,
+          creditId: credit.id,
+          type: CreditNotificationTypeEnum.SETTLEMENT,
+          message: `Credit calculated: ${creditLimit.toFixed(0)} ${credit.creditBaseSymbolId} (collateral: ${credit.collateralAmount} × ${collateralPrice} × ${credit.leverage}x leverage)`,
+          sentAt: new Date(),
+        }),
+      );
 
       return savedCredit;
     });

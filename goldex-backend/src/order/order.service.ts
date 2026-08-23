@@ -133,6 +133,18 @@ export class OrderService {
         where: { userId, status: CreditStatusEnum.ACTIVE },
       });
       if (activeCredit) {
+        // Credit v2: Calculate credit amount on first order if not yet calculated
+        if (activeCredit.creditLimit === 0) {
+          await this.creditService.calculateAndIssueCreditOnFirstOrder(activeCredit.id, dto.pricePairId);
+          // Reload credit with updated values
+          const updatedCredit = await this.creditRepo.findOne({
+            where: { id: activeCredit.id },
+          });
+          if (updatedCredit) {
+            Object.assign(activeCredit, updatedCredit);
+          }
+        }
+
         // Credit trading must not be explicitly disabled by the user's level
         // (absent => allowed, opt-out model).
         const creditTradingValue = await this.userLevelService.getFeatureValue(userId, "CREDIT_TRADING_ENABLED");
