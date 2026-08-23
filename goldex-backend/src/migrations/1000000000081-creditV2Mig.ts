@@ -13,26 +13,35 @@ export class CreditV2Mig1000000000081 implements MigrationInterface {
       END $$;
     `);
     await queryRunner.query(`
-      ALTER TABLE "wallet" ADD COLUMN "wallet_type" "public"."wallet_type_enum" NOT NULL DEFAULT 'DEPOSIT'
+      DO $$ BEGIN
+        IF NOT EXISTS (
+          SELECT 1 FROM information_schema.columns
+          WHERE table_name = 'wallet' AND column_name = 'wallet_type'
+        ) THEN
+          ALTER TABLE "wallet" ADD COLUMN "wallet_type" "public"."wallet_type_enum" NOT NULL DEFAULT 'DEPOSIT';
+        END IF;
+      END $$;
     `);
 
     // Split legacy credit balances into dedicated CREDIT wallet rows.
+    // Only reference columns that are guaranteed to exist (user_id, symbol_id,
+    // credit_balance). All other columns use their defaults.
     await queryRunner.query(`
       INSERT INTO "wallet" (
-        id, user_id, symbol_id, free_balance, locked_balance, status,
-        available_balance, credit_balance, frozen_free_balance, frozen_locked_balance,
+        id, user_id, symbol_id, free_balance, locked_balance,
+        available_balance, credit_balance,
         wallet_type, created_at, updated_at
       )
       SELECT
-        gen_random_uuid(), w.user_id, w.symbol_id, w.credit_balance, 0, w.status,
-        0, w.credit_balance, 0, 0,
+        gen_random_uuid(), w.user_id, w.symbol_id, w.credit_balance, 0,
+        0, w.credit_balance,
         'CREDIT', now(), now()
       FROM "wallet" w
       WHERE w.credit_balance > 0 AND w.deleted_at IS NULL
     `);
     await queryRunner.query(`
       UPDATE "wallet"
-      SET free_balance = available_balance + frozen_free_balance, credit_balance = 0
+      SET free_balance = available_balance, credit_balance = 0
       WHERE credit_balance > 0
     `);
 
