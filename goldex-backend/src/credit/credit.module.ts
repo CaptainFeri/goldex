@@ -2,6 +2,7 @@ import { Module } from "@nestjs/common";
 import { TypeOrmModule } from "@nestjs/typeorm";
 import { CreditService } from "./credit.service";
 import { CreditCronService } from "./credit-cron.service";
+import { CreditSettlementService } from "./settlement/credit-settlement.service";
 import { CreditAdminController } from "./admin/credit-admin.controller";
 import { CreditUserController } from "./user/credit-user.controller";
 import { CreditEntity } from "./entity/credit.entity";
@@ -15,6 +16,7 @@ import { UserEntity } from "../user/entity/user.entity";
 import { FinanceLogEntity } from "../finance-log/entity/finance-log.entity";
 import { AdminScheduleModule } from "../admin-schedule/admin-schedule.module";
 import { UserLevelModule } from "../user-level/user-level.module";
+import { WalletCoreModule } from "../wallet/wallet-core.module";
 
 @Module({
   imports: [
@@ -31,9 +33,10 @@ import { UserLevelModule } from "../user-level/user-level.module";
     ]),
     AdminScheduleModule,
     UserLevelModule,
+    WalletCoreModule,
   ],
   controllers: [CreditAdminController, CreditUserController],
-  providers: [CreditService, CreditCronService],
-  exports: [CreditService],
+  providers: [CreditService, CreditCronService, CreditSettlementService],
+  exports: [CreditService, CreditSettlementService],
 })
 export class CreditModule {}

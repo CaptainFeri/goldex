@@ -149,7 +149,7 @@ export class WalletOrderService {
           await queryRunner.manager.save(quoteWallet);
           await queryRunner.manager.save(baseWallet);
 
-          await this.createTransaction(queryRunner, baseWallet, order, {
+          await this.createTransaction(queryRunner.manager, baseWallet, order, {
             transactionType: TransactionTypeEnum.BUY,
             amount: qty,
             price: displayPrice,
@@ -158,7 +158,7 @@ export class WalletOrderService {
             metadata: { unit: pricePair.baseSymbol.slug, orderType: 'QUOTE' },
           });
 
-          await this.createTransaction(queryRunner, quoteWallet, order, {
+          await this.createTransaction(queryRunner.manager, quoteWallet, order, {
             transactionType: TransactionTypeEnum.ORDER,
             amount: -(totalCost + commissionInQuote),
             price: displayPrice,
@@ -190,7 +190,7 @@ export class WalletOrderService {
           await queryRunner.manager.save(quoteWallet);
           await queryRunner.manager.save(baseWallet);
 
-          await this.createTransaction(queryRunner, baseWallet, order, {
+          await this.createTransaction(queryRunner.manager, baseWallet, order, {
             transactionType: TransactionTypeEnum.BUY,
             amount: netQty,
             price: displayPrice,
@@ -202,7 +202,7 @@ export class WalletOrderService {
             },
           });
 
-          await this.createTransaction(queryRunner, quoteWallet, order, {
+          await this.createTransaction(queryRunner.manager, quoteWallet, order, {
             transactionType: TransactionTypeEnum.ORDER,
             amount: -totalCost,
             price: displayPrice,
@@ -233,7 +233,7 @@ export class WalletOrderService {
         await queryRunner.manager.save(baseWallet);
         await queryRunner.manager.save(quoteWallet);
 
-        await this.createTransaction(queryRunner, baseWallet, order, {
+        await this.createTransaction(queryRunner.manager, baseWallet, order, {
           transactionType: TransactionTypeEnum.SELL,
           amount: -qty,
           price,
@@ -242,7 +242,7 @@ export class WalletOrderService {
           metadata: { commission, commissionRate: rate, unit: pricePair.baseSymbol.slug },
         });
 
-        await this.createTransaction(queryRunner, quoteWallet, order, {
+        await this.createTransaction(queryRunner.manager, quoteWallet, order, {
           transactionType: TransactionTypeEnum.ORDER,
           amount: totalRevenue,
           price,
@@ -285,11 +285,7 @@ export class WalletOrderService {
     pricePair: PricePairEntity,
     finalStatus: OrderStatusEnum = OrderStatusEnum.REJECTED,
   ): Promise<void> {
-    if (
-      order.status === OrderStatusEnum.COMPLETED ||
-      order.status === OrderStatusEnum.REJECTED ||
-      order.status === OrderStatusEnum.CANCELLED
-    ) {
+    if (this.isTerminal(order.status)) {
       this.logger.warn(
         `Order ${order.orderCode} already in terminal state ${order.status}, skipping reject`,
       );
@@ -300,53 +296,8 @@ export class WalletOrderService {
     await queryRunner.connect();
     await queryRunner.startTransaction();
 
-    const isCancel = finalStatus === OrderStatusEnum.CANCELLED;
-    const txType = isCancel ? TransactionTypeEnum.ORDER_CANCEL : TransactionTypeEnum.ORDER_REJECTED;
-    const verb = isCancel ? 'cancelled' : 'rejected';
-
     try {
-      const walletType = order.isCreditLinked ? WalletTypeEnum.CREDIT : WalletTypeEnum.DEPOSIT;
-      // Only unlock the REMAINING quantity — the already-executed portion
-      // was already settled and its lock released.
-      const remainingQty = Number(order.quantity) - Number(order.executedQuantity);
-
-      if (order.side === OrderSideEnum.BUY) {
-        const quoteWallet = await this.getWallet(queryRunner, order.userId, pricePair.quoteSymbol.id, walletType);
-        let lockedAmount = Math.max(0, remainingQty) * (Number(order.price) || 0);
-
-        // QUOTE BUY: commission was also frozen in the quote wallet.
-        if (order.orderType === OrderTypeEnum.QUOTE) {
-          lockedAmount += Number(order.commission) || 0;
-        }
-
-        quoteWallet.lockedBalance = Number((quoteWallet.lockedBalance - lockedAmount).toFixed(8));
-        quoteWallet.freeBalance = Number((quoteWallet.freeBalance + lockedAmount).toFixed(8));
-        await queryRunner.manager.save(quoteWallet);
-
-        await this.createTransaction(queryRunner, quoteWallet, order, {
-          transactionType: txType,
-          amount: lockedAmount, // positive: funds returned to free balance
-          description: `Buy order ${order.orderCode} ${verb}: unlocked ${lockedAmount} ${pricePair.quoteSymbol.slug}`,
-        });
-      } else {
-        const baseWallet = await this.getWallet(queryRunner, order.userId, pricePair.baseSymbol.id, walletType);
-        const lockedAmount = Math.max(0, remainingQty);
-
-        baseWallet.lockedBalance = Number((baseWallet.lockedBalance - lockedAmount).toFixed(8));
-        baseWallet.freeBalance = Number((baseWallet.freeBalance + lockedAmount).toFixed(8));
-        await queryRunner.manager.save(baseWallet);
-
-        await this.createTransaction(queryRunner, baseWallet, order, {
-          transactionType: txType,
-          amount: lockedAmount, // positive: funds returned to free balance
-          description: `Sell order ${order.orderCode} ${verb}: unlocked ${lockedAmount} ${pricePair.baseSymbol.slug}`,
-        });
-      }
-
-      order.status = finalStatus;
-      if (finalStatus === OrderStatusEnum.CANCELLED) order.cancelledAt = new Date();
-      await queryRunner.manager.save(order);
-
+      await this.unlockOrder(queryRunner.manager, order, pricePair, finalStatus);
       await queryRunner.commitTransaction();
       this.logger.log(`Order ${order.orderCode} ${finalStatus.toLowerCase()}, balance unlocked`);
     } catch (err) {
@@ -355,6 +306,73 @@ export class WalletOrderService {
     } finally {
       await queryRunner.release();
     }
+  }
+
+  /**
+   * Same as rejectOrder but runs inside an already-open transaction (the caller
+   * supplies the EntityManager). Used by the credit settlement engine so the
+   * balance release is atomic with the settlement itself.
+   */
+  async unlockOrder(
+    manager: any,
+    order: OrderEntity,
+    pricePair: PricePairEntity,
+    finalStatus: OrderStatusEnum = OrderStatusEnum.REJECTED,
+  ): Promise<void> {
+    if (this.isTerminal(order.status)) return;
+
+    const isCancel = finalStatus === OrderStatusEnum.CANCELLED;
+    const txType = isCancel ? TransactionTypeEnum.ORDER_CANCEL : TransactionTypeEnum.ORDER_REJECTED;
+    const verb = isCancel ? 'cancelled' : 'rejected';
+    const walletType = order.isCreditLinked ? WalletTypeEnum.CREDIT : WalletTypeEnum.DEPOSIT;
+    // Only unlock the REMAINING quantity — the already-executed portion
+    // was already settled and its lock released.
+    const remainingQty = Number(order.quantity) - Number(order.executedQuantity);
+
+    if (order.side === OrderSideEnum.BUY) {
+      const quoteWallet = await this.getWalletWithManager(manager, order.userId, pricePair.quoteSymbol.id, walletType);
+      let lockedAmount = Math.max(0, remainingQty) * (Number(order.price) || 0);
+
+      // QUOTE BUY: commission was also frozen in the quote wallet.
+      if (order.orderType === OrderTypeEnum.QUOTE) {
+        lockedAmount += Number(order.commission) || 0;
+      }
+
+      quoteWallet.lockedBalance = Number((quoteWallet.lockedBalance - lockedAmount).toFixed(8));
+      quoteWallet.freeBalance = Number((quoteWallet.freeBalance + lockedAmount).toFixed(8));
+      await manager.save(quoteWallet);
+
+      await this.createTransaction(manager, quoteWallet, order, {
+        transactionType: txType,
+        amount: lockedAmount, // positive: funds returned to free balance
+        description: `Buy order ${order.orderCode} ${verb}: unlocked ${lockedAmount} ${pricePair.quoteSymbol.slug}`,
+      });
+    } else {
+      const baseWallet = await this.getWalletWithManager(manager, order.userId, pricePair.baseSymbol.id, walletType);
+      const lockedAmount = Math.max(0, remainingQty);
+
+      baseWallet.lockedBalance = Number((baseWallet.lockedBalance - lockedAmount).toFixed(8));
+      baseWallet.freeBalance = Number((baseWallet.freeBalance + lockedAmount).toFixed(8));
+      await manager.save(baseWallet);
+
+      await this.createTransaction(manager, baseWallet, order, {
+        transactionType: txType,
+        amount: lockedAmount, // positive: funds returned to free balance
+        description: `Sell order ${order.orderCode} ${verb}: unlocked ${lockedAmount} ${pricePair.baseSymbol.slug}`,
+      });
+    }
+
+    order.status = finalStatus;
+    if (finalStatus === OrderStatusEnum.CANCELLED) order.cancelledAt = new Date();
+    await manager.save(order);
+  }
+
+  private isTerminal(status: OrderStatusEnum): boolean {
+    return (
+      status === OrderStatusEnum.COMPLETED ||
+      status === OrderStatusEnum.REJECTED ||
+      status === OrderStatusEnum.CANCELLED
+    );
   }
 
   /**
@@ -411,7 +429,7 @@ export class WalletOrderService {
       await queryRunner.manager.save(takerQuoteWallet);
       await queryRunner.manager.save(takerBaseWallet);
 
-      await this.createTransaction(queryRunner, isBuy ? takerQuoteWallet : takerBaseWallet, takerOrder, {
+      await this.createTransaction(queryRunner.manager, isBuy ? takerQuoteWallet : takerBaseWallet, takerOrder, {
         transactionType: isBuy ? TransactionTypeEnum.ORDER : TransactionTypeEnum.SELL,
         amount: isBuy ? -cost : -matchSize,
         price: takerPrice,
@@ -420,7 +438,7 @@ export class WalletOrderService {
       });
 
       const takerReceived = isBuy ? netBase : totalRevenue;
-      await this.createTransaction(queryRunner, isBuy ? takerBaseWallet : takerQuoteWallet, takerOrder, {
+      await this.createTransaction(queryRunner.manager, isBuy ? takerBaseWallet : takerQuoteWallet, takerOrder, {
         transactionType: isBuy ? TransactionTypeEnum.BUY : TransactionTypeEnum.ORDER,
         amount: takerReceived,
         price: takerPrice,
@@ -453,14 +471,14 @@ export class WalletOrderService {
           await queryRunner.manager.save(makerQuoteWallet);
           await queryRunner.manager.save(makerBaseWallet);
 
-          await this.createTransaction(queryRunner, makerQuoteWallet, makerOrder, {
+          await this.createTransaction(queryRunner.manager, makerQuoteWallet, makerOrder, {
             transactionType: TransactionTypeEnum.ORDER,
             amount: -makerCost,
             price: makerPrice,
             fee: 0,
             description: `P2P match buy: spent ${makerCost} ${pricePair.quoteSymbol.slug}`,
           });
-          await this.createTransaction(queryRunner, makerBaseWallet, makerOrder, {
+          await this.createTransaction(queryRunner.manager, makerBaseWallet, makerOrder, {
             transactionType: TransactionTypeEnum.BUY,
             amount: makerNetBase,
             price: makerPrice,
@@ -477,14 +495,14 @@ export class WalletOrderService {
           await queryRunner.manager.save(makerBaseWallet);
           await queryRunner.manager.save(makerQuoteWallet);
 
-          await this.createTransaction(queryRunner, makerBaseWallet, makerOrder, {
+          await this.createTransaction(queryRunner.manager, makerBaseWallet, makerOrder, {
             transactionType: TransactionTypeEnum.SELL,
             amount: -matchSize,
             price: makerPrice,
             fee: Number((matchSize * sellComm / 100).toFixed(8)),
             description: `P2P match sell: spent ${matchSize} ${pricePair.baseSymbol.slug}`,
           });
-          await this.createTransaction(queryRunner, makerQuoteWallet, makerOrder, {
+          await this.createTransaction(queryRunner.manager, makerQuoteWallet, makerOrder, {
             transactionType: TransactionTypeEnum.ORDER,
             amount: makerTotalRevenue,
             price: makerPrice,
@@ -581,6 +599,43 @@ export class WalletOrderService {
     return wallet;
   }
 
+  // Manager-scoped variant of getWallet for callers already inside a
+  // transaction (e.g. the credit settlement engine).
+  private async getWalletWithManager(
+    manager: any,
+    userId: string,
+    symbolId: string,
+    walletType: WalletTypeEnum = WalletTypeEnum.DEPOSIT,
+  ): Promise<WalletEntity> {
+    let wallet = await manager.findOne(WalletEntity, {
+      where: { userId, symbolId, walletType },
+      lock: { mode: 'pessimistic_write' },
+    });
+
+    if (!wallet) {
+      wallet = manager.create(WalletEntity, {
+        userId,
+        symbolId,
+        walletType,
+        freeBalance: 0,
+        lockedBalance: 0,
+        status: 'ACTIVE',
+      });
+      wallet = await manager.save(wallet);
+    }
+
+    if (wallet.status !== WalletStatusEnum.ACTIVE) {
+      throw new BadRequestException("WALLET_FROZEN_CREDIT_EXPIRED");
+    }
+
+    wallet.freeBalance = Number(wallet.freeBalance) || 0;
+    wallet.lockedBalance = Number(wallet.lockedBalance) || 0;
+    wallet.frozenFreeBalance = Number(wallet.frozenFreeBalance) || 0;
+    wallet.frozenLockedBalance = Number(wallet.frozenLockedBalance) || 0;
+
+    return wallet;
+  }
+
   // Credits the platform's system ledger with profit (commission) from a trade,
   // within the same transaction as the wallet movements.
   private async recordSystemProfit(
@@ -605,7 +660,7 @@ export class WalletOrderService {
   }
 
   private async createTransaction(
-    queryRunner: any,
+    em: any,
     wallet: WalletEntity,
     order: OrderEntity,
     params: {
@@ -617,7 +672,7 @@ export class WalletOrderService {
       metadata?: any;
     },
   ): Promise<TransactionEntity> {
-    const tx = this.transactionRepo.create({
+    const tx = em.create(TransactionEntity, {
       walletId: wallet.id,
       wallet,
       orderId: order.id,
@@ -636,6 +691,6 @@ export class WalletOrderService {
       },
       completedAt: new Date(),
     });
-    return queryRunner.manager.save(tx);
+    return em.save(tx);
   }
 }

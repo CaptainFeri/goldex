@@ -152,9 +152,29 @@ export default function TradePage() {
   const walletType = useCredit && activeCredit ? 'CREDIT' : 'DEPOSIT'
   const baseWallet = selected ? walletFor(selected.baseSymbol?.id, walletType) : null
   const quoteWallet = selected ? walletFor(selected.quoteSymbol?.id, walletType) : null
+
+  // The credit line is only issued by the backend on the first order. Before
+  // that, project the balances from the frozen collateral and the current pair
+  // price: BUY = collateral × price × leverage (IRR), SELL = collateral ×
+  // leverage (XAU). After issuance the remaining credit is the CREDIT wallet's
+  // freeBalance, which already deducts the amounts locked by other requests.
+  const creditIssued = useCredit && activeCredit && Number(activeCredit.creditLimit || 0) > 0
+  const collateralMatches = useCredit && activeCredit && selected &&
+    selected.baseSymbol?.id === activeCredit.collateralSymbolId
+  const projectedCredit = collateralMatches
+    ? (Number(activeCredit.collateralAmount) || 0) * (pr.sellGram || 0) * (Number(activeCredit.leverage) || 1)
+    : 0
+  const projectedSellCredit = collateralMatches
+    ? (Number(activeCredit.collateralAmount) || 0) * (Number(activeCredit.leverage) || 1)
+    : 0
+
   const available = side === 'BUY'
-    ? (quoteWallet?.creditBalance || quoteWallet?.availableBalance || 0)
-    : (baseWallet?.creditBalance || baseWallet?.availableBalance || 0)
+    ? (useCredit && activeCredit
+        ? (creditIssued ? (quoteWallet?.freeBalance || 0) : projectedCredit)
+        : (quoteWallet?.creditBalance || quoteWallet?.availableBalance || 0))
+    : (useCredit && activeCredit
+        ? (creditIssued ? (baseWallet?.freeBalance || 0) : projectedSellCredit)
+        : (baseWallet?.creditBalance || baseWallet?.availableBalance || 0))
   const availSymbol = side === 'BUY' ? selected?.quoteSymbol?.slug : selected?.baseSymbol?.slug
   const required = side === 'BUY' ? estTotal : qty
   const insufficient = qty > 0 && required > available
@@ -333,7 +353,13 @@ export default function TradePage() {
                       <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.25rem' }}>
                         <span>Credit Limit:</span>
                         <span style={{ color: 'var(--gold)', fontWeight: 600 }}>
-                          {fmt(activeCredit.creditLimit || activeCredit.amount, 0)} IRR
+                          {fmt(creditIssued ? activeCredit.creditLimit : projectedCredit, 0)} IRR
+                        </span>
+                      </div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.25rem' }}>
+                        <span>Sell Capacity:</span>
+                        <span style={{ color: 'var(--gold)', fontWeight: 600 }}>
+                          {fmt(projectedSellCredit, decimals)} {selected?.baseSymbol?.slug || 'XAU'}
                         </span>
                       </div>
                       {activeCredit.drawdownPercent != null && (

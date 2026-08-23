@@ -27,9 +27,12 @@ import { UnitTypeEnum } from "../admin-symbol/enum/unit.type.enum";
 import { GainTypeEnum } from "../admin-symbol/enum/gain.type.enum";
 import { UserEntity } from "../user/entity/user.entity";
 import { OrderEntity } from "../order/order.entity";
+import { OrderStatusEnum } from "../order/enum/order.status.enum";
 import { FinanceLogEntity } from "../finance-log/entity/finance-log.entity";
 import { CreditActionEnum } from "./enum/credit-action.enum";
 import { WalletStatusEnum } from "../wallet/enum/wallet-status.enum";
+import { WalletOrderService } from "../wallet/services/wallet-order.service";
+import { CreditSettlementService, SettlementState } from "./settlement/credit-settlement.service";
 import { CreditEvents } from "../shared/constants/events.constants";
 import { UserLevelService } from "../user-level/user-level.service";
 
@@ -61,6 +64,8 @@ export class CreditService {
     private dataSource: DataSource,
     private readonly eventEmitter: EventEmitter2,
     private readonly userLevelService: UserLevelService,
+    private readonly walletOrderService: WalletOrderService,
+    private readonly settlementService: CreditSettlementService,
   ) {}
 
   async createCredit(adminId: string, dto: CreateCreditDto): Promise<CreditEntity> {
@@ -579,6 +584,13 @@ export class CreditService {
         return credit;
       }
 
+      // Legacy (admin-created) credits have no collateral/leverage — the credit
+      // line was already issued into the wallet at creation, so there is nothing
+      // to calculate here. Returning early keeps those orders working.
+      if (!credit.collateralSymbolId || !credit.creditBaseSymbolId || !credit.leverage) {
+        return credit;
+      }
+
       // Get current price of collateral in base symbol currency
       const collateralPair = await this.pricePairRepository.findOne({
         where: { baseId: credit.collateralSymbolId, quoteId: credit.creditBaseSymbolId, isValid: true },
@@ -637,6 +649,63 @@ export class CreditService {
       });
       await manager.save(issueTxn);
 
+      // Issue the SELL (base-symbol) credit capacity = collateralAmount ×
+      // leverage in the collateral/base symbol (e.g. XAU). This lets the user
+      // place credit SELL orders up to the leveraged capacity, not only what
+      // they already hold. The balance is virtual credit — it is clawed back
+      // at settlement and never released as a real asset (see settleFromUser).
+      const sellCreditAmount = new Decimal(credit.collateralAmount || 0).mul(credit.leverage || 1);
+      let sellCreditWalletId: string | null = null;
+      if (sellCreditAmount.greaterThan(0)) {
+        let baseCreditWallet = await manager.findOne(WalletEntity, {
+          where: {
+            userId: credit.userId,
+            symbolId: credit.collateralSymbolId,
+            walletType: WalletTypeEnum.CREDIT,
+          },
+          lock: { mode: "pessimistic_write" },
+        });
+        if (!baseCreditWallet) {
+          baseCreditWallet = manager.create(WalletEntity, {
+            userId: credit.userId,
+            symbolId: credit.collateralSymbolId,
+            walletType: WalletTypeEnum.CREDIT,
+            status: WalletStatusEnum.ACTIVE,
+            freeBalance: 0,
+            lockedBalance: 0,
+            availableBalance: 0,
+            creditBalance: 0,
+            frozenFreeBalance: 0,
+            frozenLockedBalance: 0,
+          });
+        }
+        baseCreditWallet.creditBalance = new Decimal(baseCreditWallet.creditBalance || 0)
+          .plus(sellCreditAmount)
+          .toNumber();
+        baseCreditWallet.freeBalance = new Decimal(baseCreditWallet.availableBalance || 0)
+          .plus(baseCreditWallet.creditBalance)
+          .toNumber();
+        const savedBaseWallet = await manager.save(baseCreditWallet);
+        sellCreditWalletId = savedBaseWallet.id;
+
+        const sellTxn = manager.create(TransactionEntity, {
+          walletId: savedBaseWallet.id,
+          transactionId: crypto.randomUUID(),
+          transactionType: TransactionTypeEnum.CREDIT_DEPOSIT,
+          status: TransactionStatusEnum.COMPLETED,
+          amount: sellCreditAmount.toNumber(),
+          fee: 0,
+          description: `Credit sell capacity issued on first order`,
+          metadata: {
+            creditId: credit.id,
+            leverage: credit.leverage,
+            symbolId: credit.collateralSymbolId,
+          },
+          completedAt: new Date(),
+        });
+        await manager.save(sellTxn);
+      }
+
       // Update credit entity with calculated values
       credit.amount = creditLimit.toNumber();
       credit.creditLimit = creditLimit.toNumber();
@@ -645,6 +714,9 @@ export class CreditService {
       credit.metadata = {
         ...(credit.metadata || {}),
         creditWalletId: savedCreditWallet.id,
+        sellCreditWalletId,
+        sellCreditAmount: sellCreditAmount.toNumber(),
+        sellCreditSymbolId: credit.collateralSymbolId,
         creditCalculatedAt: new Date().toISOString(),
         collateralPriceAtCalculation: collateralPrice,
       };
@@ -857,15 +929,18 @@ export class CreditService {
     });
 
     for (const credit of expiredCredits) {
+      try {
+        // Forced liquidation via the settlement engine (cash-settles at the
+        // current mark price, consuming collateral for any deficit).
+        await this.settlementService.liquidate(credit.id, "EXPIRY_LIQUIDATION");
+      } catch (err) {
+        this.logger.error(
+          `Expiry liquidation failed for credit ${credit.creditCode}: ${(err as Error).message}`,
+        );
+        continue;
+      }
+
       await this.dataSource.transaction(async (manager) => {
-        credit.status = CreditStatusEnum.EXPIRED;
-
-        // Forced liquidation: repay the loan and sell collateral to cover the
-        // shortfall (repayable leverage) before blocking the user.
-        const creditWallet = await this.resolveCreditWallet(manager, credit);
-        const repayResult = await this.repayAndLiquidate(manager, credit, creditWallet, now);
-        await manager.save(credit);
-
         const wallets = await manager.find(WalletEntity, {
           where: { userId: credit.userId },
           lock: { mode: "pessimistic_write" },
@@ -885,28 +960,25 @@ export class CreditService {
           userId: credit.userId,
           creditId: credit.id,
           actionType: CreditActionEnum.EXPIRY_FREEZE_ALL,
-          description: `Credit ${credit.creditCode} expired. Repaid ${repayResult.repaid}, liquidated ${repayResult.liquidated}, shortfall ${repayResult.shortfall}. All wallets frozen.`,
-          metadata: {
-            creditCode: credit.creditCode,
-            walletCount: wallets.length,
-            repaid: repayResult.repaid,
-            liquidated: repayResult.liquidated,
-            shortfall: repayResult.shortfall,
-          },
+          description: `Credit ${credit.creditCode} expired and was liquidated. All wallets frozen.`,
+          metadata: { creditCode: credit.creditCode, walletCount: wallets.length },
         });
 
-        const notification = manager.create(CreditNotificationEntity, {
-          userId: credit.userId,
-          creditId: credit.id,
-          type: CreditNotificationTypeEnum.EXPIRED,
-          message: `Credit ${credit.creditCode} has expired. All your wallets have been frozen. ` +
-            `Please contact support to settle your credit.`,
-          sentAt: now,
-        });
-        await manager.save(notification);
+        await manager.save(
+          manager.create(CreditNotificationEntity, {
+            userId: credit.userId,
+            creditId: credit.id,
+            type: CreditNotificationTypeEnum.EXPIRED,
+            message:
+              `Credit ${credit.creditCode} has expired. All your wallets have been frozen. ` +
+              `Please contact support to settle your credit.`,
+            sentAt: now,
+          }),
+        );
 
         this.logger.warn(`Credit ${credit.creditCode} expired, all wallets frozen for user ${credit.userId}`);
       });
+
       this.eventEmitter.emit(CreditEvents.EXPIRED, {
         userId: credit.userId,
         creditId: credit.id,
@@ -996,94 +1068,58 @@ export class CreditService {
   // increase-wallet balance and liquidates frozen collateral for any shortfall),
   // cancels open credit orders, blocks the user's wallets and notifies them.
   private async liquidateCreditForMarginCall(creditId: string): Promise<void> {
-    await this.dataSource.transaction(async (manager) => {
-      const credit = await manager.findOne(CreditEntity, {
-        where: { id: creditId },
-        lock: { mode: "pessimistic_write" },
-      });
-      if (!credit || credit.status !== CreditStatusEnum.ACTIVE) return;
-
-      const creditWallet = await this.resolveCreditWallet(manager, credit);
-      const liquidation = await this.repayAndLiquidate(
-        manager,
-        credit,
-        creditWallet,
-        new Date(),
-      );
-
-      const activeOrders = await this.creditOrderRepository.find({
-        where: { creditId: credit.id, status: CreditOrderStatusEnum.ACTIVE },
-        relations: { order: true },
-      });
-      for (const co of activeOrders) {
-        if (co.order) await this.cancelCreditOrder(co);
-      }
-
-      credit.status = CreditStatusEnum.SETTLED;
-      credit.settledAt = new Date();
-      credit.notes = (credit.notes ? `${credit.notes} ` : "") + "Liquidated on margin call";
-      credit.metadata = {
-        ...(credit.metadata || {}),
-        settleReason: "MARGIN_CALL_LIQUIDATION",
-        marginCallLiquidatedAt: new Date().toISOString(),
-        liquidation,
-      };
-      await manager.save(credit);
-
-      await this.blockUserForMarginCall(credit.userId, credit.id, manager);
-
-      await this.logFinanceAction(manager, {
-        adminId: null,
-        userId: credit.userId,
-        creditId: credit.id,
-        actionType: CreditActionEnum.LIQUIDATION,
-        description: `Credit ${credit.creditCode} liquidated due to margin call`,
-        metadata: { reason: "MARGIN_CALL", liquidation },
-      });
-
-      await this.creditNotificationRepository.save(
-        this.creditNotificationRepository.create({
-          userId: credit.userId,
-          creditId: credit.id,
-          type: CreditNotificationTypeEnum.MARGIN_CALL,
-          message:
-            `Credit ${credit.creditCode} was liquidated due to a margin call. ` +
-            `Your wallets have been frozen. Please contact support.`,
-          sentAt: new Date(),
-        }),
-      );
+    const credit = await this.creditRepository.findOne({
+      where: { id: creditId, status: CreditStatusEnum.ACTIVE },
     });
+    if (!credit) return;
+
+    await this.settlementService.liquidate(creditId, "MARGIN_CALL_LIQUIDATION", {
+      notes: "Liquidated on margin call",
+    });
+
+    await this.blockUserForMarginCall(credit.userId, creditId);
+
+    await this.creditNotificationRepository.save(
+      this.creditNotificationRepository.create({
+        userId: credit.userId,
+        creditId,
+        type: CreditNotificationTypeEnum.MARGIN_CALL,
+        message:
+          `Credit ${credit.creditCode} was liquidated due to a margin call. ` +
+          `Your wallets have been frozen. Please contact support.`,
+        sentAt: new Date(),
+      }),
+    );
   }
 
   async settleCredit(adminId: string, creditId: string, description?: string, imagePath?: string): Promise<CreditEntity> {
-    const settledCredit = await this.dataSource.transaction(async (manager) => {
-      const credit = await manager.findOne(CreditEntity, {
-        where: { id: creditId },
-        lock: { mode: "pessimistic_write" },
-      });
-      if (!credit) throw new NotFoundException("Credit not found");
-      if (credit.status !== CreditStatusEnum.ACTIVE && credit.status !== CreditStatusEnum.EXPIRED) {
-        throw new BadRequestException(`Cannot settle credit with status ${credit.status}`);
-      }
+    // Financial settlement is performed by the settlement engine (idempotent,
+    // atomic). It values the actual borrowed/held position at the mark price,
+    // releases surplus and consumes collateral for any deficit.
+    const settledCredit = await this.settlementService.settleCredit(creditId, {
+      mode: "ADMIN",
+      adminId,
+      notes: description,
+      imagePath,
+      reason: "ADMIN_SETTLEMENT",
+    });
 
-      credit.status = CreditStatusEnum.SETTLED;
-      credit.settledAt = new Date();
-      credit.settlementState = SettlementStateEnum.SETTLED;
-      credit.notes = description || credit.notes;
-      credit.settledByAdminId = adminId;
-      if (imagePath) {
-        credit.settleImagePath = imagePath;
-      }
-      await manager.save(credit);
+    // Restore the user's wallets (unfreeze + release any frozen collateral).
+    await this.unfreezeWalletsAfterSettlement(settledCredit.userId, settledCredit.creditCode, adminId);
 
-      // Repay the loan: take back whatever is left in the credit wallet and
-      // liquidate frozen collateral to cover any shortfall (repayable leverage).
-      const creditWallet = await this.resolveCreditWallet(manager, credit);
-      const repayResult = await this.repayAndLiquidate(manager, credit, creditWallet, new Date());
-      await manager.save(credit);
+    this.eventEmitter.emit(CreditEvents.SETTLED, {
+      userId: settledCredit.userId,
+      creditId: settledCredit.id,
+      reason: "ADMIN_SETTLEMENT",
+    });
+    return settledCredit;
+  }
 
+  private async unfreezeWalletsAfterSettlement(userId: string, creditCode: string, adminId?: string): Promise<void> {
+    await this.dataSource.transaction(async (manager) => {
       const wallets = await manager.find(WalletEntity, {
-        where: { userId: credit.userId },
+        where: { userId },
+        lock: { mode: "pessimistic_write" },
       });
 
       for (const wallet of wallets) {
@@ -1092,7 +1128,7 @@ export class CreditService {
         if (wallet.status === WalletStatusEnum.FROZEN && wallet.frozenAt) {
           wallet.status = WalletStatusEnum.ACTIVE;
           wallet.frozenAt = null;
-          wallet.adminNote = `Unfrozen after credit ${credit.creditCode} settlement`;
+          wallet.adminNote = `Unfrozen after credit ${creditCode} settlement`;
           await manager.save(wallet);
         }
 
@@ -1123,8 +1159,8 @@ export class CreditService {
             status: TransactionStatusEnum.COMPLETED,
             amount: unfrozenAmount,
             fee: 0,
-            description: `Unfrozen after credit ${credit.creditCode} settlement`,
-            metadata: { adminId, creditCode: credit.creditCode, creditId: credit.id },
+            description: `Unfrozen after credit ${creditCode} settlement`,
+            metadata: { adminId: adminId ?? null, creditCode, creditId: null },
             completedAt: new Date(),
           });
           await manager.save(unfreezeTxn);
@@ -1132,58 +1168,14 @@ export class CreditService {
       }
 
       await this.logFinanceAction(manager, {
-        adminId,
-        userId: credit.userId,
-        creditId: credit.id,
-        actionType: CreditActionEnum.CREDIT_SETTLED,
-        description: description || `Credit ${credit.creditCode} settled`,
-        metadata: { creditCode: credit.creditCode, settledAt: credit.settledAt },
-      });
-
-      await this.logFinanceAction(manager, {
-        adminId,
-        userId: credit.userId,
-        creditId: credit.id,
+        adminId: adminId ?? null,
+        userId,
         actionType: CreditActionEnum.WALLET_UNFROZEN,
-        description: `All wallets unfrozen after credit ${credit.creditCode} settlement`,
+        description: `All wallets unfrozen after credit ${creditCode} settlement`,
         metadata: { walletCount: wallets.length },
       });
-
-      await this.logFinanceAction(manager, {
-        adminId,
-        userId: credit.userId,
-        creditId: credit.id,
-        actionType: CreditActionEnum.CREDIT_SETTLED,
-        description:
-          `Credit ${credit.creditCode} repayment: repaid ${repayResult.repaid}, ` +
-          `liquidated ${repayResult.liquidated}, shortfall ${repayResult.shortfall}`,
-        metadata: {
-          creditCode: credit.creditCode,
-          repaid: repayResult.repaid,
-          liquidated: repayResult.liquidated,
-          shortfall: repayResult.shortfall,
-        },
-      });
-
-      const notification = manager.create(CreditNotificationEntity, {
-        userId: credit.userId,
-        creditId: credit.id,
-        type: CreditNotificationTypeEnum.SETTLEMENT,
-        message: `Credit ${credit.creditCode} has been settled. Your wallets are now active.`,
-        sentAt: new Date(),
-      });
-      await manager.save(notification);
-
-      return credit;
     });
-
-    this.eventEmitter.emit(CreditEvents.SETTLED, {
-      userId: settledCredit.userId,
-      creditId: settledCredit.id,
-    });
-    return settledCredit;
   }
-
   async cancelCredit(adminId: string, creditId: string, reason?: string): Promise<CreditEntity> {
     return await this.dataSource.transaction(async (manager) => {
       const credit = await manager.findOne(CreditEntity, {
@@ -1494,173 +1486,6 @@ export class CreditService {
     }
   }
 
-  // Resolves the wallet that received the credit amount (creditWalletId stored at
-  // creation), falling back to the user's RIAL wallet.
-  private async resolveCreditWallet(manager: any, credit: CreditEntity): Promise<WalletEntity | null> {
-    const creditWalletId = credit.metadata?.creditWalletId;
-    if (creditWalletId) {
-      const wallet = await manager.findOne(WalletEntity, {
-        where: { id: creditWalletId, userId: credit.userId },
-      });
-      if (wallet) return wallet;
-    }
-    const rialSymbol = await manager.findOne(SymbolEntity, {
-      where: { symbolType: SymbolTypeEnum.RIAL },
-    });
-    if (!rialSymbol) return null;
-    return manager.findOne(WalletEntity, {
-      where: { userId: credit.userId, symbolId: rialSymbol.id, walletType: WalletTypeEnum.DEPOSIT },
-    });
-  }
-
-  // Repays a credit loan: takes back what remains in the credit wallet's
-  // creditBalance first, then liquidates frozen material collateral (at current
-  // price) to cover shortfall. Implements FULL RECOURSE: user remains liable
-  // for any shortfall after collateral is exhausted.
-  // Idempotent — tracks already-repaid amounts in credit.metadata so expiry and a
-  // later settlement don't double-charge the user.
-  private async repayAndLiquidate(
-    manager: any,
-    credit: CreditEntity,
-    creditWallet: WalletEntity | null,
-    now: Date,
-  ): Promise<{ repaid: number; liquidated: number; shortfall: number }> {
-    credit.metadata = credit.metadata || {};
-    const alreadyRepaid = new Decimal(credit.metadata.repaidAmount || 0);
-    let owed = new Decimal(credit.amount).minus(alreadyRepaid);
-    let repaid = new Decimal(0);
-    let liquidated = new Decimal(0);
-
-    // 1. Repay from every increase wallet's creditBalance (the wallets that
-    //    received the credit at creation), not just the primary one.
-    const increaseWallets: Array<{ walletId?: string; amount?: number }> =
-      credit.metadata?.increasedWallets || [];
-    const increaseWalletIds = new Set(
-      increaseWallets.map((iw) => iw.walletId).filter(Boolean),
-    );
-    // Backwards-compatible fallback: if no increasedWallets metadata exists,
-    // treat the resolved credit wallet as the only increase target.
-    if (!increaseWalletIds.size && creditWallet) {
-      increaseWalletIds.add(creditWallet.id);
-    }
-
-    if (increaseWalletIds.size && owed.greaterThan(0)) {
-      for (const walletId of increaseWalletIds) {
-        if (owed.lessThanOrEqualTo(0)) break;
-        const wallet = await manager.findOne(WalletEntity, {
-          where: { id: walletId as string, userId: credit.userId },
-          lock: { mode: "pessimistic_write" },
-        });
-        if (!wallet) continue;
-        const creditBal = new Decimal(wallet.creditBalance || 0);
-        if (creditBal.lessThanOrEqualTo(0)) continue;
-        const repay = Decimal.min(creditBal, owed);
-        wallet.creditBalance = creditBal.minus(repay).toNumber();
-        wallet.freeBalance = new Decimal(wallet.availableBalance)
-          .plus(wallet.creditBalance)
-          .toNumber();
-        wallet.adminNote = `Repaid ${repay.toString()} for credit ${credit.creditCode}`;
-        await manager.save(wallet);
-        owed = owed.minus(repay);
-        repaid = repaid.plus(repay);
-
-        await this.logFinanceAction(manager, {
-          adminId: null,
-          userId: credit.userId,
-          creditId: credit.id,
-          walletId: wallet.id,
-          actionType: CreditActionEnum.CREDIT_SETTLED,
-          description: `Credit ${credit.creditCode} repayment of ${repay.toString()} from creditBalance`,
-          metadata: { repay: repay.toString(), creditCode: credit.creditCode },
-        });
-      }
-    }
-
-    // 2. Liquidate frozen material collateral to cover the remaining shortfall.
-    if (owed.greaterThan(0)) {
-      const wallets = await manager.find(WalletEntity, {
-        where: { userId: credit.userId },
-        lock: { mode: "pessimistic_write" },
-      });
-
-      for (const wallet of wallets) {
-        if (owed.lessThanOrEqualTo(0)) break;
-        const frozen = new Decimal(wallet.frozenFreeBalance || 0);
-        if (frozen.lessThanOrEqualTo(0)) continue;
-
-        const price = await this.getSymbolRialPrice(manager, wallet.symbolId);
-        if (!price || price <= 0) continue;
-
-        const neededUnits = owed.div(price);
-        const unitsToLiquidate = Decimal.min(frozen, neededUnits);
-        if (unitsToLiquidate.lessThanOrEqualTo(0)) continue;
-
-        const proceeds = unitsToLiquidate.mul(price);
-        wallet.frozenFreeBalance = frozen.minus(unitsToLiquidate).toNumber();
-        wallet.freeBalance = new Decimal(wallet.availableBalance)
-          .plus(wallet.creditBalance)
-          .plus(wallet.frozenFreeBalance)
-          .toNumber();
-        await manager.save(wallet);
-
-        owed = owed.minus(proceeds);
-        liquidated = liquidated.plus(unitsToLiquidate);
-
-        await this.logFinanceAction(manager, {
-          adminId: null,
-          userId: credit.userId,
-          creditId: credit.id,
-          walletId: wallet.id,
-          actionType: CreditActionEnum.LIQUIDATION,
-          description: `Liquidated ${unitsToLiquidate.toString()} of collateral to cover credit ${credit.creditCode} repayment`,
-          metadata: {
-            units: unitsToLiquidate.toString(),
-            proceeds: proceeds.toString(),
-            symbolId: wallet.symbolId,
-          },
-        });
-
-        const txn = manager.create(TransactionEntity, {
-          walletId: wallet.id,
-          transactionId: crypto.randomUUID(),
-          transactionType: TransactionTypeEnum.CREDIT_LIQUIDATION,
-          status: TransactionStatusEnum.COMPLETED,
-          amount: unitsToLiquidate.toNumber(),
-          fee: 0,
-          description: `Liquidated ${unitsToLiquidate.toString()} collateral for credit ${credit.creditCode}`,
-          metadata: { creditCode: credit.creditCode, creditId: credit.id, proceeds: proceeds.toString() },
-          completedAt: now,
-        });
-        await manager.save(txn);
-      }
-    }
-
-    // 3. Full Recourse: track shortfall (user remains liable)
-    const shortfall = owed.greaterThan(0) ? owed.toNumber() : 0;
-    if (shortfall > 0) {
-      credit.outstandingShortfall = shortfall;
-      credit.isInDefault = true;
-      credit.riskState = RiskStateEnum.DEFAULT;
-      credit.metadata.defaultReason = "INSUFFICIENT_COLLATERAL";
-      credit.metadata.defaultAt = now.toISOString();
-    } else {
-      credit.outstandingShortfall = 0;
-      credit.isInDefault = false;
-    }
-
-    // 4. Track progress for idempotency and expose any unresolved shortfall.
-    const liquidatedAmount = new Decimal(credit.metadata.liquidatedAmount || 0).plus(liquidated);
-    credit.metadata.repaidAmount = new Decimal(credit.metadata.repaidAmount || 0).plus(repaid).toNumber();
-    credit.metadata.liquidatedAmount = liquidatedAmount.toNumber();
-    credit.metadata.shortfall = shortfall;
-
-    return {
-      repaid: repaid.toNumber(),
-      liquidated: liquidated.toNumber(),
-      shortfall,
-    };
-  }
-
   // Rial price per unit of a collateral symbol, from a valid rial-quoted pair
   // (per-gram price). Returns null when no price is available so liquidation can
   // be deferred rather than failing the whole credit.
@@ -1811,55 +1636,28 @@ export class CreditService {
   }
 
   private async evaluateRiskState(credit: CreditEntity): Promise<void> {
-    const increasedWallets: Array<{
-      walletId?: string;
-      symbolId?: string;
-      amount?: number;
-      priceAtCreation?: number;
-    }> = credit.metadata?.increasedWallets || [];
-
-    if (!increasedWallets.length) return;
-
-    // Calculate total collateral value from frozen wallets
-    let totalCollateralValue = 0;
-    const wallets = await this.walletRepository.find({
-      where: { userId: credit.userId },
-    });
-
-    for (const wallet of wallets) {
-      const frozen = new Decimal(wallet.frozenFreeBalance || 0);
-      if (frozen.greaterThan(0)) {
-        const price = await this.getSymbolRialPrice(this.dataSource.manager, wallet.symbolId);
-        if (price && price > 0) {
-          totalCollateralValue += frozen.mul(price).toNumber();
-        }
-      }
+    // Value the facility at the current mark price using the settlement engine.
+    let state: SettlementState;
+    try {
+      state = await this.settlementService.computeState(credit);
+    } catch (err) {
+      // No mark price available - defer the risk evaluation.
+      return;
     }
 
-    // Calculate current value of credit exposure (increase wallets)
-    let currentExposureValue = 0;
-    for (const iw of increasedWallets) {
-      if (!iw.symbolId || !iw.amount) continue;
-      const currentPrice = await this.getSymbolRialPrice(this.dataSource.manager, iw.symbolId);
-      if (currentPrice && currentPrice > 0) {
-        currentExposureValue += iw.amount * currentPrice;
-      }
-    }
+    // Only facilities with actual exposure are risk-relevant.
+    if (state.exposure <= 0) return;
 
-    // Calculate equity = collateral value - exposure value (what the user would have left)
-    // For a credit system: equity = collateral value - outstanding loan
-    const equity = totalCollateralValue - credit.amount;
-    
-    // Margin ratio = equity / credit amount (as a percentage)
-    const marginRatio = credit.amount > 0 ? (equity / credit.amount) * 100 : 0;
-
-    // Risk thresholds (configurable per policy)
-    const WARNING_THRESHOLD = 15; // 15% margin ratio
-    const MARGIN_CALL_THRESHOLD = 7.5; // 7.5% margin ratio
+    // Margin ratio is a decimal (e.g. 0.238 = 23.8%).
+    const marginRatio = state.marginRatio;
+    const WARNING_THRESHOLD = 0.15; // 15%
+    const MARGIN_CALL_THRESHOLD = 0.075; // 7.5%
 
     let newRiskState: RiskStateEnum | null = null;
 
-    if (marginRatio <= MARGIN_CALL_THRESHOLD && credit.riskState !== RiskStateEnum.MARGIN_CALL) {
+    if (marginRatio == null) {
+      newRiskState = RiskStateEnum.NORMAL;
+    } else if (marginRatio <= MARGIN_CALL_THRESHOLD && credit.riskState !== RiskStateEnum.MARGIN_CALL) {
       newRiskState = RiskStateEnum.MARGIN_CALL;
     } else if (marginRatio <= WARNING_THRESHOLD && credit.riskState === RiskStateEnum.NORMAL) {
       newRiskState = RiskStateEnum.WARNING;
@@ -1879,6 +1677,7 @@ export class CreditService {
 
       await this.creditRepository.save(credit);
 
+      const marginPercent = marginRatio != null ? (marginRatio * 100).toFixed(2) : "8";
       await this.creditNotificationRepository.save(
         this.creditNotificationRepository.create({
           userId: credit.userId,
@@ -1888,7 +1687,7 @@ export class CreditService {
             : CreditNotificationTypeEnum.SETTLEMENT,
           message:
             `Credit ${credit.creditCode} risk state changed to ${newRiskState}. ` +
-            `Margin ratio: ${marginRatio.toFixed(2)}%. ` +
+            `Margin ratio: ${marginPercent}%. Equity ${state.equity.toFixed(2)}. ` +
             (newRiskState === RiskStateEnum.MARGIN_CALL
               ? "Your positions may be liquidated if margin ratio falls further."
               : "Please monitor your positions carefully."),
@@ -1902,13 +1701,13 @@ export class CreditService {
         previousState,
         newState: newRiskState,
         marginRatio,
-        equity,
-        collateralValue: totalCollateralValue,
+        equity: state.equity,
+        collateralValue: state.collateralValue,
       });
 
       this.logger.log(
-        `Credit ${credit.creditCode} risk state: ${previousState} → ${newRiskState} ` +
-        `(margin ratio: ${marginRatio.toFixed(2)}%)`,
+        `Credit ${credit.creditCode} risk state: ${previousState} ? ${newRiskState} ` +
+        `(margin ratio: ${marginPercent}%)`,
       );
     }
   }
@@ -1981,222 +1780,29 @@ export class CreditService {
     );
     return { blockBuy: true };
   }
-
   /**
-   * Drawdown liquidation (ENFORCE mode): cancels open credit orders, claws
-   * back remaining credit, converts the collateral back to the DEPOSIT wallet
-   * (minus realized shortfall), and settles the facility.
+   * Drawdown / forced liquidation: delegates to the settlement engine, which
+   * cash-settles the facility at the current mark price and consumes collateral
+   * for any deficit.
    */
   async liquidateForDrawdown(creditId: string, drawdownPercent?: number): Promise<CreditEntity> {
-    return await this.dataSource.transaction(async (manager) => {
-      const credit = await manager.findOne(CreditEntity, {
-        where: { id: creditId, status: CreditStatusEnum.ACTIVE },
-        lock: { mode: "pessimistic_write" },
-      });
-      if (!credit) throw new BadRequestException("Credit not found or not active");
-
-      // Cancel any still-active credit orders so nothing new settles.
-      const openCreditOrders = await manager.find(CreditOrderEntity, {
-        where: { creditId: credit.id, status: CreditOrderStatusEnum.ACTIVE },
-      });
-      for (const co of openCreditOrders) {
-        co.status = CreditOrderStatusEnum.CANCELLED;
-        await manager.save(co);
-      }
-
-      // Claw back remaining credit from the CREDIT wallet.
-      const creditWalletId = credit.metadata?.creditWalletId;
-      if (creditWalletId) {
-        const cw = await manager.findOne(WalletEntity, {
-          where: { id: creditWalletId, userId: credit.userId },
-          lock: { mode: "pessimistic_write" },
-        });
-        if (cw) {
-          cw.creditBalance = 0;
-          cw.freeBalance = new Decimal(cw.availableBalance || 0).toNumber();
-          await manager.save(cw);
-        }
-      }
-
-      // Return the (current-valued) collateral to the DEPOSIT wallet.
-      const collateralWalletId = credit.metadata?.collateralWalletId;
-      if (collateralWalletId) {
-        const colw = await manager.findOne(WalletEntity, {
-          where: { id: collateralWalletId, userId: credit.userId },
-          lock: { mode: "pessimistic_write" },
-        });
-        if (colw && Number(colw.freeBalance) > 0) {
-          const amount = new Decimal(colw.freeBalance);
-          colw.freeBalance = 0;
-          await manager.save(colw);
-
-          const depositWallet = await manager.findOne(WalletEntity, {
-            where: { userId: credit.userId, symbolId: colw.symbolId, walletType: WalletTypeEnum.DEPOSIT },
-            lock: { mode: "pessimistic_write" },
-          });
-          if (depositWallet) {
-            depositWallet.freeBalance = new Decimal(depositWallet.freeBalance).plus(amount).toNumber();
-            await manager.save(depositWallet);
-            const txn = manager.create(TransactionEntity, {
-              walletId: depositWallet.id,
-              transactionId: crypto.randomUUID(),
-              transactionType: TransactionTypeEnum.CREDIT_LIQUIDATION,
-              status: TransactionStatusEnum.COMPLETED,
-              amount: amount.toNumber(),
-              fee: 0,
-              description: `Collateral returned after drawdown liquidation of credit ${credit.creditCode}`,
-              metadata: { creditId: credit.id, drawdownPercent: drawdownPercent ?? credit.lastDrawdownPercent },
-              completedAt: new Date(),
-            });
-            await manager.save(txn);
-          }
-        }
-      }
-
-      credit.status = CreditStatusEnum.SETTLED;
-      credit.settledAt = new Date();
-      credit.metadata = { ...(credit.metadata || {}), settleReason: "DRAWDOWN_LIQUIDATION" };
-      const saved = await manager.save(credit);
-
-      await manager.save(
-        manager.create(CreditNotificationEntity, {
-          userId: credit.userId,
-          creditId: credit.id,
-          type: CreditNotificationTypeEnum.MARGIN_CALL,
-          message:
-            `Credit ${credit.creditCode} was liquidated: drawdown reached ` +
-            `${(drawdownPercent ?? credit.lastDrawdownPercent).toFixed(2)}% (threshold ${credit.drawdownPercent}%). ` +
-            `Remaining collateral was returned to your deposit wallet.`,
-          sentAt: new Date(),
-        }),
-      );
-
-      this.eventEmitter.emit(CreditEvents.SETTLED, {
-        userId: credit.userId,
-        creditId: credit.id,
-        reason: "DRAWDOWN_LIQUIDATION",
-      });
-      return saved;
-    });
+    return this.settlementService.liquidate(creditId, "DRAWDOWN_LIQUIDATION");
   }
 
   /**
-   * User self-settlement (expiry repayment): debits the owed credit from the
-   * facility's CREDIT wallet. If the wallet is short, the shortfall must first
-   * be deposited (DEPOSIT wallet is used to top up). On full repayment all
-   * credit-acquired assets are released: CREDIT wallet balances move to the
-   * DEPOSIT wallets and the facility becomes SETTLED.
+   * User self-settlement: delegates to the settlement engine, allowing the
+   * user to top up a deficit from their deposit wallet before any collateral
+   * is consumed.
    */
   async settleFromUser(userId: string, creditId: string): Promise<CreditEntity> {
-    return await this.dataSource.transaction(async (manager) => {
-      const credit = await manager.findOne(CreditEntity, {
-        where: { id: creditId, userId, status: CreditStatusEnum.ACTIVE },
-        lock: { mode: "pessimistic_write" },
-      });
-      if (!credit) throw new BadRequestException("Credit not found or not active");
-
-      // Compute owed amount (credit limit minus already-repaid).
-      credit.metadata = credit.metadata || {};
-      const alreadyRepaid = new Decimal(credit.metadata.repaidAmount || 0);
-      let owed = new Decimal(credit.amount || 0).minus(alreadyRepaid);
-
-      // 1. Repay from the CREDIT wallet's creditBalance.
-      const creditWalletId = credit.metadata?.creditWalletId;
-      if (creditWalletId && owed.greaterThan(0)) {
-        const cw = await manager.findOne(WalletEntity, {
-          where: { id: creditWalletId, userId: credit.userId },
-          lock: { mode: "pessimistic_write" },
-        });
-        if (cw && Number(cw.creditBalance) > 0) {
-          const repay = Decimal.min(new Decimal(cw.creditBalance), owed);
-          cw.creditBalance = new Decimal(cw.creditBalance).minus(repay).toNumber();
-          cw.freeBalance = new Decimal(cw.availableBalance || 0).plus(cw.creditBalance).toNumber();
-          await manager.save(cw);
-          owed = owed.minus(repay);
-          credit.metadata.repaidAmount = alreadyRepaid.plus(repay).toNumber();
-        }
-      }
-
-      // 2. If still short, take from the user's DEPOSIT wallet (same symbol as credit base).
-      if (owed.greaterThan(0) && credit.creditBaseSymbolId) {
-        const depositWallet = await manager.findOne(WalletEntity, {
-          where: { userId: credit.userId, symbolId: credit.creditBaseSymbolId, walletType: WalletTypeEnum.DEPOSIT },
-          lock: { mode: "pessimistic_write" },
-        });
-        if (depositWallet && Number(depositWallet.freeBalance) >= owed.toNumber()) {
-          depositWallet.freeBalance = new Decimal(depositWallet.freeBalance).minus(owed).toNumber();
-          await manager.save(depositWallet);
-          credit.metadata.repaidAmount = new Decimal(credit.metadata.repaidAmount || 0).plus(owed).toNumber();
-          owed = new Decimal(0);
-        } else if (owed.greaterThan(0)) {
-          throw new BadRequestException(
-            `Insufficient deposit balance to settle credit. Shortfall: ${owed.toNumber()}`,
-          );
-        }
-      }
-
-      // 3. Release credit-acquired assets: move CREDIT wallet balances to DEPOSIT.
-      const creditWallets = await manager.find(WalletEntity, {
-        where: { userId: credit.userId, walletType: WalletTypeEnum.CREDIT },
-      });
-      for (const cw of creditWallets) {
-        if (Number(cw.freeBalance) <= 0) continue;
-        const depositWallet = await manager.findOne(WalletEntity, {
-          where: { userId: credit.userId, symbolId: cw.symbolId, walletType: WalletTypeEnum.DEPOSIT },
-          lock: { mode: "pessimistic_write" },
-        });
-        if (depositWallet) {
-          depositWallet.freeBalance = new Decimal(depositWallet.freeBalance).plus(cw.freeBalance).toNumber();
-          await manager.save(depositWallet);
-        }
-        cw.freeBalance = 0;
-        cw.creditBalance = 0;
-        await manager.save(cw);
-      }
-
-      // 4. Return collateral to DEPOSIT.
-      const collateralWalletId = credit.metadata?.collateralWalletId;
-      if (collateralWalletId) {
-        const colw = await manager.findOne(WalletEntity, {
-          where: { id: collateralWalletId, userId: credit.userId },
-          lock: { mode: "pessimistic_write" },
-        });
-        if (colw && Number(colw.freeBalance) > 0) {
-          const depositWallet = await manager.findOne(WalletEntity, {
-            where: { userId: credit.userId, symbolId: colw.symbolId, walletType: WalletTypeEnum.DEPOSIT },
-            lock: { mode: "pessimistic_write" },
-          });
-          if (depositWallet) {
-            depositWallet.freeBalance = new Decimal(depositWallet.freeBalance).plus(colw.freeBalance).toNumber();
-            await manager.save(depositWallet);
-          }
-          colw.freeBalance = 0;
-          await manager.save(colw);
-        }
-      }
-
-      credit.status = CreditStatusEnum.SETTLED;
-      credit.settledAt = new Date();
-      credit.settlementState = SettlementStateEnum.SETTLED;
-      credit.metadata = { ...(credit.metadata || {}), settleReason: "USER_SETTLEMENT" };
-      const saved = await manager.save(credit);
-
-      await manager.save(
-        manager.create(CreditNotificationEntity, {
-          userId: credit.userId,
-          creditId: credit.id,
-          type: CreditNotificationTypeEnum.SETTLEMENT,
-          message: `Credit ${credit.creditCode} has been settled. All assets released to your deposit wallet.`,
-          sentAt: new Date(),
-        }),
-      );
-
-      this.eventEmitter.emit(CreditEvents.SETTLED, {
-        userId: credit.userId,
-        creditId: credit.id,
-        reason: "USER_SETTLEMENT",
-      });
-      return saved;
+    const credit = await this.creditRepository.findOne({
+      where: { id: creditId, userId, status: CreditStatusEnum.ACTIVE },
+    });
+    if (!credit) throw new BadRequestException("Credit not found or not active");
+    return this.settlementService.settleCredit(creditId, {
+      mode: "USER_SELF",
+      reason: "USER_SETTLEMENT",
+      allowDepositTopUp: true,
     });
   }
 
@@ -2205,7 +1811,7 @@ export class CreditService {
 
     const pendingOrders = await this.dataSource.manager.find(OrderEntity, {
       where: { isCreditLinked: true },
-      relations: { user: true },
+      relations: { user: true, pricePair: true },
     });
 
     for (const order of pendingOrders) {
@@ -2231,9 +1837,30 @@ export class CreditService {
             where: { userId: order.userId, status: CreditStatusEnum.ACTIVE },
           });
           if (credit?.enforceRequestDeadline) {
-            order.status = "CANCELLED" as any;
-            (order as any).cancelledAt = now;
-            await this.dataSource.manager.save(order);
+            // Release the credit balance frozen for this request, then cancel.
+            try {
+              if (order.pricePair) {
+                await this.walletOrderService.rejectOrder(order, order.pricePair, OrderStatusEnum.CANCELLED);
+              } else {
+                order.status = "CANCELLED" as any;
+                (order as any).cancelledAt = now;
+                await this.dataSource.manager.save(order);
+              }
+            } catch (error) {
+              this.logger.error(
+                `Failed to unlock & cancel overdue order ${order.orderCode}: ${(error as Error).message}`,
+              );
+              continue;
+            }
+
+            const creditOrder = await this.dataSource.manager.findOne(CreditOrderEntity, {
+              where: { orderId: order.id, status: CreditOrderStatusEnum.ACTIVE },
+            });
+            if (creditOrder) {
+              creditOrder.status = CreditOrderStatusEnum.CANCELLED;
+              await this.dataSource.manager.save(creditOrder);
+            }
+
             await this.creditNotificationRepository.save(
               this.creditNotificationRepository.create({
                 userId: order.userId,
