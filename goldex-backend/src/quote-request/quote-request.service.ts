@@ -13,8 +13,7 @@ import { WalletTypeEnum } from "../wallet/enum/wallet-type.enum";
 import { SystemLedgerEntity } from "../financial/entity/system-ledger.entity";
 import { SystemLedgerType } from "../financial/enum/system-ledger-type.enum";
 import { PricePairEntity } from "../admin-pair/entity/price.pair.entity";
-import { CreditEntity } from "../credit/entity/credit.entity";
-import { CreditStatusEnum } from "../credit/enum/credit-status.enum";
+import { CreditService } from "../credit/credit.service";
 import { computePendDeadlines, initialPendDeadlineState } from "../credit/util/pend-deadline.util";
 import * as crypto from "crypto";
 
@@ -41,6 +40,7 @@ export class QuoteRequestService {
     private readonly dataSource: DataSource,
     private readonly userTelegram: UserTelegramService,
     private readonly notifier: TelegramNotifierService,
+    private readonly creditService: CreditService,
   ) {}
 
   /**
@@ -63,19 +63,26 @@ export class QuoteRequestService {
     });
     if (!pair) throw new Error("جفت‌ارز یافت نشد");
 
+    // Credit-aware: if the user has an active credit, the request settles
+    // against the CREDIT wallets. On the first request the credit line is
+    // issued (calculated from the live price × leverage), mirroring the
+    // regular trade path.
+    const activeCredit = await this.creditService.getUserActiveCredit(userId);
+    const walletType = activeCredit ? WalletTypeEnum.CREDIT : WalletTypeEnum.DEPOSIT;
+    if (activeCredit && Number(activeCredit.creditLimit || 0) === 0) {
+      await this.creditService.calculateAndIssueCreditOnFirstOrder(activeCredit.id, pricePairId);
+    }
+
     const queryRunner = this.dataSource.createQueryRunner();
     await queryRunner.connect();
     await queryRunner.startTransaction();
 
     try {
       // Lock balance with pessimistic lock inside the transaction
-      await this.lockBalance(queryRunner, userId, side, pair, quantity, price);
+      await this.lockBalance(queryRunner, userId, side, pair, quantity, price, walletType);
 
       // Save as PENDING. Credit-linked requests carry the pair's per-side
       // pend deadlines (x/y/z hours).
-      const activeCredit = await queryRunner.manager.findOne(CreditEntity, {
-        where: { userId, status: CreditStatusEnum.ACTIVE },
-      });
       const pendDeadlines = activeCredit
         ? computePendDeadlines(pair, side)
         : { warnAt: null, expireAt: null, graceEndAt: null };
@@ -206,11 +213,16 @@ export class QuoteRequestService {
     await queryRunner.startTransaction();
 
     try {
+      // Credit-aware wallet types: each user's leg settles against CREDIT
+      // wallets when their request was credit-linked, otherwise DEPOSIT.
+      const sellerWalletType = seller.isCreditLinked ? WalletTypeEnum.CREDIT : WalletTypeEnum.DEPOSIT;
+      const buyerWalletType = buyer?.isCreditLinked ? WalletTypeEnum.CREDIT : WalletTypeEnum.DEPOSIT;
+
       // Get wallets with pessimistic lock (prevents race conditions)
-      const sellerXauWallet = await this.getWallet(queryRunner, sellerId, pair.baseSymbol.id);
-      const buyerXauWallet = await this.getWallet(queryRunner, buyerId, pair.baseSymbol.id);
-      const sellerIrWallet = await this.getWallet(queryRunner, sellerId, pair.quoteSymbol.id);
-      const buyerIrWallet = await this.getWallet(queryRunner, buyerId, pair.quoteSymbol.id);
+      const sellerXauWallet = await this.getWallet(queryRunner, sellerId, pair.baseSymbol.id, sellerWalletType);
+      const buyerXauWallet = await this.getWallet(queryRunner, buyerId, pair.baseSymbol.id, buyerWalletType);
+      const sellerIrWallet = await this.getWallet(queryRunner, sellerId, pair.quoteSymbol.id, sellerWalletType);
+      const buyerIrWallet = await this.getWallet(queryRunner, buyerId, pair.quoteSymbol.id, buyerWalletType);
 
       // Validate seller has enough locked XAU
       if (sellerXauWallet.lockedBalance < quantity) {
@@ -356,8 +368,9 @@ export class QuoteRequestService {
     });
     if (!request || request.status !== QuoteRequestStatus.PENDING) throw new Error("درخواست یافت نشد یا قابل لغو نیست");
 
-    // Unlock balance
-    await this.unlockBalance(userId, request.side, request.pricePair, Number(request.quantity), Number(request.price));
+    // Unlock balance (from the same wallet type the request was locked from).
+    const walletType = request.isCreditLinked ? WalletTypeEnum.CREDIT : WalletTypeEnum.DEPOSIT;
+    await this.unlockBalance(userId, request.side, request.pricePair, Number(request.quantity), Number(request.price), walletType);
 
     request.status = QuoteRequestStatus.CANCELLED;
     await this.repo.save(request);
@@ -387,9 +400,9 @@ export class QuoteRequestService {
 
   // ── Balance ──────────────────────────────────────────────
 
-  private async lockBalance(queryRunner: any, userId: string, side: OrderSideEnum, pair: PricePairEntity, quantity: number, price?: number): Promise<void> {
+  private async lockBalance(queryRunner: any, userId: string, side: OrderSideEnum, pair: PricePairEntity, quantity: number, price?: number, walletType: WalletTypeEnum = WalletTypeEnum.DEPOSIT): Promise<void> {
     if (side === OrderSideEnum.BUY) {
-      const wallet = await this.getWallet(queryRunner, userId, pair.quoteSymbol?.id);
+      const wallet = await this.getWallet(queryRunner, userId, pair.quoteSymbol?.id, walletType);
       const required = quantity * (price || 0);
       if (wallet.freeBalance < required) {
         throw new Error(`موجودی ${pair.quoteSymbol?.slug || "IRR"} کافی نیست (نیاز: ${required})`);
@@ -398,7 +411,7 @@ export class QuoteRequestService {
       wallet.lockedBalance = Number((wallet.lockedBalance + required).toFixed(8));
       await queryRunner.manager.save(wallet);
     } else {
-      const wallet = await this.getWallet(queryRunner, userId, pair.baseSymbol?.id);
+      const wallet = await this.getWallet(queryRunner, userId, pair.baseSymbol?.id, walletType);
       if (wallet.freeBalance < quantity) {
         throw new Error(`موجودی ${pair.baseSymbol?.slug || "XAU"} کافی نیست (نیاز: ${quantity})`);
       }
@@ -408,20 +421,20 @@ export class QuoteRequestService {
     }
   }
 
-  private async unlockBalance(userId: string, side: OrderSideEnum, pair: PricePairEntity, quantity: number, price?: number): Promise<void> {
+  private async unlockBalance(userId: string, side: OrderSideEnum, pair: PricePairEntity, quantity: number, price?: number, walletType: WalletTypeEnum = WalletTypeEnum.DEPOSIT): Promise<void> {
     const queryRunner = this.dataSource.createQueryRunner();
     await queryRunner.connect();
     await queryRunner.startTransaction();
 
     try {
       if (side === OrderSideEnum.BUY) {
-        const wallet = await this.getWallet(queryRunner, userId, pair.quoteSymbol?.id);
+        const wallet = await this.getWallet(queryRunner, userId, pair.quoteSymbol?.id, walletType);
         const amount = quantity * (price || 0);
         wallet.lockedBalance = Math.max(0, Number((Number(wallet.lockedBalance) - amount).toFixed(8)));
         wallet.freeBalance = Number((Number(wallet.freeBalance) + amount).toFixed(8));
         await queryRunner.manager.save(wallet);
       } else {
-        const wallet = await this.getWallet(queryRunner, userId, pair.baseSymbol?.id);
+        const wallet = await this.getWallet(queryRunner, userId, pair.baseSymbol?.id, walletType);
         wallet.lockedBalance = Math.max(0, Number((Number(wallet.lockedBalance) - quantity).toFixed(8)));
         wallet.freeBalance = Number((Number(wallet.freeBalance) + quantity).toFixed(8));
         await queryRunner.manager.save(wallet);
@@ -507,16 +520,17 @@ export class QuoteRequestService {
     queryRunner: any,
     userId: string,
     symbolId: string,
+    walletType: WalletTypeEnum = WalletTypeEnum.DEPOSIT,
   ): Promise<WalletEntity> {
     let wallet = await queryRunner.manager.findOne(WalletEntity, {
-      where: { userId, symbolId, walletType: WalletTypeEnum.DEPOSIT },
+      where: { userId, symbolId, walletType },
       lock: { mode: "pessimistic_write" },
     });
     if (!wallet) {
       wallet = queryRunner.manager.create(WalletEntity, {
         userId,
         symbolId,
-        walletType: WalletTypeEnum.DEPOSIT,
+        walletType,
         freeBalance: 0,
         lockedBalance: 0,
         status: "ACTIVE",

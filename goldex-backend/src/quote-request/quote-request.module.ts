@@ -8,12 +8,14 @@ import { TransactionEntity } from "../wallet/entities/transaction.entity";
 import { PricePairEntity } from "../admin-pair/entity/price.pair.entity";
 import { UserTelegramModule } from "../user-telegram/user-telegram.module";
 import { TelegramNotifierModule } from "../telegram-notifier/telegram-notifier.module";
+import { CreditModule } from "../credit/credit.module";
 
 @Module({
   imports: [
     TypeOrmModule.forFeature([QuoteRequestEntity, WalletEntity, TransactionEntity, PricePairEntity]),
     UserTelegramModule,
     TelegramNotifierModule,
+    CreditModule,
   ],
   providers: [QuoteRequestService],
   controllers: [QuoteRequestController],

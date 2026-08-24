@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useToast } from '../context/ToastContext'
 import { useAuth } from '../context/AuthContext'
-import { marketApi, walletApi, quoteRequestApi } from '../services/api'
+import { marketApi, walletApi, quoteRequestApi, creditApi } from '../services/api'
 import { useMarketPrices } from '../hooks/useMarketPrices'
 import { Spinner, Alert, Button, Field } from '../components/UI'
 
@@ -44,6 +44,8 @@ export default function OfferPage() {
   const [placing, setPlacing] = useState(false)
   const [cancelling, setCancelling] = useState(null)
   const [statusFilter, setStatusFilter] = useState('')
+  const [activeCredit, setActiveCredit] = useState(null)
+  const [useCredit, setUseCredit] = useState(false)
 
   const pairKeys = useMemo(() => pairs.map((p) => p.pairKey).filter(Boolean), [pairs])
   const { prices: live, connected } = useMarketPrices(pairKeys)
@@ -64,7 +66,17 @@ export default function OfferPage() {
     }
   }
 
-  const walletFor = (symbolId) => wallets.find((w) => w.symbol?.id === symbolId)
+  const walletFor = (symbolId, walletType = 'DEPOSIT') =>
+    wallets.find((w) => w.symbol?.id === symbolId && (!w.walletType || w.walletType === walletType))
+
+  const loadActiveCredit = async () => {
+    try {
+      const credit = await creditApi.getActiveCredit()
+      setActiveCredit(credit || null)
+    } catch (_) {
+      setActiveCredit(null)
+    }
+  }
 
   // Prefill the price whenever the pair or the side changes (only while the
   // user has not typed a custom value).
@@ -94,7 +106,7 @@ export default function OfferPage() {
   useEffect(() => {
     const init = async () => {
       try {
-        const [list] = await Promise.all([marketApi.getPairs(), loadWallets()])
+        const [list] = await Promise.all([marketApi.getPairs(), loadWallets(), loadActiveCredit()])
         let arr = Array.isArray(list) ? list : []
         const allowedTypes = marketAccess?.marketTypes
         if (allowedTypes && allowedTypes.length > 0) {
@@ -119,7 +131,7 @@ export default function OfferPage() {
   useEffect(() => {
     const hasOpen = requests.some((r) => CANCELLABLE.includes(r.status))
     if (!hasOpen) return
-    const t = setInterval(() => { loadRequests(); loadWallets() }, 4000)
+    const t = setInterval(() => { loadRequests(); loadWallets(); loadActiveCredit() }, 4000)
     return () => clearInterval(t)
   }, [requests])
 
@@ -141,9 +153,31 @@ export default function OfferPage() {
     : (selected?.quoteSymbol?.slug || '')
 
   // ── Balance constraints ──────────────────────────────────
-  const baseWallet = selected ? walletFor(selected.baseSymbol?.id) : null
-  const quoteWallet = selected ? walletFor(selected.quoteSymbol?.id) : null
-  const available = side === 'BUY' ? (quoteWallet?.availableBalance ?? 0) : (baseWallet?.availableBalance ?? 0)
+  const walletType = useCredit && activeCredit ? 'CREDIT' : 'DEPOSIT'
+  const baseWallet = selected ? walletFor(selected.baseSymbol?.id, walletType) : null
+  const quoteWallet = selected ? walletFor(selected.quoteSymbol?.id, walletType) : null
+
+  // The credit line is only issued by the backend on the first request. Before
+  // that, project the balances from the frozen collateral and the current pair
+  // price: BUY = collateral × price × leverage (IRR), SELL = collateral ×
+  // leverage (XAU).
+  const creditIssued = useCredit && activeCredit && Number(activeCredit.creditLimit || 0) > 0
+  const collateralMatches = useCredit && activeCredit && selected &&
+    selected.baseSymbol?.id === activeCredit.collateralSymbolId
+  const projectedCredit = collateralMatches
+    ? (Number(activeCredit.collateralAmount) || 0) * (pr.sellGram || 0) * (Number(activeCredit.leverage) || 1)
+    : 0
+  const projectedSellCredit = collateralMatches
+    ? (Number(activeCredit.collateralAmount) || 0) * (Number(activeCredit.leverage) || 1)
+    : 0
+
+  const available = side === 'BUY'
+    ? (useCredit && activeCredit
+        ? (creditIssued ? (quoteWallet?.freeBalance || 0) : projectedCredit)
+        : (quoteWallet?.creditBalance || quoteWallet?.availableBalance || 0))
+    : (useCredit && activeCredit
+        ? (creditIssued ? (baseWallet?.freeBalance || 0) : projectedSellCredit)
+        : (baseWallet?.creditBalance || baseWallet?.availableBalance || 0))
   const availSymbol = side === 'BUY' ? selected?.quoteSymbol?.slug : selected?.baseSymbol?.slug
   const required = side === 'BUY' ? estTotal : qty
   const insufficient = qty > 0 && required > available
@@ -292,9 +326,55 @@ export default function OfferPage() {
                 <button type="button" className={`side-btn sell ${side === 'SELL' ? 'active' : ''}`} onClick={() => setSide('SELL')}>Sell</button>
               </div>
 
+              {/* Credit toggle - only show if user has active credit */}
+              {activeCredit && (
+                <div style={{
+                  padding: '0.75rem',
+                  background: useCredit ? 'rgba(212, 175, 55, 0.1)' : 'var(--bg)',
+                  borderRadius: '8px',
+                  border: useCredit ? '1px solid var(--gold)' : '1px solid var(--border)',
+                  marginBottom: '0.5rem'
+                }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: useCredit ? '0.5rem' : '0' }}>
+                    <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer', margin: 0 }}>
+                      <input
+                        type="checkbox"
+                        checked={useCredit}
+                        onChange={(e) => setUseCredit(e.target.checked)}
+                        style={{ width: '18px', height: '18px', cursor: 'pointer' }}
+                      />
+                      <span style={{ fontWeight: 600, color: useCredit ? 'var(--gold)' : 'inherit' }}>
+                        💳 Use Credit
+                      </span>
+                    </label>
+                    <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+                      {activeCredit.leverage}x leverage
+                    </span>
+                  </div>
+                  {useCredit && (
+                    <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '0.5rem' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.25rem' }}>
+                        <span>Credit Limit:</span>
+                        <span style={{ color: 'var(--gold)', fontWeight: 600 }}>
+                          {fmt(creditIssued ? activeCredit.creditLimit : projectedCredit, 0)} IRR
+                        </span>
+                      </div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                        <span>Sell Capacity:</span>
+                        <span style={{ color: 'var(--gold)', fontWeight: 600 }}>
+                          {fmt(projectedSellCredit, decimals)} {selected?.baseSymbol?.slug || 'XAU'}
+                        </span>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+
               <div className="ticket-summary">
-                <span className="label">Available</span>
-                <span className="val">
+                <span className="label">
+                  Available {useCredit && activeCredit ? '(Credit)' : ''}
+                </span>
+                <span className="val" style={{ color: useCredit && activeCredit ? 'var(--gold)' : 'inherit' }}>
                   {fmt(available, side === 'BUY' ? 2 : decimals)} {availSymbol || ''}
                   <button type="button" className="btn-link" style={{ marginLeft: 8 }} onClick={setMax}>Max</button>
                 </span>
