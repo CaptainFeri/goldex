@@ -791,6 +791,81 @@ export class CreditService {
     });
   }
 
+  /**
+   * Idempotently guarantees the credit SELL capacity wallet (base/collateral
+   * symbol, e.g. XAU) holds the leveraged sell capacity
+   * `collateralAmount × leverage`. This is a safety net for when the credit was
+   * already calculated on an earlier order (which skips the sell issuance in
+   * `calculateAndIssueCreditOnFirstOrder`) or the wallet is missing/empty —
+   * without it, credit SELL orders fail with INSUFFICIENT_BALANCE.
+   */
+  async ensureSellCreditCapacity(creditId: string): Promise<number> {
+    return await this.dataSource.transaction(async (manager) => {
+      const credit = await manager.findOne(CreditEntity, {
+        where: { id: creditId, status: CreditStatusEnum.ACTIVE },
+        lock: { mode: "pessimistic_write" },
+      });
+      if (!credit) throw new BadRequestException("Credit not found or not active");
+      // Legacy admin credits (no collateral/leverage snapshot) have no sell capacity.
+      if (!credit.collateralSymbolId || !credit.leverage) return 0;
+
+      const expected = new Decimal(credit.collateralAmount || 0).mul(credit.leverage || 1);
+      if (!expected.greaterThan(0)) return 0;
+
+      let wallet = await manager.findOne(WalletEntity, {
+        where: { userId: credit.userId, symbolId: credit.collateralSymbolId, walletType: WalletTypeEnum.CREDIT },
+        lock: { mode: "pessimistic_write" },
+      });
+      if (!wallet) {
+        wallet = manager.create(WalletEntity, {
+          userId: credit.userId,
+          symbolId: credit.collateralSymbolId,
+          walletType: WalletTypeEnum.CREDIT,
+          status: WalletStatusEnum.ACTIVE,
+          freeBalance: 0,
+          lockedBalance: 0,
+          availableBalance: 0,
+          creditBalance: 0,
+          frozenFreeBalance: 0,
+          frozenLockedBalance: 0,
+        });
+      }
+
+      const current = new Decimal(Number(wallet.creditBalance) || 0);
+      if (current.greaterThanOrEqualTo(expected)) {
+        // Already at/above capacity; ensure freeBalance is consistent.
+        wallet.freeBalance = new Decimal(Number(wallet.availableBalance) || 0)
+          .plus(wallet.creditBalance)
+          .toNumber();
+        await manager.save(wallet);
+        return current.toNumber();
+      }
+
+      const topUp = expected.minus(current);
+      wallet.creditBalance = expected.toNumber();
+      wallet.freeBalance = new Decimal(Number(wallet.availableBalance) || 0)
+        .plus(wallet.creditBalance)
+        .toNumber();
+      const saved = await manager.save(wallet);
+
+      await manager.save(
+        manager.create(TransactionEntity, {
+          walletId: saved.id,
+          transactionId: crypto.randomUUID(),
+          transactionType: TransactionTypeEnum.CREDIT_DEPOSIT,
+          status: TransactionStatusEnum.COMPLETED,
+          amount: topUp.toNumber(),
+          fee: 0,
+          description: `Credit sell capacity ensured (+${topUp.toString()})`,
+          metadata: { creditId: credit.id, symbolId: credit.collateralSymbolId, expected: expected.toString() },
+          completedAt: new Date(),
+        }),
+      );
+
+      return expected.toNumber();
+    });
+  }
+
   async checkOrderMarginCall(creditOrderId: string, currentPrice: number): Promise<void> {
     const creditOrder = await this.creditOrderRepository.findOne({
       where: { id: creditOrderId, status: CreditOrderStatusEnum.ACTIVE },

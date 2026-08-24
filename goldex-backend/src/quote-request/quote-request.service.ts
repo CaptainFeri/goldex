@@ -56,6 +56,7 @@ export class QuoteRequestService {
     quantity: number,
     price?: number,
     notes?: string,
+    useCredit?: boolean,
   ): Promise<CreateQuoteRequestResult> {
     const pair = await this.pairRepo.findOne({
       where: { id: pricePairId },
@@ -68,9 +69,13 @@ export class QuoteRequestService {
     // issued (calculated from the live price × leverage), mirroring the
     // regular trade path.
     const activeCredit = await this.creditService.getUserActiveCredit(userId);
-    const walletType = activeCredit ? WalletTypeEnum.CREDIT : WalletTypeEnum.DEPOSIT;
-    if (activeCredit && Number(activeCredit.creditLimit || 0) === 0) {
+    const useCreditForRequest = !!activeCredit && useCredit !== false;
+    const walletType = useCreditForRequest ? WalletTypeEnum.CREDIT : WalletTypeEnum.DEPOSIT;
+    if (useCreditForRequest && Number(activeCredit.creditLimit || 0) === 0) {
       await this.creditService.calculateAndIssueCreditOnFirstOrder(activeCredit.id, pricePairId);
+    }
+    if (useCreditForRequest && side === OrderSideEnum.SELL) {
+      await this.creditService.ensureSellCreditCapacity(activeCredit.id);
     }
 
     const queryRunner = this.dataSource.createQueryRunner();
@@ -83,12 +88,12 @@ export class QuoteRequestService {
 
       // Save as PENDING. Credit-linked requests carry the pair's per-side
       // pend deadlines (x/y/z hours).
-      const pendDeadlines = activeCredit
+      const pendDeadlines = useCreditForRequest
         ? computePendDeadlines(pair, side)
         : { warnAt: null, expireAt: null, graceEndAt: null };
       const entity = this.repo.create({
         userId, side, pricePairId, quantity, price, notes, status: QuoteRequestStatus.PENDING,
-        isCreditLinked: !!activeCredit,
+        isCreditLinked: useCreditForRequest,
         pendDeadlineWarnAt: pendDeadlines.warnAt,
         pendDeadlineExpireAt: pendDeadlines.expireAt,
         pendDeadlineGraceEndAt: pendDeadlines.graceEndAt,

@@ -1,5 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from "@nestjs/swagger";
-import { IsEnum, IsNumber, IsOptional, IsUUID, Min, ValidateIf } from "class-validator";
+import { IsBoolean, IsEnum, IsNumber, IsOptional, IsUUID, Min, ValidateIf } from "class-validator";
 import { OrderSideEnum } from "../enum/order.side.enum";
 import { OrderTypeEnum } from "../enum/order.type.enum";
 
@@ -40,4 +40,9 @@ export class CreateOrderDto {
   @ApiPropertyOptional()
   @IsOptional()
   metadata?: any;
+
+  @ApiPropertyOptional({ description: "Settle against the CREDIT wallet (defaults true when the user has an active credit). Set false to use the DEPOSIT wallet." })
+  @IsOptional()
+  @IsBoolean()
+  useCredit?: boolean;
 }

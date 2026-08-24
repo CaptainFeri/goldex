@@ -209,7 +209,8 @@ export default function TradePage() {
         pricePairId: selected.id,
         side,
         orderType,
-        quantity: qty
+        quantity: qty,
+        useCredit: !!(useCredit && activeCredit)
       })
       toast.success(`${side === 'BUY' ? 'Buy' : 'Sell'} order placed.`)
       setQuantity('')

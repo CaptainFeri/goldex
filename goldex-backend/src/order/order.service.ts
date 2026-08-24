@@ -133,7 +133,11 @@ export class OrderService {
       const activeCredit = await this.creditRepo.findOne({
         where: { userId, status: CreditStatusEnum.ACTIVE },
       });
-      if (activeCredit) {
+      // An active-credit user may choose to trade from their DEPOSIT wallet by
+      // sending useCredit: false. Only when useCredit is true is the order
+      // credit-linked (settles against the CREDIT wallets).
+      const useCredit = !!activeCredit && dto.useCredit !== false;
+      if (useCredit) {
         // Credit v2: Calculate credit amount on first order if not yet calculated
         if (activeCredit.creditLimit === 0) {
           await this.creditService.calculateAndIssueCreditOnFirstOrder(activeCredit.id, dto.pricePairId);
@@ -144,6 +148,12 @@ export class OrderService {
           if (updatedCredit) {
             Object.assign(activeCredit, updatedCredit);
           }
+        }
+
+        // Guarantee the credit SELL capacity wallet (e.g. XAU) is populated so
+        // credit SELL orders do not fail with INSUFFICIENT_BALANCE.
+        if (dto.side === OrderSideEnum.SELL) {
+          await this.creditService.ensureSellCreditCapacity(activeCredit.id);
         }
 
         // Credit trading must not be explicitly disabled by the user's level
@@ -223,7 +233,7 @@ export class OrderService {
       const orderCode = this.generateOrderCode(dto.side, dto.orderType);
 
       // Credit-linked orders carry the pair's per-side pend deadlines (x/y/z).
-      const pendDeadlines = activeCredit
+      const pendDeadlines = useCredit
         ? computePendDeadlines(pricePair, dto.side)
         : { warnAt: null, expireAt: null, graceEndAt: null };
 
@@ -305,7 +315,7 @@ export class OrderService {
 
       // Credit v2: ensure the projected credit usage of this order stays within
       // the facility's available credit (creditLimit − used by open orders).
-      if (activeCredit && Number(activeCredit.creditLimit || 0) > 0) {
+      if (useCredit && Number(activeCredit.creditLimit || 0) > 0) {
         const requiredCredit = new Decimal(dto.quantity || 0).mul(displayGram);
         const usedCredit = await this.creditService.computeUsedCredit(activeCredit.id);
         const availableCredit = new Decimal(activeCredit.creditLimit || 0).minus(usedCredit);
@@ -336,7 +346,7 @@ export class OrderService {
         totalValue: 0,
         commission: commissionAmt,
         notes: dto.notes,
-        isCreditLinked: !!activeCredit,
+        isCreditLinked: useCredit,
         pendDeadlineWarnAt: pendDeadlines.warnAt,
         pendDeadlineExpireAt: pendDeadlines.expireAt,
         pendDeadlineGraceEndAt: pendDeadlines.graceEndAt,
@@ -368,7 +378,7 @@ export class OrderService {
 
         // Track credit usage: bump the stored usedCredit column and link the
         // order to the credit (the link is what the settlement engine values).
-        if (activeCredit) {
+        if (useCredit) {
           const lockedIr = new Decimal(savedOrder.quantity || 0).mul(displayGram);
           await this.creditRepo.update(activeCredit.id, {
             usedCredit: new Decimal(activeCredit.usedCredit || 0).plus(lockedIr).toNumber(),

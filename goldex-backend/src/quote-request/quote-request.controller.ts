@@ -14,6 +14,7 @@ class CreateQuoteRequestDto {
   quantity: number;
   price?: number;
   notes?: string;
+  useCredit?: boolean;
 }
 
 @ApiTags("Quote-Requests")
@@ -38,7 +39,7 @@ export class QuoteRequestController {
   @UseGuards(UserAuthGuard)
   @ApiBearerAuth()
   async create(@Req() req: UserExpressRequest, @Body() dto: CreateQuoteRequestDto) {
-    const result = await this.service.create(req.user.id, dto.side, dto.pricePairId, dto.quantity, dto.price, dto.notes);
+    const result = await this.service.create(req.user.id, dto.side, dto.pricePairId, dto.quantity, dto.price, dto.notes, dto.useCredit);
     return {
       data: {
         request: result.request,

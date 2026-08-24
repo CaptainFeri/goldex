@@ -243,6 +243,7 @@ export default function EliteTradePage() {
         orderType: 'LIMIT',
         quantity: qty,
         price: Number(price),
+        useCredit: !!(useCredit && activeCredit)
       })
       toast.success(`Limit ${side === 'BUY' ? 'buy' : 'sell'} order placed.`)
       setQuantity('')

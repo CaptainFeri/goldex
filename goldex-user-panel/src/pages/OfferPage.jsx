@@ -213,7 +213,8 @@ export default function OfferPage() {
         pricePairId: selected.id,
         side,
         quantity: qty,
-        price: askPrice
+        price: askPrice,
+        useCredit: !!(useCredit && activeCredit)
       })
       if (res?.matched) {
         toast.success(`${side === 'BUY' ? 'Buy' : 'Sell'} request matched instantly with another customer!`)
