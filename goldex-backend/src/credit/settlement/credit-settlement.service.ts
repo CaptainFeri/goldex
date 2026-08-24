@@ -152,6 +152,7 @@ export class CreditSettlementService {
       if (!credit) throw new NotFoundException("Credit not found");
       if (
         credit.status !== CreditStatusEnum.ACTIVE &&
+        credit.status !== CreditStatusEnum.SUSPENDED &&
         credit.status !== CreditStatusEnum.EXPIRED
       ) {
         throw new BadRequestException(`Cannot settle credit with status ${credit.status}`);

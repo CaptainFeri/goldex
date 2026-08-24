@@ -13,6 +13,7 @@ import { TransactionEntity } from "../wallet/entities/transaction.entity";
 import { SymbolEntity } from "../admin-symbol/entity/symbol.entity";
 import { PricePairEntity } from "../admin-pair/entity/price.pair.entity";
 import { UserEntity } from "../user/entity/user.entity";
+import { UserKycEntity } from "../user/entity/user.kyc.entity";
 import { FinanceLogEntity } from "../finance-log/entity/finance-log.entity";
 import { AdminScheduleModule } from "../admin-schedule/admin-schedule.module";
 import { UserLevelModule } from "../user-level/user-level.module";
@@ -29,6 +30,7 @@ import { WalletCoreModule } from "../wallet/wallet-core.module";
       SymbolEntity,
       PricePairEntity,
       UserEntity,
+      UserKycEntity,
       FinanceLogEntity,
     ]),
     AdminScheduleModule,

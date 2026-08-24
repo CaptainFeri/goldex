@@ -25,6 +25,7 @@ import { MarketKindEnum } from "../admin-pair/enum/market.kind.enum";
 import { defaultMarketKindsForRole } from "../shared/market-access.helper";
 import { OrderBookService } from "../order-book/order-book.service";
 import { Side } from "nodejs-order-book";
+import Decimal from "decimal.js";
 import { OrderSource } from "../order-book/interfaces/order-book.types";
 import { CreditEntity } from "../credit/entity/credit.entity";
 import { CreditOrderEntity } from "../credit/entity/credit-order.entity";
@@ -302,6 +303,19 @@ export class OrderService {
         commissionAmt = dto.commission || 0;
       }
 
+      // Credit v2: ensure the projected credit usage of this order stays within
+      // the facility's available credit (creditLimit − used by open orders).
+      if (activeCredit && Number(activeCredit.creditLimit || 0) > 0) {
+        const requiredCredit = new Decimal(dto.quantity || 0).mul(displayGram);
+        const usedCredit = await this.creditService.computeUsedCredit(activeCredit.id);
+        const availableCredit = new Decimal(activeCredit.creditLimit || 0).minus(usedCredit);
+        if (requiredCredit.greaterThan(availableCredit)) {
+          throw new BadRequestException(
+            "CREDIT_INSUFFICIENT_AVAILABLE: order would exceed available credit",
+          );
+        }
+      }
+
       await this.enforceTradingRules(userId, Number(dto.quantity) * gramPrice);
 
       const order = this.orderRepository.create({
@@ -352,11 +366,14 @@ export class OrderService {
       try {
         await this.walletOrderService.freezeForOrder(savedOrder, pricePair);
 
-        // Track credit execution level and link the order to the credit.
-        if (activeCredit && activeCredit.maxExecutionTradeLevel != null) {
+        // Track credit usage: bump the stored usedCredit column and link the
+        // order to the credit (the link is what the settlement engine values).
+        if (activeCredit) {
+          const lockedIr = new Decimal(savedOrder.quantity || 0).mul(displayGram);
           await this.creditRepo.update(activeCredit.id, {
-            executedTradeLevel: activeCredit.executedTradeLevel + 1,
+            usedCredit: new Decimal(activeCredit.usedCredit || 0).plus(lockedIr).toNumber(),
           });
+
           const creditOrder = this.creditOrderRepo.create({
             creditId: activeCredit.id,
             orderId: savedOrder.id,
@@ -365,6 +382,12 @@ export class OrderService {
             drawdownPercent: activeCredit.callMarginPercent,
           });
           await this.creditOrderRepo.save(creditOrder);
+
+          if (activeCredit.maxExecutionTradeLevel != null) {
+            await this.creditRepo.update(activeCredit.id, {
+              executedTradeLevel: activeCredit.executedTradeLevel + 1,
+            });
+          }
         }
 
         if (dto.orderType === OrderTypeEnum.LIMIT) {

@@ -8,6 +8,7 @@ import type { Credit } from "../api/types";
 const STATUS_LABELS: Record<string, string> = {
   PENDING: "در انتظار",
   ACTIVE: "فعال",
+  SUSPENDED: "تعلیق شده",
   SETTLED: "تسویه شده",
   EXPIRED: "منقضی شده",
   CANCELLED: "لغو شده",
@@ -15,6 +16,7 @@ const STATUS_LABELS: Record<string, string> = {
 const STATUS_KINDS: Record<string, string> = {
   PENDING: "gold",
   ACTIVE: "green",
+  SUSPENDED: "red",
   SETTLED: "blue",
   EXPIRED: "gray",
   CANCELLED: "red",
@@ -86,26 +88,44 @@ const isMarginCalled = (c: Credit) =>
 export default function CreditsPage() {
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
-  const [modal, setModal] = useState<null | "create" | "settle" | "cancel" | "detail">(null);
+  const [settlementFilter, setSettlementFilter] = useState("");
+  const [riskFilter, setRiskFilter] = useState("");
+  const [page, setPage] = useState(1);
+  const pageSize = 20;
+  const [modal, setModal] = useState<null | "create" | "settle" | "cancel" | "liquidate" | "extend" | "adjust" | "user" | "detail">(null);
   const [selected, setSelected] = useState<Credit | null>(null);
   const qc = useQueryClient();
   const notify = useNotify().notify;
 
+  const stats = useQuery({
+    queryKey: ["credit-stats"],
+    queryFn: async () => unwrap<any>((await api.get("/admin/credits/stats")).data),
+  });
+
   const list = useQuery({
-    queryKey: ["credits", search, statusFilter],
+    queryKey: ["credits", search, statusFilter, settlementFilter, riskFilter, page],
     queryFn: async () => {
-      const params: any = {};
+      const params: any = { page, limit: pageSize };
       if (search) params.search = search;
       if (statusFilter) params.status = statusFilter;
-      return unwrap<Credit[]>((await api.get("/admin/credits", { params })).data);
+      if (settlementFilter) params.settlementState = settlementFilter;
+      if (riskFilter) params.riskState = riskFilter;
+      return unwrap<{ items: Credit[]; total: number; page: number; limit: number }>(
+        (await api.get("/admin/credits", { params })).data
+      );
     },
   });
+  const data = list.data;
+  const items = data?.items ?? [];
+  const total = data?.total ?? 0;
+  const totalPages = Math.max(1, Math.ceil(total / pageSize));
 
   const create = useMutation({
     mutationFn: (body: any) => api.post("/admin/credits", body),
     onSuccess: () => {
       notify({ title: "اعتبار با موفقیت ایجاد شد", kind: "success" });
       qc.invalidateQueries({ queryKey: ["credits"] });
+      qc.invalidateQueries({ queryKey: ["credit-stats"] });
       setModal(null);
     },
     onError: (e: any) => {
@@ -118,6 +138,7 @@ export default function CreditsPage() {
     onSuccess: () => {
       notify({ title: "اعتبار با موفقیت تسویه شد", kind: "success" });
       qc.invalidateQueries({ queryKey: ["credits"] });
+      qc.invalidateQueries({ queryKey: ["credit-stats"] });
       setModal(null);
       setSelected(null);
     },
@@ -131,6 +152,7 @@ export default function CreditsPage() {
     onSuccess: () => {
       notify({ title: "اعتبار با موفقیت لغو شد", kind: "success" });
       qc.invalidateQueries({ queryKey: ["credits"] });
+      qc.invalidateQueries({ queryKey: ["credit-stats"] });
       setModal(null);
       setSelected(null);
     },
@@ -139,24 +161,124 @@ export default function CreditsPage() {
     },
   });
 
+  const liquidate = useMutation({
+    mutationFn: ({ id, ...body }: any) => api.post(`/admin/credits/${id}/liquidate`, body),
+    onSuccess: () => {
+      notify({ title: "اعتبار با موفقیت نقد شد", kind: "success" });
+      qc.invalidateQueries({ queryKey: ["credits"] });
+      qc.invalidateQueries({ queryKey: ["credit-stats"] });
+      setModal(null);
+      setSelected(null);
+    },
+    onError: (e: any) => {
+      notify({ title: "خطا در نقد کردن اعتبار", body: apiError(e), kind: "error" });
+    },
+  });
+
+  const suspend = useMutation({
+    mutationFn: ({ id, reason }: any) => api.post(`/admin/credits/${id}/suspend`, { reason }),
+    onSuccess: () => {
+      notify({ title: "اعتبار تعلیق شد", kind: "success" });
+      qc.invalidateQueries({ queryKey: ["credits"] });
+      qc.invalidateQueries({ queryKey: ["credit-stats"] });
+    },
+    onError: (e: any) => notify({ title: "خطا در تعلیق", body: apiError(e), kind: "error" }),
+  });
+
+  const reactivate = useMutation({
+    mutationFn: ({ id, reason }: any) => api.post(`/admin/credits/${id}/reactivate`, { reason }),
+    onSuccess: () => {
+      notify({ title: "اعتبار رفع تعلیق شد", kind: "success" });
+      qc.invalidateQueries({ queryKey: ["credits"] });
+      qc.invalidateQueries({ queryKey: ["credit-stats"] });
+    },
+    onError: (e: any) => notify({ title: "خطا در رفع تعلیق", body: apiError(e), kind: "error" }),
+  });
+
+  const extend = useMutation({
+    mutationFn: ({ id, ...body }: any) => api.post(`/admin/credits/${id}/extend`, body),
+    onSuccess: () => {
+      notify({ title: "مهلت تسویه تمدید شد", kind: "success" });
+      qc.invalidateQueries({ queryKey: ["credits"] });
+      qc.invalidateQueries({ queryKey: ["credit-stats"] });
+      setModal(null);
+      setSelected(null);
+    },
+    onError: (e: any) => notify({ title: "خطا در تمدید", body: apiError(e), kind: "error" }),
+  });
+
+  const adjustLimit = useMutation({
+    mutationFn: ({ id, ...body }: any) => api.post(`/admin/credits/${id}/adjust-limit`, body),
+    onSuccess: () => {
+      notify({ title: "حد اعتبار تغییر کرد", kind: "success" });
+      qc.invalidateQueries({ queryKey: ["credits"] });
+      qc.invalidateQueries({ queryKey: ["credit-stats"] });
+      setModal(null);
+      setSelected(null);
+    },
+    onError: (e: any) => notify({ title: "خطا در تغییر حد اعتبار", body: apiError(e), kind: "error" }),
+  });
+
   return (
     <Card
       title="مدیریت اعتبارات"
       action={
-        <div className="row" style={{ gap: 8 }}>
-          <select className="select" value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
+        <div className="row" style={{ gap: 8, flexWrap: "wrap" }}>
+          <select className="select" value={statusFilter} onChange={(e) => { setStatusFilter(e.target.value); setPage(1); }}>
             <option value="">همه وضعیت‌ها</option>
             {Object.entries(STATUS_LABELS).map(([k, v]) => (
               <option key={k} value={k}>{v}</option>
             ))}
           </select>
-          <input className="input" placeholder="جستجو (کد یا کاربر)…" value={search} onChange={(e) => setSearch(e.target.value)} />
+          <select className="select" value={settlementFilter} onChange={(e) => { setSettlementFilter(e.target.value); setPage(1); }}>
+            <option value="">همه وضعیت تسویه</option>
+            {Object.entries(SETTLEMENT_STATE_LABELS).map(([k, v]) => (
+              <option key={k} value={k}>{v}</option>
+            ))}
+          </select>
+          <select className="select" value={riskFilter} onChange={(e) => { setRiskFilter(e.target.value); setPage(1); }}>
+            <option value="">همه وضعیت ریسک</option>
+            {Object.entries(RISK_STATE_LABELS).map(([k, v]) => (
+              <option key={k} value={k}>{v}</option>
+            ))}
+          </select>
+          <input className="input" placeholder="جستجو (کد / نام / موبایل)…" value={search}
+            onChange={(e) => { setSearch(e.target.value); setPage(1); }} />
+          <button className="btn ghost"
+            onClick={() => {
+              const p = new URLSearchParams();
+              if (search) p.set("search", search);
+              if (statusFilter) p.set("status", statusFilter);
+              if (settlementFilter) p.set("settlementState", settlementFilter);
+              if (riskFilter) p.set("riskState", riskFilter);
+              window.open(`/api/admin/credits/export?${p.toString()}`, "_blank");
+            }}>
+            خروجی CSV
+          </button>
           <button className="btn" onClick={() => setModal("create")}>ایجاد اعتبار</button>
         </div>
       }
     >
+      {/* ── Dashboard KPIs ─────────────────────────────── */}
+      {stats.data && (
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 12, marginBottom: 16 }}>
+          <KpiCard label="کل اعتبارات" value={stats.data.totals.credits} tone="blue" />
+          <KpiCard label="فعال" value={stats.data.totals.active} tone="green" />
+          <KpiCard label="تسویه‌شده" value={stats.data.totals.settled} tone="gray" />
+          <KpiCard label="لغو شده" value={stats.data.totals.cancelled} tone="gray" />
+          <KpiCard label="حد اعتبار فعال" value={stats.data.exposure.activeCreditLimit} tone="gold" currency />
+          <KpiCard label="اعتبار استفاده‌شده" value={stats.data.exposure.activeUsedCredit} tone="gold" currency />
+          <KpiCard label="ارزش وثیقه فعال" value={stats.data.exposure.activeCollateralValue} tone="gold" currency />
+          <KpiCard label="پیش‌فرض" value={stats.data.risk.inDefault} tone="red" />
+          <KpiCard label="فراخوان سرمایه" value={stats.data.risk.marginCall} tone="red" />
+          <KpiCard label="هشدار" value={stats.data.risk.warning} tone="gold" />
+          <KpiCard label="بررسی ادمین" value={stats.data.risk.adminReview} tone="blue" />
+          <KpiCard label="تعلیق شده" value={stats.data.risk.suspended} tone="red" />
+        </div>
+      )}
+
       {list.isLoading ? <Loading /> : list.isError ? <ErrorState message={apiError(list.error)} /> :
-      !list.data?.length ? <Empty label="هیچ اعتباری یافت نشد" /> : (
+      !items.length ? <Empty label="هیچ اعتباری یافت نشد" /> : (
         <div className="table-wrap">
           <table>
             <thead>
@@ -166,6 +288,8 @@ export default function CreditsPage() {
                 <th>مبلغ</th>
                 <th>اهرم</th>
                 <th>حد اعتبار</th>
+                <th>استفاده‌شده</th>
+                <th>موجود</th>
                 <th>درادون</th>
                 <th>وضعیت</th>
                 <th>وضعیت تسویه</th>
@@ -178,7 +302,7 @@ export default function CreditsPage() {
               </tr>
             </thead>
             <tbody>
-              {(list.data as Credit[]).map((c) => (
+              {items.map((c) => (
                 <tr key={c.id}>
                   <td><code>{c.creditCode}</code></td>
                   <td>
@@ -187,6 +311,8 @@ export default function CreditsPage() {
                   <td>{fmtNum(c.amount)}</td>
                   <td className="mono">{c.leverage != null ? `${c.leverage}x` : "—"}</td>
                   <td className="mono">{fmtNum(c.creditLimit)}</td>
+                  <td className="mono">{fmtNum(c.usedCredit)}</td>
+                  <td className="mono">{fmtNum(c.availableCredit ?? Math.max(0, (c.creditLimit ?? 0) - (c.usedCredit ?? 0)))}</td>
                   <td>
                     {c.drawdownPercent != null ? (
                       <span style={{ color: Number(c.lastDrawdownPercent ?? 0) >= Number(c.drawdownPercent ?? 100) ? "var(--red)" : "inherit" }}>
@@ -223,14 +349,23 @@ export default function CreditsPage() {
                       : "—"}
                   </td>
                   <td>
-                    <div className="row" style={{ gap: 4 }}>
+                    <div className="row" style={{ gap: 4, flexWrap: "wrap" }}>
                       <button className="btn sm" onClick={() => { setSelected(c); setModal("detail"); }}>جزئیات</button>
-                      {c.status === "ACTIVE" && (
+                      <button className="btn sm" onClick={() => { setSelected(c); setModal("user"); }}>کاربر</button>
+                      {(c.status === "ACTIVE" || c.status === "SUSPENDED") && (
                         <>
                           <button className="btn sm" onClick={() => { setSelected(c); setModal("settle"); }}>تسویه</button>
+                          <button className="btn sm" onClick={() => { setSelected(c); setModal("liquidate"); }}>نقد اجباری</button>
+                          <button className="btn sm" onClick={() => { setSelected(c); setModal("extend"); }}>تمدید</button>
+                          <button className="btn sm" onClick={() => { setSelected(c); setModal("adjust"); }}>حد اعتبار</button>
                           <button className="btn sm" onClick={() => { setSelected(c); setModal("cancel"); }}>لغو</button>
                         </>
                       )}
+                      {c.status === "SUSPENDED"
+                        ? <button className="btn sm" onClick={() => reactivate.mutate({ id: c.id, reason: "reactivate" })}>رفع تعلیق</button>
+                        : c.status === "ACTIVE" && (
+                          <button className="btn sm" onClick={() => suspend.mutate({ id: c.id, reason: "suspend" })}>تعلیق</button>
+                        )}
                     </div>
                   </td>
                 </tr>
@@ -240,12 +375,34 @@ export default function CreditsPage() {
         </div>
       )}
 
+      {/* Pagination */}
+      {total > 0 && (
+        <div className="row" style={{ gap: 8, marginTop: 12, justifyContent: "flex-end" }}>
+          <span style={{ fontSize: 12, color: "var(--text-muted)" }}>کل: {total.toLocaleString("fa-IR")}</span>
+          <button className="btn sm" disabled={page <= 1} onClick={() => setPage((p) => Math.max(1, p - 1))}>قبلی</button>
+          <span style={{ fontSize: 12 }}>{page} / {totalPages}</span>
+          <button className="btn sm" disabled={page >= totalPages} onClick={() => setPage((p) => p + 1)}>بعدی</button>
+        </div>
+      )}
+
       {modal === "create" && <CreateCreditModal onClose={() => setModal(null)} onSave={(d) => create.mutate(d)} loading={create.isPending} />}
       {modal === "settle" && selected && (
         <SettleCreditModal credit={selected} onClose={() => { setModal(null); setSelected(null); }} onSave={(d) => settle.mutate({ id: selected.id, creditId: selected.id, ...d })} loading={settle.isPending} />
       )}
       {modal === "cancel" && selected && (
         <CancelCreditModal credit={selected} onClose={() => { setModal(null); setSelected(null); }} onSave={(d) => cancel.mutate({ id: selected.id, creditId: selected.id, ...d })} loading={cancel.isPending} />
+      )}
+      {modal === "liquidate" && selected && (
+        <LiquidateCreditModal credit={selected} onClose={() => { setModal(null); setSelected(null); }} onSave={(d) => liquidate.mutate({ id: selected.id, creditId: selected.id, ...d })} loading={liquidate.isPending} />
+      )}
+      {modal === "extend" && selected && (
+        <ExtendCreditModal credit={selected} onClose={() => { setModal(null); setSelected(null); }} onSave={(d) => extend.mutate({ id: selected.id, creditId: selected.id, ...d })} loading={extend.isPending} />
+      )}
+      {modal === "adjust" && selected && (
+        <AdjustLimitModal credit={selected} onClose={() => { setModal(null); setSelected(null); }} onSave={(d) => adjustLimit.mutate({ id: selected.id, creditId: selected.id, ...d })} loading={adjustLimit.isPending} />
+      )}
+      {modal === "user" && selected && (
+        <UserCreditsModal userId={selected.userId} credit={selected} onClose={() => { setModal(null); setSelected(null); }} />
       )}
       {modal === "detail" && selected && (
         <CreditDetailModal credit={selected} onClose={() => { setModal(null); setSelected(null); }} />
@@ -514,8 +671,158 @@ function CancelCreditModal({ credit, onClose, onSave, loading }: { credit: Credi
   );
 }
 
+function LiquidateCreditModal({ credit, onClose, onSave, loading }: { credit: Credit; onClose: () => void; onSave: (d: any) => void; loading: boolean }) {
+  const [reason, setReason] = useState("");
+
+  return (
+    <Modal title={`نقد اجباری اعتبار ${credit.creditCode}`} onClose={onClose}>
+      <form className="modal-form" onSubmit={(e) => { e.preventDefault(); onSave({ description: reason }); }}>
+        <div style={{ background: "var(--bg)", padding: 12, borderRadius: 8, marginBottom: 16, fontSize: 13, color: "var(--text-faint)", lineHeight: 1.6 }}>
+          با نقد اجباری، کل موقعیت اعتباری با قیمت مارک تسویه می‌شود؛ سود به کیف‌پول واریز و در صورت ضرر،
+          وثیقه برای پوشش کسری نقد می‌شود. سپس کیف‌پول‌های کاربر رفع انسداد می‌شود.
+          {isMarginCalled(credit) && " این اعتبار به‌دلیل فراخوان سرمایه مسدود شده و نقد آن کاربر را رفع انسداد می‌کند."}
+        </div>
+
+        <div className="form-grid">
+          <div className="field" style={{ gridColumn: "1 / -1" }}>
+            <label>دلیل نقد (اختیاری)</label>
+            <textarea className="input" rows={3} placeholder="دلیل نقد اجباری…" value={reason} onChange={(e) => setReason(e.target.value)} />
+          </div>
+        </div>
+
+        <div className="modal-actions">
+          <button type="button" className="btn ghost" onClick={onClose}>انصراف</button>
+          <button type="submit" className="btn btn-danger" disabled={loading}>
+            {loading ? <><span className="spin" /> در حال نقد…</> : "نقد اجباری"}
+          </button>
+        </div>
+      </form>
+    </Modal>
+  );
+}
+
+function KpiCard({ label, value, tone, currency }: { label: string; value: any; tone: string; currency?: boolean }) {
+  const color = tone === "red" ? "var(--red)" : tone === "gold" ? "var(--gold)" : tone === "green" ? "var(--green)" : tone === "blue" ? "#3b82f6" : "var(--text-muted)";
+  return (
+    <div className="card" style={{ padding: "12px 14px", borderLeft: `3px solid ${color}` }}>
+      <div style={{ fontSize: 11, color: "var(--text-muted)", marginBottom: 4 }}>{label}</div>
+      <div style={{ fontSize: 20, fontWeight: 700, color, direction: "ltr", textAlign: "right" }}>
+        {Number(value ?? 0).toLocaleString("fa-IR")}{currency ? " ریال" : ""}
+      </div>
+    </div>
+  );
+}
+
+function ExtendCreditModal({ credit, onClose, onSave, loading }: { credit: Credit; onClose: () => void; onSave: (d: any) => void; loading: boolean }) {
+  const [hours, setHours] = useState("24");
+  const [reason, setReason] = useState("");
+  return (
+    <Modal title={`تمدید مهلت تسویه ${credit.creditCode}`} onClose={onClose}>
+      <form className="modal-form" onSubmit={(e) => { e.preventDefault(); if (!Number(hours) || Number(hours) <= 0) return; onSave({ hours: Number(hours), reason }); }}>
+        <div style={{ background: "var(--bg)", padding: 12, borderRadius: 8, marginBottom: 16, fontSize: 13, color: "var(--text-faint)", lineHeight: 1.6 }}>
+          ساعت‌ها به زمان فعال‌سازی افزوده می‌شود و وضعیت تسویه به سبز بازنشانی می‌شود.
+        </div>
+        <div className="form-grid">
+          <div className="field">
+            <label>ساعت تمدید</label>
+            <input className="input mono" type="number" min={1} value={hours} onChange={(e) => setHours(e.target.value)} />
+          </div>
+          <div className="field">
+            <label>دلیل (اختیاری)</label>
+            <input className="input" value={reason} onChange={(e) => setReason(e.target.value)} placeholder="دلیل تمدید…" />
+          </div>
+        </div>
+        <div className="modal-actions">
+          <button type="button" className="btn ghost" onClick={onClose}>انصراف</button>
+          <button type="submit" className="btn" disabled={loading}>{loading ? <><span className="spin" /> در حال تمدید…</> : "تمدید"}</button>
+        </div>
+      </form>
+    </Modal>
+  );
+}
+
+function AdjustLimitModal({ credit, onClose, onSave, loading }: { credit: Credit; onClose: () => void; onSave: (d: any) => void; loading: boolean }) {
+  const [newLimit, setNewLimit] = useState(String(credit.creditLimit ?? 0));
+  const [reason, setReason] = useState("");
+  return (
+    <Modal title={`تغییر حد اعتبار ${credit.creditCode}`} onClose={onClose}>
+      <form className="modal-form" onSubmit={(e) => { e.preventDefault(); if (Number(newLimit) < 0) return; onSave({ newLimit: Number(newLimit), reason }); }}>
+        <div style={{ background: "var(--bg)", padding: 12, borderRadius: 8, marginBottom: 16, fontSize: 13, color: "var(--text-faint)", lineHeight: 1.6 }}>
+          حد اعتبار فعلی: {fmtNum(credit.creditLimit)} ریال. اختلاف روی کیف‌پول اعتبار (نماد پایه) اعمال می‌شود.
+        </div>
+        <div className="form-grid">
+          <div className="field">
+            <label>حد جدید (ریال)</label>
+            <input className="input mono" type="number" min={0} value={newLimit} onChange={(e) => setNewLimit(e.target.value)} />
+          </div>
+          <div className="field">
+            <label>دلیل (اختیاری)</label>
+            <input className="input" value={reason} onChange={(e) => setReason(e.target.value)} placeholder="دلیل تغییر…" />
+          </div>
+        </div>
+        <div className="modal-actions">
+          <button type="button" className="btn ghost" onClick={onClose}>انصراف</button>
+          <button type="submit" className="btn" disabled={loading}>{loading ? <><span className="spin" /> در حال ذخیره…</> : "ذخیره"}</button>
+        </div>
+      </form>
+    </Modal>
+  );
+}
+
+function UserCreditsModal({ userId, credit, onClose }: { userId: string; credit: Credit; onClose: () => void }) {
+  const q = useQuery({
+    queryKey: ["user-credits", userId],
+    queryFn: async () => unwrap<any>((await api.get(`/admin/credits/user/${userId}`)).data),
+  });
+  const data = q.data;
+  const user = credit.user;
+  return (
+    <Modal title={`اعتبارات کاربر ${user ? `${user.firstName ?? ""} ${user.lastName ?? ""}`.trim() || user.phone || user.email : userId}`} onClose={onClose} wide>
+      {q.isLoading ? <Loading /> : q.isError ? <ErrorState message={apiError(q.error)} /> : (
+        <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+          {data?.activeOverview && (
+            <div style={{ background: "var(--bg)", padding: 12, borderRadius: 8, border: "1px solid var(--gold)" }}>
+              <h4 style={{ margin: "0 0 10px 0", fontSize: 14, color: "var(--gold)" }}>اعتبار فعال</h4>
+              <div className="kv" style={{ gridTemplateColumns: "1fr 1fr 1fr" }}>
+                <span className="k">حد اعتبار</span><span className="v mono">{fmtNum(data.activeOverview.creditLimit)} ریال</span>
+                <span className="k">استفاده‌شده</span><span className="v mono">{fmtNum(data.activeOverview.usedCredit)} ریال</span>
+                <span className="k">موجود</span><span className="v mono">{fmtNum(data.activeOverview.availableCredit)} ریال</span>
+                <span className="k">ارزش وثیقه</span><span className="v mono">{fmtNum(data.activeOverview.currentCollateralValue)} ریال</span>
+                <span className="k">درادون</span><span className="v mono">{Number(data.activeOverview.lastDrawdownPercent ?? 0).toFixed(1)}% / {data.activeOverview.drawdownPercent}%</span>
+                <span className="k">ریسک</span>
+                <span className="v"><Badge kind={(RISK_STATE_KINDS[data.activeOverview.riskState] || "gray") as any}>{RISK_STATE_LABELS[data.activeOverview.riskState] || data.activeOverview.riskState}</Badge></span>
+              </div>
+            </div>
+          )}
+          <div>
+            <h4 style={{ margin: "0 0 8px 0", fontSize: 14 }}>سابقه اعتبارات ({data?.credits?.length || 0})</h4>
+            {!data?.credits?.length ? <Empty label="بدون اعتبار" /> : (
+              <div className="table-wrap">
+                <table>
+                  <thead><tr><th>کد</th><th>مبلغ</th><th>حد</th><th>وضعیت</th><th>تسویه</th><th>ساخته‌شده</th></tr></thead>
+                  <tbody>
+                    {data.credits.map((c: any) => (
+                      <tr key={c.id}>
+                        <td><code>{c.creditCode}</code></td>
+                        <td className="mono">{fmtNum(c.amount)}</td>
+                        <td className="mono">{fmtNum(c.creditLimit)}</td>
+                        <td><Badge kind={(STATUS_KINDS[c.status] || "gray") as any}>{STATUS_LABELS[c.status] || c.status}</Badge></td>
+                        <td>{fmtDate(c.settledAt)}</td>
+                        <td>{fmtDate(c.createAt)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+    </Modal>
+  );
+}
+
 function CreditDetailModal({ credit, onClose }: { credit: Credit; onClose: () => void }) {
-  // Fetch full credit details with orders
   const creditDetail = useQuery({
     queryKey: ["credit-detail", credit.id],
     queryFn: async () => unwrap<Credit>((await api.get(`/admin/credits/${credit.id}`)).data),
@@ -545,13 +852,90 @@ function CreditDetailModal({ credit, onClose }: { credit: Credit; onClose: () =>
   const c = creditDetail.data || credit;
   const pnlData = pnl.data;
 
+  const risk = useQuery({
+    queryKey: ["credit-risk", credit.id],
+    queryFn: async () => unwrap<any>((await api.get(`/admin/credits/${credit.id}/risk`)).data),
+  });
+
+  const riskData = risk.data;
+
   return (
     <Modal title={`جزئیات اعتبار ${c.creditCode}`} onClose={onClose} wide>
       {creditDetail.isLoading ? (
         <Loading />
       ) : (
         <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-          {/* Credit Info */}
+          {/* Risk / Valuation */}
+          {riskData && (
+            <div style={{ background: "var(--bg)", padding: 12, borderRadius: 8 }}>
+              <h4 style={{ margin: "0 0 12px 0", fontSize: 14 }}>ارزیابی ریسک (Mark-to-Market)</h4>
+              {riskData.stateError ? (
+                <div style={{ color: "var(--red)", fontSize: 13 }}>قیمت مارک در دسترس نیست ({riskData.stateError})</div>
+              ) : riskData.valuation ? (
+                <div className="kv" style={{ gridTemplateColumns: "1fr 1fr 1fr" }}>
+                  <span className="k">ارزش خالص</span>
+                  <span className="v mono" style={{ color: riskData.valuation.netEquity >= 0 ? "var(--green)" : "var(--red)", fontWeight: 600 }}>
+                    {fmtNum(riskData.valuation.netEquity)} ریال
+                  </span>
+                  <span className="k">سرمایه (Equity)</span>
+                  <span className="v mono">{fmtNum(riskData.valuation.equity)} ریال</span>
+                  <span className="k">نسبت مارجین</span>
+                  <span className="v mono">{riskData.valuation.marginRatio != null ? (riskData.valuation.marginRatio * 100).toFixed(2) + "%" : "—"}</span>
+                  <span className="k">قرض گرفته (IRR)</span>
+                  <span className="v mono">{fmtNum(riskData.valuation.borrowedIr)} ریال</span>
+                  <span className="k">ارزش وثیقه</span>
+                  <span className="v mono">{fmtNum(riskData.valuation.collateralValue)} ریال</span>
+                  <span className="k">در معرض (Exposure)</span>
+                  <span className="v mono">{fmtNum(riskData.valuation.exposure)} ریال</span>
+                  <span className="k">استفاده‌شده</span>
+                  <span className="v mono">{fmtNum(riskData.usedCredit)} ریال</span>
+                  <span className="k">موجود</span>
+                  <span className="v mono">{fmtNum(riskData.availableCredit)} ریال</span>
+                </div>
+              ) : null}
+
+              {(riskData.valuation?.positions || []).length > 0 && (
+                <div style={{ marginTop: 12 }}>
+                  <div style={{ fontSize: 12, color: "var(--text-muted)", marginBottom: 6 }}>پوزیشن‌ها</div>
+                  <div className="table-wrap">
+                    <table>
+                      <thead><tr><th>نماد</th><th>خالص (g)</th><th>قیمت مارک</th></tr></thead>
+                      <tbody>
+                        {riskData.valuation.positions.map((p: any, i: number) => (
+                          <tr key={i}>
+                            <td className="mono">{p.baseSymbolSlug}</td>
+                            <td className="mono">{fmtNum(p.netXau)}</td>
+                            <td className="mono">{fmtNum(p.markPrice)}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+
+              {riskData.balances?.length > 0 && (
+                <div style={{ marginTop: 12 }}>
+                  <div style={{ fontSize: 12, color: "var(--text-muted)", marginBottom: 6 }}>موجودی کیف‌پول اعتبار</div>
+                  <div className="table-wrap">
+                    <table>
+                      <thead><tr><th>نماد</th><th>آزاد</th><th>مسدود</th><th>اعتبار</th></tr></thead>
+                      <tbody>
+                        {riskData.balances.map((b: any, i: number) => (
+                          <tr key={i}>
+                            <td className="mono">{b.symbolSlug}</td>
+                            <td className="mono">{fmtNum(b.freeBalance)}</td>
+                            <td className="mono">{fmtNum(b.lockedBalance)}</td>
+                            <td className="mono">{fmtNum(b.creditBalance)}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
           <div className="kv" style={{ gridTemplateColumns: "1fr 1fr 1fr" }}>
             <span className="k">کاربر</span>
             <span className="v" style={{ gridColumn: "2 / -1" }}>
@@ -577,6 +961,15 @@ function CreditDetailModal({ credit, onClose }: { credit: Credit; onClose: () =>
               <>
                 <span className="k">حد اعتبار</span>
                 <span className="v mono">{fmtNum(c.creditLimit)} ریال</span>
+              </>
+            )}
+
+            {c.creditLimit != null && (
+              <>
+                <span className="k">استفاده‌شده / موجود</span>
+                <span className="v mono">
+                  {fmtNum(c.usedCredit)} / {fmtNum(c.availableCredit ?? Math.max(0, (c.creditLimit ?? 0) - (c.usedCredit ?? 0)))} ریال
+                </span>
               </>
             )}
 

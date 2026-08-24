@@ -26,6 +26,8 @@ import { MarketTypeEnum } from "../admin-pair/enum/market.type.enum";
 import { UnitTypeEnum } from "../admin-symbol/enum/unit.type.enum";
 import { GainTypeEnum } from "../admin-symbol/enum/gain.type.enum";
 import { UserEntity } from "../user/entity/user.entity";
+import { UserKycEntity } from "../user/entity/user.kyc.entity";
+import { KycStatusEnum } from "../baseinfo/enum/kycStatus.enum";
 import { OrderEntity } from "../order/order.entity";
 import { OrderStatusEnum } from "../order/enum/order.status.enum";
 import { FinanceLogEntity } from "../finance-log/entity/finance-log.entity";
@@ -59,6 +61,8 @@ export class CreditService {
     private readonly pricePairRepository: Repository<PricePairEntity>,
     @InjectRepository(UserEntity)
     private userRepository: Repository<UserEntity>,
+    @InjectRepository(UserKycEntity)
+    private userKycRepository: Repository<UserKycEntity>,
     @InjectRepository(FinanceLogEntity)
     private financeLogRepository: Repository<FinanceLogEntity>,
     private dataSource: DataSource,
@@ -428,6 +432,12 @@ export class CreditService {
         throw new BadRequestException("Credit trading is not enabled for this user's level");
       }
 
+      // KYC must be approved before a user can open a self-service facility.
+      const kyc = await manager.findOne(UserKycEntity, { where: { userId } });
+      if (!kyc || kyc.status !== KycStatusEnum.APPROVED) {
+        throw new BadRequestException("KYC approval is required to open a credit facility");
+      }
+
       const level = await this.userLevelService.getUserLevel(userId);
       if (!level?.creditBaseSymbolId) {
         throw new BadRequestException("Your level has no credit facility configured");
@@ -479,9 +489,30 @@ export class CreditService {
         }
       }
 
+      // Enforce the level's max credit amount against the projected credit
+      // limit (collateral × price × leverage), and cap the facility duration.
+      const maxAmount = await this.userLevelService.getFeatureValue(userId, "CREDIT_MAX_AMOUNT");
+      const maxAmt = typeof maxAmount === "object" ? Number(maxAmount?.amount) : Number(maxAmount);
+      const unitPrice =
+        depositWallet.symbolId === level.creditBaseSymbolId ? 1 : collateralPrice || 0;
+      const projectedCredit =
+        unitPrice > 0 ? new Decimal(dto.amount).mul(unitPrice).mul(dto.leverage).toNumber() : 0;
+      if (maxAmt > 0 && projectedCredit > maxAmt) {
+        throw new BadRequestException(
+          `حداکثر مبلغ اعتبار در سطح شما ${maxAmt.toLocaleString("fa-IR")} ریال است`,
+        );
+      }
+
       // Don't calculate credit amount yet - it will be calculated when user creates first order
       // using the current pair price at that moment
-      const expireAt = new Date('2099-12-31T23:59:59.999Z');
+      const maxDuration = await this.userLevelService.getFeatureValue(userId, "CREDIT_MAX_DURATION_DAYS");
+      const maxDays = typeof maxDuration === "object"
+        ? Number(maxDuration?.days ?? maxDuration?.amount)
+        : Number(maxDuration);
+      const expireAt =
+        maxDays > 0
+          ? new Date(Date.now() + maxDays * 24 * 60 * 60 * 1000)
+          : new Date('2099-12-31T23:59:59.999Z');
 
       // 1. Freeze: DEPOSIT → COLLATERAL wallet row.
       depositWallet.freeBalance = new Decimal(depositWallet.freeBalance).minus(dto.amount).toNumber();
@@ -1115,6 +1146,27 @@ export class CreditService {
     return settledCredit;
   }
 
+  /**
+   * Admin-initiated forced liquidation. Delegates to the settlement engine
+   * (cash-settles at mark price, consumes collateral for any deficit) and then
+   * restores the user's wallets.
+   */
+  async forceLiquidateCredit(adminId: string, creditId: string, reason?: string): Promise<CreditEntity> {
+    const settledCredit = await this.settlementService.liquidate(creditId, "ADMIN_FORCE_LIQUIDATION", {
+      adminId,
+      notes: reason,
+    });
+
+    await this.unfreezeWalletsAfterSettlement(settledCredit.userId, settledCredit.creditCode, adminId);
+
+    this.eventEmitter.emit(CreditEvents.SETTLED, {
+      userId: settledCredit.userId,
+      creditId: settledCredit.id,
+      reason: "ADMIN_FORCE_LIQUIDATION",
+    });
+    return settledCredit;
+  }
+
   private async unfreezeWalletsAfterSettlement(userId: string, creditCode: string, adminId?: string): Promise<void> {
     await this.dataSource.transaction(async (manager) => {
       const wallets = await manager.find(WalletEntity, {
@@ -1305,6 +1357,372 @@ export class CreditService {
     });
   }
 
+  /**
+   * Sum the IRR value currently locked by open (pending / partially-completed)
+   * credit-linked orders. This is the live "used credit" of a facility and is
+   * the authoritative number used to guard against over-allocation and to
+   * compute the available credit shown to the user and admin.
+   */
+  async computeUsedCredit(creditId: string): Promise<number> {
+    const rows = await this.creditOrderRepository.find({
+      where: { creditId },
+      relations: { order: true },
+    });
+    let total = new Decimal(0);
+    for (const co of rows) {
+      const o = co.order;
+      if (!o) continue;
+      if (o.status !== "PENDING" && o.status !== "PARTIALLY_COMPLETED") continue;
+      const price = Number(o.price) || Number(co.priceAtOrderTime) || 0;
+      total = total.plus(new Decimal(o.quantity || 0).mul(price));
+    }
+    return total.toNumber();
+  }
+
+  /**
+   * Facility overview for the active credit: live used/available credit,
+   * collateral metrics and risk/settlement state. Used by the user panel and
+   * admin dashboard.
+   */
+  async getCreditOverview(userId: string): Promise<any | null> {
+    const credit = await this.getUserActiveCredit(userId);
+    if (!credit) return null;
+
+    const usedCredit = await this.computeUsedCredit(credit.id);
+    const creditLimit = Number(credit.creditLimit) || 0;
+
+    // CREDIT-wallet free/locked per symbol for display.
+    const creditWallets = await this.walletRepository.find({
+      where: { userId, walletType: WalletTypeEnum.CREDIT },
+      relations: { symbol: true },
+    });
+    const balances = creditWallets.map((w) => ({
+      symbolId: w.symbolId,
+      symbolSlug: w.symbol?.slug || w.symbolId,
+      freeBalance: Number(w.freeBalance) || 0,
+      lockedBalance: Number(w.lockedBalance) || 0,
+      creditBalance: Number(w.creditBalance) || 0,
+    }));
+
+    // The authoritative "available credit" is the free balance of the base
+    // (credit currency) CREDIT wallet — it already reflects funds consumed by
+    // completed orders. Fall back to creditLimit − used when the wallet is
+    // absent (e.g. before the line is issued on the first order).
+    const baseWallet = creditWallets.find((w) => w.symbolId === credit.creditBaseSymbolId);
+    const availableCredit =
+      baseWallet != null
+        ? Math.max(0, Number(baseWallet.freeBalance) || 0)
+        : Math.max(0, creditLimit - usedCredit);
+
+    let currentCollateralValue = Number(credit.currentCollateralValue) || 0;
+    let lastDrawdownPercent = Number(credit.lastDrawdownPercent) || 0;
+    if (credit.collateralSymbolId && credit.initialCollateralValue) {
+      try {
+        const { drawdownPercent } = await this.recomputeDrawdown(credit);
+        lastDrawdownPercent = drawdownPercent;
+        currentCollateralValue = Number(credit.currentCollateralValue) || currentCollateralValue;
+      } catch {
+        // keep last-known values on price failure
+      }
+    }
+
+    return {
+      id: credit.id,
+      creditCode: credit.creditCode,
+      status: credit.status,
+      leverage: credit.leverage,
+      creditLimit,
+      usedCredit,
+      availableCredit,
+      collateralSymbolId: credit.collateralSymbolId,
+      collateralAmount: Number(credit.collateralAmount) || 0,
+      initialCollateralValue: Number(credit.initialCollateralValue) || 0,
+      currentCollateralValue,
+      lastDrawdownPercent,
+      drawdownPercent: credit.drawdownPercent,
+      riskState: credit.riskState,
+      settlementState: credit.settlementState,
+      balances,
+    };
+  }
+
+  /**
+   * Aggregate KPIs for the admin credit dashboard.
+   */
+  async getCreditStats(): Promise<any> {
+    const all = await this.creditRepository.find({ relations: { user: true } });
+    const active = all.filter((c) => c.status === CreditStatusEnum.ACTIVE);
+
+    const sum = (arr: CreditEntity[], pick: (c: CreditEntity) => number) =>
+      arr.reduce((s, c) => s + (Number(pick(c)) || 0), 0);
+
+    const settlementDist = {} as Record<string, number>;
+    const riskDist = {} as Record<string, number>;
+    for (const c of all) {
+      settlementDist[c.settlementState] = (settlementDist[c.settlementState] || 0) + 1;
+      riskDist[c.riskState] = (riskDist[c.riskState] || 0) + 1;
+    }
+
+    return {
+      totals: {
+        credits: all.length,
+        active: active.length,
+        settled: all.filter((c) => c.status === CreditStatusEnum.SETTLED).length,
+        cancelled: all.filter((c) => c.status === CreditStatusEnum.CANCELLED).length,
+        expired: all.filter((c) => c.status === CreditStatusEnum.EXPIRED).length,
+      },
+      exposure: {
+        activeCreditLimit: sum(active, (c) => c.creditLimit),
+        activeUsedCredit: sum(active, (c) => c.usedCredit),
+        activeCollateralValue: sum(active, (c) => c.currentCollateralValue || c.initialCollateralValue),
+        activeCollateralAmount: sum(active, (c) => c.collateralAmount),
+      },
+      risk: {
+        inDefault: all.filter((c) => c.isInDefault || c.riskState === RiskStateEnum.DEFAULT).length,
+        marginCall: active.filter((c) => c.riskState === RiskStateEnum.MARGIN_CALL).length,
+        warning: active.filter((c) => c.riskState === RiskStateEnum.WARNING).length,
+        adminReview: active.filter((c) => c.settlementState === SettlementStateEnum.ADMIN_REVIEW).length,
+        suspended: all.filter((c) => c.status === CreditStatusEnum.SUSPENDED).length,
+      },
+      settlementDistribution: settlementDist,
+      riskDistribution: riskDist,
+    };
+  }
+
+  /**
+   * Enhanced risk view for a credit (admin): live valuation from the
+   * settlement engine plus per-symbol credit wallet balances.
+   */
+  async getCreditRisk(creditId: string): Promise<any> {
+    const credit = await this.getCreditById(creditId);
+    let state: any = null;
+    let stateError: string | null = null;
+    try {
+      state = await this.settlementService.computeState(credit);
+    } catch (err) {
+      stateError = (err as Error).message || "CREDIT_NO_MARK_PRICE";
+    }
+
+    const usedCredit = await this.computeUsedCredit(credit.id);
+    const creditLimit = Number(credit.creditLimit) || 0;
+    const creditWallets = await this.walletRepository.find({
+      where: { userId: credit.userId, walletType: WalletTypeEnum.CREDIT },
+      relations: { symbol: true },
+    });
+    const balances = creditWallets.map((w) => ({
+      symbolId: w.symbolId,
+      symbolSlug: w.symbol?.slug || w.symbolId,
+      freeBalance: Number(w.freeBalance) || 0,
+      lockedBalance: Number(w.lockedBalance) || 0,
+      creditBalance: Number(w.creditBalance) || 0,
+    }));
+    const baseWallet = creditWallets.find((w) => w.symbolId === credit.creditBaseSymbolId);
+    const availableCredit =
+      baseWallet != null
+        ? Math.max(0, Number(baseWallet.freeBalance) || 0)
+        : Math.max(0, creditLimit - usedCredit);
+
+    return {
+      credit,
+      valuation: state,
+      stateError,
+      usedCredit,
+      availableCredit,
+      creditLimit,
+      balances,
+      suspended: credit.status === CreditStatusEnum.SUSPENDED,
+    };
+  }
+
+  /**
+   * All credits for a specific user (admin), plus their live active overview.
+   */
+  async getUserCreditsAdmin(userId: string): Promise<any> {
+    const credits = await this.creditRepository.find({
+      where: { userId },
+      relations: { creditOrders: true },
+      order: { createAt: "DESC" },
+    });
+    let activeOverview: any = null;
+    const active = credits.find((c) => c.status === CreditStatusEnum.ACTIVE);
+    if (active) {
+      activeOverview = await this.getCreditOverview(userId);
+    }
+    return { credits, activeOverview };
+  }
+
+  /**
+   * Suspend a user's credit: freeze all their wallets (blocks trading) and tag
+   * the facility as suspended. Reactivation restores the wallets.
+   */
+  async suspendCredit(adminId: string, creditId: string, reason?: string): Promise<CreditEntity> {
+    return await this.dataSource.transaction(async (manager) => {
+      const credit = await manager.findOne(CreditEntity, {
+        where: { id: creditId, status: CreditStatusEnum.ACTIVE },
+        lock: { mode: "pessimistic_write" },
+      });
+      if (!credit) throw new BadRequestException("Active credit not found");
+
+      credit.status = CreditStatusEnum.SUSPENDED;
+      credit.metadata = { ...(credit.metadata || {}), suspendedAt: new Date().toISOString(), suspendedBy: adminId, suspendReason: reason };
+      await manager.save(credit);
+
+      await this.blockUserForMarginCall(credit.userId, creditId, manager);
+
+      await this.logFinanceAction(manager, {
+        adminId,
+        userId: credit.userId,
+        creditId: credit.id,
+        actionType: CreditActionEnum.CREDIT_SUSPENDED,
+        description: `Credit ${credit.creditCode} suspended${reason ? `: ${reason}` : ""}. All wallets frozen.`,
+        metadata: { reason },
+      });
+      return credit;
+    });
+  }
+
+  /**
+   * Reactivate a suspended credit: restore the user's wallets to ACTIVE.
+   */
+  async reactivateCredit(adminId: string, creditId: string, reason?: string): Promise<CreditEntity> {
+    return await this.dataSource.transaction(async (manager) => {
+      const credit = await manager.findOne(CreditEntity, {
+        where: { id: creditId, status: CreditStatusEnum.SUSPENDED },
+        lock: { mode: "pessimistic_write" },
+      });
+      if (!credit) throw new BadRequestException("Suspended credit not found");
+
+      credit.status = CreditStatusEnum.ACTIVE;
+      credit.metadata = { ...(credit.metadata || {}), reactivatedAt: new Date().toISOString(), reactivatedBy: adminId };
+      await manager.save(credit);
+
+      await this.unblockUserWallets(manager, credit.userId);
+
+      await this.logFinanceAction(manager, {
+        adminId,
+        userId: credit.userId,
+        creditId: credit.id,
+        actionType: CreditActionEnum.CREDIT_REACTIVATED,
+        description: `Credit ${credit.creditCode} reactivated${reason ? `: ${reason}` : ""}. Wallets unfrozen.`,
+        metadata: { reason },
+      });
+      return credit;
+    });
+  }
+
+  /**
+   * Extend the settlement timer by pushing the activation time forward.
+   */
+  async extendCredit(adminId: string, creditId: string, hours: number, reason?: string): Promise<CreditEntity> {
+    return await this.dataSource.transaction(async (manager) => {
+      const credit = await manager.findOne(CreditEntity, {
+        where: { id: creditId, status: CreditStatusEnum.ACTIVE },
+        lock: { mode: "pessimistic_write" },
+      });
+      if (!credit) throw new BadRequestException("Active credit not found");
+
+      const base = credit.activatedAt ? new Date(credit.activatedAt) : new Date();
+      credit.activatedAt = new Date(base.getTime() + hours * 60 * 60 * 1000);
+      // Restart to GREEN so the full window is available again.
+      credit.settlementState = SettlementStateEnum.GREEN;
+      credit.settlementYellowAt = null;
+      credit.settlementRedAt = null;
+      credit.settlementAdminReviewAt = null;
+      await manager.save(credit);
+
+      await this.logFinanceAction(manager, {
+        adminId,
+        userId: credit.userId,
+        creditId: credit.id,
+        actionType: CreditActionEnum.CREDIT_EXTENDED,
+        description: `Credit ${credit.creditCode} settlement extended by ${hours}h${reason ? ` (${reason})` : ""}`,
+        metadata: { hours, reason },
+      });
+      return credit;
+    });
+  }
+
+  /**
+   * Admin override of the credit limit. Adjusts the creditLimit and applies the
+   * delta to the base (credit currency) CREDIT wallet balance.
+   */
+  async adjustCreditLimit(adminId: string, creditId: string, newLimit: number, reason?: string): Promise<CreditEntity> {
+    return await this.dataSource.transaction(async (manager) => {
+      const credit = await manager.findOne(CreditEntity, {
+        where: { id: creditId, status: CreditStatusEnum.ACTIVE },
+        lock: { mode: "pessimistic_write" },
+      });
+      if (!credit) throw new BadRequestException("Active credit not found");
+      if (!credit.creditBaseSymbolId) throw new BadRequestException("Credit has no base symbol to adjust");
+
+      const oldLimit = Number(credit.creditLimit) || 0;
+      const delta = new Decimal(newLimit).minus(oldLimit);
+      if (newLimit < 0) throw new BadRequestException("Credit limit cannot be negative");
+
+      let creditWallet = await manager.findOne(WalletEntity, {
+        where: { userId: credit.userId, symbolId: credit.creditBaseSymbolId, walletType: WalletTypeEnum.CREDIT },
+        lock: { mode: "pessimistic_write" },
+      });
+      if (!creditWallet) {
+        creditWallet = manager.create(WalletEntity, {
+          userId: credit.userId,
+          symbolId: credit.creditBaseSymbolId,
+          walletType: WalletTypeEnum.CREDIT,
+          status: WalletStatusEnum.ACTIVE,
+          freeBalance: 0,
+          lockedBalance: 0,
+          availableBalance: 0,
+          creditBalance: 0,
+          frozenFreeBalance: 0,
+          frozenLockedBalance: 0,
+        });
+      }
+      // Only allow lowering below current locked+free if it stays non-negative.
+      const newWalletBalance = new Decimal(creditWallet.creditBalance || 0).plus(delta);
+      if (newWalletBalance.lessThan(0)) {
+        throw new BadRequestException("New limit would make the credit wallet negative");
+      }
+      creditWallet.creditBalance = newWalletBalance.toNumber();
+      creditWallet.freeBalance = new Decimal(creditWallet.availableBalance || 0)
+        .plus(creditWallet.creditBalance)
+        .toNumber();
+      await manager.save(creditWallet);
+
+      credit.creditLimit = newLimit;
+      await manager.save(credit);
+
+      await this.logFinanceAction(manager, {
+        adminId,
+        userId: credit.userId,
+        creditId: credit.id,
+        walletId: creditWallet.id,
+        actionType: CreditActionEnum.CREDIT_LIMIT_ADJUSTED,
+        description: `Credit ${credit.creditCode} limit adjusted ${oldLimit} → ${newLimit}${reason ? ` (${reason})` : ""}`,
+        metadata: { oldLimit, newLimit, delta: delta.toNumber(), reason },
+      });
+      return credit;
+    });
+  }
+
+  /**
+   * Unfreeze a user's wallets (restore ACTIVE) without touching balances.
+   * Used on credit reactivation.
+   */
+  private async unblockUserWallets(manager: any, userId: string): Promise<void> {
+    const wallets = await manager.find(WalletEntity, {
+      where: { userId },
+      lock: { mode: "pessimistic_write" },
+    });
+    for (const wallet of wallets) {
+      if (wallet.status === WalletStatusEnum.FROZEN) {
+        wallet.status = WalletStatusEnum.ACTIVE;
+        wallet.frozenAt = null;
+        wallet.adminNote = `Unfrozen on credit reactivation`;
+        await manager.save(wallet);
+      }
+    }
+  }
+
   async getUserCredits(userId: string): Promise<CreditEntity[]> {
     return await this.creditRepository.find({
       where: { userId },
@@ -1412,7 +1830,17 @@ export class CreditService {
     };
   }
 
-  async getAllCredits(query?: { userId?: string; status?: CreditStatusEnum; search?: string }): Promise<CreditEntity[]> {
+  async getAllCredits(query?: {
+    userId?: string;
+    status?: CreditStatusEnum;
+    settlementState?: SettlementStateEnum;
+    riskState?: RiskStateEnum;
+    search?: string;
+    from?: string;
+    to?: string;
+    page?: number;
+    limit?: number;
+  }): Promise<{ items: CreditEntity[]; total: number; page: number; limit: number }> {
     const qb = this.creditRepository.createQueryBuilder("credit")
       .leftJoinAndSelect("credit.user", "user")
       .leftJoinAndSelect("credit.creditOrders", "creditOrders");
@@ -1423,13 +1851,75 @@ export class CreditService {
     if (query?.status) {
       qb.andWhere("credit.status = :status", { status: query.status });
     }
+    if (query?.settlementState) {
+      qb.andWhere("credit.settlementState = :settlementState", { settlementState: query.settlementState });
+    }
+    if (query?.riskState) {
+      qb.andWhere("credit.riskState = :riskState", { riskState: query.riskState });
+    }
+    if (query?.from) {
+      qb.andWhere("credit.createAt >= :from", { from: new Date(query.from) });
+    }
+    if (query?.to) {
+      qb.andWhere("credit.createAt <= :to", { to: new Date(query.to) });
+    }
     if (query?.search) {
-      qb.andWhere("(credit.creditCode ILIKE :search OR user.firstName ILIKE :search OR user.lastName ILIKE :search)", {
+      qb.andWhere("(credit.creditCode ILIKE :search OR user.firstName ILIKE :search OR user.lastName ILIKE :search OR user.phone ILIKE :search)", {
         search: `%${query.search}%`,
       });
     }
 
-    return await qb.orderBy("credit.createAt", "DESC").getMany();
+    qb.orderBy("credit.createAt", "DESC");
+    const total = await qb.getCount();
+    const page = query?.page || 1;
+    const limit = query?.limit || 20;
+    const items = await qb
+      .skip((page - 1) * limit)
+      .take(limit)
+      .getMany();
+
+    return { items, total, page, limit };
+  }
+
+  /**
+   * Build a CSV string of credits matching the query for admin export.
+   */
+  async exportCreditsCsv(query?: Parameters<CreditService["getAllCredits"]>[0]): Promise<string> {
+    const { items } = await this.getAllCredits({ ...query, limit: 100000, page: 1 });
+    const esc = (v: any) => {
+      const s = v == null ? "" : String(v);
+      return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+    };
+    const header = [
+      "creditCode", "status", "userId", "userName", "phone", "amount", "creditLimit",
+      "usedCredit", "leverage", "collateralAmount", "collateralValue", "drawdownPercent",
+      "lastDrawdownPercent", "riskState", "settlementState", "createdAt", "expireAt", "settledAt",
+    ].join(",");
+    const rows = items.map((c) =>
+      [
+        c.creditCode,
+        c.status,
+        c.userId,
+        c.user ? `${c.user.firstName ?? ""} ${c.user.lastName ?? ""}`.trim() : "",
+        c.user?.phone ?? "",
+        c.amount,
+        c.creditLimit,
+        c.usedCredit,
+        c.leverage ?? "",
+        c.collateralAmount ?? "",
+        c.currentCollateralValue ?? "",
+        c.drawdownPercent ?? "",
+        c.lastDrawdownPercent ?? "",
+        c.riskState,
+        c.settlementState,
+        c.createAt ? new Date(c.createAt).toISOString() : "",
+        c.expireAt ? new Date(c.expireAt).toISOString() : "",
+        c.settledAt ? new Date(c.settledAt).toISOString() : "",
+      ]
+        .map(esc)
+        .join(","),
+    );
+    return [header, ...rows].join("\n");
   }
 
   async getUserNotifications(userId: string): Promise<CreditNotificationEntity[]> {

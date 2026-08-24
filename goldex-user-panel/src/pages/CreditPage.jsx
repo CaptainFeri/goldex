@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback } from 'react'
 import { useTranslation } from 'react-i18next'
-import { creditApi, walletApi } from '../services/api'
+import { creditApi, walletApi, levelApi, marketApi } from '../services/api'
 import { Spinner, Alert, Button } from '../components/UI'
 
 const fmtNum = (n) => (n ?? 0).toLocaleString('en-US')
@@ -10,6 +10,7 @@ const fmtDate = (d) =>
 const STATUS_LABELS = {
   PENDING: 'Pending',
   ACTIVE: 'Active',
+  SUSPENDED: 'Suspended',
   SETTLED: 'Settled',
   EXPIRED: 'Expired',
   CANCELLED: 'Cancelled',
@@ -36,6 +37,7 @@ function CreditIcon() {
 export default function CreditPage() {
   const { t } = useTranslation()
   const [activeCredit, setActiveCredit] = useState(null)
+  const [overview, setOverview] = useState(null)
   const [history, setHistory] = useState([])
   const [notifications, setNotifications] = useState([])
   const [loading, setLoading] = useState(true)
@@ -46,14 +48,16 @@ export default function CreditPage() {
     setLoading(true)
     setError('')
     try {
-      const [active, all, notifs] = await Promise.all([
+      const [active, all, notifs, ovw] = await Promise.all([
         creditApi.getActiveCredit(),
         creditApi.getCredits(),
         creditApi.getNotifications(),
+        creditApi.getOverview().catch(() => null),
       ])
       setActiveCredit(active)
       setHistory(Array.isArray(all) ? all : [])
       setNotifications(Array.isArray(notifs) ? notifs : [])
+      setOverview(ovw || null)
     } catch (err) {
       setError(err?.response?.data?.message || err.message || 'Failed to load credit data')
     } finally {
@@ -140,6 +144,24 @@ export default function CreditPage() {
                 <div>
                   <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Credit Limit</div>
                   <div style={{ fontWeight: 600 }}>{fmtNum(activeCredit.creditLimit)} IRR</div>
+                </div>
+              )}
+              {(overview?.usedCredit != null || overview?.availableCredit != null) && (
+                <>
+                  <div>
+                    <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Used Credit</div>
+                    <div style={{ fontWeight: 600, color: 'var(--gold)' }}>{fmtNum(overview.usedCredit)} IRR</div>
+                  </div>
+                  <div>
+                    <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Available Credit</div>
+                    <div style={{ fontWeight: 600 }}>{fmtNum(overview.availableCredit)} IRR</div>
+                  </div>
+                </>
+              )}
+              {overview?.currentCollateralValue != null && (
+                <div>
+                  <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Collateral Value</div>
+                  <div style={{ fontWeight: 600 }}>{fmtNum(overview.currentCollateralValue)} IRR</div>
                 </div>
               )}
               {activeCredit.drawdownPercent != null && (
@@ -255,6 +277,7 @@ export default function CreditPage() {
                         <td>
                           <span className={`badge ${
                             c.status === 'ACTIVE' ? 'badge-success' :
+                            c.status === 'SUSPENDED' ? 'badge-danger' :
                             c.status === 'SETTLED' ? 'badge-info' :
                             c.status === 'EXPIRED' ? 'badge-danger' :
                             c.status === 'CANCELLED' ? 'badge-secondary' :
@@ -325,14 +348,40 @@ function CreditRequestForm({ onCreated }) {
   const [leverage, setLeverage] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
+  const [maxLeverage, setMaxLeverage] = useState(10)
+  const [maxAmount, setMaxAmount] = useState(0)
+  const [creditBaseSymbolId, setCreditBaseSymbolId] = useState(null)
+  const [pairs, setPairs] = useState([])
 
   useEffect(() => {
+    (async () => {
+      try {
+        const [level, features] = await Promise.all([levelApi.getMyLevel(), levelApi.getMyFeatures()])
+        if (level?.creditMaxLeverage != null) setMaxLeverage(Number(level.creditMaxLeverage))
+        if (level?.creditBaseSymbolId) setCreditBaseSymbolId(level.creditBaseSymbolId)
+        const maxAmt = features?.CREDIT_MAX_AMOUNT
+        const ma = typeof maxAmt === 'object' ? Number(maxAmt?.amount) : Number(maxAmt)
+        if (ma > 0) setMaxAmount(ma)
+      } catch (_) {}
+    })()
     walletApi.getWallets().then((w) => {
       const depositWallets = (w || []).filter((x) => !x.walletType || x.walletType === 'DEPOSIT')
       setWallets(depositWallets)
       if (depositWallets.length > 0) setSelectedWallet(depositWallets[0].id)
     }).catch(() => {})
+    marketApi.getPairs().then((p) => setPairs(Array.isArray(p) ? p : [])).catch(() => {})
   }, [])
+
+  const selectedSymId = wallets.find((w) => w.id === selectedWallet)?.symbol?.id
+  const isBaseSymbol = selectedSymId === creditBaseSymbolId
+  const pair = pairs.find(
+    (p) => p.baseSymbol?.id === selectedSymId && p.quoteSymbol?.id === creditBaseSymbolId
+  )
+  const unitPrice = isBaseSymbol ? 1 : Number(pair?.bestSellGramPrice || pair?.bestSellPrice || 0)
+  const lev = Number(leverage) || 0
+  const amt = Number(amount) || 0
+  const projectedCredit = unitPrice > 0 ? amt * unitPrice * lev : 0
+  const maxed = maxAmount > 0 && projectedCredit > maxAmount
 
   const handleSubmit = async (e) => {
     e.preventDefault()
@@ -340,13 +389,17 @@ function CreditRequestForm({ onCreated }) {
       setError('Please fill all fields')
       return
     }
+    if (maxed) {
+      setError(`Projected credit would exceed your level max of ${maxAmount.toLocaleString('en-US')}`)
+      return
+    }
     setLoading(true)
     setError('')
     try {
       await creditApi.requestCredit({
         depositWalletId: selectedWallet,
-        amount: Number(amount),
-        leverage: Number(leverage),
+        amount: amt,
+        leverage: lev,
       })
       onCreated()
     } catch (err) {
@@ -389,18 +442,46 @@ function CreditRequestForm({ onCreated }) {
           />
         </div>
         <div>
-          <label style={{ fontSize: '0.85rem', fontWeight: 500, marginBottom: 4, display: 'block' }}>Leverage</label>
+          <label style={{ fontSize: '0.85rem', fontWeight: 500, marginBottom: 4, display: 'block' }}>
+            Leverage: {lev ? `${lev}x` : '—'} (max {maxLeverage}x)
+          </label>
           <input
             className="input"
-            type="number"
+            type="range"
             min="1"
+            max={maxLeverage || 10}
             step="0.1"
-            value={leverage}
+            value={leverage || 1}
             onChange={(e) => setLeverage(e.target.value)}
-            placeholder="e.g. 10"
+            style={{ width: '100%' }}
           />
         </div>
-        <Button type="submit" disabled={loading}>
+
+        {unitPrice > 0 && amt > 0 && lev > 0 && (
+          <div style={{ background: 'var(--bg)', padding: '0.75rem', borderRadius: 8, fontSize: '0.85rem' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
+              <span style={{ color: 'var(--text-muted)' }}>Collateral value</span>
+              <span className="mono">{fmtNum(amt * unitPrice)} IRR</span>
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
+              <span style={{ color: 'var(--text-muted)' }}>Projected credit limit</span>
+              <span style={{ color: maxed ? 'var(--danger)' : 'var(--gold)', fontWeight: 600 }} className="mono">
+                {fmtNum(projectedCredit)} IRR
+              </span>
+            </div>
+            {maxAmount > 0 && (
+              <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                <span style={{ color: 'var(--text-muted)' }}>Level max</span>
+                <span className="mono">{fmtNum(maxAmount)} IRR</span>
+              </div>
+            )}
+            <div style={{ marginTop: 6, fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+              The credit line is issued when you place your first order, at the live market price.
+            </div>
+          </div>
+        )}
+
+        <Button type="submit" disabled={loading || maxed}>
           {loading ? <Spinner size={16} /> : null}
           {loading ? 'Creating...' : 'Request Credit'}
         </Button>

@@ -31,6 +31,12 @@ export class CreditUserController {
     return { data: credit };
   }
 
+  @Get("overview")
+  @ApiOperation({ summary: "Get user's active credit overview (used/available, collateral, states)" })
+  async getOverview(@Req() req: any) {
+    return { data: await this.creditService.getCreditOverview(req.user.id) };
+  }
+
   @Get()
   @ApiOperation({ summary: "Get user's credit history" })
   async getCredits(@Req() req: any) {

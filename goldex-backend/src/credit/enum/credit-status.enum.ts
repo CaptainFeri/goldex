@@ -1,6 +1,7 @@
 export enum CreditStatusEnum {
   PENDING = "PENDING",
   ACTIVE = "ACTIVE",
+  SUSPENDED = "SUSPENDED",
   SETTLED = "SETTLED",
   EXPIRED = "EXPIRED",
   CANCELLED = "CANCELLED",

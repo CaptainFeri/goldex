@@ -304,7 +304,7 @@ export interface DiscountList {
 }
 
 // ---- Credit ----
-export type CreditStatus = "PENDING" | "ACTIVE" | "SETTLED" | "EXPIRED" | "CANCELLED";
+export type CreditStatus = "PENDING" | "ACTIVE" | "SUSPENDED" | "SETTLED" | "EXPIRED" | "CANCELLED";
 export type SettlementState = "GREEN" | "YELLOW" | "RED" | "ADMIN_REVIEW" | "AUTO_LIQUIDATION" | "SETTLED";
 export type RiskState = "NORMAL" | "WARNING" | "MARGIN_CALL" | "REDUCING" | "LIQUIDATING" | "LIQUIDATED" | "SETTLED" | "DEFAULT";
 
@@ -342,6 +342,7 @@ export interface Credit {
   leverage?: number | null;
   creditLimit?: number;
   usedCredit?: number;
+  availableCredit?: number;
   collateralSymbolId?: string | null;
   collateralAmount?: number;
   initialCollateralValue?: number;

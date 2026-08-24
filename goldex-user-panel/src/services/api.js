@@ -179,6 +179,9 @@ export const creditApi = {
   getActiveCredit: async () =>
     unwrap(await http.get('/credits/active')),
 
+  getOverview: async () =>
+    unwrap(await http.get('/credits/overview')),
+
   getCredits: async () =>
     unwrap(await http.get('/credits')),
 
