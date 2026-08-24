@@ -7,6 +7,9 @@ import {
   RabbitMQMessage,
 } from '../interfaces/rabbitmq.interfaces';
 import { OrderEntity } from '../../order/order.entity';
+import { CreditEntity } from '../../credit/entity/credit.entity';
+import { CreditOrderEntity } from '../../credit/entity/credit-order.entity';
+import { CreditOrderStatusEnum } from '../../credit/enum/credit-order-status.enum';
 import { WalletOrderService } from '../../wallet/services/wallet-order.service';
 import { OrderStatusEnum } from '../../order/enum/order.status.enum';
 
@@ -46,6 +49,10 @@ export class OrderStatusConsumer implements OnModuleInit {
     private readonly walletOrderService: WalletOrderService,
     @InjectRepository(OrderEntity)
     private readonly orderRepo: Repository<OrderEntity>,
+    @InjectRepository(CreditOrderEntity)
+    private readonly creditOrderRepo: Repository<CreditOrderEntity>,
+    @InjectRepository(CreditEntity)
+    private readonly creditRepo: Repository<CreditEntity>,
   ) {}
 
   async onModuleInit() {
@@ -120,13 +127,41 @@ export class OrderStatusConsumer implements OnModuleInit {
 
       if (isConfirmed) {
         await this.walletOrderService.confirmOrderExecution(order, order.pricePair);
+        // A confirmed credit order is a completed hop — only completed orders
+        // count toward the execution/hops limits.
+        if (order.isCreditLinked) {
+          await this.markCreditOrder(order, CreditOrderStatusEnum.COMPLETED);
+        }
         this.logger.log(`Order ${order.orderCode} confirmed, wallets updated`);
       } else if (isFailed) {
         await this.walletOrderService.rejectOrder(order, order.pricePair);
+        // A failed order never completes — release its credit link.
+        if (order.isCreditLinked) {
+          await this.markCreditOrder(order, CreditOrderStatusEnum.CANCELLED);
+        }
         this.logger.log(`Order ${order.orderCode} failed, balance unlocked`);
       }
     } catch (err) {
       this.logger.error(`ORDER_STATUS_CHANGED handler failed: ${(err as Error).message}`);
+    }
+  }
+
+  private async markCreditOrder(
+    order: OrderEntity,
+    status: CreditOrderStatusEnum,
+  ): Promise<void> {
+    const creditOrder = await this.creditOrderRepo.findOne({
+      where: { orderId: order.id, status: CreditOrderStatusEnum.ACTIVE },
+    });
+    if (!creditOrder) return;
+    creditOrder.status = status;
+    await this.creditOrderRepo.save(creditOrder);
+    if (status === CreditOrderStatusEnum.COMPLETED) {
+      await this.creditRepo.increment(
+        { id: creditOrder.creditId },
+        'executedTradeLevel',
+        1,
+      );
     }
   }
 }

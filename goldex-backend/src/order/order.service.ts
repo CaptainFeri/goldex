@@ -195,11 +195,13 @@ export class OrderService {
             throw new BadRequestException("CREDIT_MAX_PARALLEL_REQUESTS_REACHED");
           }
         }
-        // Credit v2: execution-level (hops) cap from the facility snapshot.
+        // Credit v2: execution-level (hops) cap from the facility snapshot. A
+        // hop is a COMPLETED credit trade, so rejected/cancelled orders do not
+        // consume capacity.
         const maxHops = activeCredit.metadata?.maxExecutionLevel;
-        if (maxHops != null && activeCredit.usedCredit > 0) {
+        if (maxHops != null) {
           const hops = await this.creditOrderRepo.count({
-            where: { creditId: activeCredit.id, status: CreditOrderStatusEnum.ACTIVE },
+            where: { creditId: activeCredit.id, status: CreditOrderStatusEnum.COMPLETED },
           });
           if (hops + 1 > maxHops) {
             throw new BadRequestException("CREDIT_MAX_EXECUTION_LEVEL_REACHED");
@@ -392,12 +394,6 @@ export class OrderService {
             drawdownPercent: activeCredit.callMarginPercent,
           });
           await this.creditOrderRepo.save(creditOrder);
-
-          if (activeCredit.maxExecutionTradeLevel != null) {
-            await this.creditRepo.update(activeCredit.id, {
-              executedTradeLevel: activeCredit.executedTradeLevel + 1,
-            });
-          }
         }
 
         if (dto.orderType === OrderTypeEnum.LIMIT) {
@@ -435,6 +431,19 @@ export class OrderService {
       } catch (err) {
         savedOrder.status = OrderStatusEnum.REJECTED;
         await this.orderRepository.save(savedOrder);
+
+        // A rejected order never completes, so release its credit link — it
+        // must not count against the execution/hops limits.
+        if (savedOrder.isCreditLinked) {
+          const creditOrder = await this.creditOrderRepo.findOne({
+            where: { orderId: savedOrder.id, status: CreditOrderStatusEnum.ACTIVE },
+          });
+          if (creditOrder) {
+            creditOrder.status = CreditOrderStatusEnum.CANCELLED;
+            await this.creditOrderRepo.save(creditOrder);
+          }
+        }
+
         this.eventEmitter.emit(OrderEvents.REJECTED, {
           userId: savedOrder.userId,
           orderId: savedOrder.id,
@@ -734,6 +743,14 @@ export class OrderService {
             ? CreditOrderStatusEnum.COMPLETED
             : CreditOrderStatusEnum.CANCELLED;
           await this.creditOrderRepo.save(creditOrder);
+          // A completed credit trade is one "hop" — only completed orders count.
+          if (order.status === OrderStatusEnum.COMPLETED) {
+            await this.creditRepo.increment(
+              { id: creditOrder.creditId },
+              "executedTradeLevel",
+              1,
+            );
+          }
         }
       }
 

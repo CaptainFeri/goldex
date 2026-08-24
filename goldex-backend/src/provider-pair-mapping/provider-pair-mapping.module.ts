@@ -4,6 +4,8 @@ import { ProviderPairMappingEntity } from "./entity/provider-pair-mapping.entity
 import { PricePairEntity } from "../admin-pair/entity/price.pair.entity";
 import { PricePairHistoryEntity } from "../admin-pair/entity/price-pair-history.entity";
 import { OrderEntity } from "../order/order.entity";
+import { CreditEntity } from "../credit/entity/credit.entity";
+import { CreditOrderEntity } from "../credit/entity/credit-order.entity";
 import { ProviderPairMappingService } from "./provider-pair-mapping.service";
 import { ProviderPairMappingController } from "./provider-pair-mapping.controller";
 import { PairPriceConsumer } from "../rabbitmq/consumers/pair-price.consumer";
@@ -15,7 +17,7 @@ import { OrderBookModule } from "../order-book/order-book.module";
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([ProviderPairMappingEntity, PricePairEntity, PricePairHistoryEntity, OrderEntity]),
+    TypeOrmModule.forFeature([ProviderPairMappingEntity, PricePairEntity, PricePairHistoryEntity, OrderEntity, CreditEntity, CreditOrderEntity]),
     RedisModule,
     WalletCoreModule,
     OrderBookModule,
