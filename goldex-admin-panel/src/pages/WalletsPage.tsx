@@ -35,6 +35,14 @@ const FREEZE_TYPES = [
   { value: "UNFREEZE_LOCKED", label: "رفع فریز فقط قفل‌شده" },
 ];
 
+const WALLET_TYPE_META: Record<string, { label: string; kind: "gold" | "gray" | "green" | "red" }> = {
+  DEPOSIT: { label: "Debit (واریز)", kind: "green" },
+  CREDIT: { label: "Credit (اعتباری)", kind: "gold" },
+  COLLATERAL: { label: "Collateral (وثیقه)", kind: "gray" },
+};
+const walletTypeMeta = (w: any) =>
+  WALLET_TYPE_META[w.walletType] ?? { label: w.walletType || "—", kind: "gray" as const };
+
 function AdjustModal({ wallet, onClose }: { wallet: any; onClose: () => void }) {
   const qc = useQueryClient();
   const [adjustType, setAdjustType] = useState("INCREASE_FREE");
@@ -329,6 +337,7 @@ export default function WalletsPage() {
             <thead>
               <tr>
                 <th>کاربر</th>
+                <th>نوع</th>
                 <th>دارایی</th>
                 <th>قابل برداشت</th>
                 <th>مسدود شده</th>
@@ -340,10 +349,14 @@ export default function WalletsPage() {
             <tbody>
               {wallets.map((w) => {
                 const frozen = isFrozen(w);
+                const wt = walletTypeMeta(w);
                 return (
                   <tr key={w.id}>
                     <td title={w.id}>
                       {w.user ? `${w.user.firstName ?? ""} ${w.user.lastName ?? ""}`.trim() || short(w.userId) : short(w.userId)}
+                    </td>
+                    <td>
+                      <Badge kind={wt.kind}>{wt.label}</Badge>
                     </td>
                     <td>
                       <Badge kind="gold">{symbolLabel(w.symbol)}</Badge>
