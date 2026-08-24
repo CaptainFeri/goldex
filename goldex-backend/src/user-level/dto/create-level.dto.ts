@@ -94,4 +94,9 @@ export class CreateLevelDto {
   @Type(() => Number)
   @ApiProperty({ required: false })
   creditMaxExecutionLevel?: number;
+
+  @IsOptional()
+  @IsBoolean()
+  @ApiProperty({ required: false, default: true, description: "Whether KYC approval is required to open a self-service credit on this level" })
+  creditRequireKyc?: boolean;
 }

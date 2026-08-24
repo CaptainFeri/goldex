@@ -432,16 +432,20 @@ export class CreditService {
         throw new BadRequestException("Credit trading is not enabled for this user's level");
       }
 
-      // KYC must be approved before a user can open a self-service facility.
-      const kyc = await manager.findOne(UserKycEntity, { where: { userId } });
-      if (!kyc || kyc.status !== KycStatusEnum.APPROVED) {
-        throw new BadRequestException("KYC approval is required to open a credit facility");
-      }
-
       const level = await this.userLevelService.getUserLevel(userId);
       if (!level?.creditBaseSymbolId) {
         throw new BadRequestException("Your level has no credit facility configured");
       }
+
+      // KYC is required only if the user's level is configured to require it.
+      const requireKyc = level.creditRequireKyc !== false;
+      if (requireKyc) {
+        const kyc = await manager.findOne(UserKycEntity, { where: { userId } });
+        if (!kyc || kyc.status !== KycStatusEnum.APPROVED) {
+          throw new BadRequestException("KYC approval is required to open a credit facility");
+        }
+      }
+
       if (level.creditMaxLeverage == null || dto.leverage > Number(level.creditMaxLeverage)) {
         throw new BadRequestException(
           `Leverage exceeds your level maximum (${level.creditMaxLeverage ?? "unavailable"})`,

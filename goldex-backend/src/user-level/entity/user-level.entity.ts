@@ -70,6 +70,11 @@ export class UserLevelEntity extends myBaseEntity {
   @Column({ type: "int", nullable: true, name: "credit_max_execution_level" })
   creditMaxExecutionLevel: number;
 
+  // When true, a user on this level must have an approved KYC before opening a
+  // self-service credit facility. When false, KYC is not required.
+  @Column({ type: "boolean", nullable: true, default: true, name: "credit_require_kyc" })
+  creditRequireKyc: boolean;
+
   @ManyToMany(() => PricePairEntity, (p) => p.levels)
   @JoinTable({
     name: "user_level_pairs",

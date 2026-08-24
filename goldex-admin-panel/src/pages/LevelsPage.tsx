@@ -211,6 +211,7 @@ function LevelFormModal({ title, initial, onClose, onSave, loading }: {
     creditEnforceRequestDeadline: initial?.creditEnforceRequestDeadline ?? true,
     creditMaxParallelRequests: initial?.creditMaxParallelRequests ?? "",
     creditMaxExecutionLevel: initial?.creditMaxExecutionLevel ?? "",
+    creditRequireKyc: initial?.creditRequireKyc !== false,
   });
   const [showFeatures, setShowFeatures] = useState(false);
   const [showPairs, setShowPairs] = useState(false);
@@ -255,6 +256,7 @@ function LevelFormModal({ title, initial, onClose, onSave, loading }: {
     payload.creditEnforceRequestDeadline = form.creditEnforceRequestDeadline;
     if (form.creditMaxParallelRequests) payload.creditMaxParallelRequests = +form.creditMaxParallelRequests;
     if (form.creditMaxExecutionLevel) payload.creditMaxExecutionLevel = +form.creditMaxExecutionLevel;
+    payload.creditRequireKyc = form.creditRequireKyc;
     onSave(payload);
   };
 
@@ -380,6 +382,12 @@ function LevelFormModal({ title, initial, onClose, onSave, loading }: {
                 <label className="checkbox-label">
                   <input type="checkbox" checked={form.creditEnforceRequestDeadline} onChange={(e) => setForm({ ...form, creditEnforceRequestDeadline: e.target.checked })} />
                   <span>بستن خودکار درخواست‌های منقضی‌شده</span>
+                </label>
+              </div>
+              <div className="field">
+                <label className="checkbox-label">
+                  <input type="checkbox" checked={form.creditRequireKyc} onChange={(e) => setForm({ ...form, creditRequireKyc: e.target.checked })} />
+                  <span>نیاز به تأیید KYC برای افتتاح اعتبار</span>
                 </label>
               </div>
             </div>
