@@ -570,26 +570,32 @@ export class CreditService {
       });
       await manager.save(freezeTxn);
 
-      // 2. Create facility without issuing credit yet - credit will be issued on first order
+      // 2. Create facility and ISSUE the credit immediately at creation.
+      //    Initial collateral value = frozen amount × current price
+      //    (e.g. 50g XAU × 10 IRR = 500 IRR) — the drawdown baseline.
       const creditCode = `CR-${Date.now().toString(36).toUpperCase()}-${crypto.randomUUID().slice(0, 4).toUpperCase()}`;
-      // Initial collateral value = frozen amount × current price (e.g. 50g XAU ×
-      // 10 IRR = 500 IRR). This is the drawdown baseline.
       const initialCollateralValue =
         depositWallet.symbolId === level.creditBaseSymbolId
           ? dto.amount
           : collateralPrice
             ? new Decimal(dto.amount).mul(collateralPrice).toNumber()
             : 0;
+      // Capacity: BUY = collateral value × leverage (IRR), SELL = frozen
+      // amount × leverage in the base symbol (e.g. XAU).
+      const collateralValue = new Decimal(dto.amount).mul(unitPrice);
+      const creditLimit = collateralValue.mul(dto.leverage || 1);
+      const sellCreditAmount = new Decimal(dto.amount).mul(dto.leverage || 1);
+
       const credit = manager.create(CreditEntity, {
         userId,
         adminId: null,
         creditCode,
-        amount: 0, // Will be calculated on first order
+        amount: creditLimit.toNumber(),
         status: CreditStatusEnum.ACTIVE,
         expireAt,
         activatedAt: new Date(),
         leverage: dto.leverage,
-        creditLimit: 0, // Will be calculated on first order
+        creditLimit: creditLimit.toNumber(),
         usedCredit: 0,
         collateralSymbolId: depositWallet.symbolId,
         collateralAmount: dto.amount,
@@ -612,11 +618,99 @@ export class CreditService {
       });
       const savedCredit = await manager.save(credit);
 
+      // ── Issue the CREDIT wallets (BUY = IRR creditLimit, SELL = base capacity) ──
+      let creditWallet = await manager.findOne(WalletEntity, {
+        where: { userId, symbolId: level.creditBaseSymbolId, walletType: WalletTypeEnum.CREDIT },
+        lock: { mode: "pessimistic_write" },
+      });
+      if (!creditWallet) {
+        creditWallet = manager.create(WalletEntity, {
+          userId,
+          symbolId: level.creditBaseSymbolId,
+          walletType: WalletTypeEnum.CREDIT,
+          status: WalletStatusEnum.ACTIVE,
+          freeBalance: 0,
+          lockedBalance: 0,
+          availableBalance: 0,
+          creditBalance: 0,
+          frozenFreeBalance: 0,
+          frozenLockedBalance: 0,
+        });
+      }
+      creditWallet.creditBalance = new Decimal(creditWallet.creditBalance || 0).plus(creditLimit).toNumber();
+      creditWallet.freeBalance = new Decimal(creditWallet.availableBalance || 0).plus(creditWallet.creditBalance).toNumber();
+      const savedCreditWallet = await manager.save(creditWallet);
+      await manager.save(
+        manager.create(TransactionEntity, {
+          walletId: savedCreditWallet.id,
+          transactionId: crypto.randomUUID(),
+          transactionType: TransactionTypeEnum.CREDIT_DEPOSIT,
+          status: TransactionStatusEnum.COMPLETED,
+          amount: creditLimit.toNumber(),
+          fee: 0,
+          description: `Credit line issued on credit creation`,
+          metadata: { creditId: credit.id, leverage: credit.leverage, collateralPrice: unitPrice },
+          completedAt: new Date(),
+        }),
+      );
+
+      let sellCreditWalletId: string | null = null;
+      if (sellCreditAmount.greaterThan(0)) {
+        let baseCreditWallet = await manager.findOne(WalletEntity, {
+          where: { userId, symbolId: credit.collateralSymbolId, walletType: WalletTypeEnum.CREDIT },
+          lock: { mode: "pessimistic_write" },
+        });
+        if (!baseCreditWallet) {
+          baseCreditWallet = manager.create(WalletEntity, {
+            userId,
+            symbolId: credit.collateralSymbolId,
+            walletType: WalletTypeEnum.CREDIT,
+            status: WalletStatusEnum.ACTIVE,
+            freeBalance: 0,
+            lockedBalance: 0,
+            availableBalance: 0,
+            creditBalance: 0,
+            frozenFreeBalance: 0,
+            frozenLockedBalance: 0,
+          });
+        }
+        baseCreditWallet.creditBalance = new Decimal(baseCreditWallet.creditBalance || 0).plus(sellCreditAmount).toNumber();
+        baseCreditWallet.freeBalance = new Decimal(baseCreditWallet.availableBalance || 0).plus(baseCreditWallet.creditBalance).toNumber();
+        const savedBaseWallet = await manager.save(baseCreditWallet);
+        sellCreditWalletId = savedBaseWallet.id;
+        await manager.save(
+          manager.create(TransactionEntity, {
+            walletId: savedBaseWallet.id,
+            transactionId: crypto.randomUUID(),
+            transactionType: TransactionTypeEnum.CREDIT_DEPOSIT,
+            status: TransactionStatusEnum.COMPLETED,
+            amount: sellCreditAmount.toNumber(),
+            fee: 0,
+            description: `Credit sell capacity issued on credit creation`,
+            metadata: { creditId: credit.id, leverage: credit.leverage, symbolId: credit.collateralSymbolId },
+            completedAt: new Date(),
+          }),
+        );
+      }
+
+      savedCredit.metadata = {
+        ...(savedCredit.metadata || {}),
+        creditWalletId: savedCreditWallet.id,
+        sellCreditWalletId,
+        sellCreditAmount: sellCreditAmount.toNumber(),
+        sellCreditSymbolId: credit.collateralSymbolId,
+        creditCalculatedAt: new Date().toISOString(),
+        collateralPriceAtCalculation: unitPrice,
+      };
+      await manager.save(savedCredit);
+
       const notification = manager.create(CreditNotificationEntity, {
         userId: savedCredit.userId,
         creditId: savedCredit.id,
         type: CreditNotificationTypeEnum.SETTLEMENT,
-        message: `Credit ${savedCredit.creditCode} opened with leverage ${dto.leverage}x. Credit amount will be calculated when you place your first order.`,
+        message:
+          `Credit ${savedCredit.creditCode} opened with leverage ${dto.leverage}x. ` +
+          `Credit limit ${creditLimit.toFixed(0)} ${level.creditBaseSymbolId}.`,
         isRead: false,
       });
       await manager.save(notification);

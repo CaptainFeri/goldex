@@ -494,7 +494,7 @@ function CreditRequestForm({ onCreated }) {
               </div>
             )}
             <div style={{ marginTop: 6, fontSize: '0.75rem', color: 'var(--text-muted)' }}>
-              The credit line is issued when you place your first order, at the live market price.
+              The credit line is issued immediately at creation, based on the current market price.
             </div>
           </div>
         )}
