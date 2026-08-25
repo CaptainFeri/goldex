@@ -561,6 +561,10 @@ export default function WalletPage() {
                 <div className="wallet-grid animate-fade-up">
                   {wallets.filter(w => w.walletType === 'CREDIT').map((w) => {
                     const sym = w.symbol?.slug || w.symbol?.name || '—'
+                    const avail = Number(w.freeBalance) || 0
+                    const locked = Number(w.lockedBalance) || 0
+                    const cap = Number(w.creditBalance) || 0
+                    const used = Math.max(0, cap - avail - locked)
                     return (
                       <div key={w.id} className="wallet-card" style={{ borderColor: 'var(--gold)', borderWidth: '2px' }}>
                         <div className="wallet-card-head">
@@ -570,9 +574,11 @@ export default function WalletPage() {
                             <div className="wallet-sym-sub" style={{ color: 'var(--gold)', fontSize: '0.7rem', fontWeight: 600 }}>CREDIT</div>
                           </div>
                         </div>
-                        <div className="wallet-total" style={{ color: 'var(--gold)' }}>{fmt(w.creditBalance || w.totalBalance)}</div>
-                        <div className="wallet-bal-row"><span className="k">Credit Available</span><span className="v" style={{ color: 'var(--gold)' }}>{fmt(w.creditBalance || 0)}</span></div>
-                        <div className="wallet-bal-row"><span className="k">Used</span><span className="v">{fmt(w.lockedBalance)}</span></div>
+                        <div className="wallet-total" style={{ color: 'var(--gold)' }}>{fmt(cap || 0)}</div>
+                        <div className="wallet-bal-row"><span className="k">Credit Limit</span><span className="v" style={{ color: 'var(--gold)' }}>{fmt(cap || 0)}</span></div>
+                        <div className="wallet-bal-row"><span className="k">Available</span><span className="v" style={{ color: 'var(--gold)' }}>{fmt(avail)}</span></div>
+                        <div className="wallet-bal-row"><span className="k">Used</span><span className="v">{fmt(used)}</span></div>
+                        {locked > 0 && <div className="wallet-bal-row"><span className="k">Locked (pending)</span><span className="v">{fmt(locked)}</span></div>}
                         {w.status && w.status !== 'ACTIVE' && (
                           <div style={{ marginTop: '0.6rem' }}>
                             <span className="badge badge-danger">{w.status}</span>
