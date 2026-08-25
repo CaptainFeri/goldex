@@ -99,4 +99,27 @@ export class CreateLevelDto {
   @IsBoolean()
   @ApiProperty({ required: false, default: true, description: "Whether KYC approval is required to open a self-service credit on this level" })
   creditRequireKyc?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
+  @ApiProperty({ required: false, default: true, description: "Whether credit trading is allowed on this level" })
+  creditTradingEnabled?: boolean;
+
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  @Type(() => Number)
+  @ApiProperty({ required: false, description: "Max credit amount (0 = unlimited)" })
+  creditMaxAmount?: number;
+
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  @Type(() => Number)
+  @ApiProperty({ required: false, description: "Max credit duration in days (0 = no expiry)" })
+  creditMaxDurationDays?: number;
+
+  @IsOptional()
+  @ApiProperty({ required: false, type: Object, description: "Per-pair credit configs keyed by price pair id" })
+  creditConfigs?: Record<string, any>;
 }

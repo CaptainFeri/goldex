@@ -13,8 +13,6 @@ const FEATURE_LABELS: Record<string, string> = {
   TRADING_MAX_OPEN_ORDERS: "حداکثر سفارش‌های باز",
   WALLET_WITHDRAWAL_DAILY_LIMIT: "محدودیت روزانه برداشت",
   WALLET_WITHDRAWAL_PER_TX_LIMIT: "محدودیت هر تراکنش برداشت",
-  CREDIT_MAX_AMOUNT: "حداکثر مبلغ اعتبار",
-  CREDIT_MAX_DURATION_DAYS: "حداکثر مدت اعتبار (روز)",
   TELEGRAM_BOT_ENABLED: "ربات تلگرام",
   API_ACCESS_ENABLED: "دسترسی API",
   ELITE_TRADE_ENABLED: "معاملات نخبگان",
@@ -160,8 +158,6 @@ const FEATURE_TYPE: Record<string, "boolean" | "numeric" | "limit"> = {
   TRADING_MAX_OPEN_ORDERS: "numeric",
   WALLET_WITHDRAWAL_DAILY_LIMIT: "limit",
   WALLET_WITHDRAWAL_PER_TX_LIMIT: "limit",
-  CREDIT_MAX_AMOUNT: "limit",
-  CREDIT_MAX_DURATION_DAYS: "numeric",
   TELEGRAM_BOT_ENABLED: "boolean",
   API_ACCESS_ENABLED: "boolean",
   ELITE_TRADE_ENABLED: "boolean",
@@ -212,6 +208,10 @@ function LevelFormModal({ title, initial, onClose, onSave, loading }: {
     creditMaxParallelRequests: initial?.creditMaxParallelRequests ?? "",
     creditMaxExecutionLevel: initial?.creditMaxExecutionLevel ?? "",
     creditRequireKyc: initial?.creditRequireKyc !== false,
+    creditTradingEnabled: initial?.creditTradingEnabled ?? true,
+    creditMaxAmount: initial?.creditMaxAmount ?? "",
+    creditMaxDurationDays: initial?.creditMaxDurationDays ?? "",
+    creditConfigs: initial?.creditConfigs ?? {},
   });
   const [showFeatures, setShowFeatures] = useState(false);
   const [showPairs, setShowPairs] = useState(false);
@@ -227,14 +227,57 @@ function LevelFormModal({ title, initial, onClose, onSave, loading }: {
     setForm((f) => ({ ...f, features: { ...f.features, [key]: { ...f.features[key], ...patch } } }));
   };
 
+  const defaultPairCredit = (pair: any): any => ({
+    creditBaseSymbolId: pair?.quoteSymbol?.id ?? "",
+    creditMaxLeverage: form.creditMaxLeverage,
+    creditDrawdownPercent: form.creditDrawdownPercent,
+    creditEnforceOnDrawdown: form.creditEnforceOnDrawdown,
+    creditEnforceOnExpiry: form.creditEnforceOnExpiry,
+    creditEnforceRequestDeadline: form.creditEnforceRequestDeadline,
+    creditMaxParallelRequests: form.creditMaxParallelRequests,
+    creditMaxExecutionLevel: form.creditMaxExecutionLevel,
+    creditRequireKyc: form.creditRequireKyc,
+    creditTradingEnabled: form.creditTradingEnabled,
+    creditMaxAmount: form.creditMaxAmount,
+    creditMaxDurationDays: form.creditMaxDurationDays,
+  });
+
   const togglePair = (id: string) => {
-    setForm((f) => ({
-      ...f,
-      pairs: f.pairs.includes(id) ? f.pairs.filter((x: string) => x !== id) : [...f.pairs, id],
-    }));
+    setForm((f) => {
+      const inList = f.pairs.includes(id)
+      const pairs = inList ? f.pairs.filter((x: string) => x !== id) : [...f.pairs, id]
+      const creditConfigs = { ...f.creditConfigs }
+      if (inList) {
+        delete creditConfigs[id]
+      } else {
+        const pair = (pairsQuery.data ?? []).find((p: any) => p.id === id)
+        if (pair && !creditConfigs[id]) creditConfigs[id] = defaultPairCredit(pair)
+      }
+      return { ...f, pairs, creditConfigs }
+    })
   };
 
-  const setPairs = (ids: string[]) => setForm((f) => ({ ...f, pairs: ids }));
+  const setPairs = (ids: string[]) => setForm((f) => {
+    const creditConfigs = { ...f.creditConfigs }
+    for (const id of f.pairs) if (!ids.includes(id)) delete creditConfigs[id]
+    for (const id of ids) {
+      if (!creditConfigs[id]) {
+        const pair = (pairsQuery.data ?? []).find((p: any) => p.id === id)
+        if (pair) creditConfigs[id] = defaultPairCredit(pair)
+      }
+    }
+    return { ...f, pairs: ids, creditConfigs }
+  });
+
+  const setPairCredit = (pairId: string, patch: any) => {
+    setForm((f) => ({
+      ...f,
+      creditConfigs: {
+        ...f.creditConfigs,
+        [pairId]: { ...(f.creditConfigs[pairId] || {}), ...patch },
+      },
+    }));
+  };
 
   const handle = () => {
     if (!form.name.trim() || !form.slug.trim()) { setErr("نام و Slug الزامی هستند"); return; }
@@ -257,6 +300,15 @@ function LevelFormModal({ title, initial, onClose, onSave, loading }: {
     if (form.creditMaxParallelRequests) payload.creditMaxParallelRequests = +form.creditMaxParallelRequests;
     if (form.creditMaxExecutionLevel) payload.creditMaxExecutionLevel = +form.creditMaxExecutionLevel;
     payload.creditRequireKyc = form.creditRequireKyc;
+    payload.creditTradingEnabled = form.creditTradingEnabled;
+    if (form.creditMaxAmount !== "") payload.creditMaxAmount = +form.creditMaxAmount;
+    if (form.creditMaxDurationDays !== "") payload.creditMaxDurationDays = +form.creditMaxDurationDays;
+    // Clean the per-pair credit configs to only reference selected pairs.
+    const creditConfigs: Record<string, any> = {};
+    for (const id of form.pairs) {
+      if (form.creditConfigs[id]) creditConfigs[id] = form.creditConfigs[id];
+    }
+    payload.creditConfigs = creditConfigs;
     onSave(payload);
   };
 
@@ -338,58 +390,49 @@ function LevelFormModal({ title, initial, onClose, onSave, loading }: {
           </div>
 
           {showCredit && (
-            <div style={{ gridColumn: "1 / -1", display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, padding: 10, border: "1px solid var(--line)", borderRadius: 8 }}>
-              <div className="field">
-                <label>نماد پایه اعتبار (Credit Currency)</label>
-                <select className="select" value={form.creditBaseSymbolId} onChange={(e) => setForm({ ...form, creditBaseSymbolId: e.target.value })}>
-                  <option value="">انتخاب نشده</option>
-                  {(pairsQuery.data ?? []).filter((p: any) => p.quoteSymbol?.slug === "IRR").map((p: any) => (
-                    <option key={p.quoteSymbol?.id} value={p.quoteSymbol?.id}>{p.quoteSymbol?.name} ({p.quoteSymbol?.slug})</option>
-                  ))}
-                </select>
+            <div style={{ gridColumn: "1 / -1", display: "flex", flexDirection: "column", gap: 14, padding: 10, border: "1px solid var(--line)", borderRadius: 8 }}>
+              {/* Default (level-level) credit config — applies when no per-pair
+                  config exists for the traded pair. */}
+              <div style={{ fontSize: "0.85rem", fontWeight: 600, color: "var(--text-muted)" }}>
+                تنظیمات پیش‌فرض اعتبار (برای جفت‌های بدون تنظیم اختصاصی)
               </div>
-              <div className="field">
-                <label>حداکثر اهرم (Leverage)</label>
-                <input className="input mono" type="number" min={1} step={0.1} value={form.creditMaxLeverage} onChange={(e) => setForm({ ...form, creditMaxLeverage: e.target.value })} placeholder="مثال: 10" />
-              </div>
-              <div className="field">
-                <label>درصد درادون (Drawdown %)</label>
-                <input className="input mono" type="number" min={0} max={100} value={form.creditDrawdownPercent} onChange={(e) => setForm({ ...form, creditDrawdownPercent: e.target.value })} placeholder="مثال: 30" />
-              </div>
-              <div className="field">
-                <label>واکنش به درادون</label>
-                <select className="select" value={form.creditEnforceOnDrawdown} onChange={(e) => setForm({ ...form, creditEnforceOnDrawdown: e.target.value })}>
-                  <option value="ENFORCE">اجرا (بستن خودکار)</option>
-                  <option value="ALERT">هشدار</option>
-                </select>
-              </div>
-              <div className="field">
-                <label>واکنش به انقضای تسویه</label>
-                <select className="select" value={form.creditEnforceOnExpiry} onChange={(e) => setForm({ ...form, creditEnforceOnExpiry: e.target.value })}>
-                  <option value="ENFORCE">اجرا</option>
-                  <option value="ALERT">هشدار</option>
-                </select>
-              </div>
-              <div className="field">
-                <label>حداکثر درخواست‌های موازی</label>
-                <input className="input mono" type="number" min={1} value={form.creditMaxParallelRequests} onChange={(e) => setForm({ ...form, creditMaxParallelRequests: e.target.value })} placeholder="مثال: 5" />
-              </div>
-              <div className="field">
-                <label>حداکثر سطح اجرا (Hops)</label>
-                <input className="input mono" type="number" min={1} value={form.creditMaxExecutionLevel} onChange={(e) => setForm({ ...form, creditMaxExecutionLevel: e.target.value })} placeholder="مثال: 2" />
-              </div>
-              <div className="field">
-                <label className="checkbox-label">
-                  <input type="checkbox" checked={form.creditEnforceRequestDeadline} onChange={(e) => setForm({ ...form, creditEnforceRequestDeadline: e.target.checked })} />
-                  <span>بستن خودکار درخواست‌های منقضی‌شده</span>
-                </label>
-              </div>
-              <div className="field">
-                <label className="checkbox-label">
-                  <input type="checkbox" checked={form.creditRequireKyc} onChange={(e) => setForm({ ...form, creditRequireKyc: e.target.checked })} />
-                  <span>نیاز به تأیید KYC برای افتتاح اعتبار</span>
-                </label>
-              </div>
+              <CreditFields
+                value={form}
+                onChange={(patch: any) => setForm((f: any) => ({ ...f, ...patch }))}
+                currencySymbols={(() => {
+                  const selectedPairs = (pairsQuery.data ?? []).filter((p: any) => form.pairs.includes(p.id))
+                  return Array.from(
+                    new Map(selectedPairs.filter((p: any) => p.quoteSymbol).map((p: any) => [p.quoteSymbol.id, p.quoteSymbol])).values()
+                  )
+                })()}
+                currencyField="creditBaseSymbolId"
+              />
+
+              {form.pairs.length > 0 && (
+                <div style={{ fontSize: "0.85rem", fontWeight: 600, color: "var(--text-muted)", borderTop: "1px solid var(--line)", paddingTop: 12 }}>
+                  ساختار اعتبار به تفکیک جفت ({form.pairs.length} جفت)
+                </div>
+              )}
+
+              {(pairsQuery.data ?? [])
+                .filter((p: any) => form.pairs.includes(p.id))
+                .map((p: any) => {
+                  const cfg = form.creditConfigs[p.id] || {}
+                  return (
+                    <div key={p.id} style={{ border: "1px solid var(--gold)", borderRadius: 8, padding: 10, background: "rgba(212,175,55,0.05)" }}>
+                      <div style={{ fontSize: "0.8rem", fontWeight: 600, marginBottom: 8, color: "var(--gold)" }}>
+                        {pairLabel(p)} — پایه اعتبار: {p.quoteSymbol?.name} ({p.quoteSymbol?.slug})
+                      </div>
+                      <CreditFields
+                        value={cfg}
+                        onChange={(patch: any) => setPairCredit(p.id, patch)}
+                        currencySymbols={p.quoteSymbol ? [p.quoteSymbol] : []}
+                        currencyField="creditBaseSymbolId"
+                        fixedCurrency={p.quoteSymbol?.id}
+                      />
+                    </div>
+                  )
+                })}
             </div>
           )}
         </div>
@@ -401,6 +444,86 @@ function LevelFormModal({ title, initial, onClose, onSave, loading }: {
         </div>
       </form>
     </Modal>
+  );
+}
+
+function CreditFields({ value, onChange, currencySymbols, currencyField, fixedCurrency }: {
+  value: any; onChange: (patch: any) => void; currencySymbols: any[]; currencyField: string; fixedCurrency?: string;
+}) {
+  const v = value || {};
+  const num = (x: any) => (x === "" || x === undefined || x === null ? "" : x);
+  return (
+    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+      <div className="field">
+        <label>پایه اعتبار (Credit Currency)</label>
+        {fixedCurrency ? (
+          <input className="input" value={currencySymbols[0]?.name || "—"} disabled />
+        ) : (
+          <select className="select" value={v[currencyField] ?? ""} onChange={(e) => onChange({ [currencyField]: e.target.value })}>
+            <option value="">انتخاب نشده</option>
+            {currencySymbols.map((s) => (
+              <option key={s.id} value={s.id}>{s.name} ({s.slug})</option>
+            ))}
+          </select>
+        )}
+      </div>
+      <div className="field">
+        <label>حداکثر اهرم (Leverage)</label>
+        <input className="input mono" type="number" min={1} step={0.1} value={num(v.creditMaxLeverage)} onChange={(e) => onChange({ creditMaxLeverage: e.target.value })} placeholder="مثال: 10" />
+      </div>
+      <div className="field">
+        <label>درصد درادون (Drawdown %)</label>
+        <input className="input mono" type="number" min={0} max={100} value={num(v.creditDrawdownPercent)} onChange={(e) => onChange({ creditDrawdownPercent: e.target.value })} placeholder="مثال: 30" />
+      </div>
+      <div className="field">
+        <label>واکنش به درادون</label>
+        <select className="select" value={v.creditEnforceOnDrawdown ?? "ENFORCE"} onChange={(e) => onChange({ creditEnforceOnDrawdown: e.target.value })}>
+          <option value="ENFORCE">اجرا (بستن خودکار)</option>
+          <option value="ALERT">هشدار</option>
+        </select>
+      </div>
+      <div className="field">
+        <label>واکنش به انقضای تسویه</label>
+        <select className="select" value={v.creditEnforceOnExpiry ?? "ENFORCE"} onChange={(e) => onChange({ creditEnforceOnExpiry: e.target.value })}>
+          <option value="ENFORCE">اجرا</option>
+          <option value="ALERT">هشدار</option>
+        </select>
+      </div>
+      <div className="field">
+        <label>حداکثر درخواست‌های موازی</label>
+        <input className="input mono" type="number" min={1} value={num(v.creditMaxParallelRequests)} onChange={(e) => onChange({ creditMaxParallelRequests: e.target.value })} placeholder="مثال: 5" />
+      </div>
+      <div className="field">
+        <label>حداکثر سطح اجرا (Hops)</label>
+        <input className="input mono" type="number" min={1} value={num(v.creditMaxExecutionLevel)} onChange={(e) => onChange({ creditMaxExecutionLevel: e.target.value })} placeholder="مثال: 2" />
+      </div>
+      <div className="field">
+        <label>حداکثر مبلغ اعتبار (0 = نامحدود)</label>
+        <input className="input mono" type="number" min={0} value={num(v.creditMaxAmount)} onChange={(e) => onChange({ creditMaxAmount: e.target.value })} placeholder="0" />
+      </div>
+      <div className="field">
+        <label>حداکثر مدت اعتبار (روز) (0 = بدون انقضا)</label>
+        <input className="input mono" type="number" min={0} value={num(v.creditMaxDurationDays)} onChange={(e) => onChange({ creditMaxDurationDays: e.target.value })} placeholder="0" />
+      </div>
+      <div className="field">
+        <label className="checkbox-label">
+          <input type="checkbox" checked={v.creditTradingEnabled !== false} onChange={(e) => onChange({ creditTradingEnabled: e.target.checked })} />
+          <span>فعال بودن معاملات اعتباری</span>
+        </label>
+      </div>
+      <div className="field">
+        <label className="checkbox-label">
+          <input type="checkbox" checked={v.creditRequireKyc !== false} onChange={(e) => onChange({ creditRequireKyc: e.target.checked })} />
+          <span>نیاز به تأیید KYC برای افتتاح اعتبار</span>
+        </label>
+      </div>
+      <div className="field">
+        <label className="checkbox-label">
+          <input type="checkbox" checked={v.creditEnforceRequestDeadline !== false} onChange={(e) => onChange({ creditEnforceRequestDeadline: e.target.checked })} />
+          <span>بستن خودکار درخواست‌های منقضی‌شده</span>
+        </label>
+      </div>
+    </div>
   );
 }
 

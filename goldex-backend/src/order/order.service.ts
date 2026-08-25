@@ -157,8 +157,12 @@ export class OrderService {
         }
 
         // Credit trading must not be explicitly disabled by the user's level
-        // (absent => allowed, opt-out model).
-        const creditTradingValue = await this.userLevelService.getFeatureValue(userId, "CREDIT_TRADING_ENABLED");
+        // (absent => allowed, opt-out model). Per-pair config wins when present.
+        const pairCreditConfig = activeCredit.metadata?.creditConfigs?.[dto.pricePairId] || {};
+        const creditTradingValue =
+          pairCreditConfig.creditTradingEnabled !== undefined
+            ? pairCreditConfig.creditTradingEnabled
+            : await this.userLevelService.getFeatureValue(userId, "CREDIT_TRADING_ENABLED");
         const creditTradingDisabled =
           creditTradingValue !== null &&
           creditTradingValue !== undefined &&
@@ -176,8 +180,9 @@ export class OrderService {
             throw new BadRequestException("CREDIT_EXECUTION_LIMIT_REACHED");
           }
         }
-        // Credit v2: parallel-request cap from the facility snapshot.
-        const maxParallel = activeCredit.metadata?.maxParallelRequests;
+        // Credit v2: parallel-request cap from the facility snapshot (per-pair
+        // config wins when the traded pair has one).
+        const maxParallel = pairCreditConfig.creditMaxParallelRequests ?? activeCredit.metadata?.maxParallelRequests;
         if (maxParallel != null) {
           const [activeCreditOrders, pendingLinkedOrders] = await Promise.all([
             this.creditOrderRepo.count({
@@ -195,10 +200,9 @@ export class OrderService {
             throw new BadRequestException("CREDIT_MAX_PARALLEL_REQUESTS_REACHED");
           }
         }
-        // Credit v2: execution-level (hops) cap from the facility snapshot. A
-        // hop is a COMPLETED credit trade, so rejected/cancelled orders do not
-        // consume capacity.
-        const maxHops = activeCredit.metadata?.maxExecutionLevel;
+        // Credit v2: execution-level (hops) cap from the facility snapshot (a
+        // hop is a COMPLETED credit trade). Per-pair config wins when present.
+        const maxHops = pairCreditConfig.creditMaxExecutionLevel ?? activeCredit.metadata?.maxExecutionLevel;
         if (maxHops != null) {
           const hops = await this.creditOrderRepo.count({
             where: { creditId: activeCredit.id, status: CreditOrderStatusEnum.COMPLETED },
@@ -208,9 +212,14 @@ export class OrderService {
           }
         }
         // Credit v2: drawdown check — re-price collateral; ENFORCE liquidates,
-        // ALERT blocks exposure-increasing (BUY) orders.
-        if (activeCredit.drawdownPercent != null) {
-          const { blockBuy } = await this.creditService.enforceDrawdownRules(activeCredit);
+        // ALERT blocks exposure-increasing (BUY) orders. Per-pair config wins.
+        const ddPercent = pairCreditConfig.creditDrawdownPercent ?? activeCredit.drawdownPercent;
+        const ddEnforce = pairCreditConfig.creditEnforceOnDrawdown ?? activeCredit.enforceOnDrawdown;
+        if (ddPercent != null) {
+          const { blockBuy } = await this.creditService.enforceDrawdownRules(activeCredit, {
+            drawdownPercent: ddPercent,
+            enforceOnDrawdown: ddEnforce,
+          });
           if (blockBuy && dto.side === OrderSideEnum.BUY) {
             throw new BadRequestException("CREDIT_DRAWDOWN_BLOCKED");
           }

@@ -182,6 +182,26 @@ export class UserLevelService {
   async getFeatureValue(userId: string, featureKey: string): Promise<any> {
     const level = await this.getUserLevel(userId);
     if (!level) return null;
+    // Credit abilities moved out of features into dedicated columns. The new
+    // column wins; the old features value is kept as a fallback for existing levels.
+    if (featureKey === "CREDIT_TRADING_ENABLED") {
+      if (level.creditTradingEnabled !== null && level.creditTradingEnabled !== undefined) {
+        return level.creditTradingEnabled;
+      }
+      return level.features?.[featureKey] ?? null;
+    }
+    if (featureKey === "CREDIT_MAX_AMOUNT") {
+      if (level.creditMaxAmount !== null && level.creditMaxAmount !== undefined) {
+        return { amount: Number(level.creditMaxAmount) || 0, currency: "IRR" };
+      }
+      return level.features?.[featureKey] ?? null;
+    }
+    if (featureKey === "CREDIT_MAX_DURATION_DAYS") {
+      if (level.creditMaxDurationDays !== null && level.creditMaxDurationDays !== undefined) {
+        return Number(level.creditMaxDurationDays) || 0;
+      }
+      return level.features?.[featureKey] ?? null;
+    }
     return level.features?.[featureKey] ?? null;
   }
 

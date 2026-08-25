@@ -75,6 +75,24 @@ export class UserLevelEntity extends myBaseEntity {
   @Column({ type: "boolean", nullable: true, default: true, name: "credit_require_kyc" })
   creditRequireKyc: boolean;
 
+  // ── Credit "abilities" moved out of the features jsonb ─────────────
+  // Whether credit trading is allowed on this level (defaults to enabled).
+  @Column({ type: "boolean", nullable: true, default: true, name: "credit_trading_enabled" })
+  creditTradingEnabled: boolean;
+
+  // Max credit amount in the base (credit) symbol — 0/null = unlimited.
+  @Column({ type: "decimal", precision: 20, scale: 8, nullable: true, name: "credit_max_amount" })
+  creditMaxAmount: number;
+
+  // Max credit duration in days — 0/null = no expiry.
+  @Column({ type: "int", nullable: true, name: "credit_max_duration_days" })
+  creditMaxDurationDays: number;
+
+  // Per-pair credit structure: { [pairId]: CreditPairConfig }. When a pair is
+  // configured here its settings override the level-level credit defaults above.
+  @Column({ type: "jsonb", nullable: true })
+  creditConfigs: Record<string, any>;
+
   @ManyToMany(() => PricePairEntity, (p) => p.levels)
   @JoinTable({
     name: "user_level_pairs",

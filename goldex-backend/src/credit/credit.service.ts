@@ -585,6 +585,7 @@ export class CreditService {
           depositWalletId: depositWallet.id,
           maxParallelRequests: level.creditMaxParallelRequests,
           maxExecutionLevel: level.creditMaxExecutionLevel,
+          creditConfigs: level.creditConfigs || {},
         },
       });
       const savedCredit = await manager.save(credit);
@@ -2317,14 +2318,23 @@ export class CreditService {
    * liquidates the facility; ALERT mode notifies and blocks exposure-increasing
    * (BUY) orders via the returned flag.
    */
-  async enforceDrawdownRules(credit: CreditEntity): Promise<{ blockBuy: boolean }> {
+  async enforceDrawdownRules(
+    credit: CreditEntity,
+    override?: { drawdownPercent?: number | null; enforceOnDrawdown?: CreditEnforceModeEnum | null },
+  ): Promise<{ blockBuy: boolean }> {
     const { credit: fresh, drawdownPercent } = await this.recomputeDrawdown(credit);
-    const threshold = fresh.drawdownPercent != null ? Number(fresh.drawdownPercent) : null;
+    const threshold =
+      override?.drawdownPercent != null
+        ? Number(override.drawdownPercent)
+        : fresh.drawdownPercent != null
+          ? Number(fresh.drawdownPercent)
+          : null;
     if (threshold == null || threshold <= 0 || drawdownPercent < threshold) {
       return { blockBuy: false };
     }
 
-    if (fresh.enforceOnDrawdown === CreditEnforceModeEnum.ENFORCE) {
+    const enforce = override?.enforceOnDrawdown ?? fresh.enforceOnDrawdown;
+    if (enforce === CreditEnforceModeEnum.ENFORCE) {
       await this.liquidateForDrawdown(fresh.id, drawdownPercent);
       return { blockBuy: true };
     }
