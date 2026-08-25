@@ -833,19 +833,16 @@ export class CreditService {
 
       const current = new Decimal(Number(wallet.creditBalance) || 0);
       if (current.greaterThanOrEqualTo(expected)) {
-        // Already at/above capacity; ensure freeBalance is consistent.
-        wallet.freeBalance = new Decimal(Number(wallet.availableBalance) || 0)
-          .plus(wallet.creditBalance)
-          .toNumber();
-        await manager.save(wallet);
+        // Already at capacity. Never reset freeBalance — it reflects the
+        // remaining sell capacity (consumed by frozen/completed sells), so
+        // prior sells must keep reducing it.
         return current.toNumber();
       }
 
+      // Top up only the deficit so the wallet reaches the leveraged capacity.
       const topUp = expected.minus(current);
       wallet.creditBalance = expected.toNumber();
-      wallet.freeBalance = new Decimal(Number(wallet.availableBalance) || 0)
-        .plus(wallet.creditBalance)
-        .toNumber();
+      wallet.freeBalance = new Decimal(Number(wallet.freeBalance) || 0).plus(topUp).toNumber();
       const saved = await manager.save(wallet);
 
       await manager.save(
@@ -1437,10 +1434,11 @@ export class CreditService {
   }
 
   /**
-   * Sum the IRR value currently locked by open (pending / partially-completed)
-   * credit-linked orders. This is the live "used credit" of a facility and is
-   * the authoritative number used to guard against over-allocation and to
-   * compute the available credit shown to the user and admin.
+   * Sum the IRR value of all COMPLETED credit-linked orders. This is the
+   * facility's "used credit" per the product rule:
+   *   available = creditLimit (credit created at price) − all orders completed
+   * A completed order is an open obligation (borrowed IRR for a buy, or a
+   * short sell) that remains until settlement.
    */
   async computeUsedCredit(creditId: string): Promise<number> {
     const rows = await this.creditOrderRepository.find({
@@ -1451,9 +1449,10 @@ export class CreditService {
     for (const co of rows) {
       const o = co.order;
       if (!o) continue;
-      if (o.status !== "PENDING" && o.status !== "PARTIALLY_COMPLETED") continue;
+      if (o.status !== "COMPLETED") continue;
       const price = Number(o.price) || Number(co.priceAtOrderTime) || 0;
-      total = total.plus(new Decimal(o.quantity || 0).mul(price));
+      const qty = Number(o.executedQuantity) > 0 ? Number(o.executedQuantity) : Number(o.quantity || 0);
+      total = total.plus(new Decimal(qty).mul(price));
     }
     return total.toNumber();
   }
@@ -1486,12 +1485,9 @@ export class CreditService {
     // The authoritative "available credit" is the free balance of the base
     // (credit currency) CREDIT wallet — it already reflects funds consumed by
     // completed orders. Fall back to creditLimit − used when the wallet is
-    // absent (e.g. before the line is issued on the first order).
-    const baseWallet = creditWallets.find((w) => w.symbolId === credit.creditBaseSymbolId);
-    const availableCredit =
-      baseWallet != null
-        ? Math.max(0, Number(baseWallet.freeBalance) || 0)
-        : Math.max(0, creditLimit - usedCredit);
+    // available = creditLimit (credit created at price) − all completed credit
+    // orders. Pending orders are handled separately by the wallet freeze.
+    const availableCredit = Math.max(0, creditLimit - usedCredit);
 
     let currentCollateralValue = Number(credit.currentCollateralValue) || 0;
     let lastDrawdownPercent = Number(credit.lastDrawdownPercent) || 0;
@@ -1595,11 +1591,8 @@ export class CreditService {
       lockedBalance: Number(w.lockedBalance) || 0,
       creditBalance: Number(w.creditBalance) || 0,
     }));
-    const baseWallet = creditWallets.find((w) => w.symbolId === credit.creditBaseSymbolId);
-    const availableCredit =
-      baseWallet != null
-        ? Math.max(0, Number(baseWallet.freeBalance) || 0)
-        : Math.max(0, creditLimit - usedCredit);
+    // available = creditLimit (credit created at price) − all completed orders.
+    const availableCredit = Math.max(0, creditLimit - usedCredit);
 
     return {
       credit,

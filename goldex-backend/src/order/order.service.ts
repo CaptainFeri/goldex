@@ -316,8 +316,10 @@ export class OrderService {
       }
 
       // Credit v2: ensure the projected credit usage of this order stays within
-      // the facility's available credit (creditLimit − used by open orders).
-      if (useCredit && Number(activeCredit.creditLimit || 0) > 0) {
+      // the facility's available credit (creditLimit − used). Applies to BUY
+      // (which consumes IRR credit); SELL is bounded by the XAU sell capacity
+      // via the wallet freeze.
+      if (useCredit && dto.side === OrderSideEnum.BUY && Number(activeCredit.creditLimit || 0) > 0) {
         const requiredCredit = new Decimal(dto.quantity || 0).mul(displayGram);
         const usedCredit = await this.creditService.computeUsedCredit(activeCredit.id);
         const availableCredit = new Decimal(activeCredit.creditLimit || 0).minus(usedCredit);
