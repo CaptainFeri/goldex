@@ -90,7 +90,7 @@ export class UserLevelEntity extends myBaseEntity {
 
   // Per-pair credit structure: { [pairId]: CreditPairConfig }. When a pair is
   // configured here its settings override the level-level credit defaults above.
-  @Column({ type: "jsonb", nullable: true })
+  @Column({ type: "jsonb", nullable: true, name: "credit_configs" })
   creditConfigs: Record<string, any>;
 
   @ManyToMany(() => PricePairEntity, (p) => p.levels)
