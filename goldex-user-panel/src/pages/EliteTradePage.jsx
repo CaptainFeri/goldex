@@ -58,13 +58,15 @@ export default function EliteTradePage() {
   const pairMap = useMemo(() => Object.fromEntries(pairs.map((p) => [p.id, p])), [pairs])
 
   const priceOf = (p) => {
-    if (!p) return { buy: 0, sell: 0, buyGram: 0, sellGram: 0 }
+    if (!p) return { buy: 0, sell: 0, buyGram: 0, sellGram: 0, displayBuyGram: 0, displaySellGram: 0 }
     const lp = live[p.pairKey]
     return {
       buy: lp?.bestBuyPrice ?? p.bestBuyPrice ?? 0,
       sell: lp?.bestSellPrice ?? p.bestSellPrice ?? 0,
       buyGram: lp?.bestBuyGramPrice ?? p.bestBuyGramPrice ?? 0,
-      sellGram: lp?.bestSellGramPrice ?? p.bestSellGramPrice ?? 0
+      sellGram: lp?.bestSellGramPrice ?? p.bestSellGramPrice ?? 0,
+      displayBuyGram: lp?.displayBuyGramPrice ?? p.displayBuyGramPrice ?? 0,
+      displaySellGram: lp?.displaySellGramPrice ?? p.displaySellGramPrice ?? 0
     }
   }
 
@@ -135,9 +137,11 @@ export default function EliteTradePage() {
     return () => clearInterval(t)
   }, [orders, loadOrders])
 
-  const pr = selected ? priceOf(selected) : { buy: 0, sell: 0, buyGram: 0, sellGram: 0 }
-  const marketPrice = side === 'BUY' ? pr.sellGram : pr.buyGram
-  const mesghalPrice = side === 'BUY' ? pr.sell : pr.buy
+  const pr = selected ? priceOf(selected) : { buy: 0, sell: 0, buyGram: 0, sellGram: 0, displayBuyGram: 0, displaySellGram: 0 }
+  // A BUY is charged at the DISPLAY (customer) gram price (same as backend
+  // locks); a SELL is valued at the pure gram price (commission in gold).
+  const marketPrice = side === 'BUY' ? pr.displayBuyGram : pr.sellGram
+  const mesghalPrice = side === 'BUY' ? pr.buy : pr.sell
   const effectivePrice = Number(price) || Number(marketPrice)
   const qty = Number(quantity) || 0
   const estTotal = qty * (effectivePrice || 0)

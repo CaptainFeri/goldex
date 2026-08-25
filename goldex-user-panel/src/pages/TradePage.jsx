@@ -59,13 +59,15 @@ export default function TradePage() {
   // Orders settle at the PURE gram price; commission is taken in-kind from what
   // the customer receives. So the trading price is the pure (best) gram price.
   const priceOf = (p) => {
-    if (!p) return { buy: 0, sell: 0, buyGram: 0, sellGram: 0 }
+    if (!p) return { buy: 0, sell: 0, buyGram: 0, sellGram: 0, displayBuyGram: 0, displaySellGram: 0 }
     const lp = live[p.pairKey]
     return {
       buy: lp?.bestBuyPrice ?? p.bestBuyPrice ?? 0,
       sell: lp?.bestSellPrice ?? p.bestSellPrice ?? 0,
       buyGram: lp?.bestBuyGramPrice ?? p.bestBuyGramPrice ?? 0,
-      sellGram: lp?.bestSellGramPrice ?? p.bestSellGramPrice ?? 0
+      sellGram: lp?.bestSellGramPrice ?? p.bestSellGramPrice ?? 0,
+      displayBuyGram: lp?.displayBuyGramPrice ?? p.displayBuyGramPrice ?? 0,
+      displaySellGram: lp?.displaySellGramPrice ?? p.displaySellGramPrice ?? 0
     }
   }
 
@@ -130,9 +132,11 @@ export default function TradePage() {
     return () => clearInterval(t)
   }, [orders])
 
-  const pr = selected ? priceOf(selected) : { buy: 0, sell: 0, buyGram: 0, sellGram: 0 }
-  // Orders are placed and settled PER GRAM, so the trading price is the gram price.
-  const marketPrice = side === 'BUY' ? pr.buyGram : pr.sellGram
+  const pr = selected ? priceOf(selected) : { buy: 0, sell: 0, buyGram: 0, sellGram: 0, displayBuyGram: 0, displaySellGram: 0 }
+  // Orders are placed and settled PER GRAM. A BUY is charged at the DISPLAY
+  // (customer) gram price — the same price the backend locks — while a SELL is
+  // valued at the pure gram price (commission taken in gold).
+  const marketPrice = side === 'BUY' ? pr.displayBuyGram : pr.sellGram
   const mesghalPrice = side === 'BUY' ? pr.buy : pr.sell
   const effectivePrice = Number(marketPrice)
   const qty = Number(quantity) || 0 // grams

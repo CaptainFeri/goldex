@@ -56,13 +56,15 @@ export default function OfferPage() {
   // The custom market price is chosen by the customer; we prefill it with the
   // live pure gram price so offers quote a fair starting point.
   const priceOf = (p) => {
-    if (!p) return { buy: 0, sell: 0, buyGram: 0, sellGram: 0 }
+    if (!p) return { buy: 0, sell: 0, buyGram: 0, sellGram: 0, displayBuyGram: 0, displaySellGram: 0 }
     const lp = live[p.pairKey]
     return {
       buy: lp?.bestBuyPrice ?? p.bestBuyPrice ?? 0,
       sell: lp?.bestSellPrice ?? p.bestSellPrice ?? 0,
       buyGram: lp?.bestBuyGramPrice ?? p.bestBuyGramPrice ?? 0,
-      sellGram: lp?.bestSellGramPrice ?? p.bestSellGramPrice ?? 0
+      sellGram: lp?.bestSellGramPrice ?? p.bestSellGramPrice ?? 0,
+      displayBuyGram: lp?.displayBuyGramPrice ?? p.displayBuyGramPrice ?? 0,
+      displaySellGram: lp?.displaySellGramPrice ?? p.displaySellGramPrice ?? 0
     }
   }
 
@@ -135,8 +137,11 @@ export default function OfferPage() {
     return () => clearInterval(t)
   }, [requests])
 
-  const pr = selected ? priceOf(selected) : { buy: 0, sell: 0, buyGram: 0, sellGram: 0 }
-  const marketPrice = side === 'BUY' ? pr.buyGram : pr.sellGram
+  const pr = selected ? priceOf(selected) : { buy: 0, sell: 0, buyGram: 0, sellGram: 0, displayBuyGram: 0, displaySellGram: 0 }
+  // Prefill a BUY offer with the DISPLAY (customer) gram price so the quoted
+  // cost matches what would actually be charged; a SELL prefills with the pure
+  // gram price (commission taken in gold).
+  const marketPrice = side === 'BUY' ? pr.displayBuyGram : pr.sellGram
   const mesghalPrice = side === 'BUY' ? pr.buy : pr.sell
   const askPrice = Number(price) || 0
   const qty = Number(quantity) || 0 // grams
