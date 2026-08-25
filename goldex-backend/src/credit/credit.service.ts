@@ -1437,8 +1437,9 @@ export class CreditService {
    * Sum the IRR value of all COMPLETED credit-linked orders. This is the
    * facility's "used credit" per the product rule:
    *   available = creditLimit (credit created at price) − all orders completed
-   * A completed order is an open obligation (borrowed IRR for a buy, or a
-   * short sell) that remains until settlement.
+   * Pending orders are not included here — their amount is locked by the wallet
+   * freeze (freeBalance → lockedBalance), which reduces the available wallet
+   * capacity independently.
    */
   async computeUsedCredit(creditId: string): Promise<number> {
     const rows = await this.creditOrderRepository.find({
