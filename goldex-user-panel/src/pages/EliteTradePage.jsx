@@ -209,6 +209,13 @@ export default function EliteTradePage() {
     : (useCredit && activeCredit
         ? (creditIssued ? (baseWallet?.freeBalance || 0) : projectedSellCredit)
         : (baseWallet?.creditBalance || baseWallet?.availableBalance || 0))
+  // Live capacity per side — reflects amounts locked by pending orders.
+  const buyAvailable = useCredit && activeCredit
+    ? (creditIssued ? (quoteWallet?.freeBalance || 0) : projectedCredit)
+    : (quoteWallet?.creditBalance || quoteWallet?.availableBalance || 0)
+  const sellAvailable = useCredit && activeCredit
+    ? (creditIssued ? (baseWallet?.freeBalance || 0) : projectedSellCredit)
+    : (baseWallet?.creditBalance || baseWallet?.availableBalance || 0)
   const availSymbol = side === 'BUY' ? selected?.quoteSymbol?.slug : selected?.baseSymbol?.slug
   const required = side === 'BUY' ? estTotal : qty
   const insufficient = qty > 0 && required > available
@@ -449,15 +456,15 @@ export default function EliteTradePage() {
                   {useCredit && (
                     <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '0.5rem' }}>
                       <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.25rem' }}>
-                        <span>Credit Limit:</span>
+                        <span>Available Buy (IRR):</span>
                         <span style={{ color: 'var(--gold)', fontWeight: 600 }}>
-                          {fmt(creditIssued ? activeCredit.creditLimit : projectedCredit, 0)} IRR
+                          {fmt(buyAvailable, 0)} IRR
                         </span>
                       </div>
                       <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.25rem' }}>
-                        <span>Sell Capacity:</span>
+                        <span>Available Sell:</span>
                         <span style={{ color: 'var(--gold)', fontWeight: 600 }}>
-                          {fmt(projectedSellCredit, decimals)} {selected?.baseSymbol?.slug || 'XAU'}
+                          {fmt(sellAvailable, decimals)} {selected?.baseSymbol?.slug || 'XAU'}
                         </span>
                       </div>
                       {activeCredit.drawdownPercent != null && (
