@@ -475,6 +475,20 @@ export class CreditService {
         throw new BadRequestException("Deposit wallet is not active");
       }
 
+      // Collateral must be a BASE symbol of one of the level's price pairs
+      // (e.g. XAU/IRR → XAU, XAU/USD → XAU, USD/IRR → USD). Users can only
+      // freeze XAU / USD in those examples.
+      const levelBaseSymbolIds = new Set(
+        (level.pairs || [])
+          .map((p: any) => p.baseId || p.baseSymbol?.id)
+          .filter(Boolean),
+      );
+      if (levelBaseSymbolIds.size > 0 && !levelBaseSymbolIds.has(depositWallet.symbolId)) {
+        throw new BadRequestException(
+          "Collateral must be a base symbol of your level's trading pairs",
+        );
+      }
+
       const available = new Decimal(depositWallet.freeBalance).minus(depositWallet.frozenFreeBalance || 0);
       if (available.lessThan(dto.amount)) {
         throw new BadRequestException("Insufficient free balance in the deposit wallet");
@@ -558,6 +572,14 @@ export class CreditService {
 
       // 2. Create facility without issuing credit yet - credit will be issued on first order
       const creditCode = `CR-${Date.now().toString(36).toUpperCase()}-${crypto.randomUUID().slice(0, 4).toUpperCase()}`;
+      // Initial collateral value = frozen amount × current price (e.g. 50g XAU ×
+      // 10 IRR = 500 IRR). This is the drawdown baseline.
+      const initialCollateralValue =
+        depositWallet.symbolId === level.creditBaseSymbolId
+          ? dto.amount
+          : collateralPrice
+            ? new Decimal(dto.amount).mul(collateralPrice).toNumber()
+            : 0;
       const credit = manager.create(CreditEntity, {
         userId,
         adminId: null,
@@ -571,8 +593,8 @@ export class CreditService {
         usedCredit: 0,
         collateralSymbolId: depositWallet.symbolId,
         collateralAmount: dto.amount,
-        initialCollateralValue: 0, // Will be calculated on first order
-        currentCollateralValue: 0, // Will be calculated on first order
+        initialCollateralValue,
+        currentCollateralValue: initialCollateralValue,
         drawdownPercent: level.creditDrawdownPercent != null ? Number(level.creditDrawdownPercent) : null,
         lastDrawdownPercent: 0,
         creditBaseSymbolId: level.creditBaseSymbolId,
@@ -745,8 +767,13 @@ export class CreditService {
       // Update credit entity with calculated values
       credit.amount = creditLimit.toNumber();
       credit.creditLimit = creditLimit.toNumber();
-      credit.initialCollateralValue = collateralValue.toNumber();
+      // The drawdown baseline is the collateral value at credit creation
+      // (frozen amount × price). Only set it here if it wasn't captured at
+      // creation (e.g. price was unavailable then).
       credit.currentCollateralValue = collateralValue.toNumber();
+      if (!credit.initialCollateralValue || credit.initialCollateralValue <= 0) {
+        credit.initialCollateralValue = collateralValue.toNumber();
+      }
       credit.metadata = {
         ...(credit.metadata || {}),
         creditWalletId: savedCreditWallet.id,
@@ -2212,6 +2239,33 @@ export class CreditService {
     // Only facilities with actual exposure are risk-relevant.
     if (state.exposure <= 0) return;
 
+    // Drawdown enforcement (equity-based): if the credit trades push equity
+    // below the allowed drawdown, ENFORCE closes the credit (loss deducted from
+    // collateral, remainder refunded to the deposit wallet) and ALERT notifies.
+    const ddThreshold = credit.drawdownPercent != null ? Number(credit.drawdownPercent) : null;
+    if (ddThreshold != null && ddThreshold > 0) {
+      const initial = Number(credit.initialCollateralValue) || 0;
+      const drawdown = initial > 0 ? Math.max(0, (initial - state.equity) / initial) * 100 : 0;
+      if (drawdown >= ddThreshold) {
+        if (credit.enforceOnDrawdown === CreditEnforceModeEnum.ENFORCE) {
+          await this.liquidateForDrawdown(credit.id, drawdown);
+          return;
+        }
+        // ALERT: notify once per threshold crossing.
+        await this.creditNotificationRepository.save(
+          this.creditNotificationRepository.create({
+            userId: credit.userId,
+            creditId: credit.id,
+            type: CreditNotificationTypeEnum.MARGIN_CALL,
+            message:
+              `Credit ${credit.creditCode} drawdown touched ${drawdown.toFixed(2)}% ` +
+              `(threshold ${ddThreshold}%). Exposure-increasing orders are blocked until recovery.`,
+            sentAt: new Date(),
+          }),
+        );
+      }
+    }
+
     // Margin ratio is a decimal (e.g. 0.238 = 23.8%).
     const marginRatio = state.marginRatio;
     const WARNING_THRESHOLD = 0.15; // 15%
@@ -2284,30 +2338,55 @@ export class CreditService {
    * % loss of the collateral's value vs its value at facility opening.
    * Returns the updated credit (unsaved caller must save, or use the manager).
    */
+  /**
+   * Re-prices the facility and computes the drawdown % relative to the initial
+   * collateral value. Drawdown now uses the facility's EQUITY (current
+   * collateral value + credit-trade net PnL) so losing credit trades move the
+   * drawdown into the penalty area, not just collateral depreciation.
+   */
   async recomputeDrawdown(credit: CreditEntity, manager?: any): Promise<{ credit: CreditEntity; drawdownPercent: number }> {
     const em = manager || this.creditRepository.manager;
     if (!credit.collateralSymbolId || !credit.initialCollateralValue) {
       return { credit, drawdownPercent: Number(credit.lastDrawdownPercent) || 0 };
     }
-    let price: number | null = null;
-    if (credit.collateralSymbolId === credit.creditBaseSymbolId) {
-      price = 1;
-    } else {
-      const pair = await this.pricePairRepository.findOne({
-        where: { baseId: credit.collateralSymbolId, quoteId: credit.creditBaseSymbolId, isValid: true },
-      });
-      price = pair ? Number(pair.bestSellGramPrice) : null;
-    }
-    if (!price || price <= 0) {
-      return { credit, drawdownPercent: Number(credit.lastDrawdownPercent) || 0 };
-    }
-    const currentValue = new Decimal(credit.collateralAmount || 0).mul(price);
     const initial = new Decimal(credit.initialCollateralValue);
-    const drawdown = initial.greaterThan(0)
-      ? Decimal.max(0, initial.minus(currentValue)).div(initial).mul(100)
-      : new Decimal(0);
 
-    credit.currentCollateralValue = currentValue.toNumber();
+    let equity: Decimal | null = null;
+    let currentValue: Decimal | null = null;
+    try {
+      const state = await this.settlementService.computeState(credit, em);
+      equity = new Decimal(state.equity);
+      currentValue = new Decimal(state.collateralValue);
+    } catch {
+      // No mark price — fall back to collateral-only valuation below.
+    }
+
+    let drawdown: Decimal;
+    if (equity != null) {
+      drawdown = initial.greaterThan(0)
+        ? Decimal.max(0, initial.minus(equity)).div(initial).mul(100)
+        : new Decimal(0);
+    } else {
+      // Collateral-only fallback using the current pair price.
+      let price: number | null = null;
+      if (credit.collateralSymbolId === credit.creditBaseSymbolId) {
+        price = 1;
+      } else {
+        const pair = await this.pricePairRepository.findOne({
+          where: { baseId: credit.collateralSymbolId, quoteId: credit.creditBaseSymbolId, isValid: true },
+        });
+        price = pair ? Number(pair.bestSellGramPrice) : null;
+      }
+      if (!price || price <= 0) {
+        return { credit, drawdownPercent: Number(credit.lastDrawdownPercent) || 0 };
+      }
+      currentValue = new Decimal(credit.collateralAmount || 0).mul(price);
+      drawdown = initial.greaterThan(0)
+        ? Decimal.max(0, initial.minus(currentValue)).div(initial).mul(100)
+        : new Decimal(0);
+    }
+
+    credit.currentCollateralValue = (currentValue ?? new Decimal(0)).toNumber();
     credit.lastDrawdownPercent = drawdown.toDecimalPlaces(2).toNumber();
     if (!manager) await this.creditRepository.save(credit);
     return { credit, drawdownPercent: credit.lastDrawdownPercent };

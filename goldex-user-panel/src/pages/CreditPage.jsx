@@ -351,6 +351,7 @@ function CreditRequestForm({ onCreated }) {
   const [maxLeverage, setMaxLeverage] = useState(10)
   const [maxAmount, setMaxAmount] = useState(0)
   const [creditBaseSymbolId, setCreditBaseSymbolId] = useState(null)
+  const [baseSymbolIds, setBaseSymbolIds] = useState([])
   const [pairs, setPairs] = useState([])
 
   useEffect(() => {
@@ -359,6 +360,10 @@ function CreditRequestForm({ onCreated }) {
         const [level, features] = await Promise.all([levelApi.getMyLevel(), levelApi.getMyFeatures()])
         if (level?.creditMaxLeverage != null) setMaxLeverage(Number(level.creditMaxLeverage))
         if (level?.creditBaseSymbolId) setCreditBaseSymbolId(level.creditBaseSymbolId)
+        // Collateral is limited to the BASE symbols of the level's pairs
+        // (XAU/IRR → XAU, XAU/USD → XAU, USD/IRR → USD).
+        const baseIds = (level?.pairs || []).map((p) => p.baseSymbol?.id).filter(Boolean)
+        setBaseSymbolIds([...new Set(baseIds)])
         const maxAmt = features?.CREDIT_MAX_AMOUNT
         const ma = typeof maxAmt === 'object' ? Number(maxAmt?.amount) : Number(maxAmt)
         if (ma > 0) setMaxAmount(ma)
@@ -367,10 +372,20 @@ function CreditRequestForm({ onCreated }) {
     walletApi.getWallets().then((w) => {
       const depositWallets = (w || []).filter((x) => !x.walletType || x.walletType === 'DEPOSIT')
       setWallets(depositWallets)
-      if (depositWallets.length > 0) setSelectedWallet(depositWallets[0].id)
     }).catch(() => {})
     marketApi.getPairs().then((p) => setPairs(Array.isArray(p) ? p : [])).catch(() => {})
   }, [])
+
+  // Only base-symbol deposit wallets are eligible collateral.
+  const eligibleWallets = baseSymbolIds.length > 0
+    ? wallets.filter((x) => baseSymbolIds.includes(x.symbol?.id))
+    : wallets
+
+  useEffect(() => {
+    if (eligibleWallets.length > 0 && !eligibleWallets.some((x) => x.id === selectedWallet)) {
+      setSelectedWallet(eligibleWallets[0].id)
+    }
+  }, [eligibleWallets, selectedWallet])
 
   const selectedSymId = wallets.find((w) => w.id === selectedWallet)?.symbol?.id
   const isBaseSymbol = selectedSymId === creditBaseSymbolId
@@ -422,7 +437,10 @@ function CreditRequestForm({ onCreated }) {
             onChange={(e) => setSelectedWallet(e.target.value)}
             style={{ width: '100%' }}
           >
-            {wallets.map((w) => (
+            {eligibleWallets.length === 0 && (
+              <option value="">— هیچ دارایی پایه‌ای برای وثیقه موجود نیست —</option>
+            )}
+            {eligibleWallets.map((w) => (
               <option key={w.id} value={w.id}>
                 {w.symbol?.name || w.symbol?.slug || w.id} — Free: {fmtNum(w.freeBalance)}
               </option>
