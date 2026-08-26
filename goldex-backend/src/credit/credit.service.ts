@@ -481,17 +481,23 @@ export class CreditService {
         throw new BadRequestException("Deposit wallet is not active");
       }
 
-      // Collateral must be a BASE symbol of one of the level's price pairs
-      // (e.g. XAU/IRR → XAU, XAU/USD → XAU, USD/IRR → USD). Users can only
-      // freeze XAU / USD in those examples.
-      const levelBaseSymbolIds = new Set(
-        (level.pairs || [])
-          .map((p: any) => p.baseId || p.baseSymbol?.id)
-          .filter(Boolean),
+      // Collateral must be a BASE or QUOTE symbol of one of the level's price
+      // pairs (e.g. XAU/IRR → XAU or IRR, XAU/USD → XAU or USD, USD/IRR → USD
+      // or IRR). Users can freeze either leg of their trading pairs. The credit
+      // base symbol is always allowed.
+      const levelPairSymbolIds = new Set(
+        (level.pairs || []).flatMap((p: any) => [
+          p.baseId || p.baseSymbol?.id,
+          p.quoteId || p.quoteSymbol?.id,
+        ]).filter(Boolean),
       );
-      if (levelBaseSymbolIds.size > 0 && !levelBaseSymbolIds.has(depositWallet.symbolId)) {
+      if (level.creditBaseSymbolId) levelPairSymbolIds.add(level.creditBaseSymbolId);
+      if (
+        levelPairSymbolIds.size > 0 &&
+        !levelPairSymbolIds.has(depositWallet.symbolId)
+      ) {
         throw new BadRequestException(
-          "Collateral must be a base symbol of your level's trading pairs",
+          "Collateral must be a base or quote symbol of your level's trading pairs",
         );
       }
 
@@ -2702,6 +2708,12 @@ export class CreditService {
     }
 
     credit.currentCollateralValue = (currentValue ?? new Decimal(0)).toNumber();
+    // Dynamic FIAT credit capacity (handoff §6.1, AC-14): buying power tracks
+    // the current collateral value × leverage, recomputed on every price
+    // update, WITHOUT touching the credit wallet's transaction balance.
+    if (credit.leverage && Number(credit.leverage) > 0) {
+      credit.creditLimit = (currentValue ?? new Decimal(0)).mul(credit.leverage).toNumber();
+    }
     credit.lastDrawdownPercent = drawdown.toDecimalPlaces(2).toNumber();
     if (!manager) await this.creditRepository.save(credit);
     return { credit, drawdownPercent: credit.lastDrawdownPercent };
@@ -2754,6 +2766,54 @@ export class CreditService {
    */
   async liquidateForDrawdown(creditId: string, drawdownPercent?: number): Promise<CreditEntity> {
     return this.settlementService.liquidate(creditId, "DRAWDOWN_LIQUIDATION");
+  }
+
+  /**
+   * Adjust a credit's settlement policy (handoff §6.3, §6.5): admin approval
+   * requirement, enabled settlement methods and netting policy.
+   */
+  async updateSettlementPolicy(
+    adminId: string,
+    creditId: string,
+    dto: {
+      requireAdminApprovalForSettlement?: boolean;
+      settlementMethods?: string[];
+      nettingEnabled?: boolean;
+    },
+    reason?: string,
+  ): Promise<CreditEntity> {
+    const credit = await this.creditRepository.findOne({ where: { id: creditId } });
+    if (!credit) throw new NotFoundException("Credit not found");
+
+    if (dto.requireAdminApprovalForSettlement != null) {
+      credit.requireAdminApprovalForSettlement = dto.requireAdminApprovalForSettlement;
+    }
+    if (dto.settlementMethods && dto.settlementMethods.length > 0) {
+      credit.settlementMethods = dto.settlementMethods;
+    }
+    if (dto.nettingEnabled != null) {
+      credit.nettingEnabled = dto.nettingEnabled;
+    }
+    const saved = await this.creditRepository.save(credit);
+
+    await this.financeLogRepository.save(
+      this.financeLogRepository.create({
+        adminId,
+        userId: credit.userId,
+        creditId: credit.id,
+        actionType: CreditActionEnum.CREDIT_LIMIT_ADJUSTED,
+        description:
+          `Credit ${credit.creditCode} settlement policy updated` +
+          (reason ? `: ${reason}` : ""),
+        metadata: {
+          requireAdminApprovalForSettlement: saved.requireAdminApprovalForSettlement,
+          settlementMethods: saved.settlementMethods,
+          nettingEnabled: saved.nettingEnabled,
+        },
+        actionTime: new Date(),
+      }),
+    );
+    return saved;
   }
 
   /**

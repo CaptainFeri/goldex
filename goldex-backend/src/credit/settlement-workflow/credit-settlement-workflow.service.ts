@@ -10,7 +10,11 @@ import Decimal from "decimal.js";
 import { CreditEntity } from "../entity/credit.entity";
 import { CreditOrderEntity } from "../entity/credit-order.entity";
 import { CreditSettlementEntity } from "../entity/credit-settlement.entity";
-import { SettlementWorkflowStatusEnum } from "../enum/settlement-workflow-status.enum";
+import {
+  SettlementWorkflowStatusEnum,
+  SettlementMethodEnum,
+  SettlementValuationStateEnum,
+} from "../enum/settlement-workflow-status.enum";
 import { CreditOrderStatusEnum } from "../enum/credit-order-status.enum";
 import { CreditStatusEnum } from "../enum/credit-status.enum";
 import { CreditSettlementService } from "../settlement/credit-settlement.service";
@@ -25,17 +29,22 @@ export interface RequestSettlementOptions {
 }
 
 /**
- * Delivery-based settlement workflow (handoff §7).
+ * Delivery-based settlement workflow (handoff §6.6, §7, §13).
  *
- * The workflow enforces an explicit, auditable settlement lifecycle per credit
- * trade:
- *   SETTLEMENT_REQUESTED → ASSET_RECEIVED → ASSET_VERIFIED → LIABILITY_CLEARED
- *   → ASSET_SETTLED → COLLATERAL_RELEASED → CLOSED | FAILED
+ * Revised lifecycle:
+ *   SETTLEMENT_REQUESTED → PENDING_ADMIN_REVIEW (if approval policy ON)
+ *   → APPROVED → VALUATED → METHOD_SELECTED → FUNDING_REQUIRED/READY
+ *   → ASSET_RECEIVED → ASSET_VERIFIED → LIABILITY_CLEARED → ASSET_SETTLED
+ *   → COLLATERAL_RELEASED → CLOSED | REJECTED | FAILED
  *
- * The value transfer (covering the negative credit leg, releasing surplus,
- * consuming collateral and releasing per-trade collateral locks) is executed by
- * the settlement engine at the LIABILITY_CLEARED step, so there is a single
- * valuation source. All steps are idempotent.
+ * - Admin approval policy (requireAdminApprovalForSettlement): when ON, no
+ *   transfer or collateral release happens before the admin approves.
+ * - Valuation compares Credit Exposure Value vs Current Collateral Value in a
+ *   single value unit (IRR) and derives three states + the shortfall.
+ * - The user selects one of the admin-enabled settlement methods (FULL/NET/TOPUP).
+ * - The value transfer is executed by the settlement engine at LIABILITY_CLEARED
+ *   (single valuation source); per-trade collateral locks are released/consumed
+ *   there too. All steps are idempotent.
  */
 @Injectable()
 export class CreditSettlementWorkflowService {
@@ -54,10 +63,8 @@ export class CreditSettlementWorkflowService {
 
   /**
    * Start a delivery-based settlement for a credit trade (or the whole facility
-   * when no trade is given). The required asset/amount is derived from the
-   * trade's executed obligation:
-   *   SELL → deliver the borrowed base asset (qty).
-   *   BUY  → repay the borrowed credit currency (qty × customer price).
+   * when no trade is given). When the facility's approval policy is ON the
+   * workflow stops at PENDING_ADMIN_REVIEW; otherwise it is auto-approved.
    */
   async requestSettlement(
     creditId: string,
@@ -101,25 +108,250 @@ export class CreditSettlementWorkflowService {
           : await this.requiredForFacility(manager, credit);
 
       const now = new Date();
+      const requireApproval = !!credit.requireAdminApprovalForSettlement;
       const entity = manager.create(CreditSettlementEntity, {
         creditId: credit.id,
         creditOrderId: creditOrder?.id ?? null,
         requiredAssetSymbolId,
         requiredAmount,
         receivedAmount: 0,
-        status: SettlementWorkflowStatusEnum.REQUESTED,
+        status: requireApproval
+          ? SettlementWorkflowStatusEnum.PENDING_ADMIN_REVIEW
+          : SettlementWorkflowStatusEnum.APPROVED,
         requestedBy: opts.requestedBy ?? null,
         requestedAt: now,
+        approvedAt: requireApproval ? null : now,
         notes: opts.notes,
         metadata: {
           requestedBy: opts.requestedBy ?? opts.adminId ?? "system",
+          requireAdminApproval: requireApproval,
         },
       });
       const saved = await manager.save(entity);
 
       this.logger.log(
         `Settlement workflow ${saved.id} requested for credit ${credit.creditCode} ` +
-          `(required ${requiredAmount} of ${requiredAssetSymbolId})`,
+          `(required ${requiredAmount} of ${requiredAssetSymbolId}, approval=${requireApproval})`,
+      );
+      return saved;
+    });
+  }
+
+  /** Admin approves a pending settlement (PENDING_ADMIN_REVIEW → APPROVED). */
+  async approve(
+    settlementId: string,
+    adminId: string,
+    reason?: string,
+  ): Promise<CreditSettlementEntity> {
+    return this.dataSource.transaction(async (manager) => {
+      const s = await manager.findOne(CreditSettlementEntity, {
+        where: { id: settlementId },
+        lock: { mode: "pessimistic_write" },
+      });
+      if (!s) throw new NotFoundException("Settlement not found");
+      if (s.status !== SettlementWorkflowStatusEnum.PENDING_ADMIN_REVIEW) {
+        throw new BadRequestException(
+          `Only a pending settlement can be approved (current: ${s.status})`,
+        );
+      }
+      s.status = SettlementWorkflowStatusEnum.APPROVED;
+      s.approvedBy = adminId;
+      s.approvedAt = new Date();
+      s.approvalReason = reason ?? null;
+      const saved = await manager.save(s);
+      this.logger.log(`Settlement ${s.id} approved by admin ${adminId}`);
+      return saved;
+    });
+  }
+
+  /** Admin rejects a pending settlement (PENDING_ADMIN_REVIEW → REJECTED). */
+  async reject(
+    settlementId: string,
+    adminId: string,
+    reason: string,
+  ): Promise<CreditSettlementEntity> {
+    return this.dataSource.transaction(async (manager) => {
+      const s = await manager.findOne(CreditSettlementEntity, {
+        where: { id: settlementId },
+        lock: { mode: "pessimistic_write" },
+      });
+      if (!s) throw new NotFoundException("Settlement not found");
+      if (s.status !== SettlementWorkflowStatusEnum.PENDING_ADMIN_REVIEW) {
+        throw new BadRequestException(
+          `Only a pending settlement can be rejected (current: ${s.status})`,
+        );
+      }
+      s.status = SettlementWorkflowStatusEnum.REJECTED;
+      s.rejectedBy = adminId;
+      s.rejectedAt = new Date();
+      s.rejectionReason = reason;
+      const saved = await manager.save(s);
+      this.logger.log(`Settlement ${s.id} rejected by admin ${adminId}: ${reason}`);
+      return saved;
+    });
+  }
+
+  /**
+   * Valuate the settlement: mark-to-market the facility and compare Credit
+   * Exposure Value vs Current Collateral Value (single IRR unit, handoff §6.4).
+   * Also computes the shortfall when exposure exceeds collateral.
+   */
+  async valuate(settlementId: string): Promise<CreditSettlementEntity> {
+    return this.dataSource.transaction(async (manager) => {
+      const s = await manager.findOne(CreditSettlementEntity, {
+        where: { id: settlementId },
+        lock: { mode: "pessimistic_write" },
+      });
+      if (!s) throw new NotFoundException("Settlement not found");
+      if (!this.canValuate(s.status)) {
+        throw new BadRequestException(
+          `Valuation is not allowed in state ${s.status}`,
+        );
+      }
+
+      const credit = await manager.findOne(CreditEntity, {
+        where: { id: s.creditId },
+        lock: { mode: "pessimistic_write" },
+      });
+      if (!credit) throw new NotFoundException("Credit not found");
+
+      const state = await this.settlementEngine.computeState(credit, manager);
+      const collateralValue = new Decimal(state.collateralValue);
+      const exposureValue = new Decimal(state.exposure);
+      let valuationState: SettlementValuationStateEnum;
+      let shortfall = 0;
+      if (exposureValue.lessThan(collateralValue)) {
+        valuationState = SettlementValuationStateEnum.EXPOSURE_LT_COLLATERAL;
+      } else if (exposureValue.greaterThan(collateralValue)) {
+        valuationState = SettlementValuationStateEnum.EXPOSURE_GT_COLLATERAL;
+        shortfall = exposureValue.minus(collateralValue).toNumber();
+      } else {
+        valuationState = SettlementValuationStateEnum.EXPOSURE_EQ_COLLATERAL;
+      }
+
+      s.valuationState = valuationState;
+      s.collateralValue = collateralValue.toNumber();
+      s.exposureValue = exposureValue.toNumber();
+      s.shortfall = shortfall;
+      s.requiredTopUp = shortfall;
+      s.metadata = {
+        ...(s.metadata || {}),
+        valuation: {
+          markPrice: state.markPrice,
+          netEquity: state.netEquity,
+          equity: state.equity,
+          borrowedIr: state.borrowedIr,
+        },
+      };
+      if (s.status === SettlementWorkflowStatusEnum.APPROVED) {
+        s.status = SettlementWorkflowStatusEnum.VALUATED;
+      }
+      const saved = await manager.save(s);
+      this.logger.log(
+        `Settlement ${s.id} valuated: exposure ${exposureValue} vs collateral ${collateralValue} (${valuationState}, shortfall ${shortfall})`,
+      );
+      return saved;
+    });
+  }
+
+  /**
+   * User/admin selects one of the admin-enabled settlement methods
+   * (handoff §6.5). NET requires the facility's netting policy to be enabled.
+   */
+  async selectMethod(
+    settlementId: string,
+    method: SettlementMethodEnum,
+    actor?: string,
+  ): Promise<CreditSettlementEntity> {
+    return this.dataSource.transaction(async (manager) => {
+      const s = await manager.findOne(CreditSettlementEntity, {
+        where: { id: settlementId },
+        lock: { mode: "pessimistic_write" },
+      });
+      if (!s) throw new NotFoundException("Settlement not found");
+      if (!this.canSelectMethod(s.status)) {
+        throw new BadRequestException(
+          `Method selection is not allowed in state ${s.status}`,
+        );
+      }
+      const credit = await manager.findOne(CreditEntity, { where: { id: s.creditId } });
+      if (!credit) throw new NotFoundException("Credit not found");
+
+      const enabled = (credit.settlementMethods || ["FULL", "NET", "TOPUP"]) as string[];
+      if (!enabled.includes(method)) {
+        throw new BadRequestException(
+          `Settlement method ${method} is not enabled for this facility (enabled: ${enabled.join(", ")})`,
+        );
+      }
+      if (method === SettlementMethodEnum.NET && !credit.nettingEnabled) {
+        throw new BadRequestException(
+          "Net settlement (Method B) requires the facility's netting policy to be enabled",
+        );
+      }
+
+      s.settlementMethod = method;
+      if (s.status !== SettlementWorkflowStatusEnum.FUNDING_REQUIRED) {
+        s.status = SettlementWorkflowStatusEnum.METHOD_SELECTED;
+      }
+      // If there is a shortfall, funding is required before delivery.
+      if (new Decimal(s.shortfall || 0).greaterThan(0)) {
+        s.status = SettlementWorkflowStatusEnum.FUNDING_REQUIRED;
+        s.requiredTopUp = s.shortfall;
+      } else {
+        s.status = SettlementWorkflowStatusEnum.READY;
+      }
+      s.metadata = {
+        ...(s.metadata || {}),
+        settlementMethod: method,
+        methodSelectedBy: actor ?? "system",
+      };
+      const saved = await manager.save(s);
+      this.logger.log(`Settlement ${s.id} method selected: ${method}`);
+      return saved;
+    });
+  }
+
+  /**
+   * Record funding toward the settlement shortfall (handoff §6.5). When the
+   * accumulated funding covers the shortfall, the workflow becomes READY;
+   * otherwise it stays FUNDING_REQUIRED (partial funding is allowed).
+   */
+  async fund(
+    settlementId: string,
+    amount: number,
+    opts: { fundedBy?: string; notes?: string } = {},
+  ): Promise<CreditSettlementEntity> {
+    return this.dataSource.transaction(async (manager) => {
+      const s = await manager.findOne(CreditSettlementEntity, {
+        where: { id: settlementId },
+        lock: { mode: "pessimistic_write" },
+      });
+      if (!s) throw new NotFoundException("Settlement not found");
+      if (!this.canFund(s.status)) {
+        throw new BadRequestException(`Funding is not allowed in state ${s.status}`);
+      }
+      if (!(Number(amount) > 0)) {
+        throw new BadRequestException("Funding amount must be greater than zero");
+      }
+      if (new Decimal(s.shortfall || 0).lessThanOrEqualTo(0)) {
+        throw new BadRequestException("This settlement has no shortfall to fund");
+      }
+
+      const funded = new Decimal(s.fundedAmount || 0).plus(amount);
+      s.fundedAmount = funded.toNumber();
+      s.requiredTopUp = Decimal.max(0, new Decimal(s.shortfall || 0).minus(funded)).toNumber();
+      if (funded.greaterThanOrEqualTo(s.shortfall || 0)) {
+        s.status = SettlementWorkflowStatusEnum.READY;
+      } else {
+        s.status = SettlementWorkflowStatusEnum.FUNDING_REQUIRED;
+      }
+      s.metadata = {
+        ...(s.metadata || {}),
+        funding: [...(s.metadata?.funding || []), { amount, by: opts.fundedBy ?? "system", at: new Date().toISOString(), notes: opts.notes }],
+      };
+      const saved = await manager.save(s);
+      this.logger.log(
+        `Settlement ${s.id} funded +${amount} (total ${funded}/${s.shortfall})`,
       );
       return saved;
     });
@@ -135,6 +367,11 @@ export class CreditSettlementWorkflowService {
       if (!s) throw new NotFoundException("Settlement not found");
       if (!this.isActive(s.status)) {
         throw new BadRequestException(`Settlement is already ${s.status}`);
+      }
+      if (!this.canReceive(s.status)) {
+        throw new BadRequestException(
+          `Asset delivery is not allowed in state ${s.status} — approve, valuate, select a method and fund the shortfall first`,
+        );
       }
       if (!(Number(amount) > 0)) {
         throw new BadRequestException("Received amount must be greater than zero");
@@ -168,6 +405,11 @@ export class CreditSettlementWorkflowService {
       if (!this.isActive(s.status)) {
         throw new BadRequestException(`Settlement is already ${s.status}`);
       }
+      if (s.status !== SettlementWorkflowStatusEnum.ASSET_RECEIVED) {
+        throw new BadRequestException(
+          `Asset must be received before verification (current: ${s.status})`,
+        );
+      }
       if (new Decimal(s.receivedAmount || 0).lessThan(s.requiredAmount || 0)) {
         throw new BadRequestException(
           `Insufficient delivered asset: received ${s.receivedAmount}, required ${s.requiredAmount}`,
@@ -183,8 +425,10 @@ export class CreditSettlementWorkflowService {
    * Clear the negative credit liability. This is the economic step — it runs the
    * settlement engine on the facility (USER_SELF/ADMIN mode) which zeroes the
    * credit wallets, releases surplus to cash, consumes collateral for any
-   * deficit and releases per-trade collateral locks. The workflow only proceeds
-   * once the asset has been received and verified (delivery-first rule).
+   * deficit, closes the open credit trades and releases per-trade collateral
+   * locks. It only proceeds once the asset has been received and verified
+   * (delivery-first rule) and, for exposure > collateral, the shortfall has been
+   * funded.
    */
   async clearLiability(
     settlementId: string,
@@ -201,6 +445,17 @@ export class CreditSettlementWorkflowService {
           `Liability can only be cleared after the asset is verified (current: ${s.status})`,
         );
       }
+      // Handoff §6.4 State 2: never allow full collateral release while a
+      // shortfall remains unfunded.
+      if (
+        new Decimal(s.shortfall || 0).greaterThan(0) &&
+        new Decimal(s.fundedAmount || 0).lessThan(s.shortfall || 0)
+      ) {
+        throw new BadRequestException(
+          `Exposure exceeds collateral by ${s.shortfall} and the shortfall is not fully funded ` +
+            `(funded ${s.fundedAmount}). Fund the shortfall before settlement.`,
+        );
+      }
 
       const credit = await manager.findOne(CreditEntity, {
         where: { id: s.creditId },
@@ -211,15 +466,23 @@ export class CreditSettlementWorkflowService {
       // Delegate the value transfer to the settlement engine inside the same
       // transaction. The engine releases the collateral locks and marks the
       // facility settled.
-      await this.settlementEngine.settleCreditInTransaction(manager, credit, {
+      const settled = await this.settlementEngine.settleCreditInTransaction(manager, credit, {
         mode: opts.mode === "ADMIN" ? "ADMIN" : "USER_SELF",
         adminId: opts.adminId ?? null,
         reason: `SETTLEMENT_WORKFLOW:${s.id}`,
         allowDepositTopUp: opts.mode !== "ADMIN",
       });
 
+      const report = settled.metadata?.settlement || {};
       s.status = SettlementWorkflowStatusEnum.LIABILITY_CLEARED;
       s.liabilityClearedAt = new Date();
+      s.releaseAmount = Number(report.releaseIr || 0);
+      s.realizedPnL = Number(report.netEquity || 0);
+      s.finalCollateralState = {
+        released: Number(report.releaseIr || 0),
+        consumed: Number(report.consumedCollateral || 0),
+        shortfall: Number(report.shortfall || 0),
+      };
       const saved = await manager.save(s);
       this.logger.log(`Settlement ${s.id} liability cleared`);
       return saved;
@@ -378,17 +641,63 @@ export class CreditSettlementWorkflowService {
   }
 
   private isActive(status: SettlementWorkflowStatusEnum): boolean {
-    return status !== SettlementWorkflowStatusEnum.CLOSED && status !== SettlementWorkflowStatusEnum.FAILED;
+    return (
+      status !== SettlementWorkflowStatusEnum.CLOSED &&
+      status !== SettlementWorkflowStatusEnum.REJECTED &&
+      status !== SettlementWorkflowStatusEnum.FAILED
+    );
   }
 
   private activeSettlementStatuses(): SettlementWorkflowStatusEnum[] {
     return [
-      SettlementWorkflowStatusEnum.REQUESTED,
+      SettlementWorkflowStatusEnum.SETTLEMENT_REQUESTED,
+      SettlementWorkflowStatusEnum.PENDING_ADMIN_REVIEW,
+      SettlementWorkflowStatusEnum.APPROVED,
+      SettlementWorkflowStatusEnum.VALUATED,
+      SettlementWorkflowStatusEnum.METHOD_SELECTED,
+      SettlementWorkflowStatusEnum.FUNDING_REQUIRED,
+      SettlementWorkflowStatusEnum.READY,
       SettlementWorkflowStatusEnum.ASSET_RECEIVED,
       SettlementWorkflowStatusEnum.ASSET_VERIFIED,
       SettlementWorkflowStatusEnum.LIABILITY_CLEARED,
       SettlementWorkflowStatusEnum.ASSET_SETTLED,
       SettlementWorkflowStatusEnum.COLLATERAL_RELEASED,
     ];
+  }
+
+  private canValuate(status: SettlementWorkflowStatusEnum): boolean {
+    return (
+      status === SettlementWorkflowStatusEnum.APPROVED ||
+      status === SettlementWorkflowStatusEnum.VALUATED
+    );
+  }
+
+  private canSelectMethod(status: SettlementWorkflowStatusEnum): boolean {
+    return (
+      status === SettlementWorkflowStatusEnum.APPROVED ||
+      status === SettlementWorkflowStatusEnum.VALUATED ||
+      status === SettlementWorkflowStatusEnum.METHOD_SELECTED ||
+      status === SettlementWorkflowStatusEnum.FUNDING_REQUIRED
+    );
+  }
+
+  private canFund(status: SettlementWorkflowStatusEnum): boolean {
+    return (
+      status === SettlementWorkflowStatusEnum.METHOD_SELECTED ||
+      status === SettlementWorkflowStatusEnum.FUNDING_REQUIRED ||
+      status === SettlementWorkflowStatusEnum.READY
+    );
+  }
+
+  private canReceive(status: SettlementWorkflowStatusEnum): boolean {
+    return (
+      status === SettlementWorkflowStatusEnum.APPROVED ||
+      status === SettlementWorkflowStatusEnum.VALUATED ||
+      status === SettlementWorkflowStatusEnum.METHOD_SELECTED ||
+      status === SettlementWorkflowStatusEnum.FUNDING_REQUIRED ||
+      status === SettlementWorkflowStatusEnum.READY ||
+      status === SettlementWorkflowStatusEnum.ASSET_RECEIVED ||
+      status === SettlementWorkflowStatusEnum.ASSET_VERIFIED
+    );
   }
 }

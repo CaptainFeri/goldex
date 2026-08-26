@@ -6,7 +6,7 @@ import { SettleCreditDto } from "../dto/settle-credit.dto";
 import { CancelCreditDto } from "../dto/cancel-credit.dto";
 import { CreditQueryDto } from "../dto/credit-query.dto";
 import { ExtendCreditDto, AdjustCreditLimitDto } from "../dto/extend-credit.dto";
-import { RequestSettlementDto, ReceiveSettlementAssetDto, FailSettlementDto } from "../dto/settlement-workflow.dto";
+import { RequestSettlementDto, ReceiveSettlementAssetDto, FailSettlementDto, ApproveSettlementDto, RejectSettlementDto, SettlementPolicyDto, SelectSettlementMethodDto, FundSettlementDto } from "../dto/settlement-workflow.dto";
 import { CreditSettlementWorkflowService } from "../settlement-workflow/credit-settlement-workflow.service";
 import { AdminAuthGuard } from "../../admin/auth/Guard/admin.guard";
 import { AdminRoles } from "../../admin/role/admin.role.decorator";
@@ -169,6 +169,50 @@ export class CreditAdminController {
         notes: dto.notes,
       }),
     };
+  }
+
+  @Post(":id/settlement-policy")
+  @AdminRoles(AdminRole.FINANCE, AdminRole.SUPER_ADMIN, AdminRole.ADMIN)
+  @ApiOperation({ summary: "Set the credit settlement policy (admin approval, methods, netting) — handoff §6.3/§6.5" })
+  async updateSettlementPolicy(@Req() req: any, @Param("id") id: string, @Body() dto: SettlementPolicyDto) {
+    return {
+      data: await this.creditService.updateSettlementPolicy(req.admin.id, id, dto),
+    };
+  }
+
+  @Post("settlements/:settlementId/approve")
+  @AdminRoles(AdminRole.FINANCE, AdminRole.SUPER_ADMIN, AdminRole.ADMIN)
+  @ApiOperation({ summary: "Approve a pending settlement (PENDING_ADMIN_REVIEW → APPROVED)" })
+  async approveSettlement(@Req() req: any, @Param("settlementId") settlementId: string, @Body() dto: ApproveSettlementDto) {
+    return { data: await this.settlementWorkflowService.approve(settlementId, req.admin.id, dto.reason) };
+  }
+
+  @Post("settlements/:settlementId/reject")
+  @AdminRoles(AdminRole.FINANCE, AdminRole.SUPER_ADMIN, AdminRole.ADMIN)
+  @ApiOperation({ summary: "Reject a pending settlement (PENDING_ADMIN_REVIEW → REJECTED)" })
+  async rejectSettlement(@Req() req: any, @Param("settlementId") settlementId: string, @Body() dto: RejectSettlementDto) {
+    return { data: await this.settlementWorkflowService.reject(settlementId, req.admin.id, dto.reason) };
+  }
+
+  @Post("settlements/:settlementId/valuate")
+  @AdminRoles(AdminRole.FINANCE, AdminRole.SUPER_ADMIN, AdminRole.ADMIN)
+  @ApiOperation({ summary: "Valuate the settlement (exposure vs collateral, three states, shortfall)" })
+  async valuateSettlement(@Param("settlementId") settlementId: string) {
+    return { data: await this.settlementWorkflowService.valuate(settlementId) };
+  }
+
+  @Post("settlements/:settlementId/select-method")
+  @AdminRoles(AdminRole.FINANCE, AdminRole.SUPER_ADMIN, AdminRole.ADMIN)
+  @ApiOperation({ summary: "Select the settlement method (FULL/NET/TOPUP) on behalf of the user" })
+  async selectMethod(@Req() req: any, @Param("settlementId") settlementId: string, @Body() dto: SelectSettlementMethodDto) {
+    return { data: await this.settlementWorkflowService.selectMethod(settlementId, dto.method, req.admin?.id) };
+  }
+
+  @Post("settlements/:settlementId/fund")
+  @AdminRoles(AdminRole.FINANCE, AdminRole.SUPER_ADMIN, AdminRole.ADMIN)
+  @ApiOperation({ summary: "Record funding toward the settlement shortfall" })
+  async fundSettlement(@Req() req: any, @Param("settlementId") settlementId: string, @Body() dto: FundSettlementDto) {
+    return { data: await this.settlementWorkflowService.fund(settlementId, dto.amount, { fundedBy: req.admin?.id, notes: dto.notes }) };
   }
 
   @Post("settlements/:settlementId/receive")

@@ -172,6 +172,19 @@ export class CreditEntity extends myBaseEntity {
   @Column({ type: "jsonb", nullable: true })
   metadata: any;
 
+  // ── Credit v4 settlement policy (handoff §6.3, §6.5) ───────────────
+  /** When true, user settlement requests require admin approval before any transfer. */
+  @Column({ type: "boolean", default: false, name: "require_admin_approval_for_settlement" })
+  requireAdminApprovalForSettlement: boolean;
+
+  /** Settlement methods the admin has enabled for this facility (FULL/NET/TOPUP). */
+  @Column({ type: "jsonb", default: () => `'["FULL","NET","TOPUP"]'::jsonb`, name: "settlement_methods" })
+  settlementMethods: string[];
+
+  /** When true, offsetting credit trades may be netted at settlement (Method B). */
+  @Column({ type: "boolean", default: false, name: "netting_enabled" })
+  nettingEnabled: boolean;
+
   @OneToMany(() => CreditOrderEntity, (co) => co.credit)
   creditOrders: CreditOrderEntity[];
 }

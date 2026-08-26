@@ -2,7 +2,7 @@ import { Entity, Column, ManyToOne, JoinColumn, Index } from "typeorm";
 import { myBaseEntity } from "../../shared/entity/base.entity";
 import { CreditEntity } from "./credit.entity";
 import { CreditOrderEntity } from "./credit-order.entity";
-import { SettlementWorkflowStatusEnum } from "../enum/settlement-workflow-status.enum";
+import { SettlementWorkflowStatusEnum, SettlementMethodEnum, SettlementValuationStateEnum } from "../enum/settlement-workflow-status.enum";
 
 /**
  * Delivery-based settlement workflow (handoff §7, §13).
@@ -45,7 +45,7 @@ export class CreditSettlementEntity extends myBaseEntity {
   @Column({
     type: "enum",
     enum: SettlementWorkflowStatusEnum,
-    default: SettlementWorkflowStatusEnum.REQUESTED,
+    default: SettlementWorkflowStatusEnum.SETTLEMENT_REQUESTED,
     name: "status",
   })
   status: SettlementWorkflowStatusEnum;
@@ -79,4 +79,54 @@ export class CreditSettlementEntity extends myBaseEntity {
 
   @Column({ type: "jsonb", nullable: true })
   metadata: any;
+
+  // ── Handoff §6 (revision 1): approval, valuation, method & funding ──────
+
+  @Column({ type: "varchar", length: 20, nullable: true, name: "settlement_method" })
+  settlementMethod: SettlementMethodEnum | null;
+
+  @Column({ type: "varchar", length: 40, nullable: true, name: "valuation_state" })
+  valuationState: SettlementValuationStateEnum | null;
+
+  @Column({ type: "decimal", precision: 20, scale: 8, default: 0, name: "collateral_value" })
+  collateralValue: number;
+
+  @Column({ type: "decimal", precision: 20, scale: 8, default: 0, name: "exposure_value" })
+  exposureValue: number;
+
+  @Column({ type: "decimal", precision: 20, scale: 8, default: 0, name: "shortfall" })
+  shortfall: number;
+
+  @Column({ type: "decimal", precision: 20, scale: 8, default: 0, name: "required_top_up" })
+  requiredTopUp: number;
+
+  @Column({ type: "decimal", precision: 20, scale: 8, default: 0, name: "funded_amount" })
+  fundedAmount: number;
+
+  @Column({ type: "decimal", precision: 20, scale: 8, default: 0, name: "release_amount" })
+  releaseAmount: number;
+
+  @Column({ type: "decimal", precision: 20, scale: 8, default: 0, name: "realized_pnl" })
+  realizedPnL: number;
+
+  @Column({ type: "jsonb", nullable: true, name: "final_collateral_state" })
+  finalCollateralState: any;
+
+  @Column({ type: "varchar", length: 50, nullable: true, name: "approved_by" })
+  approvedBy: string | null;
+
+  @Column({ type: "timestamptz", nullable: true, name: "approved_at" })
+  approvedAt: Date;
+
+  @Column({ type: "text", nullable: true, name: "approval_reason" })
+  approvalReason: string | null;
+
+  @Column({ type: "varchar", length: 50, nullable: true, name: "rejected_by" })
+  rejectedBy: string | null;
+
+  @Column({ type: "timestamptz", nullable: true, name: "rejected_at" })
+  rejectedAt: Date;
+
+  @Column({ type: "text", nullable: true, name: "rejection_reason" })
+  rejectionReason: string | null;
 }

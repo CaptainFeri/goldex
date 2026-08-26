@@ -396,10 +396,14 @@ function CreditRequestForm({ onCreated }) {
         const [level, features] = await Promise.all([levelApi.getMyLevel(), levelApi.getMyFeatures()])
         if (level?.creditMaxLeverage != null) setMaxLeverage(Number(level.creditMaxLeverage))
         if (level?.creditBaseSymbolId) setCreditBaseSymbolId(level.creditBaseSymbolId)
-        // Collateral is limited to the BASE symbols of the level's pairs
-        // (XAU/IRR → XAU, XAU/USD → XAU, USD/IRR → USD).
-        const baseIds = (level?.pairs || []).map((p) => p.baseSymbol?.id).filter(Boolean)
-        setBaseSymbolIds([...new Set(baseIds)])
+        // Collateral can be either the BASE or the QUOTE symbol of the level's
+        // pairs (XAU/IRR → XAU or IRR, XAU/USD → XAU or USD, USD/IRR → USD or IRR).
+        // The credit base symbol itself is always eligible.
+        const pairIds = (level?.pairs || []).flatMap((p) => [
+          p.baseSymbol?.id,
+          p.quoteSymbol?.id,
+        ]).filter(Boolean)
+        setBaseSymbolIds([...new Set([...pairIds, creditBaseSymbolId].filter(Boolean))])
         const maxAmt = features?.CREDIT_MAX_AMOUNT
         const ma = typeof maxAmt === 'object' ? Number(maxAmt?.amount) : Number(maxAmt)
         if (ma > 0) setMaxAmount(ma)
@@ -474,7 +478,7 @@ function CreditRequestForm({ onCreated }) {
             style={{ width: '100%' }}
           >
             {eligibleWallets.length === 0 && (
-              <option value="">— هیچ دارایی پایه‌ای برای وثیقه موجود نیست —</option>
+              <option value="">— هیچ دارایی پایه/قیمت‌گذاری‌شده‌ای برای وثیقه موجود نیست —</option>
             )}
             {eligibleWallets.map((w) => (
               <option key={w.id} value={w.id}>

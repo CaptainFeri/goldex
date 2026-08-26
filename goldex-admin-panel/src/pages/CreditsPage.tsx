@@ -1176,7 +1176,7 @@ function CreditDetailModal({ credit, onClose }: { credit: Credit; onClose: () =>
             ) : null}
           </div>
 
-          {/* Delivery-based settlement workflows (handoff §7) */}
+          {/* Delivery-based settlement workflows (handoff §6, §7) */}
           <div style={{ background: "var(--bg)", padding: 12, borderRadius: 8 }}>
             <h4 style={{ margin: "0 0 12px 0", fontSize: 14 }}>فرآیند تسویه تحویلی (Settlement Workflow)</h4>
             {settlements.isLoading ? <Loading /> : settlements.data?.length === 0 ? (
@@ -1184,15 +1184,57 @@ function CreditDetailModal({ credit, onClose }: { credit: Credit; onClose: () =>
             ) : (
               <div className="table-wrap">
                 <table>
-                  <thead><tr><th>وضعیت</th><th>دارایی موردنیاز</th><th>موردنیاز</th><th>دریافت‌شده</th><th>درخواست</th></tr></thead>
+                  <thead><tr>
+                    <th>وضعیت</th><th>ارزش‌گذاری</th><th>Exposure/وثیقه</th><th>کسری</th>
+                    <th>روش</th><th>موردنیاز</th><th>دریافتی</th><th>تأمین</th><th>عملیات</th>
+                  </tr></thead>
                   <tbody>
                     {(settlements.data || []).map((s: any) => (
                       <tr key={s.id}>
-                        <td><Badge kind={s.status === "CLOSED" ? "green" : s.status === "FAILED" ? "red" : "gold"}>{s.status}</Badge></td>
-                        <td className="mono">{s.requiredAssetSymbolId?.slice(0, 8) || "—"}</td>
+                        <td>
+                          <Badge kind={s.status === "CLOSED" ? "green" : s.status === "REJECTED" || s.status === "FAILED" ? "red" : s.status === "PENDING_ADMIN_REVIEW" ? "gold" : "gray"}>
+                            {s.status}
+                          </Badge>
+                        </td>
+                        <td className="mono" style={{ fontSize: 11 }}>
+                          {s.valuationState ? (
+                            <>
+                              {s.valuationState === "EXPOSURE_LT_COLLATERAL" ? "exposure<وثیقه" :
+                               s.valuationState === "EXPOSURE_GT_COLLATERAL" ? "exposure>وثیقه" : "exposure=وثیقه"}
+                            </>
+                          ) : "—"}
+                        </td>
+                        <td className="mono" style={{ fontSize: 11 }}>
+                          {s.exposureValue != null || s.collateralValue != null
+                            ? `${fmtNum(s.exposureValue ?? 0)} / ${fmtNum(s.collateralValue ?? 0)}`
+                            : "—"}
+                        </td>
+                        <td className="mono" style={{ fontSize: 11, color: Number(s.shortfall) > 0 ? "var(--red)" : "inherit" }}>
+                          {Number(s.shortfall) > 0 ? fmtNum(s.shortfall) : "—"}
+                        </td>
+                        <td className="mono">{s.settlementMethod || "—"}</td>
                         <td className="mono">{fmtNum(s.requiredAmount)}</td>
                         <td className="mono">{fmtNum(s.receivedAmount)}</td>
-                        <td>{fmtDate(s.requestedAt)}</td>
+                        <td className="mono">{fmtNum(s.fundedAmount ?? 0)}</td>
+                        <td>
+                          <div className="row" style={{ gap: 4, flexWrap: "wrap" }}>
+                            {s.status === "PENDING_ADMIN_REVIEW" && (
+                              <>
+                                <button className="btn sm" onClick={async () => { await api.post(`/admin/credits/settlements/${s.id}/approve`, { reason: "approved" }); settlements.refetch(); }}>تأیید</button>
+                                <button className="btn sm" onClick={async () => { const r = window.prompt("دلیل رد:"); if (r === null) return; await api.post(`/admin/credits/settlements/${s.id}/reject`, { reason: r }); settlements.refetch(); }}>رد</button>
+                              </>
+                            )}
+                            {s.status === "APPROVED" && (
+                              <button className="btn sm" onClick={async () => { await api.post(`/admin/credits/settlements/${s.id}/valuate`); settlements.refetch(); }}>ارزش‌گذاری</button>
+                            )}
+                            {s.status === "VALUATED" && (
+                              <button className="btn sm" onClick={async () => { const m = window.prompt("روش تسویه (FULL/NET/TOPUP):"); if (!m) return; await api.post(`/admin/credits/settlements/${s.id}/select-method`, { method: m.toUpperCase() }); settlements.refetch(); }}>انتخاب روش</button>
+                            )}
+                            {(s.status === "FUNDING_REQUIRED") && (
+                              <button className="btn sm" onClick={async () => { const a = window.prompt("مبلغ تأمین کسری:"); if (!a) return; await api.post(`/admin/credits/settlements/${s.id}/fund`, { amount: Number(a) }); settlements.refetch(); }}>تأمین کسری</button>
+                            )}
+                          </div>
+                        </td>
                       </tr>
                     ))}
                   </tbody>
@@ -1200,6 +1242,35 @@ function CreditDetailModal({ credit, onClose }: { credit: Credit; onClose: () =>
               </div>
             )}
           </div>
+
+          {/* Settlement policy (handoff §6.3, §6.5) */}
+          {c.status === "ACTIVE" && (
+            <div style={{ background: "var(--bg)", padding: 12, borderRadius: 8 }}>
+              <h4 style={{ margin: "0 0 12px 0", fontSize: 14 }}>سیاست تسویه (Settlement Policy)</h4>
+              <div className="kv" style={{ gridTemplateColumns: "1fr 1fr 1fr" }}>
+                <span className="k">تأیید ادمین (approval)</span>
+                <span className="v"><Badge kind={c.requireAdminApprovalForSettlement ? "gold" : "green"}>{c.requireAdminApprovalForSettlement ? "ON" : "OFF"}</Badge></span>
+                <span className="k">روش‌های مجاز</span>
+                <span className="v mono" style={{ fontSize: 12 }}>{(c.settlementMethods || []).join(", ") || "FULL, NET, TOPUP"}</span>
+                <span className="k">Netting</span>
+                <span className="v"><Badge kind={c.nettingEnabled ? "green" : "gray"}>{c.nettingEnabled ? "فعال" : "غیرفعال"}</Badge></span>
+              </div>
+              <div className="row" style={{ gap: 6, marginTop: 10 }}>
+                <button className="btn sm" onClick={async () => {
+                  await api.post(`/admin/credits/${c.id}/settlement-policy`, { requireAdminApprovalForSettlement: !c.requireAdminApprovalForSettlement });
+                  creditDetail.refetch();
+                }}>
+                  {c.requireAdminApprovalForSettlement ? "خاموش‌کردن تأیید ادمین" : "فعال‌کردن تأیید ادمین"}
+                </button>
+                <button className="btn sm" onClick={async () => {
+                  await api.post(`/admin/credits/${c.id}/settlement-policy`, { nettingEnabled: !c.nettingEnabled });
+                  creditDetail.refetch();
+                }}>
+                  {c.nettingEnabled ? "غیرفعال‌کردن Netting" : "فعال‌کردن Netting"}
+                </button>
+              </div>
+            </div>
+          )}
 
           {/* Metadata */}
           {c.metadata && Object.keys(c.metadata).length > 0 && (

@@ -1,8 +1,8 @@
-import { Controller, Get, Patch, Post, Body, Param, Req, UseGuards } from "@nestjs/common";
+import { Controller, Get, Patch, Post, Body, Param, Req, UseGuards, NotFoundException, ForbiddenException } from "@nestjs/common";
 import { ApiTags, ApiOperation, ApiBearerAuth } from "@nestjs/swagger";
 import { CreditService } from "../credit.service";
 import { RequestCreditDto } from "../dto/request-credit.dto";
-import { RequestSettlementDto } from "../dto/settlement-workflow.dto";
+import { RequestSettlementDto, ReceiveSettlementAssetDto, SelectSettlementMethodDto, FundSettlementDto } from "../dto/settlement-workflow.dto";
 import { CreditSettlementWorkflowService } from "../settlement-workflow/credit-settlement-workflow.service";
 import { UserAuthGuard } from "../../user/auth/Guard/user.guard";
 import { UserLevelGuard } from "../../user-level/user-level.guard";
@@ -49,6 +49,45 @@ export class CreditUserController {
       return { data: [] };
     }
     return { data: await this.settlementWorkflowService.findByCredit(id) };
+  }
+
+  @Post(":id/settlement/:settlementId/valuate")
+  @ApiOperation({ summary: "Valuate a settlement (exposure vs collateral, three states)" })
+  async valuateSettlement(@Req() req: any, @Param("id") id: string, @Param("settlementId") settlementId: string) {
+    await this.assertOwned(req.user.id, id, settlementId);
+    return { data: await this.settlementWorkflowService.valuate(settlementId) };
+  }
+
+  @Post(":id/settlement/:settlementId/method")
+  @ApiOperation({ summary: "Select the settlement method (FULL/NET/TOPUP)" })
+  async selectMethod(@Req() req: any, @Param("id") id: string, @Param("settlementId") settlementId: string, @Body() dto: SelectSettlementMethodDto) {
+    await this.assertOwned(req.user.id, id, settlementId);
+    return { data: await this.settlementWorkflowService.selectMethod(settlementId, dto.method, req.user?.id) };
+  }
+
+  @Post(":id/settlement/:settlementId/fund")
+  @ApiOperation({ summary: "Fund the settlement shortfall (partial funding allowed)" })
+  async fundSettlement(@Req() req: any, @Param("id") id: string, @Param("settlementId") settlementId: string, @Body() dto: FundSettlementDto) {
+    await this.assertOwned(req.user.id, id, settlementId);
+    return { data: await this.settlementWorkflowService.fund(settlementId, dto.amount, { fundedBy: req.user?.id, notes: dto.notes }) };
+  }
+
+  @Post(":id/settlement/:settlementId/deliver")
+  @ApiOperation({ summary: "Record delivery of the required asset (partial allowed)" })
+  async deliverAsset(@Req() req: any, @Param("id") id: string, @Param("settlementId") settlementId: string, @Body() dto: ReceiveSettlementAssetDto) {
+    await this.assertOwned(req.user.id, id, settlementId);
+    return { data: await this.settlementWorkflowService.receiveAsset(settlementId, dto.amount, dto.notes) };
+  }
+
+  private async assertOwned(userId: string, creditId: string, settlementId: string): Promise<void> {
+    const credit = await this.creditService.getCreditById(creditId);
+    if (!credit || credit.userId !== userId) {
+      throw new ForbiddenException("CREDIT_NOT_FOUND");
+    }
+    const s = await this.settlementWorkflowService.findByCredit(creditId);
+    if (!s.some((x) => x.id === settlementId)) {
+      throw new NotFoundException("SETTLEMENT_NOT_FOUND");
+    }
   }
 
   @Get("active")
