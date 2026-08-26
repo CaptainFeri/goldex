@@ -504,9 +504,9 @@ const TEST_COMPOSE_FILE =
   process.env.TEST_COMPOSE_FILE || `${REPO_DIR}/docker-compose.test.yml`;
 
 const TEST_PROJECTS = [
-  { name: "goldex-cbp", dir: `${REPO_DIR}/goldex-cbp`, testCmd: "npx jest --json --outputFile=/tmp/cbp-test.json --coverage --coverageReporters=json-summary --coverageDirectory=/tmp/cbp-cov" },
-  { name: "goldex-backend", dir: `${REPO_DIR}/goldex-backend`, testCmd: "npx jest --json --outputFile=/tmp/backend-test.json --coverage --coverageReporters=json-summary --coverageDirectory=/tmp/backend-cov" },
-  { name: "goldex-pricing-engine", dir: `${REPO_DIR}/goldex-pricing-engine`, testCmd: "npx jest --json --outputFile=/tmp/pricing-test.json --coverage --coverageReporters=json-summary --coverageDirectory=/tmp/pricing-cov" },
+  { name: "goldex-cbp", dir: `${REPO_DIR}/goldex-cbp`, testCmd: "npx jest --passWithNoTests --json --outputFile=/tmp/cbp-test.json --coverage --coverageReporters=json-summary --coverageDirectory=/tmp/cbp-cov" },
+  { name: "goldex-backend", dir: `${REPO_DIR}/goldex-backend`, testCmd: "npx jest --passWithNoTests --json --outputFile=/tmp/backend-test.json --coverage --coverageReporters=json-summary --coverageDirectory=/tmp/backend-cov" },
+  { name: "goldex-pricing-engine", dir: `${REPO_DIR}/goldex-pricing-engine`, testCmd: "npx jest --passWithNoTests --json --outputFile=/tmp/pricing-test.json --coverage --coverageReporters=json-summary --coverageDirectory=/tmp/pricing-cov" },
 ];
 
 let testRun = { running: false, startedAt: null, finishedAt: null, compose: [], projects: [], lastError: null };
@@ -518,6 +518,19 @@ function runCmd(cmd, opts = {}) {
       resolve({ code: err ? err.code ?? 1 : 0, stdout: stdout || "", stderr: stderr || "", error: err?.message || null });
     });
   });
+}
+
+/**
+ * Detect which Compose binary is available. Prefers the v2 plugin
+ * (`docker compose`, supports --wait); falls back to the legacy
+ * `docker-compose` (v1). Returns null when neither exists.
+ */
+async function detectCompose() {
+  const v2 = await runCmd("docker compose version");
+  if (v2.code === 0) return { cmd: "docker compose", wait: true };
+  const v1 = await runCmd("docker-compose --version");
+  if (v1.code === 0) return { cmd: "docker-compose", wait: false };
+  return null;
 }
 
 function parseJestJson(jsonFile, covDir) {
@@ -571,18 +584,29 @@ app.post("/api/tests/run", async (_req, res) => {
 
   // 1. Bring up the shared test infrastructure.
   let composeOut = "docker compose unavailable";
-  try {
-    const comp = await runCmd(`docker compose -f "${TEST_COMPOSE_FILE}" up -d --wait`);
-    if (comp.code !== 0) {
-      const legacy = await runCmd(`docker-compose -f "${TEST_COMPOSE_FILE}" up -d`);
-      composeOut = comp.stdout + comp.stderr + (legacy.code === 0 ? "" : "\n" + legacy.stderr);
+  const compose = await detectCompose();
+  if (!compose) {
+    composeOut = [
+      "Neither 'docker compose' (v2) nor 'docker-compose' (v1) is available in the monitor container.",
+      "Install the compose plugin (apk add docker-cli-compose) or rebuild the monitor image.",
+      `Compose file: ${TEST_COMPOSE_FILE}`,
+    ].join("\n");
+  } else {
+    const up = await runCmd(`${compose.cmd} -f "${TEST_COMPOSE_FILE}" up -d${compose.wait ? " --wait" : ""}`);
+    if (up.code === 0) {
+      composeOut = up.stdout + up.stderr;
     } else {
-      composeOut = comp.stdout + comp.stderr;
+      // Retry with the other compose flavour as a last resort.
+      const alt = compose.cmd === "docker compose" ? "docker-compose" : "docker compose";
+      const altUp = await runCmd(`${alt} -f "${TEST_COMPOSE_FILE}" up -d`);
+      if (altUp.code === 0) {
+        composeOut = up.stdout + up.stderr + `\n(used fallback: ${alt})`;
+      } else {
+        composeOut = up.stdout + up.stderr + "\n" + altUp.stderr;
+      }
     }
-  } catch (e) {
-    composeOut = `Failed to run compose: ${e.message}`;
   }
-  testRun.compose = [{ command: "docker compose up -d", output: composeOut }];
+  testRun.compose = [{ command: `${compose?.cmd ?? "docker compose"} up -d`, output: composeOut }];
 
   // 2. Run each project's unit tests with coverage.
   for (const proj of TEST_PROJECTS) {

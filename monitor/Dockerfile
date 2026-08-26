@@ -1,6 +1,8 @@
 FROM node:22-alpine
 
-RUN apk add --no-cache docker-cli
+# docker-cli-compose provides the "docker compose" (v2) plugin so the test
+# runner can bring up the shared test infra from inside the container.
+RUN apk add --no-cache docker-cli docker-cli-compose
 
 WORKDIR /app
 
