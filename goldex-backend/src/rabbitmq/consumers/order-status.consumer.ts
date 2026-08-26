@@ -10,6 +10,8 @@ import { OrderEntity } from '../../order/order.entity';
 import { CreditEntity } from '../../credit/entity/credit.entity';
 import { CreditOrderEntity } from '../../credit/entity/credit-order.entity';
 import { CreditOrderStatusEnum } from '../../credit/enum/credit-order-status.enum';
+import { CollateralLockEntity } from '../../credit/entity/collateral-lock.entity';
+import { CollateralLockStatusEnum } from '../../credit/enum/collateral-lock-status.enum';
 import { WalletOrderService } from '../../wallet/services/wallet-order.service';
 import { OrderStatusEnum } from '../../order/enum/order.status.enum';
 
@@ -53,6 +55,8 @@ export class OrderStatusConsumer implements OnModuleInit {
     private readonly creditOrderRepo: Repository<CreditOrderEntity>,
     @InjectRepository(CreditEntity)
     private readonly creditRepo: Repository<CreditEntity>,
+    @InjectRepository(CollateralLockEntity)
+    private readonly collateralLockRepo: Repository<CollateralLockEntity>,
   ) {}
 
   async onModuleInit() {
@@ -156,6 +160,17 @@ export class OrderStatusConsumer implements OnModuleInit {
     if (!creditOrder) return;
     creditOrder.status = status;
     await this.creditOrderRepo.save(creditOrder);
+    if (status === CreditOrderStatusEnum.CANCELLED) {
+      // Release the per-trade collateral lock — the exposure never opened.
+      const locks = await this.collateralLockRepo.find({
+        where: { creditOrderId: creditOrder.id, status: CollateralLockStatusEnum.ACTIVE },
+      });
+      for (const lock of locks) {
+        lock.status = CollateralLockStatusEnum.RELEASED;
+        lock.releasedAt = new Date();
+        await this.collateralLockRepo.save(lock);
+      }
+    }
     if (status === CreditOrderStatusEnum.COMPLETED) {
       await this.creditRepo.increment(
         { id: creditOrder.creditId },

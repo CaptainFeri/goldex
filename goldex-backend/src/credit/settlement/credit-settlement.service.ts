@@ -11,8 +11,10 @@ import { EventEmitter2 } from "@nestjs/event-emitter";
 import { CreditEntity } from "../entity/credit.entity";
 import { CreditOrderEntity } from "../entity/credit-order.entity";
 import { CreditNotificationEntity } from "../entity/credit-notification.entity";
+import { CollateralLockEntity } from "../entity/collateral-lock.entity";
 import { CreditStatusEnum } from "../enum/credit-status.enum";
 import { CreditOrderStatusEnum } from "../enum/credit-order-status.enum";
+import { CollateralLockStatusEnum } from "../enum/collateral-lock-status.enum";
 import { CreditNotificationTypeEnum } from "../enum/credit-notification-type.enum";
 import { SettlementStateEnum } from "../enum/settlement-state.enum";
 import { RiskStateEnum } from "../enum/risk-state.enum";
@@ -110,6 +112,8 @@ export class CreditSettlementService {
     private readonly creditOrderRepo: Repository<CreditOrderEntity>,
     @InjectRepository(CreditNotificationEntity)
     private readonly creditNotificationRepo: Repository<CreditNotificationEntity>,
+    @InjectRepository(CollateralLockEntity)
+    private readonly collateralLockRepo: Repository<CollateralLockEntity>,
     @InjectRepository(WalletEntity)
     private readonly walletRepo: Repository<WalletEntity>,
     @InjectRepository(PricePairEntity)
@@ -150,13 +154,37 @@ export class CreditSettlementService {
         lock: { mode: "pessimistic_write" },
       });
       if (!credit) throw new NotFoundException("Credit not found");
-      if (
-        credit.status !== CreditStatusEnum.ACTIVE &&
-        credit.status !== CreditStatusEnum.SUSPENDED &&
-        credit.status !== CreditStatusEnum.EXPIRED
-      ) {
-        throw new BadRequestException(`Cannot settle credit with status ${credit.status}`);
-      }
+      return this.settleCreditInternal(manager, credit, opts);
+    });
+  }
+
+  /**
+   * Transaction-scoped settlement. The caller owns the transaction and must
+   * pass a pessimistically-locked CreditEntity. Used by the delivery-based
+   * settlement workflow so the value transfer stays in the workflow's
+   * transaction.
+   */
+  async settleCreditInTransaction(
+    manager: any,
+    credit: CreditEntity,
+    opts: SettlementOptions,
+  ): Promise<CreditEntity> {
+    if (!credit) throw new NotFoundException("Credit not found");
+    return this.settleCreditInternal(manager, credit, opts);
+  }
+
+  private async settleCreditInternal(
+    manager: any,
+    credit: CreditEntity,
+    opts: SettlementOptions,
+  ): Promise<CreditEntity> {
+    if (
+      credit.status !== CreditStatusEnum.ACTIVE &&
+      credit.status !== CreditStatusEnum.SUSPENDED &&
+      credit.status !== CreditStatusEnum.EXPIRED
+    ) {
+      throw new BadRequestException(`Cannot settle credit with status ${credit.status}`);
+    }
 
       // Legacy (admin-created) facilities have no collateral/leverage snapshot —
       // settle them by voiding the credit line and returning the frozen
@@ -288,6 +316,26 @@ export class CreditSettlementService {
         now,
       );
 
+      // 6b. Release/consume per-trade collateral locks (handoff §13). Any lock
+      // that is ACTIVE/RELEASE_PENDING is released back to Collateral Available;
+      // if the settlement consumed collateral, an equivalent portion of locks is
+      // consumed instead of released.
+      await this.settleCollateralLocks(manager, credit, consumedCollateral, now);
+
+      // 6c. Close the facility's open credit trades (handoff §13: CLOSED).
+      const openCreditOrders = await manager.find(CreditOrderEntity, {
+        where: { creditId: credit.id },
+      });
+      for (const co of openCreditOrders) {
+        if (
+          co.status !== CreditOrderStatusEnum.CANCELLED &&
+          co.status !== CreditOrderStatusEnum.CLOSED
+        ) {
+          co.status = CreditOrderStatusEnum.CLOSED;
+          await manager.save(co);
+        }
+      }
+
       // 7. Mark the facility settled.
       credit.status = CreditStatusEnum.SETTLED;
       credit.settledAt = now;
@@ -365,7 +413,6 @@ export class CreditSettlementService {
       );
 
       return saved;
-    });
   }
 
   /**
@@ -702,6 +749,50 @@ export class CreditSettlementService {
       });
       colw.freeBalance = 0;
       await manager.save(colw);
+    }
+  }
+
+  /**
+   * Release or consume the facility's active per-trade collateral locks on
+   * settlement (handoff §13 Collateral Lock lifecycle). Consumed collateral is
+   * backed against locks first; the remaining locks are released back to
+   * Collateral Available.
+   */
+  private async settleCollateralLocks(
+    manager: any,
+    credit: CreditEntity,
+    consumedCollateral: number,
+    now: Date,
+  ): Promise<void> {
+    const locks = await manager.find(CollateralLockEntity, {
+      where: { creditId: credit.id },
+      lock: { mode: "pessimistic_write" },
+    });
+    let remainingToConsume = new Decimal(consumedCollateral || 0);
+    for (const lock of locks) {
+      if (
+        lock.status !== CollateralLockStatusEnum.ACTIVE &&
+        lock.status !== CollateralLockStatusEnum.RELEASE_PENDING &&
+        lock.status !== CollateralLockStatusEnum.CREATED
+      ) {
+        continue;
+      }
+      const amount = new Decimal(lock.amount || 0);
+      if (remainingToConsume.greaterThan(0) && amount.greaterThan(0)) {
+        const consume = Decimal.min(amount, remainingToConsume);
+        remainingToConsume = remainingToConsume.minus(consume);
+        lock.status = CollateralLockStatusEnum.CONSUMED;
+        lock.consumedAt = now;
+        lock.metadata = {
+          ...(lock.metadata || {}),
+          consumed: true,
+          consumedAmount: consume.toNumber(),
+        };
+      } else {
+        lock.status = CollateralLockStatusEnum.RELEASED;
+        lock.releasedAt = now;
+      }
+      await manager.save(lock);
     }
   }
 

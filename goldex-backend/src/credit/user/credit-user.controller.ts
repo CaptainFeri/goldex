@@ -2,6 +2,8 @@ import { Controller, Get, Patch, Post, Body, Param, Req, UseGuards } from "@nest
 import { ApiTags, ApiOperation, ApiBearerAuth } from "@nestjs/swagger";
 import { CreditService } from "../credit.service";
 import { RequestCreditDto } from "../dto/request-credit.dto";
+import { RequestSettlementDto } from "../dto/settlement-workflow.dto";
+import { CreditSettlementWorkflowService } from "../settlement-workflow/credit-settlement-workflow.service";
 import { UserAuthGuard } from "../../user/auth/Guard/user.guard";
 import { UserLevelGuard } from "../../user-level/user-level.guard";
 
@@ -10,7 +12,10 @@ import { UserLevelGuard } from "../../user-level/user-level.guard";
 @UseGuards(UserAuthGuard, UserLevelGuard)
 @ApiBearerAuth()
 export class CreditUserController {
-  constructor(private readonly creditService: CreditService) {}
+  constructor(
+    private readonly creditService: CreditService,
+    private readonly settlementWorkflowService: CreditSettlementWorkflowService,
+  ) {}
 
   @Post("request")
   @ApiOperation({ summary: "Open a self-service credit facility (freeze collateral + leverage)" })
@@ -22,6 +27,28 @@ export class CreditUserController {
   @ApiOperation({ summary: "User self-settle: repay credit and release assets to deposit wallet" })
   async settleCredit(@Req() req: any, @Param("id") id: string) {
     return { data: await this.creditService.settleFromUser(req.user.id, id) };
+  }
+
+  @Post(":id/settlement")
+  @ApiOperation({ summary: "Request a delivery-based settlement workflow for a credit trade" })
+  async requestSettlement(@Req() req: any, @Param("id") id: string, @Body() dto: RequestSettlementDto) {
+    return {
+      data: await this.settlementWorkflowService.requestSettlement(id, {
+        creditOrderId: dto.creditOrderId,
+        requestedBy: req.user?.id,
+        notes: dto.notes,
+      }),
+    };
+  }
+
+  @Get(":id/settlements")
+  @ApiOperation({ summary: "List delivery-based settlement workflows of a credit" })
+  async listSettlements(@Req() req: any, @Param("id") id: string) {
+    const credit = await this.creditService.getCreditById(id);
+    if (credit.userId !== req.user.id) {
+      return { data: [] };
+    }
+    return { data: await this.settlementWorkflowService.findByCredit(id) };
   }
 
   @Get("active")

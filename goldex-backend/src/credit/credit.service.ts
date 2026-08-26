@@ -6,8 +6,10 @@ import Decimal from "decimal.js";
 import { CreditEntity } from "./entity/credit.entity";
 import { CreditOrderEntity } from "./entity/credit-order.entity";
 import { CreditNotificationEntity } from "./entity/credit-notification.entity";
+import { CollateralLockEntity } from "./entity/collateral-lock.entity";
 import { CreditStatusEnum } from "./enum/credit-status.enum";
 import { CreditOrderStatusEnum } from "./enum/credit-order-status.enum";
+import { CollateralLockStatusEnum } from "./enum/collateral-lock-status.enum";
 import { CreditNotificationTypeEnum } from "./enum/credit-notification-type.enum";
 import { SettlementStateEnum } from "./enum/settlement-state.enum";
 import { RiskStateEnum } from "./enum/risk-state.enum";
@@ -51,6 +53,8 @@ export class CreditService {
     private creditOrderRepository: Repository<CreditOrderEntity>,
     @InjectRepository(CreditNotificationEntity)
     private creditNotificationRepository: Repository<CreditNotificationEntity>,
+    @InjectRepository(CollateralLockEntity)
+    private collateralLockRepository: Repository<CollateralLockEntity>,
     @InjectRepository(WalletEntity)
     private walletRepository: Repository<WalletEntity>,
     @InjectRepository(TransactionEntity)
@@ -357,6 +361,8 @@ export class CreditService {
         maxConcurrentOrders: dto.maxConcurrentOrders,
         maxTradeChainDepth: dto.maxTradeChainDepth,
         currentTradeChainDepth: 0,
+        maxCreditNotional: dto.maxCreditNotional,
+        maxTotalLockedCollateral: dto.maxTotalLockedCollateral,
         settlementState: SettlementStateEnum.GREEN,
         riskState: RiskStateEnum.NORMAL,
         greenDurationHours: dto.greenDurationHours || 8,
@@ -607,6 +613,10 @@ export class CreditService {
         enforceOnDrawdown: level.creditEnforceOnDrawdown,
         enforceOnExpiry: level.creditEnforceOnExpiry,
         enforceRequestDeadline: level.creditEnforceRequestDeadline,
+        maxCreditNotional:
+          level.creditMaxNotional != null ? Number(level.creditMaxNotional) : null,
+        maxTotalLockedCollateral:
+          level.creditMaxLockedCollateral != null ? Number(level.creditMaxLockedCollateral) : null,
         metadata: {
           selfService: true,
           collateralWalletId: savedCollateralWallet.id,
@@ -1624,6 +1634,9 @@ export class CreditService {
       }
     }
 
+    // Per-trade collateral lock summary (handoff §3 Collateral Locked/Available).
+    const lockSummary = await this.getCollateralLockSummary(credit.id);
+
     return {
       id: credit.id,
       creditCode: credit.creditCode,
@@ -1634,14 +1647,222 @@ export class CreditService {
       availableCredit,
       collateralSymbolId: credit.collateralSymbolId,
       collateralAmount: Number(credit.collateralAmount) || 0,
+      collateralLocked: lockSummary.totalLocked,
+      collateralAvailable: lockSummary.available,
       initialCollateralValue: Number(credit.initialCollateralValue) || 0,
       currentCollateralValue,
       lastDrawdownPercent,
       drawdownPercent: credit.drawdownPercent,
       riskState: credit.riskState,
       settlementState: credit.settlementState,
+      maxConcurrentOrders: credit.maxConcurrentOrders,
+      maxTradeChainDepth: credit.maxTradeChainDepth,
+      maxCreditNotional: credit.maxCreditNotional,
+      maxTotalLockedCollateral: credit.maxTotalLockedCollateral,
       balances,
     };
+  }
+
+  /**
+   * Current mark price of the facility's collateral against the credit base
+   * symbol (1 when the collateral is denominated directly in the base).
+   */
+  async getCollateralMarkPrice(credit: CreditEntity): Promise<number> {
+    if (!credit.collateralSymbolId || !credit.creditBaseSymbolId) return 1;
+    if (credit.collateralSymbolId === credit.creditBaseSymbolId) return 1;
+    const pair = await this.pricePairRepository.findOne({
+      where: {
+        baseId: credit.collateralSymbolId,
+        quoteId: credit.creditBaseSymbolId,
+        isValid: true,
+      },
+    });
+    const price = pair ? Number(pair.bestSellGramPrice) || Number(pair.bestSellPrice) || 0 : 0;
+    return price > 0 ? price : 1;
+  }
+
+  /**
+   * Collateral required to back a notional exposure (handoff §4.2):
+   *   requiredCollateral = exposure / leverage
+   * expressed in collateral units (e.g. grams). Example: selling 500g XAU at
+   * 10m IRR/g with leverage 5 → (500 × 10m) / 5 / 10m = 100g locked.
+   */
+  async computeRequiredCollateral(credit: CreditEntity, notionalIr: number): Promise<number> {
+    const leverage = Number(credit.leverage) || 1;
+    if (leverage <= 0) return 0;
+    const price = await this.getCollateralMarkPrice(credit);
+    return new Decimal(notionalIr || 0).div(leverage).div(price || 1).toNumber();
+  }
+
+  /**
+   * Create a per-trade collateral lock (handoff §13). Enforces that the lock
+   * does not exceed Collateral Available and the max-total-locked ratio.
+   */
+  async createCollateralLockForOrder(
+    creditId: string,
+    creditOrderId: string,
+    notionalIr: number,
+  ): Promise<CollateralLockEntity> {
+    const credit = await this.creditRepository.findOne({ where: { id: creditId } });
+    if (!credit) throw new NotFoundException("Credit not found");
+
+    const amount = await this.computeRequiredCollateral(credit, notionalIr);
+    if (new Decimal(amount).lessThanOrEqualTo(0)) {
+      throw new BadRequestException("CREDIT_COLLATERAL_REQUIRED: unable to compute required collateral");
+    }
+
+    const summary = await this.getCollateralLockSummary(creditId);
+    const collateralTotal = new Decimal(credit.collateralAmount || 0);
+    const available = Decimal.max(0, collateralTotal.minus(summary.totalLocked));
+
+    if (new Decimal(amount).greaterThan(available)) {
+      throw new BadRequestException(
+        `CREDIT_INSUFFICIENT_COLLATERAL: required ${amount} of collateral, only ${available} available`,
+      );
+    }
+    const maxRatio = credit.maxTotalLockedCollateral != null ? Number(credit.maxTotalLockedCollateral) : null;
+    if (maxRatio != null && collateralTotal.greaterThan(0)) {
+      const projectedRatio = new Decimal(summary.totalLocked).plus(amount).div(collateralTotal);
+      if (projectedRatio.greaterThan(maxRatio)) {
+        throw new BadRequestException(
+          `CREDIT_MAX_LOCKED_COLLATERAL: locking ${projectedRatio.toFixed(4)} exceeds the max ratio ${maxRatio}`,
+        );
+      }
+    }
+
+    const price = await this.getCollateralMarkPrice(credit);
+    const lock = this.collateralLockRepository.create({
+      creditId,
+      creditOrderId,
+      amount,
+      notionalValue: notionalIr,
+      priceAtLock: price,
+      status: CollateralLockStatusEnum.ACTIVE,
+      activatedAt: new Date(),
+    });
+    return this.collateralLockRepository.save(lock);
+  }
+
+  /**
+   * Release the collateral lock of a credit trade that never opened (cancelled
+   * / rejected before execution). Idempotent.
+   */
+  async releaseCollateralLockForCreditOrder(creditOrderId: string): Promise<void> {
+    const locks = await this.collateralLockRepository.find({
+      where: { creditOrderId, status: CollateralLockStatusEnum.ACTIVE },
+    });
+    const now = new Date();
+    for (const lock of locks) {
+      lock.status = CollateralLockStatusEnum.RELEASED;
+      lock.releasedAt = now;
+      await this.collateralLockRepository.save(lock);
+    }
+  }
+
+  /**
+   * Collateral lock summary for a facility (handoff §3):
+   *   totalLocked  = Σ ACTIVE + RELEASE_PENDING locks
+   *   available    = collateralTotal − totalLocked
+   */
+  async getCollateralLockSummary(creditId: string): Promise<{
+    totalLocked: number;
+    available: number;
+    active: number;
+    released: number;
+    consumed: number;
+  }> {
+    const credit = await this.creditRepository.findOne({ where: { id: creditId } });
+    const total = new Decimal(credit?.collateralAmount || 0);
+    const locks = await this.collateralLockRepository.find({ where: { creditId } });
+
+    let totalLocked = new Decimal(0);
+    let released = new Decimal(0);
+    let consumed = new Decimal(0);
+    let active = 0;
+    for (const lock of locks) {
+      const amt = new Decimal(lock.amount || 0);
+      if (
+        lock.status === CollateralLockStatusEnum.ACTIVE ||
+        lock.status === CollateralLockStatusEnum.RELEASE_PENDING ||
+        lock.status === CollateralLockStatusEnum.CREATED
+      ) {
+        totalLocked = totalLocked.plus(amt);
+        active += 1;
+      } else if (lock.status === CollateralLockStatusEnum.RELEASED) {
+        released = released.plus(amt);
+      } else if (lock.status === CollateralLockStatusEnum.CONSUMED) {
+        consumed = consumed.plus(amt);
+      }
+    }
+    return {
+      totalLocked: totalLocked.toNumber(),
+      available: Decimal.max(0, total.minus(totalLocked)).toNumber(),
+      active,
+      released: released.toNumber(),
+      consumed: consumed.toNumber(),
+    };
+  }
+
+  /** List the per-trade collateral lock records of a facility (admin). */
+  async getCollateralLocks(creditId: string): Promise<CollateralLockEntity[]> {
+    return this.collateralLockRepository.find({
+      where: { creditId },
+      relations: { creditOrder: { order: true } },
+      order: { createAt: "DESC" },
+    });
+  }
+
+  /**
+   * Credit pre-check (handoff §9, §15). Enforces the facility's risk-limit
+   * parameters that are not covered by the existing guards in the order path:
+   *   - maxConcurrentOrders  (max_parallel_trades)
+   *   - maxTradeChainDepth   (max_asset_depth)
+   *   - maxCreditNotional    (max_credit_notional)
+   *   - maxTotalLockedCollateral (via createCollateralLockForOrder)
+   */
+  async runCreditPreCheck(
+    credit: CreditEntity,
+    opts: { side: string; notionalIr: number; excludeOrderId?: string },
+  ): Promise<void> {
+    // ── max_parallel_trades (concurrent open orders) ────────────────
+    if (credit.maxConcurrentOrders != null) {
+      const activeCount = await this.creditOrderRepository.count({
+        where: { creditId: credit.id, status: CreditOrderStatusEnum.ACTIVE },
+      });
+      if (activeCount >= credit.maxConcurrentOrders) {
+        throw new BadRequestException(
+          `CREDIT_MAX_PARALLEL_TRADES: ${activeCount} active trades exceeds the max of ${credit.maxConcurrentOrders}`,
+        );
+      }
+    }
+
+    // ── max_asset_depth (chain depth) ────────────────────────────────
+    if (credit.maxTradeChainDepth != null) {
+      const activeOrders = await this.creditOrderRepository.find({
+        where: { creditId: credit.id, status: CreditOrderStatusEnum.ACTIVE },
+      });
+      const currentDepth = activeOrders.reduce(
+        (max, co) => Math.max(max, Number(co.tradeChainLevel) || 1),
+        1,
+      );
+      if (currentDepth >= credit.maxTradeChainDepth) {
+        throw new BadRequestException(
+          `CREDIT_MAX_ASSET_DEPTH: chain depth ${currentDepth} has reached the max of ${credit.maxTradeChainDepth}`,
+        );
+      }
+    }
+
+    // ── max_credit_notional (nominal exposure cap) ──────────────────
+    if (credit.maxCreditNotional != null && Number(credit.maxCreditNotional) > 0) {
+      const usedNotional =
+        opts.side === "SELL" ? Number(credit.usedCredit) || 0 : Number(credit.usedCredit) || 0;
+      const projected = new Decimal(usedNotional).plus(opts.notionalIr || 0);
+      if (projected.greaterThan(Number(credit.maxCreditNotional))) {
+        throw new BadRequestException(
+          `CREDIT_MAX_NOTIONAL: projected exposure ${projected.toFixed(2)} exceeds the max of ${credit.maxCreditNotional}`,
+        );
+      }
+    }
   }
 
   /**

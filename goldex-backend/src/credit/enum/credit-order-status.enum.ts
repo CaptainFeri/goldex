@@ -3,4 +3,5 @@ export enum CreditOrderStatusEnum {
   MARGIN_CALLED = "MARGIN_CALLED",
   COMPLETED = "COMPLETED",
   CANCELLED = "CANCELLED",
+  CLOSED = "CLOSED",
 }

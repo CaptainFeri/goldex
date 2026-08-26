@@ -77,6 +77,15 @@ export class QuoteRequestService {
     if (useCreditForRequest && side === OrderSideEnum.SELL) {
       await this.creditService.ensureSellCreditCapacity(activeCredit.id);
     }
+    // Credit v3 pre-check (handoff §9, §15): max_parallel_trades, max_asset_depth,
+    // max_credit_notional — mirrored from the order path for quote requests.
+    if (useCreditForRequest) {
+      const notionalIr = (Number(quantity) || 0) * (Number(price) || 0);
+      await this.creditService.runCreditPreCheck(activeCredit, {
+        side,
+        notionalIr,
+      });
+    }
 
     const queryRunner = this.dataSource.createQueryRunner();
     await queryRunner.connect();

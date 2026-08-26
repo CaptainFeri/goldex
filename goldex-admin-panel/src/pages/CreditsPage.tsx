@@ -290,6 +290,8 @@ export default function CreditsPage() {
                 <th>حد اعتبار</th>
                 <th>استفاده‌شده</th>
                 <th>موجود</th>
+                <th>وثیقه قفل/آزاد</th>
+                <th>محدودیت‌ها</th>
                 <th>درادون</th>
                 <th>وضعیت</th>
                 <th>وضعیت تسویه</th>
@@ -313,6 +315,24 @@ export default function CreditsPage() {
                   <td className="mono">{fmtNum(c.creditLimit)}</td>
                   <td className="mono">{fmtNum(c.usedCredit)}</td>
                   <td className="mono">{fmtNum(c.availableCredit ?? Math.max(0, (c.creditLimit ?? 0) - (c.usedCredit ?? 0)))}</td>
+                  <td>
+                    {c.collateralLocked != null ? (
+                      <span className="mono" style={{ fontSize: 12 }}>
+                        {fmtNum(c.collateralLocked)} / {fmtNum(c.collateralAmount ?? 0)}
+                      </span>
+                    ) : "—"}
+                  </td>
+                  <td style={{ fontSize: 12 }}>
+                    {c.maxTradeChainDepth != null || c.maxConcurrentOrders != null || c.maxCreditNotional != null ? (
+                      <span className="mono">
+                        {[
+                          c.maxConcurrentOrders != null ? `موازی ${c.maxConcurrentOrders}` : null,
+                          c.maxTradeChainDepth != null ? `عمق ${c.maxTradeChainDepth}` : null,
+                          c.maxCreditNotional != null ? `حد ${fmtNum(c.maxCreditNotional)}` : null,
+                        ].filter(Boolean).join(" | ")}
+                      </span>
+                    ) : "—"}
+                  </td>
                   <td>
                     {c.drawdownPercent != null ? (
                       <span style={{ color: Number(c.lastDrawdownPercent ?? 0) >= Number(c.drawdownPercent ?? 100) ? "var(--red)" : "inherit" }}>
@@ -859,6 +879,18 @@ function CreditDetailModal({ credit, onClose }: { credit: Credit; onClose: () =>
 
   const riskData = risk.data;
 
+  // Per-trade collateral locks (handoff §13).
+  const locks = useQuery({
+    queryKey: ["credit-locks", credit.id],
+    queryFn: async () => unwrap<{ summary: any; locks: any[] }>((await api.get(`/admin/credits/${credit.id}/locks`)).data),
+  });
+
+  // Delivery-based settlement workflows (handoff §7).
+  const settlements = useQuery({
+    queryKey: ["credit-settlements", credit.id],
+    queryFn: async () => unwrap<any[]>((await api.get(`/admin/credits/${credit.id}/settlements`)).data),
+  });
+
   return (
     <Modal title={`جزئیات اعتبار ${c.creditCode}`} onClose={onClose} wide>
       {creditDetail.isLoading ? (
@@ -1091,6 +1123,76 @@ function CreditDetailModal({ credit, onClose }: { credit: Credit; onClose: () =>
                             {CREDIT_ORDER_STATUS_LABELS[c.creditOrders?.find(co => co.orderId === o.orderId)?.status || ""] || "—"}
                           </Badge>
                         </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+
+          {/* Collateral Locks (handoff §3, §13) */}
+          <div style={{ background: "var(--bg)", padding: 12, borderRadius: 8 }}>
+            <h4 style={{ margin: "0 0 12px 0", fontSize: 14 }}>قفل وثیقه (Collateral Locks)</h4>
+            {locks.isLoading ? <Loading /> : locks.data ? (
+              <>
+                <div className="kv" style={{ gridTemplateColumns: "1fr 1fr 1fr", marginBottom: 10 }}>
+                  <span className="k">وثیقه کل</span>
+                  <span className="v mono">{fmtNum(c.collateralAmount ?? 0)}</span>
+                  <span className="k">قفل‌شده</span>
+                  <span className="v mono" style={{ color: "var(--gold)", fontWeight: 600 }}>{fmtNum(locks.data.summary.totalLocked)}</span>
+                  <span className="k">آزاد (Available)</span>
+                  <span className="v mono">{fmtNum(locks.data.summary.available)}</span>
+                  <span className="k">آزادشده (Released)</span>
+                  <span className="v mono">{fmtNum(locks.data.summary.released)}</span>
+                  <span className="k">مصرف‌شده (Consumed)</span>
+                  <span className="v mono" style={{ color: locks.data.summary.consumed > 0 ? "var(--red)" : "inherit" }}>{fmtNum(locks.data.summary.consumed)}</span>
+                </div>
+                {(locks.data.locks || []).length === 0 ? (
+                  <Empty label="هیچ قفلی ثبت نشده" />
+                ) : (
+                  <div className="table-wrap">
+                    <table>
+                      <thead><tr><th>مبلغ (g)</th><th>مبلغ اسمی</th><th>وضعیت</th><th>فعال‌شده</th><th>تاریخ</th></tr></thead>
+                      <tbody>
+                        {locks.data.locks.map((l: any) => (
+                          <tr key={l.id}>
+                            <td className="mono">{fmtNum(l.amount)}</td>
+                            <td className="mono">{fmtNum(l.notionalValue)}</td>
+                            <td>
+                              <Badge kind={l.status === "ACTIVE" ? "green" : l.status === "RELEASED" ? "gold" : l.status === "CONSUMED" ? "red" : "gray"}>
+                                {l.status === "ACTIVE" ? "فعال" : l.status === "RELEASED" ? "آزاد" : l.status === "CONSUMED" ? "مصرف" : l.status}
+                              </Badge>
+                            </td>
+                            <td className="mono">{l.creditOrder ? l.creditOrder.order?.orderCode || l.creditOrder.id?.slice(0, 8) : "—"}</td>
+                            <td>{fmtDate(l.activatedAt || l.releasedAt || l.consumedAt)}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </>
+            ) : null}
+          </div>
+
+          {/* Delivery-based settlement workflows (handoff §7) */}
+          <div style={{ background: "var(--bg)", padding: 12, borderRadius: 8 }}>
+            <h4 style={{ margin: "0 0 12px 0", fontSize: 14 }}>فرآیند تسویه تحویلی (Settlement Workflow)</h4>
+            {settlements.isLoading ? <Loading /> : settlements.data?.length === 0 ? (
+              <Empty label="هیچ تسویه تحویلی درخواست نشده" />
+            ) : (
+              <div className="table-wrap">
+                <table>
+                  <thead><tr><th>وضعیت</th><th>دارایی موردنیاز</th><th>موردنیاز</th><th>دریافت‌شده</th><th>درخواست</th></tr></thead>
+                  <tbody>
+                    {(settlements.data || []).map((s: any) => (
+                      <tr key={s.id}>
+                        <td><Badge kind={s.status === "CLOSED" ? "green" : s.status === "FAILED" ? "red" : "gold"}>{s.status}</Badge></td>
+                        <td className="mono">{s.requiredAssetSymbolId?.slice(0, 8) || "—"}</td>
+                        <td className="mono">{fmtNum(s.requiredAmount)}</td>
+                        <td className="mono">{fmtNum(s.receivedAmount)}</td>
+                        <td>{fmtDate(s.requestedAt)}</td>
                       </tr>
                     ))}
                   </tbody>

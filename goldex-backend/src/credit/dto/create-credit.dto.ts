@@ -96,6 +96,21 @@ export class CreateCreditDto {
   @Type(() => Number)
   maxTradeChainDepth?: number;
 
+  @ApiProperty({ required: false, description: "Max nominal (notional) exposure, in credit base units (0 = unlimited)" })
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  @Type(() => Number)
+  maxCreditNotional?: number;
+
+  @ApiProperty({ required: false, description: "Max fraction (0..1) of total collateral that may be locked at once" })
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  @Max(1)
+  @Type(() => Number)
+  maxTotalLockedCollateral?: number;
+
   @ApiProperty({ required: false, default: 8, description: "Green phase duration in hours" })
   @IsOptional()
   @IsNumber()

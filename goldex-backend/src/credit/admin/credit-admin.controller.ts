@@ -6,6 +6,8 @@ import { SettleCreditDto } from "../dto/settle-credit.dto";
 import { CancelCreditDto } from "../dto/cancel-credit.dto";
 import { CreditQueryDto } from "../dto/credit-query.dto";
 import { ExtendCreditDto, AdjustCreditLimitDto } from "../dto/extend-credit.dto";
+import { RequestSettlementDto, ReceiveSettlementAssetDto, FailSettlementDto } from "../dto/settlement-workflow.dto";
+import { CreditSettlementWorkflowService } from "../settlement-workflow/credit-settlement-workflow.service";
 import { AdminAuthGuard } from "../../admin/auth/Guard/admin.guard";
 import { AdminRoles } from "../../admin/role/admin.role.decorator";
 import { AdminRole } from "../../admin/role/admin.roles.enum";
@@ -16,7 +18,10 @@ import { AdminWorkTimeGuard } from "../../admin-schedule/admin-work-time.guard";
 @UseGuards(AdminAuthGuard, AdminWorkTimeGuard)
 @ApiBearerAuth()
 export class CreditAdminController {
-  constructor(private readonly creditService: CreditService) {}
+  constructor(
+    private readonly creditService: CreditService,
+    private readonly settlementWorkflowService: CreditSettlementWorkflowService,
+  ) {}
 
   @Post()
   @AdminRoles(AdminRole.FINANCE, AdminRole.SUPER_ADMIN, AdminRole.ADMIN)
@@ -129,5 +134,94 @@ export class CreditAdminController {
   async getPnL(@Param("id") id: string) {
     const credit = await this.creditService.getCreditById(id);
     return { data: this.creditService.calculateCreditPnL(credit) };
+  }
+
+  // ── Delivery-based settlement workflow (handoff §7) ────────────────────
+
+  @Get(":id/locks")
+  @AdminRoles(AdminRole.FINANCE, AdminRole.SUPER_ADMIN, AdminRole.ADMIN)
+  @ApiOperation({ summary: "List per-trade collateral locks of a credit (handoff §13)" })
+  async listCollateralLocks(@Param("id") id: string) {
+    return {
+      data: {
+        summary: await this.creditService.getCollateralLockSummary(id),
+        locks: await this.creditService.getCollateralLocks(id),
+      },
+    };
+  }
+
+  @Get(":id/settlements")
+  @AdminRoles(AdminRole.FINANCE, AdminRole.SUPER_ADMIN, AdminRole.ADMIN)
+  @ApiOperation({ summary: "List delivery-based settlement workflows of a credit" })
+  async listSettlements(@Param("id") id: string) {
+    return { data: await this.settlementWorkflowService.findByCredit(id) };
+  }
+
+  @Post(":id/settlement-workflow")
+  @AdminRoles(AdminRole.FINANCE, AdminRole.SUPER_ADMIN, AdminRole.ADMIN)
+  @ApiOperation({ summary: "Start a delivery-based settlement workflow for a credit/trade" })
+  async requestSettlement(@Req() req: any, @Param("id") id: string, @Body() dto: RequestSettlementDto) {
+    return {
+      data: await this.settlementWorkflowService.requestSettlement(id, {
+        creditOrderId: dto.creditOrderId,
+        requestedBy: req.admin?.id,
+        adminId: req.admin?.id,
+        notes: dto.notes,
+      }),
+    };
+  }
+
+  @Post("settlements/:settlementId/receive")
+  @AdminRoles(AdminRole.FINANCE, AdminRole.SUPER_ADMIN, AdminRole.ADMIN)
+  @ApiOperation({ summary: "Record delivery of the required asset (partial allowed)" })
+  async receiveAsset(@Param("settlementId") settlementId: string, @Body() dto: ReceiveSettlementAssetDto) {
+    return { data: await this.settlementWorkflowService.receiveAsset(settlementId, dto.amount, dto.notes) };
+  }
+
+  @Post("settlements/:settlementId/verify")
+  @AdminRoles(AdminRole.FINANCE, AdminRole.SUPER_ADMIN, AdminRole.ADMIN)
+  @ApiOperation({ summary: "Verify delivered asset sufficiency" })
+  async verifyAsset(@Param("settlementId") settlementId: string) {
+    return { data: await this.settlementWorkflowService.verifyAsset(settlementId) };
+  }
+
+  @Post("settlements/:settlementId/clear-liability")
+  @AdminRoles(AdminRole.FINANCE, AdminRole.SUPER_ADMIN, AdminRole.ADMIN)
+  @ApiOperation({ summary: "Clear the negative credit liability (settlement engine; consumes/releases collateral locks)" })
+  async clearLiability(@Req() req: any, @Param("settlementId") settlementId: string) {
+    return {
+      data: await this.settlementWorkflowService.clearLiability(settlementId, {
+        adminId: req.admin?.id,
+        mode: "ADMIN",
+      }),
+    };
+  }
+
+  @Post("settlements/:settlementId/settle-asset")
+  @AdminRoles(AdminRole.FINANCE, AdminRole.SUPER_ADMIN, AdminRole.ADMIN)
+  @ApiOperation({ summary: "Mark credit asset transferred to cash wallet" })
+  async settleAsset(@Param("settlementId") settlementId: string) {
+    return { data: await this.settlementWorkflowService.settleAsset(settlementId) };
+  }
+
+  @Post("settlements/:settlementId/release-collateral")
+  @AdminRoles(AdminRole.FINANCE, AdminRole.SUPER_ADMIN, AdminRole.ADMIN)
+  @ApiOperation({ summary: "Confirm collateral lock release for the trade" })
+  async releaseCollateral(@Param("settlementId") settlementId: string) {
+    return { data: await this.settlementWorkflowService.releaseCollateral(settlementId) };
+  }
+
+  @Post("settlements/:settlementId/close")
+  @AdminRoles(AdminRole.FINANCE, AdminRole.SUPER_ADMIN, AdminRole.ADMIN)
+  @ApiOperation({ summary: "Close the settlement workflow and its trade" })
+  async closeSettlement(@Param("settlementId") settlementId: string) {
+    return { data: await this.settlementWorkflowService.close(settlementId) };
+  }
+
+  @Post("settlements/:settlementId/fail")
+  @AdminRoles(AdminRole.FINANCE, AdminRole.SUPER_ADMIN, AdminRole.ADMIN)
+  @ApiOperation({ summary: "Mark a settlement workflow failed (retry later)" })
+  async failSettlement(@Param("settlementId") settlementId: string, @Body() dto: FailSettlementDto) {
+    return { data: await this.settlementWorkflowService.fail(settlementId, dto.reason) };
   }
 }

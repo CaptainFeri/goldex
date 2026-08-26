@@ -70,6 +70,16 @@ export class UserLevelEntity extends myBaseEntity {
   @Column({ type: "int", nullable: true, name: "credit_max_execution_level" })
   creditMaxExecutionLevel: number;
 
+  // Max nominal (notional) exposure a facility on this level may hold, in the
+  // credit base symbol units (0/null = unlimited). Handoff §9 max_credit_notional.
+  @Column({ type: "decimal", precision: 20, scale: 8, nullable: true, name: "credit_max_notional" })
+  creditMaxNotional: number;
+
+  // Max fraction (0..1) of total collateral that may be locked at once
+  // (0/null = unlimited). Handoff §9 max_total_locked_collateral.
+  @Column({ type: "decimal", precision: 5, scale: 4, nullable: true, name: "credit_max_locked_collateral" })
+  creditMaxLockedCollateral: number;
+
   // When true, a user on this level must have an approved KYC before opening a
   // self-service credit facility. When false, KYC is not required.
   @Column({ type: "boolean", nullable: true, default: true, name: "credit_require_kyc" })

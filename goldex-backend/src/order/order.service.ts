@@ -339,6 +339,17 @@ export class OrderService {
         }
       }
 
+      // Credit v3 pre-check (handoff §9, §15): max_parallel_trades,
+      // max_asset_depth, max_credit_notional. Enforced here, after the display
+      // price is resolved, so the projected notional is exact.
+      if (useCredit) {
+        const notionalIr = new Decimal(dto.quantity || 0).mul(displayGram).toNumber();
+        await this.creditService.runCreditPreCheck(activeCredit, {
+          side: dto.side,
+          notionalIr,
+        });
+      }
+
       await this.enforceTradingRules(userId, Number(dto.quantity) * gramPrice);
 
       const order = this.orderRepository.create({
@@ -404,7 +415,17 @@ export class OrderService {
             status: CreditOrderStatusEnum.ACTIVE,
             drawdownPercent: activeCredit.callMarginPercent,
           });
-          await this.creditOrderRepo.save(creditOrder);
+          const savedCreditOrder = await this.creditOrderRepo.save(creditOrder);
+
+          // Per-trade collateral lock (handoff §4.2, §13): required collateral
+          // = exposure / leverage. Locked while the trade is open; released or
+          // consumed at settlement. Failure to lock rejects the order.
+          const notionalIr = new Decimal(savedOrder.quantity || 0).mul(displayGram).toNumber();
+          await this.creditService.createCollateralLockForOrder(
+            activeCredit.id,
+            savedCreditOrder.id,
+            notionalIr,
+          );
         }
 
         if (dto.orderType === OrderTypeEnum.LIMIT) {
@@ -452,6 +473,7 @@ export class OrderService {
           if (creditOrder) {
             creditOrder.status = CreditOrderStatusEnum.CANCELLED;
             await this.creditOrderRepo.save(creditOrder);
+            await this.creditService.releaseCollateralLockForCreditOrder(creditOrder.id);
           }
         }
 
@@ -658,6 +680,8 @@ export class OrderService {
     if (creditOrder) {
       creditOrder.status = CreditOrderStatusEnum.CANCELLED;
       await this.creditOrderRepo.save(creditOrder);
+      // Release the per-trade collateral lock (the exposure never opened).
+      await this.creditService.releaseCollateralLockForCreditOrder(creditOrder.id);
     }
 
     this.logger.log(`Order ${order.orderCode} cancelled by user ${userId}`);
@@ -754,6 +778,10 @@ export class OrderService {
             ? CreditOrderStatusEnum.COMPLETED
             : CreditOrderStatusEnum.CANCELLED;
           await this.creditOrderRepo.save(creditOrder);
+          // Release the per-trade collateral lock when the trade was cancelled.
+          if (order.status === OrderStatusEnum.CANCELLED) {
+            await this.creditService.releaseCollateralLockForCreditOrder(creditOrder.id);
+          }
           // A completed credit trade is one "hop" — only completed orders count.
           if (order.status === OrderStatusEnum.COMPLETED) {
             await this.creditRepo.increment(

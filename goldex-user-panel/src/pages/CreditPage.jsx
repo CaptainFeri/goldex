@@ -164,6 +164,42 @@ export default function CreditPage() {
                   <div style={{ fontWeight: 600 }}>{fmtNum(overview.currentCollateralValue)} IRR</div>
                 </div>
               )}
+              {(overview?.collateralLocked != null || overview?.collateralAmount != null) && (
+                <>
+                  <div>
+                    <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Collateral Locked</div>
+                    <div style={{ fontWeight: 600, color: 'var(--gold)' }}>{fmtNum(overview.collateralLocked ?? 0)}</div>
+                  </div>
+                  <div>
+                    <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Collateral Available</div>
+                    <div style={{ fontWeight: 600 }}>{fmtNum(overview.collateralAvailable ?? overview.collateralAmount ?? 0)}</div>
+                  </div>
+                </>
+              )}
+              {overview?.maxTradeChainDepth != null && (
+                <div>
+                  <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Max Asset Depth</div>
+                  <div style={{ fontWeight: 500 }}>{overview.maxTradeChainDepth}</div>
+                </div>
+              )}
+              {overview?.maxConcurrentOrders != null && (
+                <div>
+                  <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Max Parallel Trades</div>
+                  <div style={{ fontWeight: 500 }}>{overview.maxConcurrentOrders}</div>
+                </div>
+              )}
+              {overview?.maxCreditNotional != null && (
+                <div>
+                  <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Max Credit Notional</div>
+                  <div style={{ fontWeight: 500 }}>{fmtNum(overview.maxCreditNotional)} IRR</div>
+                </div>
+              )}
+              {overview?.maxTotalLockedCollateral != null && (
+                <div>
+                  <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Max Locked Collateral</div>
+                  <div style={{ fontWeight: 500 }}>{(Number(overview.maxTotalLockedCollateral) * 100).toFixed(0)}%</div>
+                </div>
+              )}
               {activeCredit.drawdownPercent != null && (
                 <div>
                   <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Drawdown</div>

@@ -73,6 +73,15 @@ export class CreditEntity extends myBaseEntity {
   @Column({ type: "int", default: 0, name: "current_trade_chain_depth" })
   currentTradeChainDepth: number;
 
+  // ── Credit v3 risk-limit fields (handoff §9, §15) ──────────────────
+  /** Max nominal (notional) exposure the facility may hold (in credit base units). */
+  @Column({ type: "decimal", precision: 20, scale: 8, nullable: true, name: "max_credit_notional" })
+  maxCreditNotional: number;
+
+  /** Max fraction (0..1) of total collateral that may be locked at once. */
+  @Column({ type: "decimal", precision: 5, scale: 4, nullable: true, name: "max_total_locked_collateral" })
+  maxTotalLockedCollateral: number;
+
   // ── Credit v2 facility fields (user self-service leverage) ─────────
   @Column({ type: "decimal", precision: 10, scale: 4, nullable: true, name: "leverage" })
   leverage: number;

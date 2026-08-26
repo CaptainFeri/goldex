@@ -6,6 +6,7 @@ import { PricePairHistoryEntity } from "../admin-pair/entity/price-pair-history.
 import { OrderEntity } from "../order/order.entity";
 import { CreditEntity } from "../credit/entity/credit.entity";
 import { CreditOrderEntity } from "../credit/entity/credit-order.entity";
+import { CollateralLockEntity } from "../credit/entity/collateral-lock.entity";
 import { ProviderPairMappingService } from "./provider-pair-mapping.service";
 import { ProviderPairMappingController } from "./provider-pair-mapping.controller";
 import { PairPriceConsumer } from "../rabbitmq/consumers/pair-price.consumer";
@@ -17,7 +18,7 @@ import { OrderBookModule } from "../order-book/order-book.module";
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([ProviderPairMappingEntity, PricePairEntity, PricePairHistoryEntity, OrderEntity, CreditEntity, CreditOrderEntity]),
+    TypeOrmModule.forFeature([ProviderPairMappingEntity, PricePairEntity, PricePairHistoryEntity, OrderEntity, CreditEntity, CreditOrderEntity, CollateralLockEntity]),
     RedisModule,
     WalletCoreModule,
     OrderBookModule,
