@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { useToast } from '../context/ToastContext'
 import { useAuth } from '../context/AuthContext'
 import { marketApi, walletApi, quoteRequestApi, creditApi } from '../services/api'
@@ -29,6 +30,7 @@ function formatDateTime(iso) {
 }
 
 export default function OfferPage() {
+  const { t } = useTranslation()
   const toast = useToast()
   const { marketAccess } = useAuth()
   const [pairs, setPairs] = useState([])
@@ -53,8 +55,6 @@ export default function OfferPage() {
   const selected = useMemo(() => pairs.find((p) => p.id === selectedId), [pairs, selectedId])
   const pairMap = useMemo(() => Object.fromEntries(pairs.map((p) => [p.id, p])), [pairs])
 
-  // The custom market price is chosen by the customer; we prefill it with the
-  // live pure gram price so offers quote a fair starting point.
   const priceOf = (p) => {
     if (!p) return { buy: 0, sell: 0, buyGram: 0, sellGram: 0, displayBuyGram: 0, displaySellGram: 0 }
     const lp = live[p.pairKey]
@@ -80,8 +80,6 @@ export default function OfferPage() {
     }
   }
 
-  // Prefill the price whenever the pair or the side changes (only while the
-  // user has not typed a custom value).
   useEffect(() => {
     if (!selected) return
     const pr = priceOf(selected)
@@ -117,19 +115,16 @@ export default function OfferPage() {
         setPairs(arr)
         if (arr.length) setSelectedId(arr[0].id)
       } catch (_) {
-        setError('Failed to load the offer market.')
+        setError(t('offer.marketLoadFailed'))
       } finally {
         setLoading(false)
       }
     }
     init()
-  }, [marketAccess])
+  }, [marketAccess, t])
 
   useEffect(() => { loadRequests() }, [statusFilter])
 
-  // While any custom request is still open (PENDING) it can be matched by
-  // another customer at any time — poll so the user sees the outcome without
-  // a manual refresh.
   useEffect(() => {
     const hasOpen = requests.some((r) => CANCELLABLE.includes(r.status))
     if (!hasOpen) return
@@ -138,9 +133,6 @@ export default function OfferPage() {
   }, [requests])
 
   const pr = selected ? priceOf(selected) : { buy: 0, sell: 0, buyGram: 0, sellGram: 0, displayBuyGram: 0, displaySellGram: 0 }
-  // Prefill a BUY offer with the DISPLAY (customer) gram price so the quoted
-  // cost matches what would actually be charged; a SELL prefills with the pure
-  // gram price (commission taken in gold).
   const marketPrice = side === 'BUY' ? pr.displayBuyGram : pr.sellGram
   const mesghalPrice = side === 'BUY' ? pr.buy : pr.sell
   const askPrice = Number(price) || 0
@@ -148,24 +140,18 @@ export default function OfferPage() {
   const estTotal = qty * askPrice
   const decimals = selected?.decimals ?? 2
 
-  // Commission is taken in-kind from what the user receives.
   const commRate = selected ? Number(side === 'BUY' ? selected.buyCommission : selected.sellCommission) || 0 : 0
   const youReceive = side === 'BUY'
-    ? qty * (1 - commRate / 100) // grams of gold
-    : estTotal * (1 - commRate / 100) // IRR
+    ? qty * (1 - commRate / 100)
+    : estTotal * (1 - commRate / 100)
   const youReceiveUnit = side === 'BUY'
     ? (selected?.baseSymbol?.slug || '')
     : (selected?.quoteSymbol?.slug || '')
 
-  // ── Balance constraints ──────────────────────────────────
   const walletType = useCredit && activeCredit ? 'CREDIT' : 'DEPOSIT'
   const baseWallet = selected ? walletFor(selected.baseSymbol?.id, walletType) : null
   const quoteWallet = selected ? walletFor(selected.quoteSymbol?.id, walletType) : null
 
-  // The credit line is only issued by the backend on the first request. Before
-  // that, project the balances from the frozen collateral and the current pair
-  // price: BUY = collateral × price × leverage (IRR), SELL = collateral ×
-  // leverage (XAU).
   const creditIssued = useCredit && activeCredit && Number(activeCredit.creditLimit || 0) > 0
   const collateralMatches = useCredit && activeCredit && selected &&
     selected.baseSymbol?.id === activeCredit.collateralSymbolId
@@ -183,7 +169,6 @@ export default function OfferPage() {
     : (useCredit && activeCredit
         ? (creditIssued ? (baseWallet?.freeBalance || 0) : projectedSellCredit)
         : (baseWallet?.creditBalance || baseWallet?.availableBalance || 0))
-  // Live capacity per side — reflects amounts locked by pending orders.
   const buyAvailable = useCredit && activeCredit
     ? (creditIssued ? (quoteWallet?.freeBalance || 0) : projectedCredit)
     : (quoteWallet?.creditBalance || quoteWallet?.availableBalance || 0)
@@ -214,11 +199,11 @@ export default function OfferPage() {
   const placeOrder = async (e) => {
     e.preventDefault()
     if (!selected) return
-    if (qty <= 0) { toast.error('Enter a valid quantity.'); return }
-    if (askPrice <= 0) { toast.error('Enter a valid price per gram.'); return }
-    if (insufficient) { toast.error(`Insufficient ${availSymbol} balance.`); return }
-    if (belowMin) { toast.error(`Minimum is ${fmt(minQ, decimals)}.`); return }
-    if (aboveMax) { toast.error(`Maximum is ${fmt(maxQ, decimals)}.`); return }
+    if (qty <= 0) { toast.error(t('trade.enterValidQty')); return }
+    if (askPrice <= 0) { toast.error(t('offer.enterValidPrice')); return }
+    if (insufficient) { toast.error(t('trade.insufficientBalance', { symbol: availSymbol })); return }
+    if (belowMin) { toast.error(t('trade.minimum', { min: fmt(minQ, decimals) })); return }
+    if (aboveMax) { toast.error(t('trade.maximum', { max: fmt(maxQ, decimals) })); return }
     setPlacing(true)
     try {
       const res = await quoteRequestApi.create({
@@ -228,15 +213,16 @@ export default function OfferPage() {
         price: askPrice,
         useCredit: !!(useCredit && activeCredit)
       })
+      const sideLabel = side === 'BUY' ? t('trade.buy') : t('trade.sell')
       if (res?.matched) {
-        toast.success(`${side === 'BUY' ? 'Buy' : 'Sell'} request matched instantly with another customer!`)
+        toast.success(t('offer.matchedInstant', { side: sideLabel }))
       } else {
-        toast.success(`${side === 'BUY' ? 'Buy' : 'Sell'} request placed in the custom market.`)
+        toast.success(t('offer.placedCustom', { side: sideLabel }))
       }
       setQuantity('')
       await Promise.all([loadRequests(), loadWallets()])
     } catch (err) {
-      toast.error(err.response?.data?.message || 'Offer could not be placed.')
+      toast.error(err.response?.data?.message || t('offer.offerFailed'))
     } finally {
       setPlacing(false)
     }
@@ -246,10 +232,10 @@ export default function OfferPage() {
     setCancelling(id)
     try {
       await quoteRequestApi.cancel(id)
-      toast.success('Offer cancelled.')
+      toast.success(t('offer.offerCancelled'))
       await Promise.all([loadRequests(), loadWallets()])
     } catch (err) {
-      toast.error(err.response?.data?.message || 'Could not cancel offer.')
+      toast.error(err.response?.data?.message || t('offer.cancelOfferFailed'))
     } finally {
       setCancelling(null)
     }
@@ -261,18 +247,17 @@ export default function OfferPage() {
     </div>
   )
 
-  // Access control: OFFER trading must be enabled for this user.
   if (!(marketAccess?.marketKinds || []).includes('OFFER')) {
     return (
       <div className="animate-fade-in">
         <div className="main-header">
-          <h1 className="main-header-title">Offer Market</h1>
-          <p className="main-header-sub">Trade via Telegram offers</p>
+          <h1 className="main-header-title">{t('offer.title')}</h1>
+          <p className="main-header-sub">{t('offer.subtitle')}</p>
         </div>
         <div className="main-body">
           <div className="card">
             <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem' }}>
-              You do not have access to the offer market. Please contact support.
+              {t('offer.noAccess')}
             </p>
           </div>
         </div>
@@ -283,23 +268,23 @@ export default function OfferPage() {
   return (
     <div className="animate-fade-in">
       <div className="main-header">
-        <h1 className="main-header-title">Offer Market</h1>
-        <p className="main-header-sub">Custom demand & supply — matches with other customers instantly</p>
+        <h1 className="main-header-title">{t('offer.title')}</h1>
+        <p className="main-header-sub">{t('offer.subtitle')}</p>
       </div>
 
       <div className="main-body" style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
         {error && <Alert type="error">{error}</Alert>}
 
         {pairs.length === 0 ? (
-          <div className="card"><p style={{ color: 'var(--text-muted)', fontSize: '0.9rem' }}>No trading pairs are available right now.</p></div>
+          <div className="card"><p style={{ color: 'var(--text-muted)', fontSize: '0.9rem' }}>{t('offer.noPairs')}</p></div>
         ) : (
           <div className="trade-grid">
             {/* Custom market list */}
             <div className="card animate-fade-up">
               <div className="card-title" style={{ justifyContent: 'space-between' }}>
-                <span style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}><div className="gold-dot" />Markets</span>
+                <span style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}><div className="gold-dot" />{t('offer.markets')}</span>
                 <span className={`live-dot ${connected ? 'on' : 'off'}`}>
-                  <span className="live-pip" />{connected ? 'Live' : 'Offline'}
+                  <span className="live-pip" />{connected ? t('offer.live') : t('offer.offline')}
                 </span>
               </div>
               <div className="pair-list">
@@ -316,8 +301,8 @@ export default function OfferPage() {
                         <div className="pair-sub">{p.baseSymbol?.name || ''}</div>
                       </div>
                       <div className="pair-prices">
-                        <div className="price-buy">Buy {fmt(q.buy, p.decimals)}</div>
-                        <div className="price-sell">Sell {fmt(q.sell, p.decimals)}</div>
+                        <div className="price-buy">{t('trade.buy')} {fmt(q.buy, p.decimals)}</div>
+                        <div className="price-sell">{t('trade.sell')} {fmt(q.sell, p.decimals)}</div>
                         {q.buyGram > 0 && <div className="pair-gram">/g {fmt(q.buyGram, p.decimals)}</div>}
                       </div>
                     </div>
@@ -330,13 +315,13 @@ export default function OfferPage() {
             <form className="card animate-fade-up" onSubmit={placeOrder}>
               <div className="card-title" style={{ justifyContent: 'space-between' }}>
                 <span style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                  <div className="gold-dot" />{selected ? pairLabel(selected) : 'Offer'}
+                  <div className="gold-dot" />{selected ? pairLabel(selected) : t('offer.offer')}
                 </span>
               </div>
 
               <div className="side-toggle">
-                <button type="button" className={`side-btn buy ${side === 'BUY' ? 'active' : ''}`} onClick={() => setSide('BUY')}>Buy</button>
-                <button type="button" className={`side-btn sell ${side === 'SELL' ? 'active' : ''}`} onClick={() => setSide('SELL')}>Sell</button>
+                <button type="button" className={`side-btn buy ${side === 'BUY' ? 'active' : ''}`} onClick={() => setSide('BUY')}>{t('trade.buy')}</button>
+                <button type="button" className={`side-btn sell ${side === 'SELL' ? 'active' : ''}`} onClick={() => setSide('SELL')}>{t('trade.sell')}</button>
               </div>
 
               {/* Credit toggle - only show if user has active credit */}
@@ -357,23 +342,23 @@ export default function OfferPage() {
                         style={{ width: '18px', height: '18px', cursor: 'pointer' }}
                       />
                       <span style={{ fontWeight: 600, color: useCredit ? 'var(--gold)' : 'inherit' }}>
-                        💳 Use Credit
+                        💳 {t('trade.useCredit')}
                       </span>
                     </label>
                     <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
-                      {activeCredit.leverage}x leverage
+                      {t('trade.leverage', { x: activeCredit.leverage })}
                     </span>
                   </div>
                   {useCredit && (
                     <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '0.5rem' }}>
                       <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.25rem' }}>
-                        <span>Available Buy (IRR):</span>
+                        <span>{t('trade.availBuyCredit')}:</span>
                         <span style={{ color: 'var(--gold)', fontWeight: 600 }}>
                           {fmt(buyAvailable, 0)} IRR
                         </span>
                       </div>
                       <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                        <span>Available Sell:</span>
+                        <span>{t('trade.availSellCredit')}:</span>
                         <span style={{ color: 'var(--gold)', fontWeight: 600 }}>
                           {fmt(sellAvailable, decimals)} {selected?.baseSymbol?.slug || 'XAU'}
                         </span>
@@ -385,25 +370,25 @@ export default function OfferPage() {
 
               <div className="ticket-summary">
                 <span className="label">
-                  Available {useCredit && activeCredit ? '(Credit)' : ''}
+                  {t('trade.available')} {useCredit && activeCredit ? `(${t('trade.useCredit')})` : ''}
                 </span>
                 <span className="val" style={{ color: useCredit && activeCredit ? 'var(--gold)' : 'inherit' }}>
                   {fmt(available, side === 'BUY' ? 2 : decimals)} {availSymbol || ''}
-                  <button type="button" className="btn-link" style={{ marginLeft: 8 }} onClick={setMax}>Max</button>
+                  <button type="button" className="btn-link" style={{ marginInlineStart: 8 }} onClick={setMax}>{t('trade.max')}</button>
                 </span>
               </div>
 
               <Field
-                label="Quantity (gram)"
-                hint={selected ? `Min ${fmt(minQ, decimals)} · Max ${fmt(maxQ, decimals)} gram` : ''}
+                label={t('trade.quantityGram')}
+                hint={selected ? t('trade.minMaxGram', { min: fmt(minQ, decimals), max: fmt(maxQ, decimals) }) : ''}
               >
                 <input className="form-input" type="number" step="any" min="0" value={quantity}
                   onChange={(e) => setQuantity(e.target.value)} placeholder="0.00" />
               </Field>
 
               <Field
-                label={`Your price / gram ${connected ? '(ref ' + fmt(marketPrice, decimals) + ')' : ''}`}
-                hint="A compatible opposite order with the same quantity matches instantly"
+                label={`${t('offer.yourPriceGram')}${connected ? ` (${fmt(marketPrice, decimals)})` : ''}`}
+                hint={t('offer.priceHint')}
               >
                 <input className="form-input" type="number" step="any" min="0" value={price}
                   onChange={(e) => setPrice(e.target.value)} placeholder="0.00" />
@@ -411,29 +396,29 @@ export default function OfferPage() {
 
               {mesghalPrice > 0 && (
                 <div className="ticket-summary">
-                  <span className="label">Ref price / mesghal</span>
+                  <span className="label">{t('offer.refPriceMesghal')}</span>
                   <span className="val">{fmt(mesghalPrice, decimals)}</span>
                 </div>
               )}
 
               <div className="ticket-summary" style={{ borderTop: '1px solid var(--border)', marginTop: '0.5rem' }}>
-                <span className="label">{side === 'BUY' ? 'You pay' : 'Gross'}</span>
+                <span className="label">{side === 'BUY' ? t('trade.youPay') : t('trade.gross')}</span>
                 <span className="val">{estTotal > 0 ? fmt(estTotal, 2) : '—'} {selected?.quoteSymbol?.slug || ''}</span>
               </div>
 
               <div className="ticket-summary">
-                <span className="label">You receive {commRate > 0 ? `(after ${commRate}% commission)` : ''}</span>
+                <span className="label">{t('trade.youReceive')} {commRate > 0 ? t('trade.afterCommission', { rate: commRate }) : ''}</span>
                 <span className="val">{youReceive > 0 ? fmt(youReceive, side === 'BUY' ? decimals : 2) : '—'} {youReceiveUnit}</span>
               </div>
 
-              {insufficient && <Alert type="error">Insufficient {availSymbol} balance.</Alert>}
-              {belowMin && <Alert type="error">Below minimum order of {fmt(minQ, decimals)}.</Alert>}
-              {aboveMax && <Alert type="error">Above maximum order of {fmt(maxQ, decimals)}.</Alert>}
+              {insufficient && <Alert type="error">{t('trade.insufficient', { symbol: availSymbol })}</Alert>}
+              {belowMin && <Alert type="error">{t('trade.belowMin', { min: fmt(minQ, decimals) })}</Alert>}
+              {aboveMax && <Alert type="error">{t('trade.aboveMax', { max: fmt(maxQ, decimals) })}</Alert>}
 
               <div style={{ marginTop: '1rem' }}>
                 <Button type="submit" loading={placing} disabled={blocked}
                   variant={side === 'BUY' ? 'primary' : 'secondary'}>
-                  {side === 'BUY' ? 'Buy' : 'Sell'} {selected?.baseSymbol?.slug || selected?.baseSymbol?.name || ''}
+                  {side === 'BUY' ? t('trade.buy') : t('trade.sell')} {selected?.baseSymbol?.slug || selected?.baseSymbol?.name || ''}
                 </Button>
               </div>
             </form>
@@ -443,29 +428,29 @@ export default function OfferPage() {
         {/* Custom offers history */}
         <div className="card animate-fade-up">
           <div className="card-title" style={{ justifyContent: 'space-between' }}>
-            <span style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}><div className="gold-dot" />Your Offers</span>
+            <span style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}><div className="gold-dot" />{t('offer.yourOffers')}</span>
             <select
               className="form-input"
               style={{ width: 'auto', padding: '0.4rem 2.2rem 0.4rem 0.8rem', fontSize: '0.82rem' }}
               value={statusFilter}
               onChange={(e) => setStatusFilter(e.target.value)}
             >
-              <option value="">All statuses</option>
-              <option value="PENDING">Pending</option>
-              <option value="MATCHED">Matched</option>
-              <option value="CANCELLED">Cancelled</option>
+              <option value="">{t('trade.allStatuses')}</option>
+              <option value="PENDING">{t('trade.pending')}</option>
+              <option value="MATCHED">{t('offer.matched')}</option>
+              <option value="CANCELLED">{t('trade.cancelled')}</option>
             </select>
           </div>
           {requests.length === 0 ? (
             <p style={{ color: 'var(--text-muted)', fontSize: '0.875rem' }}>
-              {statusFilter ? 'No offers with this status.' : 'No offers yet.'}
+              {statusFilter ? t('offer.noOffersStatus') : t('offer.noOffers')}
             </p>
           ) : (
             <div style={{ overflowX: 'auto' }}>
               <table className="order-table">
                 <thead>
                   <tr>
-                    <th>Pair</th><th>Side</th><th>Qty</th><th>Price</th><th>Total</th><th>Status</th><th>Date</th><th></th>
+                    <th>{t('trade.pair')}</th><th>{t('trade.side')}</th><th>{t('trade.qty')}</th><th>{t('trade.price')}</th><th>{t('trade.total')}</th><th>{t('trade.status')}</th><th>{t('trade.date')}</th><th></th>
                   </tr>
                 </thead>
                 <tbody>
@@ -475,13 +460,13 @@ export default function OfferPage() {
                     return (
                       <tr key={r.id}>
                         <td>{p ? pairLabel(p) : '—'}</td>
-                        <td className={r.side === 'BUY' ? 'txt-buy' : 'txt-sell'}>{r.side}</td>
+                        <td className={r.side === 'BUY' ? 'txt-buy' : 'txt-sell'}>{r.side === 'BUY' ? t('trade.buy') : t('trade.sell')}</td>
                         <td>{fmt(r.quantity, d)}</td>
-                        <td>{r.price ? fmt(r.price, d) : 'Market'}</td>
+                        <td>{r.price ? fmt(r.price, d) : t('trade.marketOrder')}</td>
                         <td>{r.price ? fmt(Number(r.quantity) * Number(r.price), 2) : '—'}</td>
                         <td>
                           <span className={`badge ${STATUS_BADGE[r.status] || 'badge-warning'}`}>
-                            {r.status === 'MATCHED' ? 'Matched' : r.status?.replace('_', ' ')}
+                            {r.status === 'MATCHED' ? t('offer.matched') : t(`trade.${r.status === 'PENDING' ? 'pending' : 'cancelled'}`)}
                           </span>
                           {r.status === 'MATCHED' && r.matchedAt && (
                             <div className="pair-sub">{formatDateTime(r.matchedAt)}</div>
@@ -491,7 +476,7 @@ export default function OfferPage() {
                         <td>
                           {CANCELLABLE.includes(r.status) && (
                             <button className="btn btn-danger" disabled={cancelling === r.id} onClick={() => cancelOrder(r.id)}>
-                              {cancelling === r.id ? <Spinner light /> : 'Cancel'}
+                              {cancelling === r.id ? <Spinner light /> : t('common.cancel')}
                             </button>
                           )}
                         </td>

@@ -1,29 +1,30 @@
 import { useEffect, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { levelApi } from '../services/api'
 import { Spinner, Alert } from '../components/UI'
 
 const fmtNum = (n) => {
   if (n === null || n === undefined) return '—'
-  if (typeof n === 'number' && n >= 999) return 'Unlimited'
+  if (typeof n === 'number' && n >= 999) return null
   return Number(n).toLocaleString('en-US')
 }
 
-const FEATURE_META = {
-  TRADING_DAILY_LIMIT: { label: 'Daily Trading Limit', category: 'Trading' },
-  TRADING_MAX_ORDER_VALUE: { label: 'Max Order Value', category: 'Trading' },
-  TRADING_MAX_OPEN_ORDERS: { label: 'Max Open Orders', category: 'Trading' },
-  WALLET_WITHDRAWAL_DAILY_LIMIT: { label: 'Daily Withdrawal Limit', category: 'Wallet' },
-  WALLET_WITHDRAWAL_PER_TX_LIMIT: { label: 'Per-Transaction Withdrawal Limit', category: 'Wallet' },
-  CREDIT_MAX_AMOUNT: { label: 'Max Credit Amount', category: 'Credit' },
-  CREDIT_MAX_DURATION_DAYS: { label: 'Max Credit Duration (days)', category: 'Credit' },
-  TELEGRAM_BOT_ENABLED: { label: 'Telegram Bot', category: 'Access' },
-  API_ACCESS_ENABLED: { label: 'API Access', category: 'Access' },
-  ELITE_TRADE_ENABLED: { label: 'Elite Trade', category: 'Access' },
-  PRIORITY_SUPPORT: { label: 'Priority Support', category: 'Access' },
-  MAX_MARKET_TYPES: { label: 'Allowed Market Types', category: 'Access' },
+const FEATURE_KEY = {
+  TRADING_DAILY_LIMIT: { label: 'fDailyTradingLimit', category: 'catTrading' },
+  TRADING_MAX_ORDER_VALUE: { label: 'fMaxOrderValue', category: 'catTrading' },
+  TRADING_MAX_OPEN_ORDERS: { label: 'fMaxOpenOrders', category: 'catTrading' },
+  WALLET_WITHDRAWAL_DAILY_LIMIT: { label: 'fDailyWithdrawalLimit', category: 'catWallet' },
+  WALLET_WITHDRAWAL_PER_TX_LIMIT: { label: 'fPerTxWithdrawalLimit', category: 'catWallet' },
+  CREDIT_MAX_AMOUNT: { label: 'fMaxCreditAmount', category: 'catCredit' },
+  CREDIT_MAX_DURATION_DAYS: { label: 'fMaxCreditDuration', category: 'catCredit' },
+  TELEGRAM_BOT_ENABLED: { label: 'fTelegramBot', category: 'catAccess' },
+  API_ACCESS_ENABLED: { label: 'fApiAccess', category: 'catAccess' },
+  ELITE_TRADE_ENABLED: { label: 'fEliteTrade', category: 'catAccess' },
+  PRIORITY_SUPPORT: { label: 'fPrioritySupport', category: 'catAccess' },
+  MAX_MARKET_TYPES: { label: 'fMaxMarketTypes', category: 'catAccess' },
 }
 
-const CAT_ORDER = ['Trading', 'Wallet', 'Credit', 'Access']
+const CAT_KEYS = ['catTrading', 'catWallet', 'catCredit', 'catAccess']
 
 function LevelIcon() {
   return (
@@ -33,33 +34,34 @@ function LevelIcon() {
   )
 }
 
-function renderValue(key, val) {
-  if (val === null || val === undefined) return <span className="field-value muted">Not set</span>
+function renderValue(key, val, t) {
+  if (val === null || val === undefined) return <span className="field-value muted">{t('level.notSet')}</span>
   if (typeof val === 'object') {
     if ('enabled' in val) {
       return val.enabled
-        ? <span className="badge badge-success">Enabled</span>
-        : <span className="badge badge-danger">Disabled</span>
+        ? <span className="badge badge-success">{t('level.enabled')}</span>
+        : <span className="badge badge-danger">{t('level.disabled')}</span>
     }
     if ('amount' in val) {
-      if (val.amount === 0) return <span className="field-value accent">Unlimited</span>
+      if (val.amount === 0) return <span className="field-value accent">{t('level.unlimited')}</span>
       return <span>{fmtNum(val.amount)} {val.currency || ''}</span>
     }
     return <span>{JSON.stringify(val)}</span>
   }
   if (typeof val === 'boolean') {
     return val
-      ? <span className="badge badge-success">Enabled</span>
-      : <span className="badge badge-danger">Disabled</span>
+      ? <span className="badge badge-success">{t('level.enabled')}</span>
+      : <span className="badge badge-danger">{t('level.disabled')}</span>
   }
   if (typeof val === 'number') {
-    if (val === 0) return <span className="field-value accent">Unlimited</span>
-    return <span>{fmtNum(val)}</span>
+    if (val === 0) return <span className="field-value accent">{t('level.unlimited')}</span>
+    return <span>{fmtNum(val) ?? t('level.unlimited')}</span>
   }
   return <span>{String(val)}</span>
 }
 
 export default function LevelPage() {
+  const { t } = useTranslation()
   const [level, setLevel] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -67,16 +69,16 @@ export default function LevelPage() {
   useEffect(() => {
     levelApi.getMyLevel()
       .then(setLevel)
-      .catch((err) => setError(err?.response?.data?.message || err.message || 'Failed to load level info'))
+      .catch((err) => setError(err?.response?.data?.message || err.message || t('level.loadFailed')))
       .finally(() => setLoading(false))
-  }, [])
+  }, [t])
 
   if (loading) {
     return (
       <div className="animate-fade-in">
         <div className="main-header">
-          <h1 className="main-header-title">Account Level</h1>
-          <p className="main-header-sub">Your current tier and feature entitlements</p>
+          <h1 className="main-header-title">{t('level.title')}</h1>
+          <p className="main-header-sub">{t('level.subtitle')}</p>
         </div>
         <div className="main-body" style={{ display: 'flex', justifyContent: 'center', padding: '4rem 0' }}>
           <Spinner />
@@ -89,8 +91,8 @@ export default function LevelPage() {
     return (
       <div className="animate-fade-in">
         <div className="main-header">
-          <h1 className="main-header-title">Account Level</h1>
-          <p className="main-header-sub">Your current tier and feature entitlements</p>
+          <h1 className="main-header-title">{t('level.title')}</h1>
+          <p className="main-header-sub">{t('level.subtitle')}</p>
         </div>
         <div className="main-body"><Alert type="error">{error}</Alert></div>
       </div>
@@ -100,17 +102,17 @@ export default function LevelPage() {
   const features = level?.features ?? {}
   const grouped = {}
   for (const [key, val] of Object.entries(features)) {
-    const cat = FEATURE_META[key]?.category ?? 'Other'
-    if (!grouped[cat]) grouped[cat] = []
-    grouped[cat].push({ key, val, label: FEATURE_META[key]?.label ?? key })
+    const catKey = FEATURE_KEY[key]?.category ?? 'catAccess'
+    if (!grouped[catKey]) grouped[catKey] = []
+    grouped[catKey].push({ key, val, label: t(`level.${FEATURE_KEY[key]?.label || 'fMaxOrderValue'}`) })
   }
 
   return (
     <div className="animate-fade-in">
       <div className="main-header" style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between' }}>
         <div>
-          <h1 className="main-header-title">Account Level</h1>
-          <p className="main-header-sub">Your current tier and feature entitlements</p>
+          <h1 className="main-header-title">{t('level.title')}</h1>
+          <p className="main-header-sub">{t('level.subtitle')}</p>
         </div>
       </div>
 
@@ -132,22 +134,22 @@ export default function LevelPage() {
           </div>
         )}
 
-        {CAT_ORDER.filter((cat) => grouped[cat]).map((cat) => (
-          <div key={cat} className="card animate-fade-up">
-            <div className="card-title"><div className="gold-dot" />{cat}</div>
+        {CAT_KEYS.filter((cat) => grouped[cat]).map((catKey) => (
+          <div key={catKey} className="card animate-fade-up">
+            <div className="card-title"><div className="gold-dot" />{t(`level.${catKey}`)}</div>
             <div className="table-wrap" style={{ marginTop: 8 }}>
               <table className="level-feature-table">
                 <thead>
                   <tr>
-                    <th>Feature</th>
-                    <th>Value</th>
+                    <th>{t('level.feature')}</th>
+                    <th>{t('level.value')}</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {grouped[cat].map(({ key, val, label }) => (
+                  {grouped[catKey].map(({ key, val, label }) => (
                     <tr key={key}>
                       <td style={{ fontWeight: 500 }}>{label}</td>
-                      <td>{renderValue(key, val)}</td>
+                      <td>{renderValue(key, val, t)}</td>
                     </tr>
                   ))}
                 </tbody>

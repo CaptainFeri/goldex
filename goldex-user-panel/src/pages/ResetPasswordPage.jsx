@@ -1,11 +1,13 @@
 import { useState } from 'react'
 import { Link, useSearchParams, useNavigate } from 'react-router-dom'
+import { useTranslation } from 'react-i18next'
 import { authApi } from '../services/api'
 import { useToast } from '../context/ToastContext'
 import AuthBrand from '../components/AuthBrand'
 import { Alert, Button, TextField, ThemeToggle } from '../components/UI'
 
 export default function ResetPasswordPage() {
+  const { t } = useTranslation()
   const [params] = useSearchParams()
   const token = params.get('token')
   const navigate = useNavigate()
@@ -18,16 +20,16 @@ export default function ResetPasswordPage() {
 
   const handleSubmit = async (e) => {
     e.preventDefault()
-    if (password.length < 6) { setError('Password must be at least 6 characters.'); return }
-    if (password !== confirm) { setError('Passwords do not match.'); return }
+    if (password.length < 6) { setError(t('resetPassword.minLength')); return }
+    if (password !== confirm) { setError(t('resetPassword.mismatch')); return }
     setLoading(true)
     setError('')
     try {
       await authApi.resetPassword(token, password)
-      toast.success('Your password has been reset. Please sign in.')
+      toast.success(t('resetPassword.resetSuccess'))
       navigate('/login')
     } catch (err) {
-      setError(err.response?.data?.message || 'Reset link is invalid or has expired.')
+      setError(err.response?.data?.message || t('resetPassword.resetInvalid'))
     } finally {
       setLoading(false)
     }
@@ -40,39 +42,39 @@ export default function ResetPasswordPage() {
       <div className="auth-panel">
         <div className="auth-card">
           <div className="animate-fade-up">
-            <h2 className="auth-card-title">New Password</h2>
-            <p className="auth-card-sub">Choose a strong password for your account</p>
+            <h2 className="auth-card-title">{t('resetPassword.title')}</h2>
+            <p className="auth-card-sub">{t('resetPassword.subtitle')}</p>
 
             {!token ? (
               <>
-                <Alert type="error">This reset link is missing its token. Please request a new one.</Alert>
+                <Alert type="error">{t('resetPassword.missingToken')}</Alert>
                 <div style={{ textAlign: 'center', marginTop: '1.25rem' }}>
-                  <Link className="btn-link" to="/forgot-password">Request a new link</Link>
+                  <Link className="btn-link" to="/forgot-password">{t('resetPassword.requestNewLink')}</Link>
                 </div>
               </>
             ) : (
               <form onSubmit={handleSubmit}>
                 {error && <Alert type="error">{error}</Alert>}
                 <TextField
-                  label="New Password"
+                  label={t('resetPassword.newPassword')}
                   type="password"
-                  placeholder="Min 6 characters"
+                  placeholder={t('resetPassword.newPasswordPlaceholder')}
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   required
                   autoFocus
                 />
                 <TextField
-                  label="Confirm Password"
+                  label={t('resetPassword.confirmPassword')}
                   type="password"
-                  placeholder="Re-enter your password"
+                  placeholder={t('resetPassword.confirmPasswordPlaceholder')}
                   value={confirm}
                   onChange={(e) => setConfirm(e.target.value)}
                   required
                 />
-                <Button type="submit" loading={loading}>Reset Password</Button>
+                <Button type="submit" loading={loading}>{t('resetPassword.resetPassword')}</Button>
                 <div style={{ textAlign: 'center', marginTop: '1.25rem' }}>
-                  <Link className="btn-link" to="/login">Back to sign in</Link>
+                  <Link className="btn-link" to="/login">{t('common.backToSignIn')}</Link>
                 </div>
               </form>
             )}

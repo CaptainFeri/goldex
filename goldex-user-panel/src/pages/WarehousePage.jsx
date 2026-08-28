@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { warehouseApi, walletApi } from '../services/api'
 import { Spinner, Alert, Button } from '../components/UI'
 
@@ -30,34 +31,32 @@ function formatDateTime(iso) {
   })
 }
 
-const TABS = [
-  { key: 'deposit', label: 'Deposit' },
-  { key: 'withdraw', label: 'Withdraw' },
-  { key: 'requests', label: 'Requests' },
-  { key: 'packets', label: 'Packets' },
+const TAB_KEYS = [
+  { key: 'deposit', label: 'tabDeposit' },
+  { key: 'withdraw', label: 'tabWithdraw' },
+  { key: 'requests', label: 'tabRequests' },
+  { key: 'packets', label: 'tabPackets' },
 ]
 
 export default function WarehousePage() {
+  const { t } = useTranslation()
   const [tab, setTab] = useState('deposit')
   const [wallets, setWallets] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [success, setSuccess] = useState('')
 
-  // Deposit form
   const [depWarehouseId, setDepWarehouseId] = useState('')
   const [depWeight, setDepWeight] = useState('')
   const [depSymbolId, setDepSymbolId] = useState('')
   const [depNotes, setDepNotes] = useState('')
   const [depSubmitting, setDepSubmitting] = useState(false)
 
-  // Withdraw form
   const [wdWeight, setWdWeight] = useState('')
   const [wdSymbolId, setWdSymbolId] = useState('')
   const [wdNotes, setWdNotes] = useState('')
   const [wdSubmitting, setWdSubmitting] = useState(false)
 
-  // Lists
   const [requests, setRequests] = useState([])
   const [packets, setPackets] = useState([])
   const [warehouses, setWarehouses] = useState([])
@@ -77,13 +76,13 @@ export default function WarehousePage() {
       setWarehouses(Array.isArray(w) ? w : [])
       setWallets(Array.isArray(wl) ? wl : [])
     } catch (_) {
-      setError('Failed to load data.')
+      setError(t('warehouse.dataLoadFailed'))
     } finally {
       setLoading(false)
     }
   }
 
-  useEffect(() => { loadAll() }, [])
+  useEffect(() => { loadAll() }, [t])
 
   const handleDeposit = async (e) => {
     e.preventDefault()
@@ -99,17 +98,17 @@ export default function WarehousePage() {
         notes: depNotes || undefined,
       })
       const info = []
-      if (result?.deliveryDate) info.push(`Deposit by: ${new Date(result.deliveryDate).toLocaleDateString('en-GB')}`)
-      if (result?.deliveryTime) info.push(`Time: ${result.deliveryTime}`)
-      if (result?.deliveryLocation) info.push(`Location: ${result.deliveryLocation}`)
-      setSuccess(`Deposit request submitted! Packet created. ${info.join(', ')}`)
+      if (result?.deliveryDate) info.push(new Date(result.deliveryDate).toLocaleDateString('en-GB'))
+      if (result?.deliveryTime) info.push(result.deliveryTime)
+      if (result?.deliveryLocation) info.push(result.deliveryLocation)
+      setSuccess(t('warehouse.depositSubmitted', { info: info.join(' · ') }))
       setDepWarehouseId('')
       setDepWeight('')
       setDepSymbolId('')
       setDepNotes('')
       loadAll(true)
     } catch (e) {
-      setError(e?.response?.data?.message || e?.message || 'Failed to submit deposit request')
+      setError(e?.response?.data?.message || e?.message || t('warehouse.depositSubmitFailed'))
     } finally {
       setDepSubmitting(false)
     }
@@ -129,19 +128,19 @@ export default function WarehousePage() {
       })
       if (result?.status === 'APPROVED') {
         const info = []
-        if (result.deliveryDate) info.push(`Date: ${new Date(result.deliveryDate).toLocaleDateString('en-GB')}`)
-        if (result.deliveryTime) info.push(`Time: ${result.deliveryTime}`)
-        if (result.deliveryLocation) info.push(`Location: ${result.deliveryLocation}`)
-        setSuccess(`Withdrawal approved! ${info.join(', ')}`)
+        if (result.deliveryDate) info.push(new Date(result.deliveryDate).toLocaleDateString('en-GB'))
+        if (result.deliveryTime) info.push(result.deliveryTime)
+        if (result.deliveryLocation) info.push(result.deliveryLocation)
+        setSuccess(t('warehouse.withdrawalApproved', { info: info.join(' · ') }))
       } else {
-        setSuccess('Withdrawal request submitted and is pending admin approval.')
+        setSuccess(t('warehouse.withdrawalPending'))
       }
       setWdWeight('')
       setWdSymbolId('')
       setWdNotes('')
       loadAll(true)
     } catch (e) {
-      setError(e?.response?.data?.message || e?.message || 'Failed to submit withdrawal request')
+      setError(e?.response?.data?.message || e?.message || t('warehouse.withdrawalSubmitFailed'))
     } finally {
       setWdSubmitting(false)
     }
@@ -152,11 +151,9 @@ export default function WarehousePage() {
       await warehouseApi.cancelRequest(id)
       loadAll(true)
     } catch (e) {
-      setError(e?.response?.data?.message || 'Failed to cancel request')
+      setError(e?.response?.data?.message || t('warehouse.cancelFailed'))
     }
   }
-
-  const xauWallets = wallets.filter((w) => w.symbol?.slug === 'XAU' || w.symbol?.name === 'XAU' || (w.symbol?.symbolType === 'material'))
 
   if (loading) {
     return (
@@ -169,8 +166,8 @@ export default function WarehousePage() {
   return (
     <div className="animate-fade-in">
       <div className="main-header">
-        <h1 className="main-header-title">Warehouse</h1>
-        <p className="main-header-sub">Manage your physical gold deposits & withdrawals</p>
+        <h1 className="main-header-title">{t('warehouse.title')}</h1>
+        <p className="main-header-sub">{t('warehouse.subtitle')}</p>
       </div>
 
       <div className="main-body" style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
@@ -179,9 +176,9 @@ export default function WarehousePage() {
 
         {/* Tabs */}
         <div className="tabs" style={{ marginBottom: 0 }}>
-          {TABS.map((t) => (
+          {TAB_KEYS.map((t) => (
             <button key={t.key} className={`tab ${tab === t.key ? 'active' : ''}`} onClick={() => setTab(t.key)}>
-              {t.label}
+              {t(`warehouse.${t.label}`)}
             </button>
           ))}
         </div>
@@ -189,43 +186,43 @@ export default function WarehousePage() {
         {/* Deposit Tab */}
         {tab === 'deposit' && (
           <div className="card animate-fade-up">
-            <div className="card-title"><div className="gold-dot" />Deposit Physical Gold</div>
+            <div className="card-title"><div className="gold-dot" />{t('warehouse.depositTitle')}</div>
             <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem', marginBottom: '1rem' }}>
-              Request to deposit physical gold into a Goldex warehouse.
+              {t('warehouse.depositDesc')}
             </p>
             <form onSubmit={handleDeposit} style={{ display: 'flex', flexDirection: 'column', gap: '1rem', maxWidth: 480 }}>
               <div className="field">
-                <label>Warehouse</label>
+                <label>{t('warehouse.warehouse')}</label>
                 <select className="form-input" value={depWarehouseId} onChange={(e) => setDepWarehouseId(e.target.value)} required>
-                  <option value="">Select warehouse…</option>
+                  <option value="">{t('warehouse.warehousePlaceholder')}</option>
                   {warehouses.map((w) => (
-                    <option key={w.id} value={w.id}>{w.name} — {fmt(w.capacityRemaining)}g available</option>
+                    <option key={w.id} value={w.id}>{t('warehouse.warehouseCapacity', { name: w.name, capacity: fmt(w.capacityRemaining) })}</option>
                   ))}
                 </select>
               </div>
               <div className="field">
-                <label>Weight (grams)</label>
+                <label>{t('warehouse.weightGrams')}</label>
                 <input className="form-input" type="number" step="0.00000001" min="0.00000001"
-                  value={depWeight} onChange={(e) => setDepWeight(e.target.value)} required placeholder="10" />
+                  value={depWeight} onChange={(e) => setDepWeight(e.target.value)} required placeholder={t('warehouse.weightPlaceholder')} />
               </div>
               <div className="field">
-                <label>Symbol</label>
+                <label>{t('warehouse.symbol')}</label>
                 <select className="form-input" value={depSymbolId} onChange={(e) => setDepSymbolId(e.target.value)} required>
-                  <option value="">Select symbol…</option>
+                  <option value="">{t('warehouse.symbolPlaceholder')}</option>
                   {wallets.map((w) => (
                     <option key={w.symbol?.id || w.symbolId} value={w.symbol?.id || w.symbolId}>
-                      {w.symbol?.slug || w.symbol?.name || 'Unknown'}
+                      {w.symbol?.slug || w.symbol?.name || t('warehouse.unknown')}
                     </option>
                   ))}
                 </select>
               </div>
               <div className="field">
-                <label>Notes (optional)</label>
+                <label>{t('warehouse.notesOptional')}</label>
                 <textarea className="form-input" value={depNotes} onChange={(e) => setDepNotes(e.target.value)}
-                  rows={2} placeholder="Any additional information…" />
+                  rows={2} placeholder={t('warehouse.notesPlaceholder')} />
               </div>
               <Button type="submit" disabled={depSubmitting} style={{ alignSelf: 'flex-start' }}>
-                {depSubmitting ? 'Submitting…' : 'Submit Deposit Request'}
+                {depSubmitting ? t('warehouse.submitting') : t('warehouse.submitDeposit')}
               </Button>
             </form>
           </div>
@@ -234,34 +231,34 @@ export default function WarehousePage() {
         {/* Withdraw Tab */}
         {tab === 'withdraw' && (
           <div className="card animate-fade-up">
-            <div className="card-title"><div className="gold-dot" />Withdraw Physical Gold</div>
+            <div className="card-title"><div className="gold-dot" />{t('warehouse.withdrawTitle')}</div>
             <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem', marginBottom: '1rem' }}>
-              Request to withdraw your physical gold. If orphan packets are available in the warehouse, they will be assigned automatically.
+              {t('warehouse.withdrawDesc')}
             </p>
             <form onSubmit={handleWithdraw} style={{ display: 'flex', flexDirection: 'column', gap: '1rem', maxWidth: 480 }}>
               <div className="field">
-                <label>Weight (grams)</label>
+                <label>{t('warehouse.weightGrams')}</label>
                 <input className="form-input" type="number" step="0.00000001" min="0.00000001"
-                  value={wdWeight} onChange={(e) => setWdWeight(e.target.value)} required placeholder="10" />
+                  value={wdWeight} onChange={(e) => setWdWeight(e.target.value)} required placeholder={t('warehouse.weightPlaceholder')} />
               </div>
               <div className="field">
-                <label>Symbol</label>
+                <label>{t('warehouse.symbol')}</label>
                 <select className="form-input" value={wdSymbolId} onChange={(e) => setWdSymbolId(e.target.value)} required>
-                  <option value="">Select symbol…</option>
+                  <option value="">{t('warehouse.symbolPlaceholder')}</option>
                   {wallets.map((w) => (
                     <option key={w.symbol?.id || w.symbolId} value={w.symbol?.id || w.symbolId}>
-                      {w.symbol?.slug || w.symbol?.name || 'Unknown'} — Balance: {fmt(w.freeBalance || 0)}g
+                      {w.symbol?.slug || w.symbol?.name || t('warehouse.unknown')} — {t('warehouse.balance', { balance: fmt(w.freeBalance || 0) })}
                     </option>
                   ))}
                 </select>
               </div>
               <div className="field">
-                <label>Notes (optional)</label>
+                <label>{t('warehouse.notesOptional')}</label>
                 <textarea className="form-input" value={wdNotes} onChange={(e) => setWdNotes(e.target.value)}
-                  rows={2} placeholder="Any additional information…" />
+                  rows={2} placeholder={t('warehouse.notesPlaceholder')} />
               </div>
               <Button type="submit" disabled={wdSubmitting} style={{ alignSelf: 'flex-start' }}>
-                {wdSubmitting ? 'Submitting…' : 'Submit Withdrawal Request'}
+                {wdSubmitting ? t('warehouse.submitting') : t('warehouse.submitWithdrawal')}
               </Button>
             </form>
           </div>
@@ -270,18 +267,18 @@ export default function WarehousePage() {
         {/* Requests Tab */}
         {tab === 'requests' && (
           <div className="card animate-fade-up">
-            <div className="card-title"><div className="gold-dot" />My Requests</div>
+            <div className="card-title"><div className="gold-dot" />{t('warehouse.myRequests')}</div>
             <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem', marginBottom: '1rem' }}>
-              Track your deposit and withdrawal requests.
+              {t('warehouse.requestsDesc')}
             </p>
             {requests.length === 0 ? (
-              <p style={{ color: 'var(--text-muted)', fontSize: '0.875rem' }}>No requests yet.</p>
+              <p style={{ color: 'var(--text-muted)', fontSize: '0.875rem' }}>{t('warehouse.noRequests')}</p>
             ) : (
               <div style={{ overflowX: 'auto' }}>
                 <table className="order-table">
                   <thead>
                     <tr>
-                      <th>Type</th><th>Status</th><th>Weight</th><th>Warehouse</th><th>Delivery</th><th>Notes</th><th>Created</th><th>Action</th>
+                      <th>{t('warehouse.type')}</th><th>{t('warehouse.status')}</th><th>{t('warehouse.weightG')}</th><th>{t('warehouse.warehouseCol')}</th><th>{t('warehouse.deliveryCol')}</th><th>{t('warehouse.notesCol')}</th><th>{t('warehouse.createdCol')}</th><th>{t('warehouse.actionCol')}</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -302,7 +299,7 @@ export default function WarehousePage() {
                         <td>
                           {r.status === 'PENDING' ? (
                             <button className="btn btn-danger sm" onClick={() => handleCancel(r.id)}>
-                              Cancel
+                              {t('warehouse.cancel')}
                             </button>
                           ) : (
                             <span style={{ color: 'var(--text-muted)', fontSize: '0.8rem' }}>—</span>
@@ -320,18 +317,18 @@ export default function WarehousePage() {
         {/* Packets Tab */}
         {tab === 'packets' && (
           <div className="card animate-fade-up">
-            <div className="card-title"><div className="gold-dot" />My Gold Packets</div>
+            <div className="card-title"><div className="gold-dot" />{t('warehouse.myPackets')}</div>
             <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem', marginBottom: '1rem' }}>
-              Gold packets stored in warehouses under your name.
+              {t('warehouse.packetsDesc')}
             </p>
             {packets.length === 0 ? (
-              <p style={{ color: 'var(--text-muted)', fontSize: '0.875rem' }}>No packets assigned to you yet.</p>
+              <p style={{ color: 'var(--text-muted)', fontSize: '0.875rem' }}>{t('warehouse.noPackets')}</p>
             ) : (
               <div style={{ overflowX: 'auto' }}>
                 <table className="order-table">
                   <thead>
                     <tr>
-                      <th>ID</th><th>Status</th><th>Weight</th><th>Apparent</th><th>Wastage</th><th>Warehouse</th><th>Ang</th><th>Ayar</th><th>Batch</th><th>Created</th>
+                      <th>{t('warehouse.id')}</th><th>{t('warehouse.status')}</th><th>{t('warehouse.weightG')}</th><th>{t('warehouse.apparent')}</th><th>{t('warehouse.wastage')}</th><th>{t('warehouse.warehouseCol')}</th><th>{t('warehouse.ang')}</th><th>{t('warehouse.ayar')}</th><th>{t('warehouse.batch')}</th><th>{t('warehouse.createdCol')}</th>
                     </tr>
                   </thead>
                   <tbody>

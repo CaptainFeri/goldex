@@ -1,16 +1,17 @@
 import { useEffect, useState, useCallback } from 'react'
+import { useTranslation } from 'react-i18next'
 import { ticketApi } from '../services/api'
 import { Spinner, Alert, Button, TextField, SelectField } from '../components/UI'
 
 const fmtDate = (d) =>
   d ? new Date(d).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : '—'
 
-const STATUS_LABELS = {
-  OPEN: 'Open',
-  IN_PROGRESS: 'In Progress',
-  WAITING_ON_CUSTOMER: 'Waiting on You',
-  RESOLVED: 'Resolved',
-  CLOSED: 'Closed',
+const STATUS_KEY = {
+  OPEN: 'statusOpen',
+  IN_PROGRESS: 'statusInProgress',
+  WAITING_ON_CUSTOMER: 'statusWaiting',
+  RESOLVED: 'statusResolved',
+  CLOSED: 'statusClosed',
 }
 
 const STATUS_CLASSES = {
@@ -21,21 +22,21 @@ const STATUS_CLASSES = {
   CLOSED: 'badge-secondary',
 }
 
-const CATEGORY_OPTIONS = [
-  { value: 'TRADING', label: 'Trading' },
-  { value: 'KYC', label: 'KYC' },
-  { value: 'WITHDRAWAL', label: 'Withdrawal' },
-  { value: 'DEPOSIT', label: 'Deposit' },
-  { value: 'ACCOUNT', label: 'Account' },
-  { value: 'TECHNICAL', label: 'Technical' },
-  { value: 'OTHER', label: 'Other' },
+const CATEGORY_KEYS = [
+  { value: 'TRADING', label: 'catTrading' },
+  { value: 'KYC', label: 'catKyc' },
+  { value: 'WITHDRAWAL', label: 'catWithdrawal' },
+  { value: 'DEPOSIT', label: 'catDeposit' },
+  { value: 'ACCOUNT', label: 'catAccount' },
+  { value: 'TECHNICAL', label: 'catTechnical' },
+  { value: 'OTHER', label: 'catOther' },
 ]
 
-const PRIORITY_OPTIONS = [
-  { value: 'LOW', label: 'Low' },
-  { value: 'MEDIUM', label: 'Medium' },
-  { value: 'HIGH', label: 'High' },
-  { value: 'URGENT', label: 'Urgent' },
+const PRIORITY_KEYS = [
+  { value: 'LOW', label: 'priorityLow' },
+  { value: 'MEDIUM', label: 'priorityMedium' },
+  { value: 'HIGH', label: 'priorityHigh' },
+  { value: 'URGENT', label: 'priorityUrgent' },
 ]
 
 function SupportIcon() {
@@ -48,6 +49,7 @@ function SupportIcon() {
 }
 
 export default function SupportPage() {
+  const { t } = useTranslation()
   const [tickets, setTickets] = useState([])
   const [total, setTotal] = useState(0)
   const [loading, setLoading] = useState(true)
@@ -61,6 +63,10 @@ export default function SupportPage() {
   const [form, setForm] = useState({ subject: '', description: '', category: 'OTHER', priority: 'MEDIUM' })
   const [creating, setCreating] = useState(false)
 
+  const statusLabel = (s) => t(`support.${STATUS_KEY[s] || 'statusOpen'}`)
+  const categoryOptions = CATEGORY_KEYS.map((c) => ({ value: c.value, label: t(`support.${c.label}`) }))
+  const priorityOptions = PRIORITY_KEYS.map((c) => ({ value: c.value, label: t(`support.${c.label}`) }))
+
   const loadTickets = useCallback(async () => {
     setLoading(true)
     setError('')
@@ -69,11 +75,11 @@ export default function SupportPage() {
       setTickets(data.data || [])
       setTotal(data.total || 0)
     } catch (err) {
-      setError(err?.response?.data?.message || 'Failed to load tickets')
+      setError(err?.response?.data?.message || t('support.failedLoadTickets'))
     } finally {
       setLoading(false)
     }
-  }, [])
+  }, [t])
 
   useEffect(() => { loadTickets() }, [loadTickets])
 
@@ -85,7 +91,7 @@ export default function SupportPage() {
       setMessages(data.messages || [])
       setView('detail')
     } catch (err) {
-      setError(err?.response?.data?.message || 'Failed to load ticket')
+      setError(err?.response?.data?.message || t('support.failedLoadTicket'))
     } finally {
       setLoading(false)
     }
@@ -95,11 +101,11 @@ export default function SupportPage() {
     e.preventDefault()
     setCreating(true)
     try {
-      const ticket = await ticketApi.create(form)
+      await ticketApi.create(form)
       setView('list')
       loadTickets()
     } catch (err) {
-      setError(err?.response?.data?.message || 'Failed to create ticket')
+      setError(err?.response?.data?.message || t('support.failedCreateTicket'))
     } finally {
       setCreating(false)
     }
@@ -113,7 +119,7 @@ export default function SupportPage() {
       setMessages((prev) => [...prev, msg])
       setNewMsg('')
     } catch (err) {
-      setError(err?.response?.data?.message || 'Failed to send message')
+      setError(err?.response?.data?.message || t('support.failedSendMessage'))
     } finally {
       setSendingMsg(false)
     }
@@ -139,8 +145,8 @@ export default function SupportPage() {
             <div>
               <h1 className="main-header-title">{selectedTicket.subject}</h1>
               <p className="main-header-sub">
-                <span className={`badge ${STATUS_CLASSES[selectedTicket.status]}`}>{STATUS_LABELS[selectedTicket.status]}</span>
-                {' '}Created {fmtDate(selectedTicket.createAt)}
+                <span className={`badge ${STATUS_CLASSES[selectedTicket.status]}`}>{statusLabel(selectedTicket.status)}</span>
+                {' '}{t('support.created')} {fmtDate(selectedTicket.createAt)}
               </p>
             </div>
           </div>
@@ -148,14 +154,14 @@ export default function SupportPage() {
 
         <div className="main-body">
           <div className="card" style={{ marginBottom: '1rem' }}>
-            <div className="card-title">Description</div>
+            <div className="card-title">{t('support.description')}</div>
             <div style={{ padding: '0.5rem 0', color: 'var(--text-secondary)' }}>{selectedTicket.description}</div>
           </div>
 
           <div className="card" style={{ marginBottom: '1rem' }}>
-            <div className="card-title">Messages ({messages.length})</div>
+            <div className="card-title">{t('support.messages')} ({messages.length})</div>
             {messages.length === 0 ? (
-              <div style={{ padding: '2rem', textAlign: 'center', color: 'var(--text-muted)' }}>No messages yet</div>
+              <div style={{ padding: '2rem', textAlign: 'center', color: 'var(--text-muted)' }}>{t('support.noMessages')}</div>
             ) : (
               <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', padding: '0.5rem 0' }}>
                 {messages.filter((m) => !m.isInternal).map((m) => (
@@ -168,7 +174,7 @@ export default function SupportPage() {
                     maxWidth: '85%',
                   }}>
                     <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: 4 }}>
-                      {m.senderType === 'ADMIN' ? 'Support Agent' : 'You'} · {fmtDate(m.createAt)}
+                      {m.senderType === 'ADMIN' ? t('support.supportAgent') : t('support.you')} · {fmtDate(m.createAt)}
                     </div>
                     <div style={{ color: 'var(--text-secondary)' }}>{m.message}</div>
                   </div>
@@ -178,25 +184,25 @@ export default function SupportPage() {
           </div>
 
           <div className="card">
-            <div className="card-title">Add Message</div>
+            <div className="card-title">{t('support.addMessage')}</div>
             <textarea
               className="text-field"
               rows={3}
               value={newMsg}
               onChange={(e) => setNewMsg(e.target.value)}
-              placeholder="Type your message..."
+              placeholder={t('support.typeMessage')}
               style={{ width: '100%', marginBottom: '0.75rem', resize: 'vertical' }}
             />
             <div style={{ display: 'flex', gap: '0.5rem' }}>
               <Button loading={sendingMsg} onClick={sendMessage} disabled={!newMsg.trim()}>
-                Send
+                {t('support.send')}
               </Button>
             </div>
           </div>
 
           {selectedTicket.status === 'RESOLVED' && !selectedTicket.satisfactionScore && (
             <div className="card" style={{ marginTop: '1rem' }}>
-              <div className="card-title">Rate Your Support Experience</div>
+              <div className="card-title">{t('support.rateExperience')}</div>
               <div style={{ display: 'flex', gap: '0.5rem', padding: '0.5rem 0' }}>
                 {[1, 2, 3, 4, 5].map((s) => (
                   <button key={s} className="btn ghost" onClick={() => setSatisfaction(s)}>
@@ -217,8 +223,8 @@ export default function SupportPage() {
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
           <SupportIcon />
           <div>
-            <h1 className="main-header-title">Support</h1>
-            <p className="main-header-sub">Get help from our support team</p>
+            <h1 className="main-header-title">{t('support.title')}</h1>
+            <p className="main-header-sub">{t('support.subtitle')}</p>
           </div>
         </div>
       </div>
@@ -228,25 +234,25 @@ export default function SupportPage() {
 
         <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '1rem' }}>
           <button className={`btn ${view === 'list' ? '' : 'ghost'}`} onClick={() => setView('list')}>
-            My Tickets {total > 0 && `(${total})`}
+            {t('support.myTickets')} {total > 0 && `(${total})`}
           </button>
           <button className={`btn ${view === 'create' ? '' : 'ghost'}`} onClick={() => setView('create')}>
-            New Ticket
+            {t('support.newTicket')}
           </button>
         </div>
 
         {view === 'create' && (
           <form className="card" onSubmit={createTicket}>
-            <div className="card-title">New Support Ticket</div>
+            <div className="card-title">{t('support.newSupportTicket')}</div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
               <TextField
-                label="Subject"
+                label={t('support.subject')}
                 value={form.subject}
                 onChange={(e) => setForm((f) => ({ ...f, subject: e.target.value }))}
                 required
               />
               <div>
-                <label className="field-label">Description</label>
+                <label className="field-label">{t('support.description')}</label>
                 <textarea
                   className="text-field"
                   rows={4}
@@ -258,20 +264,20 @@ export default function SupportPage() {
               </div>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
                 <SelectField
-                  label="Category"
+                  label={t('support.category')}
                   value={form.category}
                   onChange={(e) => setForm((f) => ({ ...f, category: e.target.value }))}
-                  options={CATEGORY_OPTIONS}
+                  options={categoryOptions}
                 />
                 <SelectField
-                  label="Priority"
+                  label={t('support.priority')}
                   value={form.priority}
                   onChange={(e) => setForm((f) => ({ ...f, priority: e.target.value }))}
-                  options={PRIORITY_OPTIONS}
+                  options={priorityOptions}
                 />
               </div>
               <div className="btn-row">
-                <Button type="submit" loading={creating}>Submit Ticket</Button>
+                <Button type="submit" loading={creating}>{t('support.submitTicket')}</Button>
               </div>
             </div>
           </form>
@@ -284,8 +290,8 @@ export default function SupportPage() {
             </div>
           ) : tickets.length === 0 ? (
             <div className="card" style={{ textAlign: 'center', padding: '3rem' }}>
-              <div style={{ color: 'var(--text-muted)', marginBottom: '1rem' }}>No support tickets yet</div>
-              <Button onClick={() => setView('create')}>Create a Ticket</Button>
+              <div style={{ color: 'var(--text-muted)', marginBottom: '1rem' }}>{t('support.noTickets')}</div>
+              <Button onClick={() => setView('create')}>{t('support.createTicket')}</Button>
             </div>
           ) : (
             <div className="card" style={{ padding: 0 }}>
@@ -304,7 +310,7 @@ export default function SupportPage() {
                 >
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
                     <div style={{ fontWeight: 600 }}>{t.subject}</div>
-                    <span className={`badge ${STATUS_CLASSES[t.status]}`}>{STATUS_LABELS[t.status]}</span>
+                    <span className={`badge ${STATUS_CLASSES[t.status]}`}>{statusLabel(t.status)}</span>
                   </div>
                   <div style={{ display: 'flex', gap: '0.5rem', fontSize: '0.8rem', color: 'var(--text-muted)' }}>
                     <span>{t.category}</span>

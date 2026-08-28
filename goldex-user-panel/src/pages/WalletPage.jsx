@@ -1,4 +1,5 @@
 import { useEffect, useState, useCallback } from 'react'
+import { useTranslation } from 'react-i18next'
 import { walletApi, warehouseApi, depositApi, withdrawApi } from '../services/api'
 import { Spinner, Alert, Button } from '../components/UI'
 
@@ -35,19 +36,20 @@ const DWT_BADGE = {
   CANCELLED: 'badge-danger',
 }
 
-const cancelReq = async (api, id, onDone) => {
-  if (!window.confirm('Are you sure you want to cancel this request?')) return
+const cancelReq = async (api, id, onDone, t) => {
+  if (!window.confirm(t('wallet.confirmCancelRequest'))) return
   try {
     await api.cancel(id)
     onDone()
   } catch (e) {
-    alert(e?.response?.data?.message || e?.message || 'Failed to cancel')
+    alert(e?.response?.data?.message || e?.message || t('wallet.failedToCancel'))
   }
 }
 
 function OcrPreviewBox({ ocr, ocrLoading, ocrEdits, setOcrEdits, imageBase64 }) {
+  const { t } = useTranslation()
   if (ocrLoading) {
-    return <div style={{ background: 'var(--bg)', padding: 12, borderRadius: 8, fontSize: 13, color: 'var(--text-muted)' }}>⏳ Processing receipt image…</div>
+    return <div style={{ background: 'var(--bg)', padding: 12, borderRadius: 8, fontSize: 13, color: 'var(--text-muted)' }}>⏳ {t('wallet.processingReceipt')}</div>
   }
   if (!ocr || !ocrEdits) return null
 
@@ -58,7 +60,7 @@ function OcrPreviewBox({ ocr, ocrLoading, ocrEdits, setOcrEdits, imageBase64 }) 
   return (
     <div style={{ background: 'var(--bg)', padding: 12, borderRadius: 8, fontSize: 13, lineHeight: 1.8 }}>
       <div style={{ fontWeight: 600, marginBottom: 6, display: 'flex', justifyContent: 'space-between' }}>
-        <span>📄 Extracted Receipt Data</span>
+        <span>📄 {t('wallet.extractedReceiptData')}</span>
         {ocr.processing_time_ms && (
           <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>
             {ocr.processing_time_ms}ms
@@ -66,21 +68,21 @@ function OcrPreviewBox({ ocr, ocrLoading, ocrEdits, setOcrEdits, imageBase64 }) 
         )}
       </div>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginTop: 4 }}>
-        <label style={{ fontSize: 12 }}>Date</label>
+        <label style={{ fontSize: 12 }}>{t('wallet.date')}</label>
         <input className="form-input" value={ocrEdits.date} onChange={(e) => handleChange('date', e.target.value)} placeholder="1402/06/15" />
-        <label style={{ fontSize: 12 }}>Amount</label>
-        <input className="form-input" value={ocrEdits.amount} onChange={(e) => handleChange('amount', e.target.value)} placeholder="Amount" />
-        <label style={{ fontSize: 12 }}>Ref ID</label>
-        <input className="form-input" value={ocrEdits.transactionId} onChange={(e) => handleChange('transactionId', e.target.value)} placeholder="Ref ID" />
-        <label style={{ fontSize: 12 }}>Card Number</label>
-        <label style={{ fontSize: 12 }}>Source IBAN</label>
+        <label style={{ fontSize: 12 }}>{t('wallet.amount')}</label>
+        <input className="form-input" value={ocrEdits.amount} onChange={(e) => handleChange('amount', e.target.value)} placeholder={t('wallet.amount')} />
+        <label style={{ fontSize: 12 }}>{t('wallet.refId')}</label>
+        <input className="form-input" value={ocrEdits.transactionId} onChange={(e) => handleChange('transactionId', e.target.value)} placeholder={t('wallet.refId')} />
+        <label style={{ fontSize: 12 }}>{t('wallet.cardNumber')}</label>
+        <label style={{ fontSize: 12 }}>{t('wallet.sourceIban')}</label>
         <input className="form-input" value={ocrEdits.sourceIban || ''} onChange={(e) => handleChange('sourceIban', e.target.value)} placeholder="IRxxxxxxxxxxxxxxxxxxxxxxxx" dir="ltr" />
-        <label style={{ fontSize: 12 }}>Destination IBAN</label>
+        <label style={{ fontSize: 12 }}>{t('wallet.destinationIban')}</label>
         <input className="form-input" value={ocrEdits.destinationIban || ''} onChange={(e) => handleChange('destinationIban', e.target.value)} placeholder="IRxxxxxxxxxxxxxxxxxxxxxxxx" dir="ltr" />
       </div>
       {ocr.raw_text && (
         <details style={{ marginTop: 6 }}>
-          <summary style={{ cursor: 'pointer', fontSize: 12, color: 'var(--text-muted)' }}>View Raw Text</summary>
+          <summary style={{ cursor: 'pointer', fontSize: 12, color: 'var(--text-muted)' }}>{t('wallet.viewRawText')}</summary>
           <pre style={{ fontSize: 11, whiteSpace: 'pre-wrap', marginTop: 4, maxHeight: 120, overflow: 'auto' }}>{ocr.raw_text}</pre>
         </details>
       )}
@@ -89,6 +91,7 @@ function OcrPreviewBox({ ocr, ocrLoading, ocrEdits, setOcrEdits, imageBase64 }) 
 }
 
 function DepositModal({ symbolId, symbolSlug, depositTypes: allowedDepositTypes, depositGateways, defaultDepositGateway, onClose, onDone }) {
+  const { t } = useTranslation()
   const [type, setType] = useState(allowedDepositTypes?.[0] || 'manual')
   const [gatewayCode, setGatewayCode] = useState(defaultDepositGateway || '')
   const [amount, setAmount] = useState('')
@@ -114,12 +117,10 @@ function DepositModal({ symbolId, symbolSlug, depositTypes: allowedDepositTypes,
     }
   }, [allowedDepositTypes])
 
-  // Waits for goldex-cbp to run the gateway (async via RabbitMQ) and then
-  // opens the Kaino IPG payment page in a new tab.
   const openGatewayAfterCreate = async (depositId) => {
     const deadline = Date.now() + 60_000
     while (Date.now() < deadline) {
-      setGatewayMsg('Connecting to the payment gateway…')
+      setGatewayMsg(t('wallet.connectingGateway'))
       await new Promise((r) => setTimeout(r, 2000))
       const d = await depositApi.get(depositId)
       const pay = d?.metadata?.payment
@@ -128,10 +129,10 @@ function DepositModal({ symbolId, symbolSlug, depositTypes: allowedDepositTypes,
         return
       }
       if (d.status === 'FAILED' || d.status === 'CANCELLED') {
-        throw new Error(pay?.error || `Deposit was ${d.status.toLowerCase()}`)
+        throw new Error(pay?.error || `${t('wallet.depositLabel')} ${d.status.toLowerCase()}`)
       }
     }
-    throw new Error('The payment gateway did not respond. You can open it from the deposit list below.')
+    throw new Error(t('wallet.gatewayTimeout'))
   }
 
   const handleFileChange = async (e) => {
@@ -165,7 +166,7 @@ function DepositModal({ symbolId, symbolSlug, depositTypes: allowedDepositTypes,
         })
       }
     } catch (err) {
-      setError('OCR processing failed: ' + (err?.response?.data?.message || err.message))
+      setError(t('wallet.ocrFailed') + ': ' + (err?.response?.data?.message || err.message))
     } finally {
       setOcrLoading(false)
     }
@@ -213,7 +214,7 @@ function DepositModal({ symbolId, symbolSlug, depositTypes: allowedDepositTypes,
       onDone()
       onClose()
     } catch (e) {
-      setError(e?.response?.data?.message || e?.message || 'Failed to submit deposit')
+      setError(e?.response?.data?.message || e?.message || t('wallet.depositFailed'))
     } finally {
       setSubmitting(false)
     }
@@ -223,7 +224,7 @@ function DepositModal({ symbolId, symbolSlug, depositTypes: allowedDepositTypes,
     <div className="modal-overlay" onClick={onClose}>
       <div className="card" onClick={(e) => e.stopPropagation()}>
         <div className="card-title" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <span><div className="gold-dot" style={{ display: 'inline-block', marginRight: 8 }} />Deposit {symbolSlug}</span>
+          <span><div className="gold-dot" style={{ display: 'inline-block', marginInlineEnd: 8 }} />{t('wallet.depositTitle', { symbol: symbolSlug })}</span>
           <button className="btn btn-ghost" onClick={onClose} style={{ fontSize: '1.2rem', lineHeight: 1, padding: '0.25rem 0.5rem' }}>✕</button>
         </div>
         {error && <Alert type="error">{error}</Alert>}
@@ -231,7 +232,7 @@ function DepositModal({ symbolId, symbolSlug, depositTypes: allowedDepositTypes,
         <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '1rem', marginTop: '1rem' }}>
           {allowedDepositTypes?.length > 1 && (
             <div className="field">
-              <label>Deposit Type</label>
+              <label>{t('wallet.depositType')}</label>
               <select className="form-input" value={type} onChange={(e) => setType(e.target.value)} required>
                 {allowedDepositTypes.map((t) => (
                   <option key={t} value={t}>{t}</option>
@@ -242,32 +243,32 @@ function DepositModal({ symbolId, symbolSlug, depositTypes: allowedDepositTypes,
           {isWarehouse ? (
             <>
               <div className="field">
-                <label>Warehouse</label>
+                <label>{t('wallet.warehouse')}</label>
                 <select className="form-input" value={warehouseId} onChange={(e) => setWarehouseId(e.target.value)} required>
-                  <option value="">— Select Warehouse —</option>
+                  <option value="">{t('wallet.selectWarehouse')}</option>
                   {warehouses.map((w) => (
                     <option key={w.id} value={w.id}>{w.name}{w.location ? ` — ${w.location}` : ''}</option>
                   ))}
                 </select>
               </div>
               <div className="field">
-                <label>Weight (grams)</label>
+                <label>{t('wallet.weight')}</label>
                 <input className="form-input" type="number" step="0.00000001" min="0.00000001"
-                  value={amount} onChange={(e) => setAmount(e.target.value)} required placeholder="e.g. 10" />
+                  value={amount} onChange={(e) => setAmount(e.target.value)} required placeholder={t('wallet.weightPlaceholder')} />
               </div>
             </>
           ) : (
             <>
               <div className="field">
-                <label>Amount</label>
+                <label>{t('wallet.amount')}</label>
                 <input className="form-input" type="number" step="0.00000001" min="0.00000001"
-                  value={amount} onChange={(e) => setAmount(e.target.value)} required placeholder="e.g. 10" />
+                  value={amount} onChange={(e) => setAmount(e.target.value)} required placeholder={t('wallet.weightPlaceholder')} />
               </div>
               {isGateway && depositGateways?.length > 0 && (
                 <div className="field">
-                  <label>Payment Gateway</label>
+                  <label>{t('wallet.paymentGateway')}</label>
                   <select className="form-input" value={gatewayCode} onChange={(e) => setGatewayCode(e.target.value)} required>
-                    <option value="">— Select Gateway —</option>
+                    <option value="">{t('wallet.selectGateway')}</option>
                     {depositGateways.map((g) => (
                       <option key={g} value={g}>{g}</option>
                     ))}
@@ -276,7 +277,7 @@ function DepositModal({ symbolId, symbolSlug, depositTypes: allowedDepositTypes,
               )}
               {type === 'manual' && (
                 <div className="field">
-                  <label>Receipt Picture</label>
+                  <label>{t('wallet.receiptPicture')}</label>
                   <input className="form-input" type="file" accept="image/*" onChange={handleFileChange} />
                   {pictureFile && <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>{pictureFile.name}</span>}
                   {picturePreview && <img src={picturePreview} alt="preview" style={{ maxWidth: '100%', maxHeight: 200, borderRadius: 6, marginTop: 4 }} />}
@@ -286,12 +287,12 @@ function DepositModal({ symbolId, symbolSlug, depositTypes: allowedDepositTypes,
             </>
           )}
           <div className="field">
-            <label>Notes (optional)</label>
+            <label>{t('wallet.notesOptional')}</label>
             <textarea className="form-input" value={notes} onChange={(e) => setNotes(e.target.value)}
-              rows={2} placeholder="Any additional information…" />
+              rows={2} placeholder={t('wallet.notesPlaceholder')} />
           </div>
           <Button type="submit" loading={submitting} style={{ alignSelf: 'flex-start' }}>
-            Submit Deposit
+            {t('wallet.submitDeposit')}
           </Button>
         </form>
       </div>
@@ -300,6 +301,7 @@ function DepositModal({ symbolId, symbolSlug, depositTypes: allowedDepositTypes,
 }
 
 function WithdrawModal({ symbolId, symbolSlug, withdrawTypes: allowedWithdrawTypes, withdrawGateways, defaultWithdrawGateway, onClose, onDone }) {
+  const { t } = useTranslation()
   const [type, setType] = useState(allowedWithdrawTypes?.[0] || 'manual')
   const [gatewayCode, setGatewayCode] = useState(defaultWithdrawGateway || '')
   const [beneficiaryIban, setBeneficiaryIban] = useState('')
@@ -345,7 +347,7 @@ function WithdrawModal({ symbolId, symbolSlug, withdrawTypes: allowedWithdrawTyp
       onDone()
       onClose()
     } catch (e) {
-      setError(e?.response?.data?.message || e?.message || 'Failed to submit withdrawal')
+      setError(e?.response?.data?.message || e?.message || t('wallet.withdrawFailed'))
     } finally {
       setSubmitting(false)
     }
@@ -355,14 +357,14 @@ function WithdrawModal({ symbolId, symbolSlug, withdrawTypes: allowedWithdrawTyp
     <div className="modal-overlay" onClick={onClose}>
       <div className="card" onClick={(e) => e.stopPropagation()}>
         <div className="card-title" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <span><div className="gold-dot" style={{ display: 'inline-block', marginRight: 8 }} />Withdraw {symbolSlug}</span>
+          <span><div className="gold-dot" style={{ display: 'inline-block', marginInlineEnd: 8 }} />{t('wallet.withdrawTitle', { symbol: symbolSlug })}</span>
           <button className="btn btn-ghost" onClick={onClose} style={{ fontSize: '1.2rem', lineHeight: 1, padding: '0.25rem 0.5rem' }}>✕</button>
         </div>
         {error && <Alert type="error">{error}</Alert>}
         <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '1rem', marginTop: '1rem' }}>
           {allowedWithdrawTypes?.length > 1 && (
             <div className="field">
-              <label>Withdraw Type</label>
+              <label>{t('wallet.withdrawType')}</label>
               <select className="form-input" value={type} onChange={(e) => setType(e.target.value)} required>
                 {allowedWithdrawTypes.map((t) => (
                   <option key={t} value={t}>{t}</option>
@@ -373,32 +375,32 @@ function WithdrawModal({ symbolId, symbolSlug, withdrawTypes: allowedWithdrawTyp
           {isWarehouse ? (
             <>
               <div className="field">
-                <label>Warehouse</label>
+                <label>{t('wallet.warehouse')}</label>
                 <select className="form-input" value={warehouseId} onChange={(e) => setWarehouseId(e.target.value)} required>
-                  <option value="">— Select Warehouse —</option>
+                  <option value="">{t('wallet.selectWarehouse')}</option>
                   {warehouses.map((w) => (
                     <option key={w.id} value={w.id}>{w.name}{w.location ? ` — ${w.location}` : ''}</option>
                   ))}
                 </select>
               </div>
               <div className="field">
-                <label>Weight (grams)</label>
+                <label>{t('wallet.weight')}</label>
                 <input className="form-input" type="number" step="0.00000001" min="0.00000001"
-                  value={amount} onChange={(e) => setAmount(e.target.value)} required placeholder="e.g. 10" />
+                  value={amount} onChange={(e) => setAmount(e.target.value)} required placeholder={t('wallet.weightPlaceholder')} />
               </div>
             </>
           ) : (
             <>
               <div className="field">
-                <label>Amount</label>
+                <label>{t('wallet.amount')}</label>
                 <input className="form-input" type="number" step="0.00000001" min="0.00000001"
-                  value={amount} onChange={(e) => setAmount(e.target.value)} required placeholder="e.g. 10" />
+                  value={amount} onChange={(e) => setAmount(e.target.value)} required placeholder={t('wallet.weightPlaceholder')} />
               </div>
               {isGateway && withdrawGateways?.length > 0 && (
                 <div className="field">
-                  <label>Payment Gateway</label>
+                  <label>{t('wallet.paymentGateway')}</label>
                   <select className="form-input" value={gatewayCode} onChange={(e) => setGatewayCode(e.target.value)} required>
-                    <option value="">— Select Gateway —</option>
+                    <option value="">{t('wallet.selectGateway')}</option>
                     {withdrawGateways.map((g) => (
                       <option key={g} value={g}>{g}</option>
                     ))}
@@ -408,28 +410,28 @@ function WithdrawModal({ symbolId, symbolSlug, withdrawTypes: allowedWithdrawTyp
               {isGateway && (
                 <>
                   <div className="field">
-                    <label>Beneficiary IBAN</label>
+                    <label>{t('wallet.beneficiaryIban')}</label>
                     <input className="form-input" value={beneficiaryIban} onChange={(e) => setBeneficiaryIban(e.target.value)} placeholder="IRxxxxxxxxxxxxxxxxxxxxxxxx" dir="ltr" required />
                   </div>
                   <div className="field">
-                    <label>Beneficiary Name</label>
-                    <input className="form-input" value={beneficiaryName} onChange={(e) => setBeneficiaryName(e.target.value)} placeholder="Full name as registered" required />
+                    <label>{t('wallet.beneficiaryName')}</label>
+                    <input className="form-input" value={beneficiaryName} onChange={(e) => setBeneficiaryName(e.target.value)} placeholder={t('wallet.fullNameAsRegistered')} required />
                   </div>
                   <div className="field">
-                    <label>Beneficiary ID (National Code / Passport)</label>
-                    <input className="form-input" value={beneficiaryId} onChange={(e) => setBeneficiaryId(e.target.value)} placeholder="National code or passport number" required />
+                    <label>{t('wallet.beneficiaryId')}</label>
+                    <input className="form-input" value={beneficiaryId} onChange={(e) => setBeneficiaryId(e.target.value)} placeholder={t('wallet.nationalCodeOrPassport')} required />
                   </div>
                 </>
               )}
             </>
           )}
           <div className="field">
-            <label>Notes (optional)</label>
+            <label>{t('wallet.notesOptional')}</label>
             <textarea className="form-input" value={notes} onChange={(e) => setNotes(e.target.value)}
-              rows={2} placeholder="Any additional information…" />
+              rows={2} placeholder={t('wallet.notesPlaceholder')} />
           </div>
           <Button type="submit" loading={submitting} style={{ alignSelf: 'flex-start' }}>
-            Submit Withdrawal
+            {t('wallet.submitWithdrawal')}
           </Button>
         </form>
       </div>
@@ -446,6 +448,7 @@ const REQ_BADGE = {
 }
 
 export default function WalletPage() {
+  const { t } = useTranslation()
   const [wallets, setWallets] = useState([])
   const [txs, setTxs] = useState([])
   const [requests, setRequests] = useState([])
@@ -470,11 +473,11 @@ export default function WalletPage() {
       setDeposits(d?.items || [])
       setWithdraws(wd?.items || [])
     } catch (_) {
-      setError('Failed to load your wallets.')
+      setError(t('wallet.walletLoadFailed'))
     } finally {
       setLoading(false)
     }
-  }, [])
+  }, [t])
 
   useEffect(() => {
     load()
@@ -493,22 +496,22 @@ export default function WalletPage() {
   return (
     <div className="animate-fade-in">
       <div className="main-header">
-        <h1 className="main-header-title">Wallet</h1>
-        <p className="main-header-sub">Your balances across all assets</p>
+        <h1 className="main-header-title">{t('wallet.title')}</h1>
+        <p className="main-header-sub">{t('wallet.subtitle')}</p>
       </div>
 
       <div className="main-body" style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
         {error && <Alert type="error">{error}</Alert>}
 
         {wallets.length === 0 ? (
-          <div className="card"><p style={{ color: 'var(--text-muted)', fontSize: '0.9rem' }}>You don't have any wallets yet.</p></div>
+          <div className="card"><p style={{ color: 'var(--text-muted)', fontSize: '0.9rem' }}>{t('wallet.noWallets')}</p></div>
         ) : (
           <>
             {/* Deposit Wallets */}
             {wallets.filter(w => !w.walletType || w.walletType === 'DEPOSIT').length > 0 && (
               <div>
                 <h3 style={{ fontSize: '1rem', fontWeight: 600, marginBottom: '0.75rem', color: 'var(--text-primary)' }}>
-                  Deposit Wallets
+                  {t('wallet.depositWallets')}
                 </h3>
                 <div className="wallet-grid animate-fade-up">
                   {wallets.filter(w => !w.walletType || w.walletType === 'DEPOSIT').map((w) => {
@@ -523,10 +526,10 @@ export default function WalletPage() {
                           </div>
                         </div>
                         <div className="wallet-total">{fmt(w.totalBalance)}</div>
-                        <div className="wallet-bal-row"><span className="k">Available</span><span className="v">{fmt(w.availableBalance)}</span></div>
-                        <div className="wallet-bal-row"><span className="k">Locked</span><span className="v">{fmt(w.lockedBalance)}</span></div>
+                        <div className="wallet-bal-row"><span className="k">{t('wallet.available')}</span><span className="v">{fmt(w.availableBalance)}</span></div>
+                        <div className="wallet-bal-row"><span className="k">{t('wallet.locked')}</span><span className="v">{fmt(w.lockedBalance)}</span></div>
                         {Number(w.frozenFreeBalance) > 0 && (
-                          <div className="wallet-bal-row"><span className="k">Frozen</span><span className="v" style={{ color: 'var(--danger)' }}>{fmt(Number(w.frozenFreeBalance) + Number(w.frozenLockedBalance || 0))}</span></div>
+                          <div className="wallet-bal-row"><span className="k">{t('wallet.frozen')}</span><span className="v" style={{ color: 'var(--danger)' }}>{fmt(Number(w.frozenFreeBalance) + Number(w.frozenLockedBalance || 0))}</span></div>
                         )}
                         {w.status && w.status !== 'ACTIVE' && (
                           <div style={{ marginTop: '0.6rem' }}>
@@ -536,12 +539,12 @@ export default function WalletPage() {
                         <div className="wallet-actions">
                           {w.symbol?.depositTypes?.length > 0 && (
                             <Button variant="ghost" onClick={() => setModal({ type: 'deposit', wallet: w })}>
-                              Deposit
+                              {t('wallet.deposit')}
                             </Button>
                           )}
                           {w.symbol?.withdrawTypes?.length > 0 && (
                             <Button variant="ghost" onClick={() => setModal({ type: 'withdraw', wallet: w })}>
-                              Withdraw
+                              {t('wallet.withdraw')}
                             </Button>
                           )}
                         </div>
@@ -556,7 +559,7 @@ export default function WalletPage() {
             {wallets.filter(w => w.walletType === 'CREDIT').length > 0 && (
               <div>
                 <h3 style={{ fontSize: '1rem', fontWeight: 600, marginBottom: '0.75rem', color: 'var(--gold)' }}>
-                  Credit Wallets
+                  {t('wallet.creditWallets')}
                 </h3>
                 <div className="wallet-grid animate-fade-up">
                   {wallets.filter(w => w.walletType === 'CREDIT').map((w) => {
@@ -575,10 +578,10 @@ export default function WalletPage() {
                           </div>
                         </div>
                         <div className="wallet-total" style={{ color: 'var(--gold)' }}>{fmt(cap || 0)}</div>
-                        <div className="wallet-bal-row"><span className="k">Credit Limit</span><span className="v" style={{ color: 'var(--gold)' }}>{fmt(cap || 0)}</span></div>
-                        <div className="wallet-bal-row"><span className="k">Available</span><span className="v" style={{ color: 'var(--gold)' }}>{fmt(avail)}</span></div>
-                        <div className="wallet-bal-row"><span className="k">Used</span><span className="v">{fmt(used)}</span></div>
-                        {locked > 0 && <div className="wallet-bal-row"><span className="k">Locked (pending)</span><span className="v">{fmt(locked)}</span></div>}
+                        <div className="wallet-bal-row"><span className="k">{t('wallet.creditLimit')}</span><span className="v" style={{ color: 'var(--gold)' }}>{fmt(cap || 0)}</span></div>
+                        <div className="wallet-bal-row"><span className="k">{t('wallet.available')}</span><span className="v" style={{ color: 'var(--gold)' }}>{fmt(avail)}</span></div>
+                        <div className="wallet-bal-row"><span className="k">{t('wallet.used')}</span><span className="v">{fmt(used)}</span></div>
+                        {locked > 0 && <div className="wallet-bal-row"><span className="k">{t('wallet.lockedPending')}</span><span className="v">{fmt(locked)}</span></div>}
                         {w.status && w.status !== 'ACTIVE' && (
                           <div style={{ marginTop: '0.6rem' }}>
                             <span className="badge badge-danger">{w.status}</span>
@@ -595,7 +598,7 @@ export default function WalletPage() {
             {wallets.filter(w => w.walletType === 'COLLATERAL').length > 0 && (
               <div>
                 <h3 style={{ fontSize: '1rem', fontWeight: 600, marginBottom: '0.75rem', color: 'var(--text-muted)' }}>
-                  Collateral Wallets (Frozen)
+                  {t('wallet.collateralWallets')}
                 </h3>
                 <div className="wallet-grid animate-fade-up">
                   {wallets.filter(w => w.walletType === 'COLLATERAL').map((w) => {
@@ -610,9 +613,9 @@ export default function WalletPage() {
                           </div>
                         </div>
                         <div className="wallet-total" style={{ color: 'var(--text-muted)' }}>{fmt(w.totalBalance)}</div>
-                        <div className="wallet-bal-row"><span className="k">Frozen Amount</span><span className="v">{fmt(w.freeBalance)}</span></div>
+                        <div className="wallet-bal-row"><span className="k">{t('wallet.frozenAmount')}</span><span className="v">{fmt(w.freeBalance)}</span></div>
                         <div style={{ marginTop: '0.5rem', fontSize: '0.75rem', color: 'var(--text-muted)' }}>
-                          This collateral is frozen as security for your credit facility
+                          {t('wallet.collateralNote')}
                         </div>
                       </div>
                     )
@@ -624,15 +627,15 @@ export default function WalletPage() {
         )}
 
         <div className="card animate-fade-up">
-          <div className="card-title"><div className="gold-dot" />Recent Transactions</div>
+          <div className="card-title"><div className="gold-dot" />{t('wallet.recentTransactions')}</div>
           {txs.length === 0 ? (
-            <p style={{ color: 'var(--text-muted)', fontSize: '0.875rem' }}>No transactions yet.</p>
+            <p style={{ color: 'var(--text-muted)', fontSize: '0.875rem' }}>{t('wallet.noTransactions')}</p>
           ) : (
             <div style={{ overflowX: 'auto' }}>
               <table className="order-table">
                 <thead>
                   <tr>
-                    <th>Type</th><th>Asset</th><th>Amount</th><th>Fee</th><th>Status</th><th>Date</th>
+                    <th>{t('wallet.type')}</th><th>{t('wallet.asset')}</th><th>{t('wallet.amount')}</th><th>{t('wallet.fee')}</th><th>{t('wallet.status')}</th><th>{t('wallet.date')}</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -658,21 +661,21 @@ export default function WalletPage() {
         </div>
 
         <div className="card animate-fade-up">
-          <div className="card-title"><div className="gold-dot" />Warehouse Requests</div>
+          <div className="card-title"><div className="gold-dot" />{t('wallet.warehouseRequests')}</div>
           {requests.length === 0 ? (
-            <p style={{ color: 'var(--text-muted)', fontSize: '0.875rem' }}>No warehouse requests yet.</p>
+            <p style={{ color: 'var(--text-muted)', fontSize: '0.875rem' }}>{t('wallet.noRequests')}</p>
           ) : (
             <div style={{ overflowX: 'auto' }}>
               <table className="order-table">
                 <thead>
                   <tr>
-                    <th>Type</th><th>Status</th><th>Weight</th><th>Warehouse</th><th>Delivery</th><th>Notes</th><th>Created</th>
+                    <th>{t('wallet.type')}</th><th>{t('wallet.status')}</th><th>{t('wallet.weight')}</th><th>{t('wallet.warehouse')}</th><th>{t('wallet.delivery')}</th><th>{t('wallet.notes')}</th><th>{t('wallet.created')}</th>
                   </tr>
                 </thead>
                 <tbody>
                   {requests.map((r) => (
                     <tr key={r.id}>
-                      <td className={r.type === 'INPUT' ? 'txt-buy' : 'txt-sell'}>{r.type === 'INPUT' ? 'Deposit' : 'Withdraw'}</td>
+                      <td className={r.type === 'INPUT' ? 'txt-buy' : 'txt-sell'}>{r.type === 'INPUT' ? t('wallet.depositLabel') : t('wallet.withdrawLabel')}</td>
                       <td><span className={`badge ${REQ_BADGE[r.status] || 'badge-warning'}`}>{r.status}</span></td>
                       <td>{fmt(r.weight)}g</td>
                       <td>{r.warehouse?.name || '—'}</td>
@@ -688,15 +691,15 @@ export default function WalletPage() {
         </div>
 
         <div className="card animate-fade-up">
-          <div className="card-title"><div className="gold-dot" />Deposit Requests</div>
+          <div className="card-title"><div className="gold-dot" />{t('wallet.depositRequests')}</div>
           {deposits.length === 0 ? (
-            <p style={{ color: 'var(--text-muted)', fontSize: '0.875rem' }}>No deposit requests yet.</p>
+            <p style={{ color: 'var(--text-muted)', fontSize: '0.875rem' }}>{t('wallet.noRequests')}</p>
           ) : (
             <div style={{ overflowX: 'auto' }}>
               <table className="order-table">
                 <thead>
                   <tr>
-                    <th>Picture</th><th>Symbol</th><th>Type</th><th>Amount</th><th>Status</th><th>Created</th><th />
+                    <th>{t('wallet.receiptPicture')}</th><th>{t('wallet.asset')}</th><th>{t('wallet.type')}</th><th>{t('wallet.amount')}</th><th>{t('wallet.status')}</th><th>{t('wallet.created')}</th><th />
                   </tr>
                 </thead>
                 <tbody>
@@ -714,12 +717,12 @@ export default function WalletPage() {
                       <td>{formatDateTime(d.createAt)}</td>
                       <td>
                         {d.metadata?.payment?.gatewayUrl && (
-                          <button className="btn" style={{ marginRight: 6 }} onClick={() => window.open(d.metadata.payment.gatewayUrl, '_blank', 'noopener')}>
-                            Open Gateway
+                          <button className="btn" style={{ marginInlineEnd: 6 }} onClick={() => window.open(d.metadata.payment.gatewayUrl, '_blank', 'noopener')}>
+                            {t('wallet.openGateway')}
                           </button>
                         )}
                         {d.status === 'PENDING' && (
-                          <button className="btn btn-danger" onClick={() => cancelReq(depositApi, d.id, load)}>Cancel</button>
+                          <button className="btn btn-danger" onClick={() => cancelReq(depositApi, d.id, load, t)}>{t('common.cancel')}</button>
                         )}
                       </td>
                     </tr>
@@ -731,15 +734,15 @@ export default function WalletPage() {
         </div>
 
         <div className="card animate-fade-up">
-          <div className="card-title"><div className="gold-dot" />Withdraw Requests</div>
+          <div className="card-title"><div className="gold-dot" />{t('wallet.withdrawRequests')}</div>
           {withdraws.length === 0 ? (
-            <p style={{ color: 'var(--text-muted)', fontSize: '0.875rem' }}>No withdrawal requests yet.</p>
+            <p style={{ color: 'var(--text-muted)', fontSize: '0.875rem' }}>{t('wallet.noRequests')}</p>
           ) : (
             <div style={{ overflowX: 'auto' }}>
               <table className="order-table">
                 <thead>
                   <tr>
-                    <th>Symbol</th><th>Type</th><th>Amount</th><th>Status</th><th>Created</th><th />
+                    <th>{t('wallet.asset')}</th><th>{t('wallet.type')}</th><th>{t('wallet.amount')}</th><th>{t('wallet.status')}</th><th>{t('wallet.created')}</th><th />
                   </tr>
                 </thead>
                 <tbody>
@@ -752,7 +755,7 @@ export default function WalletPage() {
                       <td>{formatDateTime(w.createAt)}</td>
                       <td>
                         {w.status === 'PENDING' && (
-                          <button className="btn btn-danger" onClick={() => cancelReq(withdrawApi, w.id, load)}>Cancel</button>
+                          <button className="btn btn-danger" onClick={() => cancelReq(withdrawApi, w.id, load, t)}>{t('common.cancel')}</button>
                         )}
                       </td>
                     </tr>

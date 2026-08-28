@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { useAuth } from '../context/AuthContext'
 import { profileApi, authApi } from '../services/api'
 import { Spinner, Alert } from '../components/UI'
@@ -12,6 +13,7 @@ function formatDateTime(iso) {
 }
 
 export default function SessionsPage() {
+  const { t } = useTranslation()
   const { deviceId } = useAuth()
   const [data, setData] = useState(null)
   const [loading, setLoading] = useState(true)
@@ -24,13 +26,13 @@ export default function SessionsPage() {
       const d = await profileApi.getLoginHistory()
       setData(d)
     } catch (_) {
-      setError('Failed to load session data.')
+      setError(t('sessions.loadFailed'))
     } finally {
       setLoading(false)
     }
   }
 
-  useEffect(() => { load() }, [])
+  useEffect(() => { load() }, [t])
 
   const handleRevoke = async (dId) => {
     setRevoking(dId)
@@ -50,8 +52,8 @@ export default function SessionsPage() {
   return (
     <div className="animate-fade-in">
       <div className="main-header">
-        <h1 className="main-header-title">Sessions</h1>
-        <p className="main-header-sub">Manage your active devices and login history</p>
+        <h1 className="main-header-title">{t('sessions.title')}</h1>
+        <p className="main-header-sub">{t('sessions.subtitle')}</p>
       </div>
 
       <div className="main-body">
@@ -59,16 +61,16 @@ export default function SessionsPage() {
 
         <div className="tabs">
           <button className={`tab ${tab === 'devices' ? 'active' : ''}`} onClick={() => setTab('devices')}>
-            Active Devices
+            {t('sessions.activeDevices')}
           </button>
           <button className={`tab ${tab === 'history' ? 'active' : ''}`} onClick={() => setTab('history')}>
-            Login History
+            {t('sessions.loginHistory')}
           </button>
         </div>
 
         {tab === 'devices' && (
           <div className="card animate-fade-up">
-            <div className="card-title"><div className="gold-dot" />Active Sessions</div>
+            <div className="card-title"><div className="gold-dot" />{t('sessions.activeSessions')}</div>
             {data?.currentDeviceList?.length ? (
               <div className="device-list">
                 {data.currentDeviceList.map(device => (
@@ -80,17 +82,17 @@ export default function SessionsPage() {
                       <div className="device-name">
                         {device.userAgent || device.deviceType}
                         {device.deviceId === deviceId && (
-                          <span className="badge badge-success" style={{ marginLeft: 8 }}>Current</span>
+                          <span className="badge badge-success" style={{ marginInlineStart: 8 }}>{t('sessions.current')}</span>
                         )}
                       </div>
                       <div className="device-meta">
-                        {device.ipAddress} · Last login {formatDateTime(device.lastLogin)}
+                        {device.ipAddress} · {t('sessions.lastLogin', { date: formatDateTime(device.lastLogin) })}
                       </div>
                     </div>
                     {device.isConnected && (
                       <span className="badge badge-success" style={{ flexShrink: 0 }}>
                         <span style={{ width: 5, height: 5, borderRadius: '50%', background: '#81c784', display: 'inline-block' }} />
-                        Active
+                        {t('sessions.active')}
                       </span>
                     )}
                     {device.deviceId !== deviceId && (
@@ -100,23 +102,23 @@ export default function SessionsPage() {
                         disabled={revoking === device.deviceId}
                         style={{ flexShrink: 0 }}
                       >
-                        {revoking === device.deviceId ? <Spinner light /> : 'Revoke'}
+                        {revoking === device.deviceId ? <Spinner light /> : t('sessions.revoke')}
                       </button>
                     )}
                   </div>
                 ))}
               </div>
             ) : (
-              <p style={{ color: 'var(--text-muted)', fontSize: '0.875rem' }}>No active devices found.</p>
+              <p style={{ color: 'var(--text-muted)', fontSize: '0.875rem' }}>{t('sessions.noDevices')}</p>
             )}
           </div>
         )}
 
         {tab === 'history' && (
           <div className="card animate-fade-up">
-            <div className="card-title"><div className="gold-dot" />Login History</div>
+            <div className="card-title"><div className="gold-dot" />{t('sessions.loginHistory')}</div>
             <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', marginBottom: '1rem' }}>
-              {data?.totalItems || 0} login events recorded
+              {t('sessions.loginEvents', { count: data?.totalItems || 0 })}
             </div>
             <div className="history-list">
               {data?.loginHistoryList?.map(entry => (
@@ -124,8 +126,8 @@ export default function SessionsPage() {
                   <div className={`history-status-dot ${entry.status === 'SUCCESS' ? 'success' : 'fail'}`} />
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ fontSize: '0.875rem', color: 'var(--text-primary)' }}>
-                      {entry.deviceInfo?.browser?.name || 'Unknown Browser'}
-                      {' '}on {entry.deviceInfo?.os?.name || 'Unknown OS'}
+                      {entry.deviceInfo?.browser?.name || t('sessions.unknownBrowser')}
+                      {' '}{t('sessions.on')} {entry.deviceInfo?.os?.name || t('sessions.unknownOs')}
                     </div>
                     <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: 1 }}>
                       {entry.ipAddress} · {formatDateTime(entry.createAt)}

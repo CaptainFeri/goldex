@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { useTranslation } from 'react-i18next'
 import { useAuth } from '../context/AuthContext'
 import { useNavigate, useLocation } from 'react-router-dom'
 import { BrandHeader, ThemeToggle, LangToggle } from './UI'
@@ -34,18 +35,18 @@ function CreditIcon() {
 }
 
 const navItems = [
-  { label: 'Trade', path: '/trade', icon: TradeIcon },
-  { label: 'Elite Trade', path: '/elite-trade', icon: EliteTradeIcon },
-  { label: 'Offer', path: '/offer', icon: OfferIcon },
-  { label: 'Wallet', path: '/wallet', icon: WalletIcon },
-  { label: 'Credit', path: '/credit', icon: CreditIcon },
-  { label: 'Notifications', path: '/notifications', icon: BellIcon },
-  { label: 'Support', path: '/support', icon: SupportIcon },
-  { label: 'Profile', path: '/profile', icon: UserIcon },
-  { label: 'Level', path: '/level', icon: StarIcon },
-  { label: 'Verification', path: '/kyc', icon: ShieldIcon },
-  { label: 'Sessions', path: '/sessions', icon: DeviceIcon },
-  { label: 'Settings', path: '/settings', icon: SettingsIcon },
+  { key: 'trade', path: '/trade', icon: TradeIcon },
+  { key: 'eliteTrade', path: '/elite-trade', icon: EliteTradeIcon },
+  { key: 'offer', path: '/offer', icon: OfferIcon },
+  { key: 'wallet', path: '/wallet', icon: WalletIcon },
+  { key: 'credit', path: '/credit', icon: CreditIcon },
+  { key: 'notifications', path: '/notifications', icon: BellIcon },
+  { key: 'support', path: '/support', icon: SupportIcon },
+  { key: 'profile', path: '/profile', icon: UserIcon },
+  { key: 'level', path: '/level', icon: StarIcon },
+  { key: 'verification', path: '/kyc', icon: ShieldIcon },
+  { key: 'sessions', path: '/sessions', icon: DeviceIcon },
+  { key: 'settings', path: '/settings', icon: SettingsIcon },
 ]
 
 function OfferIcon() {
@@ -141,6 +142,7 @@ function LogoutIcon() {
 }
 
 export default function Sidebar({ user }) {
+  const { t } = useTranslation()
   const { logout, marketAccess } = useAuth()
   const navigate = useNavigate()
   const location = useLocation()
@@ -218,7 +220,7 @@ export default function Sidebar({ user }) {
       </div>
 
       <nav className="sidebar-nav">
-        {visibleNav.map(({ label, path, icon: Icon }) => (
+        {visibleNav.map(({ key, path, icon: Icon }) => (
           <button
             key={path}
             className={`nav-item ${location.pathname === path ? 'active' : ''}`}
@@ -226,16 +228,9 @@ export default function Sidebar({ user }) {
             style={{ position: 'relative' }}
           >
             <Icon />
-            {label}
+            {t(`sidebar.${key}`)}
             {path === '/notifications' && unreadNotifs > 0 && (
-              <span style={{
-                position: 'absolute', left: '1.75rem', top: '0.4rem',
-                background: 'var(--danger, #ef4444)', color: '#fff',
-                fontSize: '0.6rem', fontWeight: 700,
-                minWidth: 16, height: 16, borderRadius: 8,
-                display: 'flex', alignItems: 'center', justifyContent: 'center',
-                padding: '0 3px',
-              }}>{unreadNotifs > 99 ? '99+' : unreadNotifs}</span>
+              <span className="nav-badge">{unreadNotifs > 99 ? '99+' : unreadNotifs}</span>
             )}
           </button>
         ))}
@@ -243,16 +238,16 @@ export default function Sidebar({ user }) {
 
       <div className="sidebar-footer">
         <div className="sidebar-theme-row">
-          <span>Language</span>
+          <span>{t('sidebar.language')}</span>
           <LangToggle />
         </div>
         <div className="sidebar-theme-row">
-          <span>Theme</span>
+          <span>{t('sidebar.theme')}</span>
           <ThemeToggle />
         </div>
         <button className="nav-item" onClick={handleLogout} disabled={loggingOut}>
           <LogoutIcon />
-          {loggingOut ? 'Signing out…' : 'Sign out'}
+          {loggingOut ? t('sidebar.signingOut') : t('sidebar.signOut')}
         </button>
       </div>
     </aside>

@@ -12,9 +12,9 @@ const TYPE_STYLES = {
   ERROR: 'badge-danger', PROMOTION: 'badge-gold', SYSTEM: 'badge-secondary',
 }
 
-const TYPE_LABELS = {
-  INFO: 'Info', SUCCESS: 'Success', WARNING: 'Warning',
-  ERROR: 'Error', PROMOTION: 'Promotion', SYSTEM: 'System',
+const TYPE_KEYS = {
+  INFO: 'typeInfo', SUCCESS: 'typeSuccess', WARNING: 'typeWarning',
+  ERROR: 'typeError', PROMOTION: 'typePromotion', SYSTEM: 'typeSystem',
 }
 
 const CHANNELS = ['IN_APP', 'EMAIL', 'SMS', 'TELEGRAM']
@@ -30,6 +30,7 @@ function BellIcon() {
 }
 
 function PreferencesTab() {
+  const { t } = useTranslation()
   const [prefs, setPrefs] = useState([])
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
@@ -82,13 +83,13 @@ function PreferencesTab() {
   return (
     <div>
       <p style={{ color: 'var(--text-muted)', marginBottom: '1rem', fontSize: '0.9rem' }}>
-        Choose which notification channels and categories you want to receive
+        {t('notification.choosePrefs')}
       </p>
       <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
         <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem' }}>
           <thead>
             <tr style={{ borderBottom: '1px solid var(--border)' }}>
-              <th style={{ padding: '0.75rem 1rem', textAlign: 'left' }}>Channel / Category</th>
+              <th style={{ padding: '0.75rem 1rem', textAlign: 'start' }}>{t('notification.channelCategory')}</th>
               {CATEGORIES.map((cat) => (
                 <th key={cat} style={{ padding: '0.75rem 0.5rem', textAlign: 'center' }}>{cat}</th>
               ))}
@@ -114,7 +115,7 @@ function PreferencesTab() {
         </table>
       </div>
       <div style={{ marginTop: '1rem' }}>
-        <Button onClick={savePrefs} loading={saving}>Save Preferences</Button>
+        <Button onClick={savePrefs} loading={saving}>{t('notification.savePreferences')}</Button>
       </div>
     </div>
   )
@@ -140,15 +141,14 @@ export default function NotificationPage() {
       setTotal(data.total || 0)
       setUnreadCount(data.unreadCount || 0)
     } catch (err) {
-      setError(err?.response?.data?.message || 'Failed to load notifications')
+      setError(err?.response?.data?.message || t('notification.loadFailed'))
     } finally {
       setLoading(false)
     }
-  }, [page])
+  }, [page, t])
 
   useEffect(() => { load() }, [load])
 
-  // Realtime refresh when a new notification arrives over the socket.
   useEffect(() => {
     let ns = null
     try {
@@ -188,9 +188,9 @@ export default function NotificationPage() {
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
           <BellIcon />
           <div>
-            <h1 className="main-header-title">Notifications</h1>
+            <h1 className="main-header-title">{t('notification.title')}</h1>
             <p className="main-header-sub">
-              {tab === 'list' ? (unreadCount > 0 ? `${unreadCount} unread` : 'All caught up') : 'Manage your preferences'}
+              {tab === 'list' ? (unreadCount > 0 ? t('notification.unread', { count: unreadCount }) : t('notification.allCaughtUp')) : t('notification.managePrefs')}
             </p>
           </div>
         </div>
@@ -199,10 +199,10 @@ export default function NotificationPage() {
       <div className="main-body">
         <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '1rem' }}>
           <button className={`btn ${tab === 'list' ? '' : 'ghost'}`} onClick={() => setTab('list')}>
-            Notifications
+            {t('notification.notifications')}
           </button>
           <button className={`btn ${tab === 'prefs' ? '' : 'ghost'}`} onClick={() => setTab('prefs')}>
-            Preferences
+            {t('notification.preferences')}
           </button>
         </div>
 
@@ -213,7 +213,7 @@ export default function NotificationPage() {
             {unreadCount > 0 && (
               <div style={{ marginBottom: '1rem', display: 'flex', justifyContent: 'flex-end' }}>
                 <Button className="btn-auto ghost" onClick={handleMarkAllRead}>
-                  Mark all as read
+                  {t('notification.markAllRead')}
                 </Button>
               </div>
             )}
@@ -225,7 +225,7 @@ export default function NotificationPage() {
             ) : notifications.length === 0 ? (
               <div className="card" style={{ textAlign: 'center', padding: '3rem' }}>
                 <div style={{ fontSize: '3rem', marginBottom: '1rem', opacity: 0.3 }}>🔔</div>
-                <div style={{ color: 'var(--text-muted)' }}>No notifications yet</div>
+                <div style={{ color: 'var(--text-muted)' }}>{t('notification.noNotifications')}</div>
               </div>
             ) : (
               <div className="card" style={{ padding: 0 }}>
@@ -247,7 +247,7 @@ export default function NotificationPage() {
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
                         <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
                           <span className={`badge ${TYPE_STYLES[n.type] || 'badge-info'}`}>
-                            {TYPE_LABELS[n.type] || n.type}
+                            {t(`notification.${TYPE_KEYS[n.type] || 'typeInfo'}`)}
                           </span>
                           {n.category && (
                             <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{n.category}</span>
@@ -266,13 +266,13 @@ export default function NotificationPage() {
             {total > pageSize && (
               <div style={{ display: 'flex', justifyContent: 'center', gap: '0.5rem', marginTop: '1rem' }}>
                 <Button className="btn-auto" disabled={page === 1} onClick={() => setPage((p) => p - 1)}>
-                  Previous
+                  {t('notification.previous')}
                 </Button>
                 <span style={{ padding: '0.5rem 1rem', color: 'var(--text-muted)' }}>
-                  Page {page} of {Math.ceil(total / pageSize)}
+                  {t('notification.pageOf', { page, total: Math.ceil(total / pageSize) })}
                 </span>
                 <Button className="btn-auto" disabled={page >= Math.ceil(total / pageSize)} onClick={() => setPage((p) => p + 1)}>
-                  Next
+                  {t('notification.next')}
                 </Button>
               </div>
             )}

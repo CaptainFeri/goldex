@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState, useCallback } from 'react'
+import { useTranslation } from 'react-i18next'
 import { useToast } from '../context/ToastContext'
 import { useAuth } from '../context/AuthContext'
 import { marketApi, orderApi, walletApi, orderBookApi, creditApi } from '../services/api'
@@ -30,9 +31,18 @@ function formatDateTime(iso) {
   })
 }
 
+const ORDER_STATUS_KEY = {
+  PENDING: 'pending',
+  PARTIALLY_COMPLETED: 'partiallyCompleted',
+  COMPLETED: 'completed',
+  CANCELLED: 'cancelled',
+  REJECTED: 'rejected',
+}
+
 const MESQAL_TO_GRAM = 4.3318
 
 export default function EliteTradePage() {
+  const { t } = useTranslation()
   const toast = useToast()
   const { marketAccess } = useAuth()
   const [pairs, setPairs] = useState([])
@@ -75,9 +85,6 @@ export default function EliteTradePage() {
 
   const loadOrders = useCallback(async () => {
     try {
-      // Only fetch the user's own limit orders on the market type(s) this
-      // page displays (buy and sell alike) — orders from other market types
-      // never leak into the elite list.
       const types = marketAccess?.marketTypes?.filter(Boolean)
       const res = await orderApi.list({
         limit: 20,
@@ -111,8 +118,6 @@ export default function EliteTradePage() {
       try {
         const [list] = await Promise.all([marketApi.getPairs(), loadWallets(), loadActiveCredit()])
         let arr = Array.isArray(list) ? list : []
-        // The backend already filters by market type; keep a client-side safety
-        // net so pairs outside the user's allowed market types never render.
         const allowedTypes = marketAccess?.marketTypes
         if (allowedTypes && allowedTypes.length > 0) {
           arr = arr.filter((p) => allowedTypes.includes(p.marketType))
@@ -120,13 +125,13 @@ export default function EliteTradePage() {
         setPairs(arr)
         if (arr.length) setSelectedId(arr[0].id)
       } catch (_) {
-        setError('Failed to load the market.')
+        setError(t('eliteTrade.marketLoadFailed'))
       } finally {
         setLoading(false)
       }
     }
     init()
-  }, [marketAccess])
+  }, [marketAccess, t])
 
   useEffect(() => { loadOrders() }, [loadOrders])
 
@@ -138,8 +143,6 @@ export default function EliteTradePage() {
   }, [orders, loadOrders])
 
   const pr = selected ? priceOf(selected) : { buy: 0, sell: 0, buyGram: 0, sellGram: 0, displayBuyGram: 0, displaySellGram: 0 }
-  // A BUY is charged at the DISPLAY (customer) gram price (same as backend
-  // locks); a SELL is valued at the pure gram price (commission in gold).
   const marketPrice = side === 'BUY' ? pr.displayBuyGram : pr.sellGram
   const mesghalPrice = side === 'BUY' ? pr.buy : pr.sell
   const effectivePrice = Number(price) || Number(marketPrice)
@@ -157,8 +160,6 @@ export default function EliteTradePage() {
     if (!selectedId) return
     try {
       const data = await orderBookApi.getDepth(selectedId)
-      // Backend returns mesghal prices; convert to per-gram to match the
-      // rest of the UI (limit price input, market price display, etc.).
       const toGram = (d) => ({ ...d, price: d.price / MESQAL_TO_GRAM })
       setDepth({
         bids: (data.bids || []).map(toGram),
@@ -187,11 +188,6 @@ export default function EliteTradePage() {
   const baseWallet = selected ? walletFor(selected.baseSymbol?.id, walletType) : null
   const quoteWallet = selected ? walletFor(selected.quoteSymbol?.id, walletType) : null
 
-  // The credit line is only issued by the backend on the first order. Before
-  // that, project the balances from the frozen collateral and the current pair
-  // price: BUY = collateral × price × leverage (IRR), SELL = collateral ×
-  // leverage (XAU). After issuance the remaining credit is the CREDIT wallet's
-  // freeBalance, which already deducts the amounts locked by other requests.
   const creditIssued = useCredit && activeCredit && Number(activeCredit.creditLimit || 0) > 0
   const collateralMatches = useCredit && activeCredit && selected &&
     selected.baseSymbol?.id === activeCredit.collateralSymbolId
@@ -209,7 +205,6 @@ export default function EliteTradePage() {
     : (useCredit && activeCredit
         ? (creditIssued ? (baseWallet?.freeBalance || 0) : projectedSellCredit)
         : (baseWallet?.creditBalance || baseWallet?.availableBalance || 0))
-  // Live capacity per side — reflects amounts locked by pending orders.
   const buyAvailable = useCredit && activeCredit
     ? (creditIssued ? (quoteWallet?.freeBalance || 0) : projectedCredit)
     : (quoteWallet?.creditBalance || quoteWallet?.availableBalance || 0)
@@ -241,11 +236,11 @@ export default function EliteTradePage() {
   const placeOrder = async (e) => {
     e.preventDefault()
     if (!selected) return
-    if (qty <= 0) { toast.error('Enter a valid quantity.'); return }
-    if (!Number(price) || Number(price) <= 0) { toast.error('Enter a limit price.'); return }
-    if (insufficient) { toast.error(`Insufficient ${availSymbol} balance.`); return }
-    if (belowMin) { toast.error(`Minimum is ${fmt(minQ, decimals)}.`); return }
-    if (aboveMax) { toast.error(`Maximum is ${fmt(maxQ, decimals)}.`); return }
+    if (qty <= 0) { toast.error(t('eliteTrade.enterValidQty')); return }
+    if (!Number(price) || Number(price) <= 0) { toast.error(t('eliteTrade.enterLimitPrice')); return }
+    if (insufficient) { toast.error(t('eliteTrade.insufficientBalance', { symbol: availSymbol })); return }
+    if (belowMin) { toast.error(t('eliteTrade.minimum', { min: fmt(minQ, decimals) })); return }
+    if (aboveMax) { toast.error(t('eliteTrade.maximum', { max: fmt(maxQ, decimals) })); return }
     setPlacing(true)
     try {
       await orderApi.create({
@@ -256,12 +251,12 @@ export default function EliteTradePage() {
         price: Number(price),
         useCredit: !!(useCredit && activeCredit)
       })
-      toast.success(`Limit ${side === 'BUY' ? 'buy' : 'sell'} order placed.`)
+      toast.success(side === 'BUY' ? t('eliteTrade.limitBuyPlaced') : t('eliteTrade.limitSellPlaced'))
       setQuantity('')
       setPrice(marketPrice ? String(marketPrice) : '')
       await Promise.all([loadOrders(), loadWallets(), loadActiveCredit()])
     } catch (err) {
-      toast.error(err.response?.data?.message || 'Order could not be placed.')
+      toast.error(err.response?.data?.message || t('eliteTrade.orderFailed'))
     } finally {
       setPlacing(false)
     }
@@ -271,16 +266,15 @@ export default function EliteTradePage() {
     setCancelling(id)
     try {
       await orderApi.cancel(id)
-      toast.success('Order cancelled.')
+      toast.success(t('eliteTrade.orderCancelled'))
       await Promise.all([loadOrders(), loadWallets(), loadActiveCredit()])
     } catch (err) {
-      toast.error(err.response?.data?.message || 'Could not cancel order.')
+      toast.error(err.response?.data?.message || t('eliteTrade.cancelFailed'))
     } finally {
       setCancelling(null)
     }
   }
 
-  // -- Order book computations --
   const asks = depth.asks || []
   const bids = depth.bids || []
   const bestAsk = asks.length > 0 ? asks[0].price : 0
@@ -297,19 +291,18 @@ export default function EliteTradePage() {
     </div>
   )
 
-  // Access control: LIMIT trading must be enabled for this user.
   const limitKindAllowed = !marketAccess || (marketAccess.marketKinds || []).includes('LIMIT')
   if (!limitKindAllowed) {
     return (
       <div className="animate-fade-in">
         <div className="main-header">
-          <h1 className="main-header-title">Elite Trade</h1>
-          <p className="main-header-sub">Advanced limit order trading with live order book</p>
+          <h1 className="main-header-title">{t('eliteTrade.title')}</h1>
+          <p className="main-header-sub">{t('eliteTrade.subtitle')}</p>
         </div>
         <div className="main-body">
           <div className="card">
             <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem' }}>
-              You do not have access to limit (elite) trading. Please contact support.
+              {t('eliteTrade.noAccess')}
             </p>
           </div>
         </div>
@@ -320,15 +313,15 @@ export default function EliteTradePage() {
   return (
     <div className="animate-fade-in">
       <div className="main-header">
-        <h1 className="main-header-title">Elite Trade</h1>
-        <p className="main-header-sub">Advanced limit order trading with live order book</p>
+        <h1 className="main-header-title">{t('eliteTrade.title')}</h1>
+        <p className="main-header-sub">{t('eliteTrade.subtitle')}</p>
       </div>
 
       <div className="main-body" style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
         {error && <Alert type="error">{error}</Alert>}
 
         {pairs.length === 0 ? (
-          <div className="card"><p style={{ color: 'var(--text-muted)', fontSize: '0.9rem' }}>No trading pairs are available right now.</p></div>
+          <div className="card"><p style={{ color: 'var(--text-muted)', fontSize: '0.9rem' }}>{t('eliteTrade.noPairs')}</p></div>
         ) : (
           <div className="elite-grid">
             {/* ── Pair selector ── */}
@@ -351,28 +344,27 @@ export default function EliteTradePage() {
             <div className="card animate-fade-up">
               <div className="card-title" style={{ justifyContent: 'space-between' }}>
                 <span style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                  <div className="gold-dot" />Order Book
+                  <div className="gold-dot" />{t('eliteTrade.orderBook')}
                 </span>
                 <span className={`live-dot ${connected ? 'on' : 'off'}`}>
-                  <span className="live-pip" />{connected ? 'Live' : 'Offline'}
+                  <span className="live-pip" />{connected ? t('eliteTrade.live') : t('eliteTrade.offline')}
                 </span>
               </div>
 
               {!connected && asks.length === 0 && bids.length === 0 ? (
                 <div style={{ padding: '2rem', textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.85rem' }}>
-                  Waiting for live prices…
+                  {t('eliteTrade.waitingPrices')}
                 </div>
               ) : (
                 <div className="ob-container">
-                  {/* ASKS */}
                   <div className="ob-side">
                     <div className="ob-header">
-                      <span className="ob-h-price">Price (IRR)</span>
-                      <span className="ob-h-size">Amount (g)</span>
+                      <span className="ob-h-price">{t('eliteTrade.priceIrr')}</span>
+                      <span className="ob-h-size">{t('eliteTrade.amountG')}</span>
                     </div>
                     <div className="ob-rows ob-asks">
                       {asks.length === 0 ? (
-                        <div className="ob-empty">No sell orders</div>
+                        <div className="ob-empty">{t('eliteTrade.noSellOrders')}</div>
                       ) : (
                         [...asks].reverse().map((a, i) => (
                           <div key={`ask-${i}`} className="ob-row">
@@ -385,16 +377,14 @@ export default function EliteTradePage() {
                     </div>
                   </div>
 
-                  {/* Spread */}
                   <div className="ob-spread">
-                    <span>Spread {fmt(spread, decimals)} ({fmt(spreadPercent, 2)}%)</span>
+                    <span>{t('eliteTrade.spread', { price: fmt(spread, decimals), percent: fmt(spreadPercent, 2) })}</span>
                   </div>
 
-                  {/* BIDS */}
                   <div className="ob-side">
                     <div className="ob-rows ob-bids">
                       {bids.length === 0 ? (
-                        <div className="ob-empty">No buy orders</div>
+                        <div className="ob-empty">{t('eliteTrade.noBuyOrders')}</div>
                       ) : (
                         bids.map((b, i) => (
                           <div key={`bid-${i}`} className="ob-row">
@@ -406,8 +396,8 @@ export default function EliteTradePage() {
                       )}
                     </div>
                     <div className="ob-header">
-                      <span className="ob-h-price">Price (IRR)</span>
-                      <span className="ob-h-size">Amount (g)</span>
+                      <span className="ob-h-price">{t('eliteTrade.priceIrr')}</span>
+                      <span className="ob-h-size">{t('eliteTrade.amountG')}</span>
                     </div>
                   </div>
                 </div>
@@ -418,14 +408,14 @@ export default function EliteTradePage() {
             <form className="card animate-fade-up" onSubmit={placeOrder}>
               <div className="card-title" style={{ justifyContent: 'space-between' }}>
                 <span style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                  <div className="gold-dot" />Limit Order
+                  <div className="gold-dot" />{t('eliteTrade.limitOrder')}
                 </span>
                 {selected && <span style={{ fontSize: '0.82rem', color: 'var(--text-muted)' }}>{pairLabel(selected)}</span>}
               </div>
 
               <div className="side-toggle">
-                <button type="button" className={`side-btn buy ${side === 'BUY' ? 'active' : ''}`} onClick={() => setSide('BUY')}>Buy</button>
-                <button type="button" className={`side-btn sell ${side === 'SELL' ? 'active' : ''}`} onClick={() => setSide('SELL')}>Sell</button>
+                <button type="button" className={`side-btn buy ${side === 'BUY' ? 'active' : ''}`} onClick={() => setSide('BUY')}>{t('eliteTrade.buy')}</button>
+                <button type="button" className={`side-btn sell ${side === 'SELL' ? 'active' : ''}`} onClick={() => setSide('SELL')}>{t('eliteTrade.sell')}</button>
               </div>
 
               {/* Credit toggle - only show if user has active credit */}
@@ -446,30 +436,30 @@ export default function EliteTradePage() {
                         style={{ width: '18px', height: '18px', cursor: 'pointer' }}
                       />
                       <span style={{ fontWeight: 600, color: useCredit ? 'var(--gold)' : 'inherit' }}>
-                        💳 Use Credit
+                        💳 {t('trade.useCredit')}
                       </span>
                     </label>
                     <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
-                      {activeCredit.leverage}x leverage
+                      {t('trade.leverage', { x: activeCredit.leverage })}
                     </span>
                   </div>
                   {useCredit && (
                     <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '0.5rem' }}>
                       <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.25rem' }}>
-                        <span>Available Buy (IRR):</span>
+                        <span>{t('trade.availBuyCredit')}:</span>
                         <span style={{ color: 'var(--gold)', fontWeight: 600 }}>
                           {fmt(buyAvailable, 0)} IRR
                         </span>
                       </div>
                       <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.25rem' }}>
-                        <span>Available Sell:</span>
+                        <span>{t('trade.availSellCredit')}:</span>
                         <span style={{ color: 'var(--gold)', fontWeight: 600 }}>
                           {fmt(sellAvailable, decimals)} {selected?.baseSymbol?.slug || 'XAU'}
                         </span>
                       </div>
                       {activeCredit.drawdownPercent != null && (
                         <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                          <span>Drawdown:</span>
+                          <span>{t('trade.drawdown')}:</span>
                           <span style={{
                             color: Number(activeCredit.lastDrawdownPercent || 0) >= Number(activeCredit.drawdownPercent || 100)
                               ? 'var(--danger)' : 'inherit'
@@ -485,23 +475,23 @@ export default function EliteTradePage() {
 
               <div className="ticket-summary">
                 <span className="label">
-                  Available {useCredit && activeCredit ? '(Credit)' : ''}
+                  {t('eliteTrade.available')} {useCredit && activeCredit ? `(${t('trade.useCredit')})` : ''}
                 </span>
                 <span className="val" style={{ color: useCredit && activeCredit ? 'var(--gold)' : 'inherit' }}>
                   {fmt(available, side === 'BUY' ? 2 : decimals)} {availSymbol || ''}
-                  <button type="button" className="btn-link" style={{ marginLeft: 8 }} onClick={setMax}>Max</button>
+                  <button type="button" className="btn-link" style={{ marginInlineStart: 8 }} onClick={setMax}>{t('eliteTrade.max')}</button>
                 </span>
               </div>
 
               <Field
-                label="Quantity (gram)"
-                hint={selected ? `Min ${fmt(minQ, decimals)} · Max ${fmt(maxQ, decimals)} gram` : ''}
+                label={t('eliteTrade.quantityGram')}
+                hint={selected ? t('eliteTrade.minMaxGram', { min: fmt(minQ, decimals), max: fmt(maxQ, decimals) }) : ''}
               >
                 <input className="form-input" type="number" step="any" min="0" value={quantity}
                   onChange={(e) => setQuantity(e.target.value)} placeholder="0.00" />
               </Field>
 
-              <Field label="Limit Price (per gram)">
+              <Field label={t('eliteTrade.limitPrice')}>
                 <input className="form-input" type="number" step="any" min="0.01" value={price}
                   onChange={(e) => setPrice(e.target.value)}
                   placeholder={fmt(marketPrice, decimals)} />
@@ -509,29 +499,29 @@ export default function EliteTradePage() {
 
               {mesghalPrice > 0 && (
                 <div className="ticket-summary">
-                  <span className="label">Price / mesghal</span>
+                  <span className="label">{t('eliteTrade.priceMesghal')}</span>
                   <span className="val">{fmt(mesghalPrice, decimals)}</span>
                 </div>
               )}
 
               <div className="ticket-summary" style={{ borderTop: '1px solid var(--border)', marginTop: '0.5rem' }}>
-                <span className="label">{side === 'BUY' ? 'You pay' : 'Gross'}</span>
+                <span className="label">{side === 'BUY' ? t('eliteTrade.youPay') : t('eliteTrade.gross')}</span>
                 <span className="val">{estTotal > 0 ? fmt(estTotal, 2) : '—'} {selected?.quoteSymbol?.slug || ''}</span>
               </div>
 
               <div className="ticket-summary">
-                <span className="label">You receive {commRate > 0 ? `(after ${commRate}% commission)` : ''}</span>
+                <span className="label">{t('eliteTrade.youReceive')} {commRate > 0 ? t('eliteTrade.afterCommission', { rate: commRate }) : ''}</span>
                 <span className="val">{youReceive > 0 ? fmt(youReceive, side === 'BUY' ? decimals : 2) : '—'} {youReceiveUnit}</span>
               </div>
 
-              {insufficient && <Alert type="error">Insufficient {availSymbol} balance.</Alert>}
-              {belowMin && <Alert type="error">Below minimum order of {fmt(minQ, decimals)}.</Alert>}
-              {aboveMax && <Alert type="error">Above maximum order of {fmt(maxQ, decimals)}.</Alert>}
+              {insufficient && <Alert type="error">{t('eliteTrade.insufficient', { symbol: availSymbol })}</Alert>}
+              {belowMin && <Alert type="error">{t('eliteTrade.belowMin', { min: fmt(minQ, decimals) })}</Alert>}
+              {aboveMax && <Alert type="error">{t('eliteTrade.aboveMax', { max: fmt(maxQ, decimals) })}</Alert>}
 
               <div style={{ marginTop: '1rem' }}>
                 <Button type="submit" loading={placing} disabled={blocked}
                   variant={side === 'BUY' ? 'primary' : 'secondary'}>
-                  Place {side === 'BUY' ? 'Buy' : 'Sell'} Limit Order
+                  {side === 'BUY' ? t('eliteTrade.placeBuyLimit') : t('eliteTrade.placeSellLimit')}
                 </Button>
               </div>
             </form>
@@ -541,31 +531,31 @@ export default function EliteTradePage() {
         {/* ── Order history ── */}
         <div className="card animate-fade-up">
           <div className="card-title" style={{ justifyContent: 'space-between' }}>
-            <span style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}><div className="gold-dot" />Limit Orders</span>
+            <span style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}><div className="gold-dot" />{t('eliteTrade.limitOrders')}</span>
             <select
               className="form-input"
               style={{ width: 'auto', padding: '0.4rem 2.2rem 0.4rem 0.8rem', fontSize: '0.82rem' }}
               value={statusFilter}
               onChange={(e) => setStatusFilter(e.target.value)}
             >
-              <option value="">All statuses</option>
-              <option value="PENDING">Pending</option>
-              <option value="PARTIALLY_COMPLETED">Partially completed</option>
-              <option value="COMPLETED">Completed</option>
-              <option value="CANCELLED">Cancelled</option>
-              <option value="REJECTED">Rejected</option>
+              <option value="">{t('eliteTrade.allStatuses')}</option>
+              <option value="PENDING">{t('eliteTrade.pending')}</option>
+              <option value="PARTIALLY_COMPLETED">{t('eliteTrade.partiallyCompleted')}</option>
+              <option value="COMPLETED">{t('eliteTrade.completed')}</option>
+              <option value="CANCELLED">{t('eliteTrade.cancelled')}</option>
+              <option value="REJECTED">{t('eliteTrade.rejected')}</option>
             </select>
           </div>
           {orders.length === 0 ? (
             <p style={{ color: 'var(--text-muted)', fontSize: '0.875rem' }}>
-              {statusFilter ? 'No limit orders with this status.' : 'No limit orders yet.'}
+              {statusFilter ? t('eliteTrade.noOrdersStatus') : t('eliteTrade.noOrders')}
             </p>
           ) : (
             <div style={{ overflowX: 'auto' }}>
               <table className="order-table">
                 <thead>
                   <tr>
-                    <th>Pair</th><th>Side</th><th>Qty</th><th>Price</th><th>Filled</th><th>Total</th><th>Status</th><th>Date</th><th></th>
+                    <th>{t('eliteTrade.pair')}</th><th>{t('eliteTrade.side')}</th><th>{t('eliteTrade.qty')}</th><th>{t('eliteTrade.price')}</th><th>{t('eliteTrade.filled')}</th><th>{t('eliteTrade.total')}</th><th>{t('eliteTrade.status')}</th><th>{t('eliteTrade.date')}</th><th></th>
                   </tr>
                 </thead>
                 <tbody>
@@ -575,17 +565,17 @@ export default function EliteTradePage() {
                     return (
                       <tr key={o.id}>
                         <td>{p ? pairLabel(p) : '—'}</td>
-                        <td className={o.side === 'BUY' ? 'txt-buy' : 'txt-sell'}>{o.side}</td>
+                        <td className={o.side === 'BUY' ? 'txt-buy' : 'txt-sell'}>{o.side === 'BUY' ? t('eliteTrade.buy') : t('eliteTrade.sell')}</td>
                         <td>{fmt(o.quantity, d)}</td>
                         <td>{fmt(o.averagePrice > 0 ? o.averagePrice : o.price, d)}</td>
                         <td>{fmt(o.executedQuantity, d)}</td>
                         <td>{fmt(o.totalValue, 2)}</td>
-                        <td><span className={`badge ${STATUS_BADGE[o.status] || 'badge-warning'}`}>{o.status?.replace('_', ' ')}</span></td>
+                        <td><span className={`badge ${STATUS_BADGE[o.status] || 'badge-warning'}`}>{t(`eliteTrade.${ORDER_STATUS_KEY[o.status] || 'pending'}`)}</span></td>
                         <td>{formatDateTime(o.createAt || o.createdAt)}</td>
                         <td>
                           {CANCELLABLE.includes(o.status) && (
                             <button className="btn btn-danger" disabled={cancelling === o.id} onClick={() => cancelOrder(o.id)}>
-                              {cancelling === o.id ? <Spinner light /> : 'Cancel'}
+                              {cancelling === o.id ? <Spinner light /> : t('common.cancel')}
                             </button>
                           )}
                         </td>

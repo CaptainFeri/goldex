@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
+import { useTranslation } from 'react-i18next'
 import { useAuth } from '../context/AuthContext'
 import { useToast } from '../context/ToastContext'
 import { authApi } from '../services/api'
@@ -8,20 +9,21 @@ import { Spinner, Alert, StepIndicator, OtpInputs, ThemeToggle } from '../compon
 
 // ─── Step 1: Enter Phone ──────────────────────────────────
 function PhoneStep({ onOtpSent }) {
+  const { t } = useTranslation()
   const [phone, setPhone] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
 
   const handleSubmit = async (e) => {
     e.preventDefault()
-    if (phone.length < 10) { setError('Please enter a valid phone number'); return }
+    if (phone.length < 10) { setError(t('auth.validPhone')); return }
     setLoading(true)
     setError('')
     try {
       await authApi.sendOtp(phone)
       onOtpSent(phone)
     } catch (err) {
-      setError(err.response?.data?.message || 'Failed to send OTP. Please try again.')
+      setError(err.response?.data?.message || t('auth.sendOtpFailed'))
     } finally {
       setLoading(false)
     }
@@ -30,20 +32,20 @@ function PhoneStep({ onOtpSent }) {
   return (
     <div className="animate-fade-up">
       <StepIndicator total={3} current={0} />
-      <h2 className="auth-card-title">Welcome</h2>
-      <p className="auth-card-sub">Enter your phone number to get started</p>
+      <h2 className="auth-card-title">{t('auth.welcome')}</h2>
+      <p className="auth-card-sub">{t('auth.enterPhone')}</p>
 
       {error && <Alert type="error">{error}</Alert>}
 
       <form onSubmit={handleSubmit}>
         <div className="form-group">
-          <label className="form-label">Phone Number</label>
+          <label className="form-label">{t('auth.phoneNumber')}</label>
           <div className="input-wrapper">
             <span className="input-prefix">📱</span>
             <input
               type="tel"
               className="form-input has-prefix"
-              placeholder="09xxxxxxxxx"
+              placeholder={t('auth.phonePlaceholder')}
               value={phone}
               onChange={e => setPhone(e.target.value.replace(/\D/g, ''))}
               maxLength={11}
@@ -52,7 +54,7 @@ function PhoneStep({ onOtpSent }) {
           </div>
         </div>
         <button className="btn btn-primary" type="submit" disabled={loading || phone.length < 10}>
-          {loading ? <Spinner /> : 'Send Verification Code'}
+          {loading ? <Spinner /> : t('auth.sendCode')}
         </button>
       </form>
     </div>
@@ -61,6 +63,7 @@ function PhoneStep({ onOtpSent }) {
 
 // ─── Step 2: Enter OTP ────────────────────────────────────
 function OtpStep({ phone, onVerified, onBack }) {
+  const { t } = useTranslation()
   const [otp, setOtp] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
@@ -75,7 +78,7 @@ function OtpStep({ phone, onVerified, onBack }) {
       const data = await authApi.verifyOtp(phone, otp)
       onVerified(data)
     } catch (err) {
-      setError(err.response?.data?.message || 'Invalid OTP. Please try again.')
+      setError(err.response?.data?.message || t('auth.invalidOtp'))
       setOtp('')
     } finally {
       setLoading(false)
@@ -91,13 +94,13 @@ function OtpStep({ phone, onVerified, onBack }) {
   return (
     <div className="animate-fade-up">
       <StepIndicator total={3} current={1} />
-      <h2 className="auth-card-title">Verify Code</h2>
-      <p className="auth-card-sub">Enter the 5-digit code sent to</p>
+      <h2 className="auth-card-title">{t('auth.verifyCode')}</h2>
+      <p className="auth-card-sub">{t('auth.enterOtp')}</p>
 
       <div className="phone-banner">
         <span className="phone-banner-number">{phone}</span>
         <button className="btn btn-ghost" style={{ padding: '0.3rem 0.7rem', fontSize: '0.78rem' }} onClick={onBack}>
-          Change
+          {t('auth.change')}
         </button>
       </div>
 
@@ -107,12 +110,12 @@ function OtpStep({ phone, onVerified, onBack }) {
         <OtpInputs value={otp} onChange={setOtp} length={5} />
 
         <button className="btn btn-primary" type="submit" disabled={loading || otp.length < 5}>
-          {loading ? <Spinner /> : 'Verify Code'}
+          {loading ? <Spinner /> : t('auth.verify')}
         </button>
 
         <div style={{ textAlign: 'center', marginTop: '1rem' }}>
           <button type="button" className="btn-link" onClick={handleResend} disabled={resending}>
-            {resending ? 'Resending…' : "Didn't receive it? Resend"}
+            {resending ? t('auth.resending') : t('auth.resend')}
           </button>
         </div>
       </form>
@@ -122,6 +125,7 @@ function OtpStep({ phone, onVerified, onBack }) {
 
 // ─── Step 3: Register ─────────────────────────────────────
 function RegisterStep({ phone, userId, tempToken, onRegistered }) {
+  const { t } = useTranslation()
   const [form, setForm] = useState({ firstName: '', lastName: '', email: '', password: '' })
   const [showPassword, setShowPassword] = useState(false)
   const [loading, setLoading] = useState(false)
@@ -137,7 +141,7 @@ function RegisterStep({ phone, userId, tempToken, onRegistered }) {
       const data = await authApi.completeRegistration(form, tempToken)
       onRegistered(data)
     } catch (err) {
-      setError(err.response?.data?.message || 'Registration failed. Please try again.')
+      setError(err.response?.data?.message || t('auth.registrationFailed'))
     } finally {
       setLoading(false)
     }
@@ -146,35 +150,35 @@ function RegisterStep({ phone, userId, tempToken, onRegistered }) {
   return (
     <div className="animate-fade-up">
       <StepIndicator total={3} current={2} />
-      <h2 className="auth-card-title">Create Account</h2>
-      <p className="auth-card-sub">Complete your profile to start trading</p>
+      <h2 className="auth-card-title">{t('auth.createAccount')}</h2>
+      <p className="auth-card-sub">{t('auth.completeProfile')}</p>
 
       {error && <Alert type="error">{error}</Alert>}
 
       <form onSubmit={handleSubmit}>
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
           <div className="form-group">
-            <label className="form-label">First Name</label>
-            <input className="form-input" placeholder="Ali" value={form.firstName} onChange={set('firstName')} required />
+            <label className="form-label">{t('auth.firstName')}</label>
+            <input className="form-input" placeholder={t('auth.firstNamePlaceholder')} value={form.firstName} onChange={set('firstName')} required />
           </div>
           <div className="form-group">
-            <label className="form-label">Last Name</label>
-            <input className="form-input" placeholder="Hosseini" value={form.lastName} onChange={set('lastName')} required />
+            <label className="form-label">{t('auth.lastName')}</label>
+            <input className="form-input" placeholder={t('auth.lastNamePlaceholder')} value={form.lastName} onChange={set('lastName')} required />
           </div>
         </div>
 
         <div className="form-group">
-          <label className="form-label">Email Address</label>
-          <input className="form-input" type="email" placeholder="ali@example.com" value={form.email} onChange={set('email')} required />
+          <label className="form-label">{t('auth.email')}</label>
+          <input className="form-input" type="email" placeholder={t('auth.emailPlaceholder')} value={form.email} onChange={set('email')} required />
         </div>
 
         <div className="form-group">
-          <label className="form-label">Password</label>
+          <label className="form-label">{t('auth.password')}</label>
           <div className="input-wrapper">
             <input
               className="form-input"
               type={showPassword ? 'text' : 'password'}
-              placeholder="Min 8 chars, 1 uppercase, 1 symbol"
+              placeholder={t('auth.passwordPlaceholder')}
               value={form.password}
               onChange={set('password')}
               required
@@ -182,15 +186,15 @@ function RegisterStep({ phone, userId, tempToken, onRegistered }) {
             <button
               type="button"
               onClick={() => setShowPassword(v => !v)}
-              style={{ position: 'absolute', right: '0.85rem', top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', fontSize: '0.8rem', padding: 0 }}
+              className="input-action"
             >
-              {showPassword ? 'Hide' : 'Show'}
+              {showPassword ? t('auth.hide') : t('auth.show')}
             </button>
           </div>
         </div>
 
         <button className="btn btn-primary" type="submit" disabled={loading}>
-          {loading ? <Spinner /> : 'Create Account'}
+          {loading ? <Spinner /> : t('auth.createAccount')}
         </button>
       </form>
     </div>
@@ -199,6 +203,7 @@ function RegisterStep({ phone, userId, tempToken, onRegistered }) {
 
 // ─── Login ────────────────────────────────────────────────
 function LoginForm({ onSuccess, onSwitchToRegister }) {
+  const { t } = useTranslation()
   const [step, setStep] = useState('password') // 'password' | 'otp'
   const [phone, setPhone] = useState('')
   const [password, setPassword] = useState('')
@@ -221,7 +226,7 @@ function LoginForm({ onSuccess, onSwitchToRegister }) {
         onSuccess(data)
       }
     } catch (err) {
-      setError(err.response?.data?.message || 'Invalid credentials. Please try again.')
+      setError(err.response?.data?.message || t('auth.invalidCredentials'))
     } finally {
       setLoading(false)
     }
@@ -236,7 +241,7 @@ function LoginForm({ onSuccess, onSwitchToRegister }) {
       const data = await authApi.loginWithOtp(phone, otp)
       onSuccess(data)
     } catch (err) {
-      setError(err.response?.data?.message || 'Invalid code. Please try again.')
+      setError(err.response?.data?.message || t('auth.invalidOtp'))
       setOtp('')
     } finally {
       setLoading(false)
@@ -252,13 +257,13 @@ function LoginForm({ onSuccess, onSwitchToRegister }) {
   if (step === 'otp') {
     return (
       <div className="animate-fade-up">
-        <h2 className="auth-card-title">Verify Code</h2>
-        <p className="auth-card-sub">Enter the 5-digit code sent to</p>
+        <h2 className="auth-card-title">{t('auth.verifyCode')}</h2>
+        <p className="auth-card-sub">{t('auth.enterOtp')}</p>
 
         <div className="phone-banner">
           <span className="phone-banner-number">{phone}</span>
           <button className="btn btn-ghost" style={{ padding: '0.3rem 0.7rem', fontSize: '0.78rem' }} onClick={() => { setStep('password'); setOtp(''); setError('') }}>
-            Change
+            {t('auth.change')}
           </button>
         </div>
 
@@ -268,12 +273,12 @@ function LoginForm({ onSuccess, onSwitchToRegister }) {
           <OtpInputs value={otp} onChange={setOtp} length={5} />
 
           <button className="btn btn-primary" type="submit" disabled={loading || otp.length < 5}>
-            {loading ? <Spinner /> : 'Sign In'}
+            {loading ? <Spinner /> : t('auth.signIn')}
           </button>
 
           <div style={{ textAlign: 'center', marginTop: '1rem' }}>
             <button type="button" className="btn-link" onClick={handleResend} disabled={resending}>
-              {resending ? 'Resending…' : "Didn't receive it? Resend"}
+              {resending ? t('auth.resending') : t('auth.resend')}
             </button>
           </div>
         </form>
@@ -283,20 +288,20 @@ function LoginForm({ onSuccess, onSwitchToRegister }) {
 
   return (
     <div className="animate-fade-up">
-      <h2 className="auth-card-title">Sign In</h2>
-      <p className="auth-card-sub">Welcome back to Goldex</p>
+      <h2 className="auth-card-title">{t('auth.signIn')}</h2>
+      <p className="auth-card-sub">{t('auth.welcomeBack')}</p>
 
       {error && <Alert type="error">{error}</Alert>}
 
       <form onSubmit={handlePasswordSubmit}>
         <div className="form-group">
-          <label className="form-label">Phone Number</label>
+          <label className="form-label">{t('auth.phoneNumber')}</label>
           <div className="input-wrapper">
             <span className="input-prefix">📱</span>
             <input
               type="tel"
               className="form-input has-prefix"
-              placeholder="09xxxxxxxxx"
+              placeholder={t('auth.phonePlaceholder')}
               value={phone}
               onChange={e => setPhone(e.target.value.replace(/\D/g, ''))}
               maxLength={11}
@@ -306,12 +311,12 @@ function LoginForm({ onSuccess, onSwitchToRegister }) {
         </div>
 
         <div className="form-group">
-          <label className="form-label">Password</label>
+          <label className="form-label">{t('auth.password')}</label>
           <div className="input-wrapper">
             <input
               className="form-input"
               type={showPassword ? 'text' : 'password'}
-              placeholder="Your password"
+              placeholder={t('auth.yourPassword')}
               value={password}
               onChange={e => setPassword(e.target.value)}
               required
@@ -319,27 +324,27 @@ function LoginForm({ onSuccess, onSwitchToRegister }) {
             <button
               type="button"
               onClick={() => setShowPassword(v => !v)}
-              style={{ position: 'absolute', right: '0.85rem', top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', fontSize: '0.8rem', padding: 0 }}
+              className="input-action"
             >
-              {showPassword ? 'Hide' : 'Show'}
+              {showPassword ? t('auth.hide') : t('auth.show')}
             </button>
           </div>
         </div>
 
-        <div style={{ textAlign: 'right', marginTop: '-0.5rem', marginBottom: '1rem' }}>
-          <Link className="btn-link" to="/forgot-password">Forgot password?</Link>
+        <div style={{ textAlign: 'end', marginTop: '-0.5rem', marginBottom: '1rem' }}>
+          <Link className="btn-link" to="/forgot-password">{t('auth.forgotPassword')}</Link>
         </div>
 
         <button className="btn btn-primary" type="submit" disabled={loading}>
-          {loading ? <Spinner /> : 'Continue'}
+          {loading ? <Spinner /> : t('auth.signIn')}
         </button>
       </form>
 
-      <div className="divider">or</div>
+      <div className="divider">{t('common.or')}</div>
 
       <div style={{ textAlign: 'center' }}>
-        <span style={{ fontSize: '0.875rem', color: 'var(--text-secondary)' }}>New to Goldex? </span>
-        <button className="btn-link" onClick={onSwitchToRegister}>Create an account</button>
+        <span style={{ fontSize: '0.875rem', color: 'var(--text-secondary)' }}>{t('auth.newToGoldex')}</span>
+        <button className="btn-link" onClick={onSwitchToRegister}>{t('auth.createAccountLink')}</button>
       </div>
     </div>
   )
@@ -347,6 +352,7 @@ function LoginForm({ onSuccess, onSwitchToRegister }) {
 
 // ─── Main Auth Page ───────────────────────────────────────
 export default function AuthPage() {
+  const { t } = useTranslation()
   const [mode, setMode] = useState('login') // 'login' | 'register'
   const [step, setStep] = useState('phone') // 'phone' | 'otp' | 'register'
   const [phone, setPhone] = useState('')
@@ -373,7 +379,7 @@ export default function AuthPage() {
   const handleRegistered = () => {
     // Registration does not log the user in — send them to sign in with their
     // new phone + password.
-    toast.success('Account created. Please sign in to continue.')
+    toast.success(t('auth.accountCreated'))
     switchToLogin()
   }
 
@@ -409,8 +415,8 @@ export default function AuthPage() {
         <>
           <PhoneStep onOtpSent={handleOtpSent} />
           <div style={{ textAlign: 'center', marginTop: '1.25rem' }}>
-            <span style={{ fontSize: '0.875rem', color: 'var(--text-secondary)' }}>Already have an account? </span>
-            <button className="btn-link" onClick={switchToLogin}>Sign in</button>
+            <span style={{ fontSize: '0.875rem', color: 'var(--text-secondary)' }}>{t('auth.alreadyHaveAccount')}</span>
+            <button className="btn-link" onClick={switchToLogin}>{t('auth.signInLink')}</button>
           </div>
         </>
       )

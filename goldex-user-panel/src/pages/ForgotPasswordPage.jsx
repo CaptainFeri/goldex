@@ -1,10 +1,12 @@
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
+import { Trans, useTranslation } from 'react-i18next'
 import { authApi } from '../services/api'
 import AuthBrand from '../components/AuthBrand'
 import { Alert, Button, TextField, ThemeToggle } from '../components/UI'
 
 export default function ForgotPasswordPage() {
+  const { t } = useTranslation()
   const [email, setEmail] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
@@ -18,7 +20,7 @@ export default function ForgotPasswordPage() {
       await authApi.forgetPassword(email)
       setSent(true)
     } catch (err) {
-      setError(err.response?.data?.message || 'Could not send the reset link. Please try again.')
+      setError(err.response?.data?.message || t('forgotPassword.sendFailed'))
     } finally {
       setLoading(false)
     }
@@ -31,35 +33,35 @@ export default function ForgotPasswordPage() {
       <div className="auth-panel">
         <div className="auth-card">
           <div className="animate-fade-up">
-            <h2 className="auth-card-title">Reset Password</h2>
-            <p className="auth-card-sub">Enter your email and we'll send you a reset link</p>
+            <h2 className="auth-card-title">{t('forgotPassword.title')}</h2>
+            <p className="auth-card-sub">{t('forgotPassword.subtitle')}</p>
 
             {sent ? (
               <>
                 <Alert type="success">
-                  If an account exists for <strong>{email}</strong>, a password reset link is on its way.
+                  <Trans i18nKey="forgotPassword.sentSuccess" values={{ email }} components={{ 1: <strong /> }} />
                 </Alert>
                 <div style={{ textAlign: 'center', marginTop: '1.25rem' }}>
-                  <Link className="btn-link" to="/login">Back to sign in</Link>
+                  <Link className="btn-link" to="/login">{t('common.backToSignIn')}</Link>
                 </div>
               </>
             ) : (
               <form onSubmit={handleSubmit}>
                 {error && <Alert type="error">{error}</Alert>}
                 <TextField
-                  label="Email Address"
+                  label={t('forgotPassword.email')}
                   type="email"
-                  placeholder="you@example.com"
+                  placeholder={t('forgotPassword.emailPlaceholder')}
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   required
                   autoFocus
                 />
                 <Button type="submit" loading={loading} disabled={!email}>
-                  Send Reset Link
+                  {t('forgotPassword.sendResetLink')}
                 </Button>
                 <div style={{ textAlign: 'center', marginTop: '1.25rem' }}>
-                  <Link className="btn-link" to="/login">Back to sign in</Link>
+                  <Link className="btn-link" to="/login">{t('common.backToSignIn')}</Link>
                 </div>
               </form>
             )}

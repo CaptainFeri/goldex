@@ -1,6 +1,8 @@
+import { useTranslation } from 'react-i18next'
 import { BrandHeader } from './UI'
 
 export default function AuthBrand() {
+  const { t } = useTranslation()
   return (
     <div className="auth-brand">
       {/* Decorative rings */}
@@ -11,27 +13,27 @@ export default function AuthBrand() {
 
       <div className="brand-hero">
         <h1 className="brand-tagline">
-          Trade gold with<br />
-          <em>precision</em> and<br />
-          confidence.
+          {t('authBrand.tagline1')}<br />
+          <em>{t('authBrand.precision')}</em> {t('authBrand.tagline2')}<br />
+          {t('authBrand.confidence')}
         </h1>
         <p className="brand-sub">
-          A secure, modern platform for gold exchange — built for traders who demand transparency and speed.
+          {t('authBrand.sub')}
         </p>
       </div>
 
       <div className="brand-stats">
         <div>
           <div className="brand-stat-value">24K</div>
-          <div className="brand-stat-label">Purity tracked</div>
+          <div className="brand-stat-label">{t('authBrand.purityTracked')}</div>
         </div>
         <div>
           <div className="brand-stat-value">99.9%</div>
-          <div className="brand-stat-label">Uptime</div>
+          <div className="brand-stat-label">{t('authBrand.uptime')}</div>
         </div>
         <div>
           <div className="brand-stat-value">ISO</div>
-          <div className="brand-stat-label">Certified</div>
+          <div className="brand-stat-label">{t('authBrand.certified')}</div>
         </div>
       </div>
     </div>
