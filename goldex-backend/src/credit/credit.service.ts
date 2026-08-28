@@ -1,7 +1,7 @@
 import { Injectable, NotFoundException, BadRequestException, Logger } from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
 import { EventEmitter2, OnEvent } from "@nestjs/event-emitter";
-import { Repository, DataSource, LessThan, IsNull, Not } from "typeorm";
+import { Repository, DataSource, LessThan, IsNull, Not, In } from "typeorm";
 import Decimal from "decimal.js";
 import { CreditEntity } from "./entity/credit.entity";
 import { CreditOrderEntity } from "./entity/credit-order.entity";
@@ -736,206 +736,11 @@ export class CreditService {
   }
 
   /**
-   * Calculate credit amount on first order using current pair price.
-   * Called when user places their first credit-linked order.
-   */
-  async calculateAndIssueCreditOnFirstOrder(creditId: string, orderPricePairId: string): Promise<CreditEntity> {
-    return await this.dataSource.transaction(async (manager) => {
-      const credit = await manager.findOne(CreditEntity, {
-        where: { id: creditId, status: CreditStatusEnum.ACTIVE },
-        lock: { mode: "pessimistic_write" },
-      });
-      if (!credit) throw new BadRequestException("Credit not found or not active");
-
-      // If credit already calculated, return as-is
-      if (credit.creditLimit > 0) {
-        return credit;
-      }
-
-      // Legacy (admin-created) credits have no collateral/leverage — the credit
-      // line was already issued into the wallet at creation, so there is nothing
-      // to calculate here. Returning early keeps those orders working.
-      if (!credit.collateralSymbolId || !credit.creditBaseSymbolId || !credit.leverage) {
-        return credit;
-      }
-
-      // Get current price of collateral in base symbol currency
-      const collateralPair = await this.pricePairRepository.findOne({
-        where: { baseId: credit.collateralSymbolId, quoteId: credit.creditBaseSymbolId, isValid: true },
-      });
-
-      let collateralPrice: number;
-      if (credit.collateralSymbolId === credit.creditBaseSymbolId) {
-        collateralPrice = 1;
-      } else if (collateralPair) {
-        collateralPrice = Number(collateralPair.bestSellGramPrice) || Number(collateralPair.bestSellPrice) || 0;
-      } else {
-        throw new BadRequestException("Cannot determine collateral price for credit calculation");
-      }
-
-      if (collateralPrice <= 0) {
-        throw new BadRequestException("Invalid collateral price");
-      }
-
-      // Calculate credit amount: collateral amount × price × leverage
-      const collateralValue = new Decimal(credit.collateralAmount || 0).mul(collateralPrice);
-      const creditLimit = collateralValue.mul(credit.leverage || 1);
-
-      // Issue credit to CREDIT wallet
-      let creditWallet = await manager.findOne(WalletEntity, {
-        where: { userId: credit.userId, symbolId: credit.creditBaseSymbolId, walletType: WalletTypeEnum.CREDIT },
-        lock: { mode: "pessimistic_write" },
-      });
-      if (!creditWallet) {
-        creditWallet = manager.create(WalletEntity, {
-          userId: credit.userId,
-          symbolId: credit.creditBaseSymbolId,
-          walletType: WalletTypeEnum.CREDIT,
-          status: WalletStatusEnum.ACTIVE,
-          freeBalance: 0,
-          lockedBalance: 0,
-          availableBalance: 0,
-          creditBalance: 0,
-          frozenFreeBalance: 0,
-          frozenLockedBalance: 0,
-        });
-      }
-      creditWallet.creditBalance = new Decimal(creditWallet.creditBalance || 0).plus(creditLimit).toNumber();
-      creditWallet.freeBalance = new Decimal(creditWallet.availableBalance || 0).plus(creditWallet.creditBalance).toNumber();
-      const savedCreditWallet = await manager.save(creditWallet);
-
-      const issueTxn = manager.create(TransactionEntity, {
-        walletId: savedCreditWallet.id,
-        transactionId: crypto.randomUUID(),
-        transactionType: TransactionTypeEnum.CREDIT_DEPOSIT,
-        status: TransactionStatusEnum.COMPLETED,
-        amount: creditLimit.toNumber(),
-        fee: 0,
-        description: `Credit line issued on first order`,
-        metadata: { creditId: credit.id, leverage: credit.leverage, collateralPrice },
-        completedAt: new Date(),
-      });
-      await manager.save(issueTxn);
-
-      // Issue the SELL (base-symbol) credit capacity = collateralAmount ×
-      // leverage in the collateral/base symbol (e.g. XAU). This lets the user
-      // place credit SELL orders up to the leveraged capacity, not only what
-      // they already hold. The balance is virtual credit — it is clawed back
-      // at settlement and never released as a real asset (see settleFromUser).
-      const sellCreditAmount = new Decimal(credit.collateralAmount || 0).mul(credit.leverage || 1);
-      let sellCreditWalletId: string | null = null;
-      if (sellCreditAmount.greaterThan(0)) {
-        let baseCreditWallet = await manager.findOne(WalletEntity, {
-          where: {
-            userId: credit.userId,
-            symbolId: credit.collateralSymbolId,
-            walletType: WalletTypeEnum.CREDIT,
-          },
-          lock: { mode: "pessimistic_write" },
-        });
-        if (!baseCreditWallet) {
-          baseCreditWallet = manager.create(WalletEntity, {
-            userId: credit.userId,
-            symbolId: credit.collateralSymbolId,
-            walletType: WalletTypeEnum.CREDIT,
-            status: WalletStatusEnum.ACTIVE,
-            freeBalance: 0,
-            lockedBalance: 0,
-            availableBalance: 0,
-            creditBalance: 0,
-            frozenFreeBalance: 0,
-            frozenLockedBalance: 0,
-          });
-        }
-        baseCreditWallet.creditBalance = new Decimal(baseCreditWallet.creditBalance || 0)
-          .plus(sellCreditAmount)
-          .toNumber();
-        baseCreditWallet.freeBalance = new Decimal(baseCreditWallet.availableBalance || 0)
-          .plus(baseCreditWallet.creditBalance)
-          .toNumber();
-        const savedBaseWallet = await manager.save(baseCreditWallet);
-        sellCreditWalletId = savedBaseWallet.id;
-
-        const sellTxn = manager.create(TransactionEntity, {
-          walletId: savedBaseWallet.id,
-          transactionId: crypto.randomUUID(),
-          transactionType: TransactionTypeEnum.CREDIT_DEPOSIT,
-          status: TransactionStatusEnum.COMPLETED,
-          amount: sellCreditAmount.toNumber(),
-          fee: 0,
-          description: `Credit sell capacity issued on first order`,
-          metadata: {
-            creditId: credit.id,
-            leverage: credit.leverage,
-            symbolId: credit.collateralSymbolId,
-          },
-          completedAt: new Date(),
-        });
-        await manager.save(sellTxn);
-      }
-
-      // Update credit entity with calculated values
-      credit.amount = creditLimit.toNumber();
-      credit.creditLimit = creditLimit.toNumber();
-      // The drawdown baseline is the collateral value at credit creation
-      // (frozen amount × price). Only set it here if it wasn't captured at
-      // creation (e.g. price was unavailable then).
-      credit.currentCollateralValue = collateralValue.toNumber();
-      if (!credit.initialCollateralValue || credit.initialCollateralValue <= 0) {
-        credit.initialCollateralValue = collateralValue.toNumber();
-      }
-      credit.metadata = {
-        ...(credit.metadata || {}),
-        creditWalletId: savedCreditWallet.id,
-        sellCreditWalletId,
-        sellCreditAmount: sellCreditAmount.toNumber(),
-        sellCreditSymbolId: credit.collateralSymbolId,
-        creditCalculatedAt: new Date().toISOString(),
-        collateralPriceAtCalculation: collateralPrice,
-      };
-
-      const savedCredit = await manager.save(credit);
-
-      // Send notification
-      await manager.save(
-        manager.create(CreditNotificationEntity, {
-          userId: credit.userId,
-          creditId: credit.id,
-          type: CreditNotificationTypeEnum.SETTLEMENT,
-          message: `Credit calculated: ${creditLimit.toFixed(0)} ${credit.creditBaseSymbolId} (collateral: ${credit.collateralAmount} × ${collateralPrice} × ${credit.leverage}x leverage)`,
-          sentAt: new Date(),
-        }),
-      );
-
-      return savedCredit;
-    });
-  }
-
-  async linkOrderToCredit(creditId: string, order: OrderEntity, priceAtOrderTime: number): Promise<CreditOrderEntity> {
-    return await this.dataSource.transaction(async (manager) => {
-      const credit = await manager.findOne(CreditEntity, {
-        where: { id: creditId, status: CreditStatusEnum.ACTIVE },
-      });
-      if (!credit) throw new BadRequestException("Credit not found or not active");
-
-      const creditOrder = manager.create(CreditOrderEntity, {
-        creditId,
-        orderId: order.id,
-        priceAtOrderTime,
-        status: CreditOrderStatusEnum.ACTIVE,
-        drawdownPercent: credit.callMarginPercent,
-      });
-      return await manager.save(creditOrder);
-    });
-  }
-
-  /**
    * Idempotently guarantees the credit SELL capacity wallet (base/collateral
    * symbol, e.g. XAU) holds the leveraged sell capacity
-   * `collateralAmount × leverage`. This is a safety net for when the credit was
-   * already calculated on an earlier order (which skips the sell issuance in
-   * `calculateAndIssueCreditOnFirstOrder`) or the wallet is missing/empty —
-   * without it, credit SELL orders fail with INSUFFICIENT_BALANCE.
+   * `collateralAmount × leverage`. This is a safety net for when the sell
+   * capacity wallet is missing or empty — without it, credit SELL orders fail
+   * with INSUFFICIENT_BALANCE.
    */
   async ensureSellCreditCapacity(creditId: string): Promise<number> {
     return await this.dataSource.transaction(async (manager) => {
@@ -1174,9 +979,32 @@ export class CreditService {
     });
 
     for (const credit of expiredCredits) {
+      // ALERT mode: notify the user but leave the facility open for manual
+      // settlement (the admin decides).
+      if (credit.enforceOnExpiry === CreditEnforceModeEnum.ALERT) {
+        await this.creditNotificationRepository.save(
+          this.creditNotificationRepository.create({
+            userId: credit.userId,
+            creditId: credit.id,
+            type: CreditNotificationTypeEnum.EXPIRED,
+            message:
+              `Credit ${credit.creditCode} has expired. Please settle it or contact support.`,
+            sentAt: now,
+          }),
+        );
+        this.eventEmitter.emit(CreditEvents.EXPIRED, {
+          userId: credit.userId,
+          creditId: credit.id,
+          amount: credit.amount,
+        });
+        continue;
+      }
+
+      // ENFORCE (or default): force-liquidate at the current mark price. The
+      // settlement engine consumes collateral for any deficit and returns the
+      // remainder, so we restore the wallets afterwards instead of freezing them
+      // (a frozen SETTLED credit would have no recovery path).
       try {
-        // Forced liquidation via the settlement engine (cash-settles at the
-        // current mark price, consuming collateral for any deficit).
         await this.settlementService.liquidate(credit.id, "EXPIRY_LIQUIDATION");
       } catch (err) {
         this.logger.error(
@@ -1185,44 +1013,21 @@ export class CreditService {
         continue;
       }
 
-      await this.dataSource.transaction(async (manager) => {
-        const wallets = await manager.find(WalletEntity, {
-          where: { userId: credit.userId },
-          lock: { mode: "pessimistic_write" },
-        });
+      await this.unfreezeWalletsAfterSettlement(credit.userId, credit.creditCode);
 
-        for (const wallet of wallets) {
-          if (wallet.status === WalletStatusEnum.ACTIVE) {
-            wallet.status = WalletStatusEnum.FROZEN;
-            wallet.frozenAt = now;
-            wallet.adminNote = `Frozen due to credit ${credit.creditCode} expiry`;
-            await manager.save(wallet);
-          }
-        }
-
-        await this.logFinanceAction(manager, {
-          adminId: null,
+      await this.creditNotificationRepository.save(
+        this.creditNotificationRepository.create({
           userId: credit.userId,
           creditId: credit.id,
-          actionType: CreditActionEnum.EXPIRY_FREEZE_ALL,
-          description: `Credit ${credit.creditCode} expired and was liquidated. All wallets frozen.`,
-          metadata: { creditCode: credit.creditCode, walletCount: wallets.length },
-        });
+          type: CreditNotificationTypeEnum.EXPIRED,
+          message:
+            `Credit ${credit.creditCode} has expired and was liquidated. ` +
+            `Any remaining collateral has been returned to your deposit wallet.`,
+          sentAt: now,
+        }),
+      );
 
-        await manager.save(
-          manager.create(CreditNotificationEntity, {
-            userId: credit.userId,
-            creditId: credit.id,
-            type: CreditNotificationTypeEnum.EXPIRED,
-            message:
-              `Credit ${credit.creditCode} has expired. All your wallets have been frozen. ` +
-              `Please contact support to settle your credit.`,
-            sentAt: now,
-          }),
-        );
-
-        this.logger.warn(`Credit ${credit.creditCode} expired, all wallets frozen for user ${credit.userId}`);
-      });
+      this.logger.warn(`Credit ${credit.creditCode} expired and was liquidated for user ${credit.userId}`);
 
       this.eventEmitter.emit(CreditEvents.EXPIRED, {
         userId: credit.userId,
@@ -1297,12 +1102,11 @@ export class CreditService {
 
       const saved = new Decimal(iw.priceAtCreation);
       if (saved.equals(0)) continue;
-      const drawdown = new Decimal(currentPrice)
-        .minus(saved)
-        .div(saved)
-        .mul(100)
-        .abs();
-      if (drawdown.greaterThanOrEqualTo(credit.callMarginPercent)) {
+      // The increase wallet holds a LONG position in its symbol, so the adverse
+      // move is a price decline (saved → current). Trigger the margin call only
+      // on a loss, not on a favourable price rise.
+      const loss = new Decimal(saved).minus(currentPrice).div(saved).mul(100);
+      if (loss.greaterThanOrEqualTo(credit.callMarginPercent)) {
         await this.liquidateCreditForMarginCall(credit.id);
         return;
       }
@@ -1322,7 +1126,11 @@ export class CreditService {
       notes: "Liquidated on margin call",
     });
 
-    await this.blockUserForMarginCall(credit.userId, creditId);
+    // Liquidation already marks the credit SETTLED, so freezing the wallets here
+    // would leave them permanently blocked (admin settle/reactivate can no longer
+    // act on a settled credit). Restore them instead — any deficit was already
+    // covered from the collateral by the settlement engine.
+    await this.unfreezeWalletsAfterSettlement(credit.userId, credit.creditCode);
 
     await this.creditNotificationRepository.save(
       this.creditNotificationRepository.create({
@@ -1331,7 +1139,7 @@ export class CreditService {
         type: CreditNotificationTypeEnum.MARGIN_CALL,
         message:
           `Credit ${credit.creditCode} was liquidated due to a margin call. ` +
-          `Your wallets have been frozen. Please contact support.`,
+          `Any remaining collateral has been returned to your deposit wallet.`,
         sentAt: new Date(),
       }),
     );
@@ -1406,16 +1214,14 @@ export class CreditService {
         }
         if (wallet.frozenLockedBalance > 0) {
           unfrozenAmount += wallet.frozenLockedBalance;
+          wallet.lockedBalance = new Decimal(wallet.lockedBalance).plus(wallet.frozenLockedBalance).toNumber();
           wallet.frozenLockedBalance = 0;
           await manager.save(wallet);
         }
 
-        // Sync freeBalance = availableBalance + creditBalance + frozenFreeBalance
-        wallet.freeBalance = new Decimal(wallet.availableBalance)
-          .plus(wallet.creditBalance)
-          .plus(wallet.frozenFreeBalance)
-          .toNumber();
-        await manager.save(wallet);
+        // freeBalance already reflects the restored frozen funds above. Do NOT
+        // recompute it from availableBalance (a column that is never maintained
+        // and is always 0) — that would wipe the user's real balance.
 
         if (unfrozenAmount > 0) {
           const unfreezeTxn = manager.create(TransactionEntity, {
@@ -1453,10 +1259,27 @@ export class CreditService {
         throw new BadRequestException(`Cannot cancel credit with status ${credit.status}`);
       }
 
+      // A facility with open or executed trades cannot be cancelled safely — the
+      // borrowed position must go through settlement instead.
+      const openOrders = await manager.count(CreditOrderEntity, {
+        where: { creditId: credit.id, status: Not(CreditOrderStatusEnum.CANCELLED) },
+      });
+      if (openOrders > 0) {
+        throw new BadRequestException(
+          "Credit has open or completed trades. Settle it instead of cancelling.",
+        );
+      }
+
       credit.status = CreditStatusEnum.CANCELLED;
       credit.settlementState = SettlementStateEnum.SETTLED;
       credit.notes = reason || credit.notes;
       await manager.save(credit);
+
+      // v2 self-service credits: void the credit line (CREDIT wallets) and return
+      // the frozen collateral (COLLATERAL wallet) to the deposit wallet.
+      if (credit.collateralSymbolId && credit.creditBaseSymbolId && credit.leverage) {
+        await this.voidV2CreditOnCancel(manager, credit, adminId, reason);
+      }
 
       // Claw back the credited amount from every increase wallet's creditBalance
       // (reverse of the CREDIT_DEPOSIT at creation). Done BEFORE unfreezing
@@ -1519,21 +1342,20 @@ export class CreditService {
 
         if (wallet.frozenFreeBalance > 0) {
           unfrozenAmount += wallet.frozenFreeBalance;
+          wallet.freeBalance = new Decimal(wallet.freeBalance).plus(wallet.frozenFreeBalance).toNumber();
           wallet.frozenFreeBalance = 0;
           await manager.save(wallet);
         }
         if (wallet.frozenLockedBalance > 0) {
           unfrozenAmount += wallet.frozenLockedBalance;
+          wallet.lockedBalance = new Decimal(wallet.lockedBalance).plus(wallet.frozenLockedBalance).toNumber();
           wallet.frozenLockedBalance = 0;
           await manager.save(wallet);
         }
 
-        // Sync freeBalance = availableBalance + creditBalance + frozenFreeBalance
-        wallet.freeBalance = new Decimal(wallet.availableBalance)
-          .plus(wallet.creditBalance)
-          .plus(wallet.frozenFreeBalance)
-          .toNumber();
-        await manager.save(wallet);
+        // freeBalance already reflects the restored frozen funds above. Do NOT
+        // recompute it from availableBalance (a column that is never maintained
+        // and is always 0) — that would wipe the user's real balance.
 
         if (unfrozenAmount > 0) {
           const unfreezeTxn = manager.create(TransactionEntity, {
@@ -1561,6 +1383,119 @@ export class CreditService {
       });
 
       return credit;
+    });
+  }
+
+  // Voids the v2 self-service credit line (CREDIT wallets) and returns the frozen
+  // collateral (COLLATERAL wallet) back to the user's DEPOSIT wallet. Used when
+  // cancelling a leverage-based credit that has no executed trades.
+  private async voidV2CreditOnCancel(
+    manager: any,
+    credit: CreditEntity,
+    adminId: string,
+    reason?: string,
+  ): Promise<void> {
+    // Void the credit line: zero the base-symbol and sell-capacity CREDIT wallets.
+    const creditWallets = await manager.find(WalletEntity, {
+      where: { userId: credit.userId, walletType: WalletTypeEnum.CREDIT },
+      lock: { mode: "pessimistic_write" },
+    });
+    for (const cw of creditWallets) {
+      const voided = new Decimal(cw.creditBalance || 0)
+        .plus(cw.freeBalance || 0)
+        .plus(cw.lockedBalance || 0);
+      if (voided.lessThanOrEqualTo(0)) continue;
+      cw.creditBalance = 0;
+      cw.freeBalance = 0;
+      cw.lockedBalance = 0;
+      await manager.save(cw);
+      await manager.save(
+        manager.create(TransactionEntity, {
+          walletId: cw.id,
+          transactionId: crypto.randomUUID(),
+          transactionType: TransactionTypeEnum.CREDIT_WITHDRAWAL,
+          status: TransactionStatusEnum.COMPLETED,
+          amount: voided.toNumber(),
+          fee: 0,
+          description: `Credit ${credit.creditCode} line of ${voided.toString()} voided on cancellation`,
+          metadata: { adminId, creditCode: credit.creditCode, creditId: credit.id, reason },
+          completedAt: new Date(),
+        }),
+      );
+    }
+
+    // Return the frozen collateral to the user's DEPOSIT wallet.
+    let collateralWallet: WalletEntity | null = null;
+    if (credit.metadata?.collateralWalletId) {
+      collateralWallet = await manager.findOne(WalletEntity, {
+        where: { id: credit.metadata.collateralWalletId, userId: credit.userId },
+        lock: { mode: "pessimistic_write" },
+      });
+    }
+    if (!collateralWallet && credit.collateralSymbolId) {
+      collateralWallet = await manager.findOne(WalletEntity, {
+        where: {
+          userId: credit.userId,
+          symbolId: credit.collateralSymbolId,
+          walletType: WalletTypeEnum.COLLATERAL,
+        },
+        lock: { mode: "pessimistic_write" },
+      });
+    }
+    if (!collateralWallet || new Decimal(collateralWallet.freeBalance || 0).lessThanOrEqualTo(0)) {
+      return;
+    }
+
+    const returned = new Decimal(collateralWallet.freeBalance || 0);
+    let depositWallet = await manager.findOne(WalletEntity, {
+      where: {
+        userId: credit.userId,
+        symbolId: credit.collateralSymbolId,
+        walletType: WalletTypeEnum.DEPOSIT,
+      },
+      lock: { mode: "pessimistic_write" },
+    });
+    if (!depositWallet) {
+      depositWallet = manager.create(WalletEntity, {
+        userId: credit.userId,
+        symbolId: credit.collateralSymbolId,
+        walletType: WalletTypeEnum.DEPOSIT,
+        status: WalletStatusEnum.ACTIVE,
+        freeBalance: 0,
+        lockedBalance: 0,
+        availableBalance: 0,
+        creditBalance: 0,
+        frozenFreeBalance: 0,
+        frozenLockedBalance: 0,
+      });
+    }
+    depositWallet.freeBalance = new Decimal(depositWallet.freeBalance || 0).plus(returned).toNumber();
+    await manager.save(depositWallet);
+    collateralWallet.freeBalance = 0;
+    await manager.save(collateralWallet);
+
+    await manager.save(
+      manager.create(TransactionEntity, {
+        walletId: depositWallet.id,
+        transactionId: crypto.randomUUID(),
+        transactionType: TransactionTypeEnum.MATERIAL_UNFREEZE,
+        status: TransactionStatusEnum.COMPLETED,
+        amount: returned.toNumber(),
+        fee: 0,
+        description: `Collateral of ${returned.toString()} returned after credit ${credit.creditCode} cancellation`,
+        metadata: { adminId, creditCode: credit.creditCode, creditId: credit.id, reason },
+        completedAt: new Date(),
+      }),
+    );
+
+    await this.logFinanceAction(manager, {
+      adminId,
+      userId: credit.userId,
+      creditId: credit.id,
+      walletId: depositWallet.id,
+      actionType: CreditActionEnum.CREDIT_CANCELLED,
+      description: `Collateral of ${returned.toString()} returned after credit ${credit.creditCode} cancellation`,
+      metadata: { creditCode: credit.creditCode, returned: returned.toNumber(), reason },
     });
   }
 
@@ -1597,6 +1532,48 @@ export class CreditService {
   }
 
   /**
+   * Sum the completed-order IRR usage across a set of credits in a single query
+   * (used by the admin dashboard stats to avoid N+1 computeUsedCredit calls).
+   */
+  private async sumCompletedCreditUsage(creditIds: string[]): Promise<number> {
+    if (!creditIds.length) return 0;
+    const rows = await this.creditOrderRepository.find({
+      where: { creditId: In(creditIds) },
+      relations: { order: true },
+    });
+    let total = new Decimal(0);
+    for (const co of rows) {
+      const o = co.order;
+      if (!o || o.status !== "COMPLETED") continue;
+      const price = Number(o.price) || Number(co.priceAtOrderTime) || 0;
+      const qty = Number(o.executedQuantity) > 0 ? Number(o.executedQuantity) : Number(o.quantity || 0);
+      total = total.plus(new Decimal(qty).mul(price));
+    }
+    return total.toNumber();
+  }
+
+  /**
+   * Per-credit completed-order IRR usage (single query) — used by the CSV export
+   * so every row reflects live usage rather than the stale usedCredit column.
+   */
+  private async computeUsedCreditMap(creditIds: string[]): Promise<Record<string, number>> {
+    const map: Record<string, number> = {};
+    if (!creditIds.length) return map;
+    const rows = await this.creditOrderRepository.find({
+      where: { creditId: In(creditIds) },
+      relations: { order: true },
+    });
+    for (const co of rows) {
+      const o = co.order;
+      if (!o || o.status !== "COMPLETED") continue;
+      const price = Number(o.price) || Number(co.priceAtOrderTime) || 0;
+      const qty = Number(o.executedQuantity) > 0 ? Number(o.executedQuantity) : Number(o.quantity || 0);
+      map[co.creditId] = new Decimal(map[co.creditId] || 0).plus(new Decimal(qty).mul(price)).toNumber();
+    }
+    return map;
+  }
+
+  /**
    * Facility overview for the active credit: live used/available credit,
    * collateral metrics and risk/settlement state. Used by the user panel and
    * admin dashboard.
@@ -1621,11 +1598,9 @@ export class CreditService {
       creditBalance: Number(w.creditBalance) || 0,
     }));
 
-    // The authoritative "available credit" is the free balance of the base
-    // (credit currency) CREDIT wallet — it already reflects funds consumed by
-    // completed orders. Fall back to creditLimit − used when the wallet is
-    // available = creditLimit (credit created at price) − all completed credit
-    // orders. Pending orders are handled separately by the wallet freeze.
+    // Available credit = creditLimit − completed-order usage. Pending orders are
+    // excluded here because their capacity is already held by the CREDIT wallet
+    // freeze (freeBalance → lockedBalance).
     const availableCredit = Math.max(0, creditLimit - usedCredit);
 
     let currentCollateralValue = Number(credit.currentCollateralValue) || 0;
@@ -1671,10 +1646,12 @@ export class CreditService {
 
   /**
    * Current mark price of the facility's collateral against the credit base
-   * symbol (1 when the collateral is denominated directly in the base).
+   * symbol. Returns 1 when the collateral is denominated directly in the base
+   * symbol, and 0 when no live price pair is available (callers must treat 0 as
+   * "unable to price" rather than assuming a price of 1).
    */
   async getCollateralMarkPrice(credit: CreditEntity): Promise<number> {
-    if (!credit.collateralSymbolId || !credit.creditBaseSymbolId) return 1;
+    if (!credit.collateralSymbolId || !credit.creditBaseSymbolId) return 0;
     if (credit.collateralSymbolId === credit.creditBaseSymbolId) return 1;
     const pair = await this.pricePairRepository.findOne({
       where: {
@@ -1684,7 +1661,7 @@ export class CreditService {
       },
     });
     const price = pair ? Number(pair.bestSellGramPrice) || Number(pair.bestSellPrice) || 0 : 0;
-    return price > 0 ? price : 1;
+    return price > 0 ? price : 0;
   }
 
   /**
@@ -1697,7 +1674,8 @@ export class CreditService {
     const leverage = Number(credit.leverage) || 1;
     if (leverage <= 0) return 0;
     const price = await this.getCollateralMarkPrice(credit);
-    return new Decimal(notionalIr || 0).div(leverage).div(price || 1).toNumber();
+    if (price <= 0) return 0;
+    return new Decimal(notionalIr || 0).div(leverage).div(price).toNumber();
   }
 
   /**
@@ -1860,8 +1838,10 @@ export class CreditService {
 
     // ── max_credit_notional (nominal exposure cap) ──────────────────
     if (credit.maxCreditNotional != null && Number(credit.maxCreditNotional) > 0) {
-      const usedNotional =
-        opts.side === "SELL" ? Number(credit.usedCredit) || 0 : Number(credit.usedCredit) || 0;
+      // Current exposure = IRR value of completed credit orders (the real open
+      // notional), not the placement-time `usedCredit` bump which also counts
+      // pending/rejected orders.
+      const usedNotional = await this.computeUsedCredit(credit.id);
       const projected = new Decimal(usedNotional).plus(opts.notionalIr || 0);
       if (projected.greaterThan(Number(credit.maxCreditNotional))) {
         throw new BadRequestException(
@@ -1881,6 +1861,9 @@ export class CreditService {
     const sum = (arr: CreditEntity[], pick: (c: CreditEntity) => number) =>
       arr.reduce((s, c) => s + (Number(pick(c)) || 0), 0);
 
+    // Live used credit = IRR value of completed credit orders (single query).
+    const activeUsedCredit = await this.sumCompletedCreditUsage(active.map((c) => c.id));
+
     const settlementDist = {} as Record<string, number>;
     const riskDist = {} as Record<string, number>;
     for (const c of all) {
@@ -1898,7 +1881,7 @@ export class CreditService {
       },
       exposure: {
         activeCreditLimit: sum(active, (c) => c.creditLimit),
-        activeUsedCredit: sum(active, (c) => c.usedCredit),
+        activeUsedCredit,
         activeCollateralValue: sum(active, (c) => c.currentCollateralValue || c.initialCollateralValue),
         activeCollateralAmount: sum(active, (c) => c.collateralAmount),
       },
@@ -1941,7 +1924,8 @@ export class CreditService {
       lockedBalance: Number(w.lockedBalance) || 0,
       creditBalance: Number(w.creditBalance) || 0,
     }));
-    // available = creditLimit (credit created at price) − all completed orders.
+    // available = creditLimit − completed-order usage (pending orders are held
+    // by the CREDIT wallet freeze).
     const availableCredit = Math.max(0, creditLimit - usedCredit);
 
     return {
@@ -2308,6 +2292,7 @@ export class CreditService {
    */
   async exportCreditsCsv(query?: Parameters<CreditService["getAllCredits"]>[0]): Promise<string> {
     const { items } = await this.getAllCredits({ ...query, limit: 100000, page: 1 });
+    const usedCreditMap = await this.computeUsedCreditMap(items.map((c) => c.id));
     const esc = (v: any) => {
       const s = v == null ? "" : String(v);
       return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
@@ -2326,7 +2311,7 @@ export class CreditService {
         c.user?.phone ?? "",
         c.amount,
         c.creditLimit,
-        c.usedCredit,
+        usedCreditMap[c.id] ?? c.usedCredit ?? "",
         c.leverage ?? "",
         c.collateralAmount ?? "",
         c.currentCollateralValue ?? "",
@@ -2491,6 +2476,7 @@ export class CreditService {
       }
 
       if (newState) {
+        const previousState = credit.settlementState;
         credit.settlementState = newState;
 
         if (newState === SettlementStateEnum.YELLOW && !credit.settlementYellowAt) {
@@ -2520,12 +2506,12 @@ export class CreditService {
         this.eventEmitter.emit(CreditEvents.SETTLEMENT_STATE_CHANGED, {
           userId: credit.userId,
           creditId: credit.id,
-          previousState: credit.settlementState,
+          previousState,
           newState,
         });
 
         this.logger.log(
-          `Credit ${credit.creditCode} settlement state: ${credit.settlementState} → ${newState} ` +
+          `Credit ${credit.creditCode} settlement state: ${previousState} → ${newState} ` +
           `(elapsed ${elapsedHours.toFixed(1)}h)`,
         );
       }
@@ -2645,7 +2631,7 @@ export class CreditService {
       });
 
       this.logger.log(
-        `Credit ${credit.creditCode} risk state: ${previousState} ? ${newRiskState} ` +
+        `Credit ${credit.creditCode} risk state: ${previousState} → ${newRiskState} ` +
         `(margin ratio: ${marginPercent}%)`,
       );
     }
@@ -2708,12 +2694,12 @@ export class CreditService {
     }
 
     credit.currentCollateralValue = (currentValue ?? new Decimal(0)).toNumber();
-    // Dynamic FIAT credit capacity (handoff §6.1, AC-14): buying power tracks
-    // the current collateral value × leverage, recomputed on every price
-    // update, WITHOUT touching the credit wallet's transaction balance.
-    if (credit.leverage && Number(credit.leverage) > 0) {
-      credit.creditLimit = (currentValue ?? new Decimal(0)).mul(credit.leverage).toNumber();
-    }
+    // NOTE: creditLimit stays fixed at the value issued at facility creation
+    // (collateral value at creation × leverage). It is NOT re-derived from the
+    // live collateral value here — that would make the limit swing with the mark
+    // price while usedCredit accumulates statically, producing an inconsistent
+    // "available credit" figure. Live buying power is derived at read time (see
+    // getCreditOverview) if needed.
     credit.lastDrawdownPercent = drawdown.toDecimalPlaces(2).toNumber();
     if (!manager) await this.creditRepository.save(credit);
     return { credit, drawdownPercent: credit.lastDrawdownPercent };
@@ -2837,7 +2823,10 @@ export class CreditService {
     const now = new Date();
 
     const pendingOrders = await this.dataSource.manager.find(OrderEntity, {
-      where: { isCreditLinked: true },
+      where: {
+        isCreditLinked: true,
+        status: In([OrderStatusEnum.PENDING, OrderStatusEnum.PARTIALLY_COMPLETED]),
+      },
       relations: { user: true, pricePair: true },
     });
 

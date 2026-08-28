@@ -32,6 +32,7 @@ export class CreditUserController {
   @Post(":id/settlement")
   @ApiOperation({ summary: "Request a delivery-based settlement workflow for a credit trade" })
   async requestSettlement(@Req() req: any, @Param("id") id: string, @Body() dto: RequestSettlementDto) {
+    await this.assertCreditOwned(req.user.id, id);
     return {
       data: await this.settlementWorkflowService.requestSettlement(id, {
         creditOrderId: dto.creditOrderId,
@@ -79,11 +80,15 @@ export class CreditUserController {
     return { data: await this.settlementWorkflowService.receiveAsset(settlementId, dto.amount, dto.notes) };
   }
 
-  private async assertOwned(userId: string, creditId: string, settlementId: string): Promise<void> {
+  private async assertCreditOwned(userId: string, creditId: string): Promise<void> {
     const credit = await this.creditService.getCreditById(creditId);
     if (!credit || credit.userId !== userId) {
       throw new ForbiddenException("CREDIT_NOT_FOUND");
     }
+  }
+
+  private async assertOwned(userId: string, creditId: string, settlementId: string): Promise<void> {
+    await this.assertCreditOwned(userId, creditId);
     const s = await this.settlementWorkflowService.findByCredit(creditId);
     if (!s.some((x) => x.id === settlementId)) {
       throw new NotFoundException("SETTLEMENT_NOT_FOUND");

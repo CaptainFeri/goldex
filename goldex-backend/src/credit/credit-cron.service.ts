@@ -18,16 +18,15 @@ export class CreditCronService {
     }
   }
 
-  // Credits don't have expiry time - they only close on drawdown or manual settlement
-  // @Cron(CronExpression.EVERY_30_MINUTES)
-  // async handleExpiredCredits() {
-  //   this.logger.log("Running expired credits check...");
-  //   try {
-  //     await this.creditService.processExpiredCredits();
-  //   } catch (error) {
-  //     this.logger.error(`Error processing expired credits: ${(error as Error).message}`);
-  //   }
-  // }
+  @Cron(CronExpression.EVERY_30_MINUTES)
+  async handleExpiredCredits() {
+    this.logger.log("Running expired credits check...");
+    try {
+      await this.creditService.processExpiredCredits();
+    } catch (error) {
+      this.logger.error(`Error processing expired credits: ${(error as Error).message}`);
+    }
+  }
 
   @Cron(CronExpression.EVERY_10_MINUTES)
   async handleSettlementTimers() {

@@ -65,15 +65,11 @@ export class QuoteRequestService {
     if (!pair) throw new Error("جفت‌ارز یافت نشد");
 
     // Credit-aware: if the user has an active credit, the request settles
-    // against the CREDIT wallets. On the first request the credit line is
-    // issued (calculated from the live price × leverage), mirroring the
-    // regular trade path.
+    // against the CREDIT wallets. The credit line is issued immediately at
+    // facility creation (requestCredit), so no first-order calculation is needed.
     const activeCredit = await this.creditService.getUserActiveCredit(userId);
     const useCreditForRequest = !!activeCredit && useCredit !== false;
     const walletType = useCreditForRequest ? WalletTypeEnum.CREDIT : WalletTypeEnum.DEPOSIT;
-    if (useCreditForRequest && Number(activeCredit.creditLimit || 0) === 0) {
-      await this.creditService.calculateAndIssueCreditOnFirstOrder(activeCredit.id, pricePairId);
-    }
     if (useCreditForRequest && side === OrderSideEnum.SELL) {
       await this.creditService.ensureSellCreditCapacity(activeCredit.id);
     }

@@ -31,6 +31,7 @@ import { CreditEntity } from "../credit/entity/credit.entity";
 import { CreditOrderEntity } from "../credit/entity/credit-order.entity";
 import { CreditStatusEnum } from "../credit/enum/credit-status.enum";
 import { CreditOrderStatusEnum } from "../credit/enum/credit-order-status.enum";
+import { RiskStateEnum } from "../credit/enum/risk-state.enum";
 import { CreditService } from "../credit/credit.service";
 import { OrderEvents } from "../shared/constants/events.constants";
 import { UserLevelService } from "../user-level/user-level.service";
@@ -138,17 +139,8 @@ export class OrderService {
       // credit-linked (settles against the CREDIT wallets).
       const useCredit = !!activeCredit && dto.useCredit !== false;
       if (useCredit) {
-        // Credit v2: Calculate credit amount on first order if not yet calculated
-        if (activeCredit.creditLimit === 0) {
-          await this.creditService.calculateAndIssueCreditOnFirstOrder(activeCredit.id, dto.pricePairId);
-          // Reload credit with updated values
-          const updatedCredit = await this.creditRepo.findOne({
-            where: { id: activeCredit.id },
-          });
-          if (updatedCredit) {
-            Object.assign(activeCredit, updatedCredit);
-          }
-        }
+        // The credit line is issued immediately at facility creation
+        // (requestCredit), so no first-order calculation is needed here.
 
         // Guarantee the credit SELL capacity wallet (e.g. XAU) is populated so
         // credit SELL orders do not fail with INSUFFICIENT_BALANCE.
@@ -227,12 +219,12 @@ export class OrderService {
         // Reduce-only mode (handoff Section 25): when riskState is WARNING or
         // MARGIN_CALL, block new/increase orders — only reducing orders allowed.
         if (
-          activeCredit.riskState === "WARNING" ||
-          activeCredit.riskState === "MARGIN_CALL"
+          activeCredit.riskState === RiskStateEnum.WARNING ||
+          activeCredit.riskState === RiskStateEnum.MARGIN_CALL
         ) {
           // Allow SELL orders (reducing a BUY position) on credit-linked pairs.
           // Block BUY orders (increasing/opening new positions).
-          if (dto.side === "BUY") {
+          if (dto.side === OrderSideEnum.BUY) {
             throw new BadRequestException(
               `CREDIT_REDUCE_ONLY: Credit is in ${activeCredit.riskState} state. ` +
               `Only reducing (sell) orders are allowed.`
@@ -400,14 +392,10 @@ export class OrderService {
       try {
         await this.walletOrderService.freezeForOrder(savedOrder, pricePair);
 
-        // Track credit usage: bump the stored usedCredit column and link the
-        // order to the credit (the link is what the settlement engine values).
+        // Link the order to the credit (the link is what the settlement engine
+        // values). Live used credit is computed on demand from completed orders
+        // via computeUsedCredit — no column bump here.
         if (useCredit) {
-          const lockedIr = new Decimal(savedOrder.quantity || 0).mul(displayGram);
-          await this.creditRepo.update(activeCredit.id, {
-            usedCredit: new Decimal(activeCredit.usedCredit || 0).plus(lockedIr).toNumber(),
-          });
-
           const creditOrder = this.creditOrderRepo.create({
             creditId: activeCredit.id,
             orderId: savedOrder.id,

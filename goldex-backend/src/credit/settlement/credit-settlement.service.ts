@@ -580,7 +580,12 @@ export class CreditSettlementService {
     // the fallback for any symbol without a live pair).
     const positions: BaseSymbolPosition[] = [];
     let netEquity = netIr;
-    let exposure = borrowedIr;
+    // Exposure = the value the user owes the platform.
+    //   - Gross (default): total borrowed IRR + total borrowed base asset at mark.
+    //   - Net (nettingEnabled): net negative obligations only — offsetting
+    //     BUY/SELL positions in the same base symbol cancel out, matching the
+    //     already-netted settlement transfer.
+    let exposure = credit.nettingEnabled ? Decimal.max(0, netIr.negated()) : borrowedIr;
     for (const [symbolId, netXau] of netXauByBase) {
       const price = markPrices[symbolId] || markPrice;
       positions.push({
@@ -590,9 +595,11 @@ export class CreditSettlementService {
         markPrice: price,
       });
       netEquity = netEquity.plus(netXau.mul(price));
-      // Repayment coverage: the value the user must return (borrowed IRR +
-      // borrowed base asset valued at mark).
-      exposure = exposure.plus((borrowedXauByBase.get(symbolId) || new Decimal(0)).mul(price));
+      if (credit.nettingEnabled) {
+        exposure = exposure.plus(Decimal.max(0, netXau.negated()).mul(price));
+      } else {
+        exposure = exposure.plus((borrowedXauByBase.get(symbolId) || new Decimal(0)).mul(price));
+      }
     }
     const collateralValue = new Decimal(credit.collateralAmount || 0).mul(markPrice);
     const equity = collateralValue.plus(netEquity);

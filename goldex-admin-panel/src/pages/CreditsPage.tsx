@@ -462,7 +462,7 @@ function CreateCreditModal({ onClose, onSave, loading }: { onClose: () => void; 
   // Material wallets that can be frozen as collateral.
   const materialWallets = (userWallets.data ?? []).filter((w: any) => w.symbol?.symbolType === "material");
   // All wallets (incl. RIAL) eligible to receive the credit amount.
-  const creditWalletOptions = (userWallets.data ?? []).filter((w: any) => w.symbol?.symbolType !== "material" || true);
+  const creditWalletOptions = userWallets.data ?? [];
 
   const avail = (w: any) => Number(w.calculatedStats?.availableBalance ?? w.freeBalance - w.frozenFreeBalance);
 
@@ -1178,7 +1178,17 @@ function CreditDetailModal({ credit, onClose }: { credit: Credit; onClose: () =>
 
           {/* Delivery-based settlement workflows (handoff §6, §7) */}
           <div style={{ background: "var(--bg)", padding: 12, borderRadius: 8 }}>
-            <h4 style={{ margin: "0 0 12px 0", fontSize: 14 }}>فرآیند تسویه تحویلی (Settlement Workflow)</h4>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
+              <h4 style={{ margin: 0, fontSize: 14 }}>فرآیند تسویه تحویلی (Settlement Workflow)</h4>
+              {c.status === "ACTIVE" && (
+                <button className="btn sm" onClick={async () => {
+                  await api.post(`/admin/credits/${c.id}/settlement-workflow`, { notes: "admin requested" });
+                  settlements.refetch();
+                }}>
+                  درخواست تسویه تحویلی
+                </button>
+              )}
+            </div>
             {settlements.isLoading ? <Loading /> : settlements.data?.length === 0 ? (
               <Empty label="هیچ تسویه تحویلی درخواست نشده" />
             ) : (
@@ -1224,14 +1234,35 @@ function CreditDetailModal({ credit, onClose }: { credit: Credit; onClose: () =>
                                 <button className="btn sm" onClick={async () => { const r = window.prompt("دلیل رد:"); if (r === null) return; await api.post(`/admin/credits/settlements/${s.id}/reject`, { reason: r }); settlements.refetch(); }}>رد</button>
                               </>
                             )}
-                            {s.status === "APPROVED" && (
+                            {(s.status === "APPROVED" || s.status === "VALUATED") && (
                               <button className="btn sm" onClick={async () => { await api.post(`/admin/credits/settlements/${s.id}/valuate`); settlements.refetch(); }}>ارزش‌گذاری</button>
                             )}
-                            {s.status === "VALUATED" && (
-                              <button className="btn sm" onClick={async () => { const m = window.prompt("روش تسویه (FULL/NET/TOPUP):"); if (!m) return; await api.post(`/admin/credits/settlements/${s.id}/select-method`, { method: m.toUpperCase() }); settlements.refetch(); }}>انتخاب روش</button>
+                            {(s.status === "APPROVED" || s.status === "VALUATED" || s.status === "METHOD_SELECTED" || s.status === "FUNDING_REQUIRED") && (
+                              <button className="btn sm" onClick={async () => { const m = window.prompt("روش تسویه (FULL/NET/TOPUP):", s.settlementMethod || "FULL"); if (!m) return; await api.post(`/admin/credits/settlements/${s.id}/select-method`, { method: m.toUpperCase() }); settlements.refetch(); }}>روش</button>
                             )}
-                            {(s.status === "FUNDING_REQUIRED") && (
-                              <button className="btn sm" onClick={async () => { const a = window.prompt("مبلغ تأمین کسری:"); if (!a) return; await api.post(`/admin/credits/settlements/${s.id}/fund`, { amount: Number(a) }); settlements.refetch(); }}>تأمین کسری</button>
+                            {(s.status === "METHOD_SELECTED" || s.status === "FUNDING_REQUIRED" || s.status === "READY") && Number(s.shortfall) > 0 && (
+                              <button className="btn sm" onClick={async () => { const a = window.prompt("مبلغ تأمین کسری:"); if (!a) return; await api.post(`/admin/credits/settlements/${s.id}/fund`, { amount: Number(a) }); settlements.refetch(); }}>تأمین</button>
+                            )}
+                            {(s.status === "APPROVED" || s.status === "VALUATED" || s.status === "METHOD_SELECTED" || s.status === "FUNDING_REQUIRED" || s.status === "READY" || s.status === "ASSET_RECEIVED" || s.status === "ASSET_VERIFIED") && (
+                              <button className="btn sm" onClick={async () => { const a = window.prompt("مقدار تحویل دارایی:"); if (!a) return; await api.post(`/admin/credits/settlements/${s.id}/receive`, { amount: Number(a) }); settlements.refetch(); }}>تحویل</button>
+                            )}
+                            {s.status === "ASSET_RECEIVED" && (
+                              <button className="btn sm" onClick={async () => { await api.post(`/admin/credits/settlements/${s.id}/verify`); settlements.refetch(); }}>تأیید دارایی</button>
+                            )}
+                            {s.status === "ASSET_VERIFIED" && (
+                              <button className="btn sm" onClick={async () => { await api.post(`/admin/credits/settlements/${s.id}/clear-liability`); settlements.refetch(); }}>تسویه بدهی</button>
+                            )}
+                            {s.status === "LIABILITY_CLEARED" && (
+                              <button className="btn sm" onClick={async () => { await api.post(`/admin/credits/settlements/${s.id}/settle-asset`); settlements.refetch(); }}>تسویه دارایی</button>
+                            )}
+                            {s.status === "ASSET_SETTLED" && (
+                              <button className="btn sm" onClick={async () => { await api.post(`/admin/credits/settlements/${s.id}/release-collateral`); settlements.refetch(); }}>آزادسازی وثیقه</button>
+                            )}
+                            {s.status === "COLLATERAL_RELEASED" && (
+                              <button className="btn sm" onClick={async () => { await api.post(`/admin/credits/settlements/${s.id}/close`); settlements.refetch(); }}>بستن</button>
+                            )}
+                            {s.status !== "CLOSED" && s.status !== "REJECTED" && s.status !== "FAILED" && (
+                              <button className="btn sm ghost" onClick={async () => { const r = window.prompt("دلیل شکست:"); if (r === null) return; await api.post(`/admin/credits/settlements/${s.id}/fail`, { reason: r }); settlements.refetch(); }}>شکست</button>
                             )}
                           </div>
                         </td>

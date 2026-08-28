@@ -196,6 +196,25 @@ export const creditApi = {
 
   settleCredit: async (id) =>
     unwrap(await http.post(`/credits/${id}/settle`)),
+
+  // Delivery-based settlement workflow
+  requestSettlement: async (creditId, data = {}) =>
+    unwrap(await http.post(`/credits/${creditId}/settlement`, data)),
+
+  getSettlements: async (creditId) =>
+    unwrap(await http.get(`/credits/${creditId}/settlements`)),
+
+  valuateSettlement: async (creditId, settlementId) =>
+    unwrap(await http.post(`/credits/${creditId}/settlement/${settlementId}/valuate`)),
+
+  selectSettlementMethod: async (creditId, settlementId, method) =>
+    unwrap(await http.post(`/credits/${creditId}/settlement/${settlementId}/method`, { method })),
+
+  fundSettlement: async (creditId, settlementId, amount) =>
+    unwrap(await http.post(`/credits/${creditId}/settlement/${settlementId}/fund`, { amount })),
+
+  deliverAsset: async (creditId, settlementId, amount) =>
+    unwrap(await http.post(`/credits/${creditId}/settlement/${settlementId}/deliver`, { amount })),
 }
 
 export const baseInfoApi = {
