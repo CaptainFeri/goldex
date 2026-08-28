@@ -602,7 +602,9 @@
     "notifMarginCall": "Margin Call",
     "notifExpiryWarning": "Expiry Warning",
     "notifSettlement": "Settlement",
-    "notifExpired": "Expired"
+    "notifExpired": "Expired",
+    "depositFirst": "Please deposit into your wallet first",
+    "insufficientCollateral": "Insufficient balance. Please deposit into your wallet first."
   },
   "level": {
     "title": "Account Level",

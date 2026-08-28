@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
+import i18n from '../i18n'
 import { useToast } from '../context/ToastContext'
 import { useAuth } from '../context/AuthContext'
 import { marketApi, walletApi, quoteRequestApi, creditApi } from '../services/api'
@@ -19,8 +20,14 @@ const fmt = (n, d = 2) => {
   return num.toLocaleString('en-US', { maximumFractionDigits: d })
 }
 
-const pairLabel = (p) =>
-  `${p.baseSymbol?.slug || p.baseSymbol?.name || '—'}/${p.quoteSymbol?.slug || p.quoteSymbol?.name || '—'}`
+const pairLabel = (p) => {
+  const base = p.baseSymbol?.slug || p.baseSymbol?.name || '—'
+  const quote = p.quoteSymbol?.slug || p.quoteSymbol?.name || '—'
+  if (i18n.language === 'fa') {
+    return `${p.baseSymbol?.name || base} به ${p.quoteSymbol?.name || quote}`
+  }
+  return `${base}/${quote}`
+}
 
 function formatDateTime(iso) {
   if (!iso) return '—'

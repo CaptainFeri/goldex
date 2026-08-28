@@ -602,7 +602,9 @@
     "notifMarginCall": "فراخوان سرمایه",
     "notifExpiryWarning": "هشدار انقضا",
     "notifSettlement": "تسویه",
-    "notifExpired": "منقضی شده"
+    "notifExpired": "منقضی شده",
+    "depositFirst": "لطفاً ابتدا به کیف پول خود واریز کنید",
+    "insufficientCollateral": "موجودی کافی نیست. لطفاً ابتدا به کیف پول خود واریز کنید."
   },
   "level": {
     "title": "سطح حساب",

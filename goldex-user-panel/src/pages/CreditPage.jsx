@@ -1,7 +1,7 @@
 import { useEffect, useState, useCallback } from 'react'
 import { useTranslation } from 'react-i18next'
 import { creditApi, walletApi, levelApi, marketApi } from '../services/api'
-import { Spinner, Alert, Button } from '../components/UI'
+import { Spinner, Alert, Button, Field } from '../components/UI'
 
 const fmtNum = (n) => (n ?? 0).toLocaleString('en-US')
 const fmtDate = (d) =>
@@ -17,6 +17,15 @@ const NOTIF_TYPES = {
   EXPIRED: { key: 'notifExpired', cls: 'badge-danger' },
 }
 
+const STATUS_BADGE = {
+  ACTIVE: 'badge-success',
+  SUSPENDED: 'badge-danger',
+  SETTLED: 'badge-info',
+  EXPIRED: 'badge-danger',
+  CANCELLED: 'badge-secondary',
+  PENDING: 'badge-warning',
+}
+
 function CreditIcon() {
   return (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" style={{ width: 24, height: 24 }}>
@@ -24,6 +33,15 @@ function CreditIcon() {
       <line x1="1" y1="10" x2="23" y2="10" />
       <circle cx="12" cy="15" r="2" />
     </svg>
+  )
+}
+
+function KV({ label, value, accent }) {
+  return (
+    <div className="field-row">
+      <span className="field-label">{label}</span>
+      <span className={`field-value ${accent ? 'accent' : ''}`}>{value}</span>
+    </div>
   )
 }
 
@@ -35,7 +53,7 @@ export default function CreditPage() {
   const [notifications, setNotifications] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
-  const [tab, setTab] = useState('active') // active | notifications
+  const [tab, setTab] = useState('history') // history | notifications
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -97,167 +115,71 @@ export default function CreditPage() {
         </div>
       </div>
 
-      <div className="main-body">
+      <div className="main-body" style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
         {error && <Alert type="error">{error}</Alert>}
-
         {blocked && <Alert type="error">{t('credit.blockedMessage')}</Alert>}
 
-        {/* Active Credit Card */}
         {activeCredit ? (
-          <div className="card" style={{ marginBottom: '1.5rem', border: '2px solid var(--gold)' }}>
-            <div className="card-title">{t('credit.active')}</div>
-            <div style={{ padding: '1rem', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
-              <div>
-                <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{t('credit.creditCode')}</div>
-                <div style={{ fontWeight: 600, fontFamily: 'monospace' }}>{activeCredit.creditCode}</div>
-              </div>
-              <div>
-                <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{t('credit.amount')}</div>
-                <div style={{ fontWeight: 600, color: 'var(--gold)' }}>{fmtNum(activeCredit.amount)} IRR</div>
-              </div>
-              <div>
-                <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{t('credit.status')}</div>
-                <span className="badge badge-success">{statusLabel(t, 'ACTIVE')}</span>
-              </div>
-              <div>
-                <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{t('credit.expiryDate')}</div>
-                <div style={{ fontWeight: 500 }}>{fmtDate(activeCredit.expireAt)}</div>
-              </div>
-              {activeCredit.hasCallMargin && (
-                <div>
-                  <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{t('credit.marginCall')}</div>
-                  <span className="badge badge-warning">{activeCredit.callMarginPercent}%</span>
-                </div>
-              )}
-              {activeCredit.leverage != null && (
-                <div>
-                  <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{t('credit.leverage')}</div>
-                  <div style={{ fontWeight: 600, color: 'var(--gold)' }}>{activeCredit.leverage}x</div>
-                </div>
-              )}
-              {activeCredit.creditLimit != null && (
-                <div>
-                  <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{t('credit.creditLimit')}</div>
-                  <div style={{ fontWeight: 600 }}>{fmtNum(activeCredit.creditLimit)} IRR</div>
-                </div>
-              )}
-              {(overview?.usedCredit != null || overview?.availableCredit != null) && (
-                <>
-                  <div>
-                    <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{t('credit.usedCredit')}</div>
-                    <div style={{ fontWeight: 600, color: 'var(--gold)' }}>{fmtNum(overview.usedCredit)} IRR</div>
-                  </div>
-                  <div>
-                    <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{t('credit.availableCredit')}</div>
-                    <div style={{ fontWeight: 600 }}>{fmtNum(overview.availableCredit)} IRR</div>
-                  </div>
-                </>
-              )}
-              {overview?.currentCollateralValue != null && (
-                <div>
-                  <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{t('credit.collateralValue')}</div>
-                  <div style={{ fontWeight: 600 }}>{fmtNum(overview.currentCollateralValue)} IRR</div>
-                </div>
-              )}
-              {(overview?.collateralLocked != null || overview?.collateralAmount != null) && (
-                <>
-                  <div>
-                    <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{t('credit.collateralLocked')}</div>
-                    <div style={{ fontWeight: 600, color: 'var(--gold)' }}>{fmtNum(overview.collateralLocked ?? 0)}</div>
-                  </div>
-                  <div>
-                    <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{t('credit.collateralAvailable')}</div>
-                    <div style={{ fontWeight: 600 }}>{fmtNum(overview.collateralAvailable ?? overview.collateralAmount ?? 0)}</div>
-                  </div>
-                </>
-              )}
-              {overview?.maxTradeChainDepth != null && (
-                <div>
-                  <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{t('credit.maxAssetDepth')}</div>
-                  <div style={{ fontWeight: 500 }}>{overview.maxTradeChainDepth}</div>
-                </div>
-              )}
-              {overview?.maxConcurrentOrders != null && (
-                <div>
-                  <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{t('credit.maxParallelTrades')}</div>
-                  <div style={{ fontWeight: 500 }}>{overview.maxConcurrentOrders}</div>
-                </div>
-              )}
-              {overview?.maxCreditNotional != null && (
-                <div>
-                  <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{t('credit.maxCreditNotional')}</div>
-                  <div style={{ fontWeight: 500 }}>{fmtNum(overview.maxCreditNotional)} IRR</div>
-                </div>
-              )}
-              {overview?.maxTotalLockedCollateral != null && (
-                <div>
-                  <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{t('credit.maxLockedCollateral')}</div>
-                  <div style={{ fontWeight: 500 }}>{(Number(overview.maxTotalLockedCollateral) * 100).toFixed(0)}%</div>
-                </div>
-              )}
+          <div className="card animate-fade-up" style={{ border: '2px solid var(--gold)' }}>
+            <div className="card-title">
+              <div className="gold-dot" />{t('credit.active')}
+              <span className="badge badge-success" style={{ marginInlineStart: 'auto' }}>{statusLabel(t, 'ACTIVE')}</span>
+            </div>
+
+            <div className="profile-grid">
+              <KV label={t('credit.creditCode')} value={<code>{activeCredit.creditCode}</code>} />
+              <KV label={t('credit.amount')} value={`${fmtNum(activeCredit.amount)} IRR`} accent />
+              <KV label={t('credit.expiryDate')} value={fmtDate(activeCredit.expireAt)} />
+              {activeCredit.leverage != null && <KV label={t('credit.leverage')} value={`${activeCredit.leverage}x`} accent />}
+              {activeCredit.creditLimit != null && <KV label={t('credit.creditLimit')} value={`${fmtNum(activeCredit.creditLimit)} IRR`} />}
+              {overview?.usedCredit != null && <KV label={t('credit.usedCredit')} value={`${fmtNum(overview.usedCredit)} IRR`} accent />}
+              {overview?.availableCredit != null && <KV label={t('credit.availableCredit')} value={`${fmtNum(overview.availableCredit)} IRR`} />}
+              {overview?.currentCollateralValue != null && <KV label={t('credit.collateralValue')} value={`${fmtNum(overview.currentCollateralValue)} IRR`} />}
+              {overview?.collateralLocked != null && <KV label={t('credit.collateralLocked')} value={fmtNum(overview.collateralLocked)} accent />}
+              {overview?.collateralAvailable != null && <KV label={t('credit.collateralAvailable')} value={fmtNum(overview.collateralAvailable)} />}
               {activeCredit.drawdownPercent != null && (
-                <div>
-                  <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{t('credit.drawdown')}</div>
-                  <div style={{ fontWeight: 500, color: Number(activeCredit.lastDrawdownPercent ?? 0) >= Number(activeCredit.drawdownPercent ?? 100) ? 'var(--red)' : 'inherit' }}>
-                    {Number(activeCredit.lastDrawdownPercent ?? 0).toFixed(1)}% / {activeCredit.drawdownPercent}%
-                  </div>
-                </div>
+                <KV label={t('credit.drawdown')} value={`${(Number(activeCredit.lastDrawdownPercent ?? 0)).toFixed(1)}% / ${activeCredit.drawdownPercent}%`} />
               )}
-              <div>
-                <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{t('credit.reminderEvery')}</div>
-                <div style={{ fontWeight: 500 }}>{activeCredit.reminderTimerHours} hr</div>
-              </div>
-              {activeCredit.maxExecutionTradeLevel != null && (
-                <div>
-                  <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{t('credit.maxExecutionLevel')}</div>
-                  <div style={{ fontWeight: 500 }}>
-                    {(activeCredit.executedTradeLevel ?? 0)} / {activeCredit.maxExecutionTradeLevel}
-                  </div>
-                </div>
+              {activeCredit.hasCallMargin && (
+                <KV label={t('credit.marginCall')} value={<span className="badge badge-warning">{activeCredit.callMarginPercent}%</span>} />
               )}
-              {activeCredit.metadata?.increasedWallets?.length ? (
-                <div style={{ gridColumn: '1 / -1' }}>
-                  <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: 4 }}>{t('credit.increasedWallets')}</div>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-                    {activeCredit.metadata.increasedWallets.map((iw, idx) => (
-                      <div key={idx} style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.85rem' }}>
-                        <span style={{ fontWeight: 600 }}>{iw.symbolName || iw.symbolId}</span>
-                        <span style={{ fontFamily: 'monospace' }}>{fmtNum(iw.amount)}</span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              ) : (
-                <div>
-                  <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{t('credit.creditWallet')}</div>
-                  <div style={{ fontWeight: 500 }}>{activeCredit.metadata?.creditSymbol || 'RIAL'}</div>
-                </div>
-              )}
-              <div style={{ gridColumn: '1 / -1' }}>
-                <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: 4 }}>{t('credit.autoReminder')}</div>
-                <div className="progress-bar" style={{ background: 'var(--border)', borderRadius: 4, height: 8, overflow: 'hidden' }}>
-                  <div style={{
-                    width: `${progressPct}%`,
-                    height: '100%',
-                    background: 'var(--gold)',
-                    borderRadius: 4,
-                    transition: 'width 0.5s',
-                  }} />
-                </div>
+              {overview?.maxTradeChainDepth != null && <KV label={t('credit.maxAssetDepth')} value={overview.maxTradeChainDepth} />}
+              {overview?.maxConcurrentOrders != null && <KV label={t('credit.maxParallelTrades')} value={overview.maxConcurrentOrders} />}
+              {overview?.maxCreditNotional != null && <KV label={t('credit.maxCreditNotional')} value={`${fmtNum(overview.maxCreditNotional)} IRR`} />}
+              {overview?.maxTotalLockedCollateral != null && <KV label={t('credit.maxLockedCollateral')} value={`${(Number(overview.maxTotalLockedCollateral) * 100).toFixed(0)}%`} />}
+              {activeCredit.maxExecutionTradeLevel != null && <KV label={t('credit.maxExecutionLevel')} value={`${activeCredit.executedTradeLevel ?? 0} / ${activeCredit.maxExecutionTradeLevel}`} />}
+              <KV label={t('credit.reminderEvery')} value={`${activeCredit.reminderTimerHours} hr`} />
+              {activeCredit.metadata?.increasedWallets?.length
+                ? <KV label={t('credit.increasedWallets')} value={activeCredit.metadata.increasedWallets.map((iw) => `${iw.symbolName || iw.symbolId}: ${fmtNum(iw.amount)}`).join('، ')} />
+                : <KV label={t('credit.creditWallet')} value={activeCredit.metadata?.creditSymbol || 'RIAL'} />}
+            </div>
+
+            {/* Auto-reminder progress */}
+            <div className="field-row" style={{ marginTop: '1.25rem' }}>
+              <span className="field-label">{t('credit.autoReminder')}</span>
+              <div style={{ background: 'var(--border)', borderRadius: 4, height: 8, overflow: 'hidden', marginTop: 6 }}>
+                <div style={{
+                  width: `${progressPct}%`,
+                  height: '100%',
+                  background: 'var(--gold)',
+                  borderRadius: 4,
+                  transition: 'width 0.5s',
+                }} />
               </div>
-              <div style={{ gridColumn: '1 / -1', display: 'flex', justifyContent: 'flex-end', marginTop: '0.5rem' }}>
-                <Button onClick={async () => {
-                  if (!window.confirm(t('credit.settleConfirm'))) return
-                  try {
-                    await creditApi.settleCredit(activeCredit.id)
-                    await load()
-                  } catch (err) {
-                    alert(err?.response?.data?.message || err.message || t('credit.settlementFailed'))
-                  }
-                }}>
-                  {t('credit.settleCredit')}
-                </Button>
-              </div>
+            </div>
+
+            <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '1.25rem' }}>
+              <Button onClick={async () => {
+                if (!window.confirm(t('credit.settleConfirm'))) return
+                try {
+                  await creditApi.settleCredit(activeCredit.id)
+                  await load()
+                } catch (err) {
+                  alert(err?.response?.data?.message || err.message || t('credit.settlementFailed'))
+                }
+              }}>
+                {t('credit.settleCredit')}
+              </Button>
             </div>
 
             <SettlementWorkflows creditId={activeCredit.id} onChanged={load} />
@@ -267,30 +189,23 @@ export default function CreditPage() {
         )}
 
         {/* Tabs: History / Notifications */}
-        <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '1rem' }}>
-          <button
-            className={`btn ${tab === 'active' ? '' : 'ghost'}`}
-            onClick={() => setTab('active')}
-          >
+        <div className="tabs">
+          <button className={`tab ${tab === 'history' ? 'active' : ''}`} onClick={() => setTab('history')}>
             {t('credit.creditHistory')}
           </button>
-          <button
-            className={`btn ${tab === 'notifications' ? '' : 'ghost'}`}
-            onClick={() => setTab('notifications')}
-          >
-            {t('credit.notifications')} {notifications.filter((n) => !n.isRead).length > 0 && `(${notifications.filter((n) => !n.isRead).length})`}
+          <button className={`tab ${tab === 'notifications' ? 'active' : ''}`} onClick={() => setTab('notifications')}>
+            {t('credit.notifications')}
+            {notifications.filter((n) => !n.isRead).length > 0 && ` (${notifications.filter((n) => !n.isRead).length})`}
           </button>
         </div>
 
-        {tab === 'active' && (
-          <div className="card">
-            <div className="card-title">{t('credit.creditHistory')}</div>
+        {tab === 'history' && (
+          <div className="card animate-fade-up">
+            <div className="card-title"><div className="gold-dot" />{t('credit.creditHistory')}</div>
             {history.length === 0 ? (
-              <div style={{ padding: '2rem', textAlign: 'center', color: 'var(--text-muted)' }}>
-                {t('credit.noHistory')}
-              </div>
+              <p style={{ color: 'var(--text-muted)', fontSize: '0.875rem' }}>{t('credit.noHistory')}</p>
             ) : (
-              <div style={{ overflowX: 'auto' }}>
+              <div className="table-wrap">
                 <table className="order-table">
                   <thead>
                     <tr>
@@ -306,16 +221,9 @@ export default function CreditPage() {
                     {history.map((c) => (
                       <tr key={c.id}>
                         <td><code>{c.creditCode}</code></td>
-                        <td style={{ color: 'var(--gold)', fontWeight: 600 }}>{fmtNum(c.amount)}</td>
+                        <td className="txt-buy">{fmtNum(c.amount)}</td>
                         <td>
-                          <span className={`badge ${
-                            c.status === 'ACTIVE' ? 'badge-success' :
-                            c.status === 'SUSPENDED' ? 'badge-danger' :
-                            c.status === 'SETTLED' ? 'badge-info' :
-                            c.status === 'EXPIRED' ? 'badge-danger' :
-                            c.status === 'CANCELLED' ? 'badge-secondary' :
-                            'badge-warning'
-                          }`}>{statusLabel(t, c.status)}</span>
+                          <span className={`badge ${STATUS_BADGE[c.status] || 'badge-warning'}`}>{statusLabel(t, c.status)}</span>
                         </td>
                         <td>{fmtDate(c.createAt)}</td>
                         <td>{fmtDate(c.expireAt)}</td>
@@ -330,32 +238,34 @@ export default function CreditPage() {
         )}
 
         {tab === 'notifications' && (
-          <div className="card">
-            <div className="card-title">{t('credit.notifications')}</div>
+          <div className="card animate-fade-up">
+            <div className="card-title"><div className="gold-dot" />{t('credit.notifications')}</div>
             {notifications.length === 0 ? (
-              <div style={{ padding: '2rem', textAlign: 'center', color: 'var(--text-muted)' }}>
-                {t('credit.noNotifications')}
-              </div>
+              <p style={{ color: 'var(--text-muted)', fontSize: '0.875rem' }}>{t('credit.noNotifications')}</p>
             ) : (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', padding: '0.5rem 0' }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
                 {notifications.map((n) => {
                   const nt = NOTIF_TYPES[n.type] || { key: null, cls: 'badge-info' }
                   return (
-                    <div key={n.id} onClick={() => {
-                      if (!n.isRead) {
-                        creditApi.markAsRead(n.id).then(() => {
-                          setNotifications((prev) => prev.map((x) => x.id === n.id ? { ...x, isRead: true } : x))
-                        }).catch(() => {})
-                      }
-                    }} style={{
-                      padding: '0.75rem 1rem',
-                      background: n.isRead ? 'transparent' : 'var(--surface)',
-                      borderRadius: 8,
-                      borderBottom: '1px solid var(--border)',
-                      opacity: n.isRead ? 0.6 : 1,
-                      cursor: n.isRead ? 'default' : 'pointer',
-                      transition: 'opacity 0.2s',
-                    }}>
+                    <div
+                      key={n.id}
+                      onClick={() => {
+                        if (!n.isRead) {
+                          creditApi.markAsRead(n.id).then(() => {
+                            setNotifications((prev) => prev.map((x) => x.id === n.id ? { ...x, isRead: true } : x))
+                          }).catch(() => {})
+                        }
+                      }}
+                      style={{
+                        padding: '0.85rem 1rem',
+                        background: n.isRead ? 'transparent' : 'var(--surface)',
+                        borderRadius: 'var(--radius-md)',
+                        border: '1px solid var(--border)',
+                        opacity: n.isRead ? 0.6 : 1,
+                        cursor: n.isRead ? 'default' : 'pointer',
+                        transition: 'opacity 0.2s',
+                      }}
+                    >
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
                         <span className={`badge ${nt.cls}`}>{nt.key ? t(`credit.${nt.key}`) : n.type}</span>
                         <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{fmtDate(n.sentAt)}</span>
@@ -405,12 +315,12 @@ function SettlementWorkflows({ creditId, onChanged }) {
   }
 
   return (
-    <div style={{ padding: '0 1rem 1rem' }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-        <span style={{ fontWeight: 600, fontSize: '0.9rem' }}>{t('credit.settlementWorkflows')}</span>
-        <button className="btn ghost" onClick={() => act(() => creditApi.requestSettlement(creditId))}>
+    <div style={{ marginTop: '1.25rem', borderTop: '1px solid var(--border)', paddingTop: '1rem' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem' }}>
+        <span style={{ fontWeight: 600, fontSize: '0.9rem', color: 'var(--text-primary)' }}>{t('credit.settlementWorkflows')}</span>
+        <Button variant="ghost" onClick={() => act(() => creditApi.requestSettlement(creditId))}>
           {t('credit.requestSettlement')}
-        </button>
+        </Button>
       </div>
       {!items ? (
         <div style={{ textAlign: 'center', padding: '0.5rem' }}><Spinner size={16} /></div>
@@ -419,7 +329,7 @@ function SettlementWorkflows({ creditId, onChanged }) {
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
           {items.map((s) => (
-            <div key={s.id} style={{ border: '1px solid var(--border)', borderRadius: 8, padding: 10, display: 'flex', flexDirection: 'column', gap: 6 }}>
+            <div key={s.id} style={{ border: '1px solid var(--border)', borderRadius: 'var(--radius-md)', padding: '0.85rem 1rem', display: 'flex', flexDirection: 'column', gap: 6 }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                 <span className="badge badge-info">{s.status}</span>
                 {s.settlementMethod && <span style={{ fontSize: '0.8rem', fontFamily: 'monospace' }}>{s.settlementMethod}</span>}
@@ -482,9 +392,6 @@ function CreditRequestForm({ onCreated }) {
         const [level, features] = await Promise.all([levelApi.getMyLevel(), levelApi.getMyFeatures()])
         if (level?.creditMaxLeverage != null) setMaxLeverage(Number(level.creditMaxLeverage))
         if (level?.creditBaseSymbolId) setCreditBaseSymbolId(level.creditBaseSymbolId)
-        // Collateral can be either the BASE or the QUOTE symbol of the level's
-        // pairs (XAU/IRR → XAU or IRR, XAU/USD → XAU or USD, USD/IRR → USD or IRR).
-        // The credit base symbol itself is always eligible.
         const pairIds = (level?.pairs || []).flatMap((p) => [
           p.baseSymbol?.id,
           p.quoteSymbol?.id,
@@ -502,7 +409,6 @@ function CreditRequestForm({ onCreated }) {
     marketApi.getPairs().then((p) => setPairs(Array.isArray(p) ? p : [])).catch(() => {})
   }, [])
 
-  // Only base-symbol deposit wallets are eligible collateral.
   const eligibleWallets = baseSymbolIds.length > 0
     ? wallets.filter((x) => baseSymbolIds.includes(x.symbol?.id))
     : wallets
@@ -513,7 +419,8 @@ function CreditRequestForm({ onCreated }) {
     }
   }, [eligibleWallets, selectedWallet])
 
-  const selectedSymId = wallets.find((w) => w.id === selectedWallet)?.symbol?.id
+  const selectedWalletObj = wallets.find((w) => w.id === selectedWallet)
+  const selectedSymId = selectedWalletObj?.symbol?.id
   const isBaseSymbol = selectedSymId === creditBaseSymbolId
   const pair = pairs.find(
     (p) => p.baseSymbol?.id === selectedSymId && p.quoteSymbol?.id === creditBaseSymbolId
@@ -524,10 +431,18 @@ function CreditRequestForm({ onCreated }) {
   const projectedCredit = unitPrice > 0 ? amt * unitPrice * lev : 0
   const maxed = maxAmount > 0 && projectedCredit > maxAmount
 
+  const availableCollateral = Number(selectedWalletObj?.freeBalance) || 0
+  const noBalance = eligibleWallets.length > 0 && availableCollateral <= 0
+  const insufficient = amt > 0 && amt > availableCollateral
+
   const handleSubmit = async (e) => {
     e.preventDefault()
     if (!selectedWallet || !amount || !leverage) {
       setError(t('credit.fillAllFields'))
+      return
+    }
+    if (noBalance || insufficient) {
+      setError(t('credit.depositFirst'))
       return
     }
     if (maxed) {
@@ -551,17 +466,21 @@ function CreditRequestForm({ onCreated }) {
   }
 
   return (
-    <div className="card" style={{ marginBottom: '1.5rem' }}>
-      <div className="card-title">{t('credit.requestFacility')}</div>
-      <form onSubmit={handleSubmit} style={{ padding: '1rem', display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+    <div className="card animate-fade-up">
+      <div className="card-title"><div className="gold-dot" />{t('credit.requestFacility')}</div>
+
+      {noBalance && (
+        <Alert type="error">{t('credit.depositFirst')}</Alert>
+      )}
+
+      <form onSubmit={handleSubmit}>
         {error && <Alert type="error">{error}</Alert>}
-        <div>
-          <label style={{ fontSize: '0.85rem', fontWeight: 500, marginBottom: 4, display: 'block' }}>{t('credit.collateralWallet')}</label>
+
+        <Field label={t('credit.collateralWallet')}>
           <select
-            className="input"
+            className="form-input"
             value={selectedWallet}
             onChange={(e) => setSelectedWallet(e.target.value)}
-            style={{ width: '100%' }}
           >
             {eligibleWallets.length === 0 && (
               <option value="">{t('credit.noEligibleWallets')}</option>
@@ -572,11 +491,14 @@ function CreditRequestForm({ onCreated }) {
               </option>
             ))}
           </select>
-        </div>
-        <div>
-          <label style={{ fontSize: '0.85rem', fontWeight: 500, marginBottom: 4, display: 'block' }}>{t('credit.collateralAmount')}</label>
+        </Field>
+
+        <Field
+          label={t('credit.collateralAmount')}
+          hint={insufficient ? t('credit.insufficientCollateral') : undefined}
+        >
           <input
-            className="input"
+            className="form-input"
             type="number"
             min="0"
             step="any"
@@ -584,39 +506,36 @@ function CreditRequestForm({ onCreated }) {
             onChange={(e) => setAmount(e.target.value)}
             placeholder={t('credit.collateralAmountPlaceholder')}
           />
-        </div>
-        <div>
-          <label style={{ fontSize: '0.85rem', fontWeight: 500, marginBottom: 4, display: 'block' }}>
-            {t('credit.leverage')}: {lev ? `${lev}x` : '—'} ({t('credit.leverageMax', { max: maxLeverage })})
-          </label>
+        </Field>
+
+        <Field label={`${t('credit.leverage')}: ${lev ? `${lev}x` : '—'} (${t('credit.leverageMax', { max: maxLeverage })})`}>
           <input
-            className="input"
             type="range"
             min="1"
             max={maxLeverage || 10}
             step="0.1"
             value={leverage || 1}
             onChange={(e) => setLeverage(e.target.value)}
-            style={{ width: '100%' }}
+            style={{ width: '100%', accentColor: 'var(--gold)' }}
           />
-        </div>
+        </Field>
 
         {unitPrice > 0 && amt > 0 && lev > 0 && (
-          <div style={{ background: 'var(--bg)', padding: '0.75rem', borderRadius: 8, fontSize: '0.85rem' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
-              <span style={{ color: 'var(--text-muted)' }}>{t('credit.collateralValueLabel')}</span>
-              <span className="mono">{fmtNum(amt * unitPrice)} IRR</span>
+          <div style={{ marginTop: '0.5rem' }}>
+            <div className="ticket-summary">
+              <span className="label">{t('credit.collateralValueLabel')}</span>
+              <span className="val">{fmtNum(amt * unitPrice)} IRR</span>
             </div>
-            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
-              <span style={{ color: 'var(--text-muted)' }}>{t('credit.projectedCreditLimit')}</span>
-              <span style={{ color: maxed ? 'var(--danger)' : 'var(--gold)', fontWeight: 600 }} className="mono">
+            <div className="ticket-summary">
+              <span className="label">{t('credit.projectedCreditLimit')}</span>
+              <span className="val" style={{ color: maxed ? 'var(--danger)' : 'var(--gold)', fontWeight: 600 }}>
                 {fmtNum(projectedCredit)} IRR
               </span>
             </div>
             {maxAmount > 0 && (
-              <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                <span style={{ color: 'var(--text-muted)' }}>{t('credit.levelMax')}</span>
-                <span className="mono">{fmtNum(maxAmount)} IRR</span>
+              <div className="ticket-summary">
+                <span className="label">{t('credit.levelMax')}</span>
+                <span className="val">{fmtNum(maxAmount)} IRR</span>
               </div>
             )}
             <div style={{ marginTop: 6, fontSize: '0.75rem', color: 'var(--text-muted)' }}>
@@ -625,10 +544,12 @@ function CreditRequestForm({ onCreated }) {
           </div>
         )}
 
-        <Button type="submit" disabled={loading || maxed}>
-          {loading ? <Spinner size={16} /> : null}
-          {loading ? t('credit.creating') : t('credit.requestCredit')}
-        </Button>
+        <div style={{ marginTop: '1rem' }}>
+          <Button type="submit" disabled={loading || maxed || noBalance || insufficient}>
+            {loading ? <Spinner size={16} /> : null}
+            {loading ? t('credit.creating') : t('credit.requestCredit')}
+          </Button>
+        </div>
       </form>
     </div>
   )
