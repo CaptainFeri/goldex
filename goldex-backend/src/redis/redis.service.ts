@@ -29,7 +29,10 @@ export class RedisService {
   private readonly client: Redis;
 
   constructor(config: ConfigService<ConfigType<typeof appEnvConfig>>) {
-    this.client = new Redis(config.get('redis', { infer: true }).port, config.get('redis', { infer: true }).host);
+    const redisCfg = config.get('redis', { infer: true });
+    this.client = new Redis(redisCfg.port, redisCfg.host, {
+      password: redisCfg.password || undefined,
+    });
   }
 
   getClient(): Redis {

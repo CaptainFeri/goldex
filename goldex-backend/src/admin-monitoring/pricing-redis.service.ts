@@ -38,6 +38,7 @@ export class PricingRedisService implements OnModuleDestroy {
       host: cfg.host,
       port: cfg.port,
       db: cfg.db,
+      password: cfg.password || undefined,
       lazyConnect: false,
       // Queue commands while reconnecting instead of failing fast — the pricing
       // Redis may restart independently of the backend.

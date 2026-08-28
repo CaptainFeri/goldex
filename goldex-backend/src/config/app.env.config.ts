@@ -32,6 +32,7 @@ export default () => ({
     port: parseInt(process.env.GOLDEX_REDIS_INTERNAL_PORT),
     ttl: process.env.GOLDEX_REDIS_TTL,
     db: process.env.GOLDEX_REDIS_DB,
+    password: process.env.GOLDEX_REDIS_PASSWORD,
   },
   // The pricing-engine's own Redis (separate instance) — read-only source for
   // provider price history (`price:history:*`) used by the admin monitoring charts.
@@ -39,6 +40,7 @@ export default () => ({
     host: process.env.GOLDEX_PRICING_REDIS_HOST || "localhost",
     port: parseInt(process.env.GOLDEX_PRICING_REDIS_PORT) || 6380,
     db: process.env.GOLDEX_PRICING_REDIS_DB ? parseInt(process.env.GOLDEX_PRICING_REDIS_DB) : 0,
+    password: process.env.GOLDEX_REDIS_PASSWORD || process.env.REDIS_PASSWORD,
   },
   rabbitmq: {
     host: process.env.GOLDEX_RABBITMQ_HOST || 'localhost',
