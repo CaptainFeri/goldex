@@ -432,7 +432,7 @@ export class CreditSettlementWorkflowService {
    */
   async clearLiability(
     settlementId: string,
-    opts: { adminId?: string; mode?: "USER_SELF" | "ADMIN" } = {},
+    opts: { adminId?: string; mode?: "USER_SELF" | "ADMIN"; force?: boolean } = {},
   ): Promise<CreditSettlementEntity> {
     return this.dataSource.transaction(async (manager) => {
       const s = await manager.findOne(CreditSettlementEntity, {
@@ -471,6 +471,7 @@ export class CreditSettlementWorkflowService {
         adminId: opts.adminId ?? null,
         reason: `SETTLEMENT_WORKFLOW:${s.id}`,
         allowDepositTopUp: opts.mode !== "ADMIN",
+        force: opts.mode === "ADMIN" ? opts.force : false,
       });
 
       const report = settled.metadata?.settlement || {};

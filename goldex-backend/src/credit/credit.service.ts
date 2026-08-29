@@ -1145,16 +1145,27 @@ export class CreditService {
     );
   }
 
-  async settleCredit(adminId: string, creditId: string, description?: string, imagePath?: string): Promise<CreditEntity> {
+  async settleCredit(
+    adminId: string,
+    creditId: string,
+    description?: string,
+    imagePath?: string,
+    force?: boolean,
+  ): Promise<CreditEntity> {
     // Financial settlement is performed by the settlement engine (idempotent,
     // atomic). It values the actual borrowed/held position at the mark price,
-    // releases surplus and consumes collateral for any deficit.
+    // releases surplus and consumes collateral for any deficit. Voluntary
+    // settlement is gated on the facility's credit wallets netting to zero or
+    // positive after collateral (no outstanding shortfall) — `force` is an
+    // explicit, audited override for the rare case an admin must settle a
+    // facility left in default anyway.
     const settledCredit = await this.settlementService.settleCredit(creditId, {
       mode: "ADMIN",
       adminId,
       notes: description,
       imagePath,
       reason: "ADMIN_SETTLEMENT",
+      force,
     });
 
     // Restore the user's wallets (unfreeze + release any frozen collateral).
@@ -1618,6 +1629,18 @@ export class CreditService {
     // Per-trade collateral lock summary (handoff §3 Collateral Locked/Available).
     const lockSummary = await this.getCollateralLockSummary(credit.id);
 
+    // Live, signed per-symbol exposure ("negative used balance") and whether
+    // the facility could settle right now (all credit wallets net to zero or
+    // positive after collateral). Best-effort — a missing mark price (e.g. no
+    // trades yet, or a legacy facility) just omits these rather than failing
+    // the whole overview.
+    let eligibility: any = null;
+    try {
+      eligibility = await this.settlementService.previewSettlementEligibility(credit);
+    } catch {
+      // No mark price available yet — leave eligibility null.
+    }
+
     return {
       id: credit.id,
       creditCode: credit.creditCode,
@@ -1641,6 +1664,9 @@ export class CreditService {
       maxCreditNotional: credit.maxCreditNotional,
       maxTotalLockedCollateral: credit.maxTotalLockedCollateral,
       balances,
+      positions: eligibility?.positions ?? [],
+      settlementEligible: eligibility?.eligible ?? null,
+      settlementShortfall: eligibility?.shortfall ?? 0,
     };
   }
 
@@ -1898,6 +1924,17 @@ export class CreditService {
   }
 
   /**
+   * Whether the facility can complete a voluntary settlement right now — i.e.
+   * whether its credit wallets net to zero or positive after collateral, with
+   * no outstanding shortfall. Read-only preview used by both panels to show
+   * the gate (and what's still owed per symbol) before the user hits Settle.
+   */
+  async getSettlementEligibility(creditId: string): Promise<any> {
+    const credit = await this.getCreditById(creditId);
+    return this.settlementService.previewSettlementEligibility(credit);
+  }
+
+  /**
    * Enhanced risk view for a credit (admin): live valuation from the
    * settlement engine plus per-symbol credit wallet balances.
    */
@@ -1905,8 +1942,10 @@ export class CreditService {
     const credit = await this.getCreditById(creditId);
     let state: any = null;
     let stateError: string | null = null;
+    let eligible: boolean | null = null;
     try {
       state = await this.settlementService.computeState(credit);
+      eligible = state.shortfall <= 0;
     } catch (err) {
       stateError = (err as Error).message || "CREDIT_NO_MARK_PRICE";
     }
@@ -1932,6 +1971,7 @@ export class CreditService {
       credit,
       valuation: state,
       stateError,
+      eligible,
       usedCredit,
       availableCredit,
       creditLimit,

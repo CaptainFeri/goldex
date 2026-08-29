@@ -45,6 +45,24 @@ export interface SettlementOptions {
   notes?: string;
   imagePath?: string;
   allowDepositTopUp?: boolean;
+  /**
+   * Bypasses the "no outstanding shortfall" gate on voluntary settlement
+   * (USER_SELF/ADMIN). Only meaningful for ADMIN mode — never honoured for
+   * USER_SELF, so a user can never self-settle into default. Every use is
+   * recorded on the settlement's finance-log entry for audit.
+   */
+  force?: boolean;
+}
+
+export interface SettlementEligibility {
+  eligible: boolean;
+  legacy: boolean;
+  markPrice: number | null;
+  positions: BaseSymbolPosition[];
+  netEquity: number;
+  deficit: number;
+  shortfall: number;
+  collateralValue: number;
 }
 
 export interface BaseSymbolPosition {
@@ -128,7 +146,7 @@ export class CreditSettlementService {
    * an active facility without mutating anything. Used by the risk engine and
    * admin P&L views.
    */
-  async computeState(credit: CreditEntity, manager?: any): Promise<SettlementState> {
+  async computeState(credit: CreditEntity, manager?: any): Promise<SettlementResult> {
     const em = manager || this.creditRepo.manager;
     const markPrice = await this.resolveMarkPrice(em, credit);
     if (!markPrice || markPrice <= 0) {
@@ -142,6 +160,53 @@ export class CreditSettlementService {
 
     const markPrices = await this.resolveBaseMarkPrices(em, credit, creditOrders, markPrice);
     return this.computeFromOrders(credit, creditOrders, markPrice, markPrices);
+  }
+
+  /**
+   * Preview whether a facility's voluntary settlement would succeed right now,
+   * without mutating anything. Mirrors the shortfall computation used inside
+   * settleCreditInternal (the same "credit wallets must net to zero or
+   * positive after collateral" rule) so callers/UI can show the gate — and
+   * what's still owed per symbol — before the user hits Settle.
+   */
+  async previewSettlementEligibility(credit: CreditEntity): Promise<SettlementEligibility> {
+    if (!credit.collateralSymbolId || !credit.creditBaseSymbolId || !credit.leverage) {
+      // Legacy (v1) facilities have no mark-to-market valuation to gate on.
+      return {
+        eligible: true,
+        legacy: true,
+        markPrice: null,
+        positions: [],
+        netEquity: 0,
+        deficit: 0,
+        shortfall: 0,
+        collateralValue: 0,
+      };
+    }
+
+    const manager = this.creditRepo.manager;
+    const markPrice = await this.resolveMarkPrice(manager, credit);
+    if (!markPrice || markPrice <= 0) {
+      throw new BadRequestException("CREDIT_NO_MARK_PRICE");
+    }
+
+    const creditOrders = await manager.find(CreditOrderEntity, {
+      where: { creditId: credit.id },
+      relations: { order: { pricePair: { baseSymbol: true, quoteSymbol: true } } },
+    });
+    const markPrices = await this.resolveBaseMarkPrices(manager, credit, creditOrders, markPrice);
+    const result = this.computeFromOrders(credit, creditOrders, markPrice, markPrices);
+
+    return {
+      eligible: result.shortfall <= 0,
+      legacy: false,
+      markPrice,
+      positions: result.positions,
+      netEquity: result.netEquity,
+      deficit: result.deficit,
+      shortfall: result.shortfall,
+      collateralValue: result.collateralValue,
+    };
   }
 
   /**
@@ -268,6 +333,22 @@ export class CreditSettlementService {
         }
       }
 
+      // 3b. Voluntary settlement (USER_SELF / ADMIN) requires the facility's
+      // credit wallets to net to zero or positive — i.e. no shortfall left
+      // uncovered even after collateral. FORCE/EXPIRY/MARGIN_CALL/DRAWDOWN
+      // liquidations must still be allowed to complete when underwater —
+      // that's their entire purpose (closing out a defaulting position), so
+      // they are exempt. ADMIN mode may bypass with an explicit, audited
+      // `force` flag; USER_SELF can never bypass this.
+      const isVoluntary = opts.mode === "USER_SELF" || opts.mode === "ADMIN";
+      if (isVoluntary && shortfall > 0 && !(opts.mode === "ADMIN" && opts.force)) {
+        throw new BadRequestException(
+          `CREDIT_NOT_SETTLEABLE_NEGATIVE_POSITION: outstanding shortfall of ${shortfall.toFixed(2)} ` +
+          `remains after collateral. Buy back the sold position or top up your deposit wallet so all ` +
+          `credit wallets net to zero or positive before this credit can be settled.`,
+        );
+      }
+
       // 4. Zero the CREDIT wallets (the credit line is removed on settlement).
       const creditWallets = await manager.find(WalletEntity, {
         where: { userId: credit.userId, walletType: WalletTypeEnum.CREDIT },
@@ -382,10 +463,10 @@ export class CreditSettlementService {
         creditId: credit.id,
         actionType: CreditActionEnum.CREDIT_SETTLED,
         description:
-          `Credit ${credit.creditCode} settled (${opts.mode}). netIr ${result.netIr}, ` +
-          `netEquity ${result.netEquity}, surplus ${releaseIr}, deficit ${deficit}, ` +
+          `Credit ${credit.creditCode} settled (${opts.mode}${opts.force ? ", FORCED past shortfall gate" : ""}). ` +
+          `netIr ${result.netIr}, netEquity ${result.netEquity}, surplus ${releaseIr}, deficit ${deficit}, ` +
           `collateral consumed ${consumedCollateral}, shortfall ${shortfall}`,
-        metadata: { mode: opts.mode, settlement: result, consumedCollateral, shortfall },
+        metadata: { mode: opts.mode, settlement: result, consumedCollateral, shortfall, force: !!opts.force },
       });
 
       await manager.save(
