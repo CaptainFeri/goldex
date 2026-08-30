@@ -162,16 +162,6 @@ export class OrderService {
         if (creditTradingDisabled) {
           throw new BadRequestException("CREDIT_TRADING_DISABLED");
         }
-        // Enforce the per-credit max execution (open positions) cap by counting
-        // currently-active credit-linked orders.
-        if (activeCredit.maxExecutionTradeLevel != null) {
-          const activeCount = await this.creditOrderRepo.count({
-            where: { creditId: activeCredit.id, status: CreditOrderStatusEnum.ACTIVE },
-          });
-          if (activeCount >= activeCredit.maxExecutionTradeLevel) {
-            throw new BadRequestException("CREDIT_EXECUTION_LIMIT_REACHED");
-          }
-        }
         // Credit v2: parallel-request cap from the facility snapshot (per-pair
         // config wins when the traded pair has one).
         const maxParallel = pairCreditConfig.creditMaxParallelRequests ?? activeCredit.metadata?.maxParallelRequests;
@@ -190,17 +180,6 @@ export class OrderService {
           ]);
           if (activeCreditOrders + pendingLinkedOrders >= maxParallel) {
             throw new BadRequestException("CREDIT_MAX_PARALLEL_REQUESTS_REACHED");
-          }
-        }
-        // Credit v2: execution-level (hops) cap from the facility snapshot (a
-        // hop is a COMPLETED credit trade). Per-pair config wins when present.
-        const maxHops = pairCreditConfig.creditMaxExecutionLevel ?? activeCredit.metadata?.maxExecutionLevel;
-        if (maxHops != null) {
-          const hops = await this.creditOrderRepo.count({
-            where: { creditId: activeCredit.id, status: CreditOrderStatusEnum.COMPLETED },
-          });
-          if (hops + 1 > maxHops) {
-            throw new BadRequestException("CREDIT_MAX_EXECUTION_LEVEL_REACHED");
           }
         }
         // Credit v2: drawdown check — re-price collateral; ENFORCE liquidates,
@@ -769,14 +748,6 @@ export class OrderService {
           // Release the per-trade collateral lock when the trade was cancelled.
           if (order.status === OrderStatusEnum.CANCELLED) {
             await this.creditService.releaseCollateralLockForCreditOrder(creditOrder.id);
-          }
-          // A completed credit trade is one "hop" — only completed orders count.
-          if (order.status === OrderStatusEnum.COMPLETED) {
-            await this.creditRepo.increment(
-              { id: creditOrder.creditId },
-              "executedTradeLevel",
-              1,
-            );
           }
         }
       }

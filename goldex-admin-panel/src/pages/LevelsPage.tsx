@@ -206,7 +206,6 @@ function LevelFormModal({ title, initial, onClose, onSave, loading }: {
     creditEnforceOnExpiry: initial?.creditEnforceOnExpiry ?? "ENFORCE",
     creditEnforceRequestDeadline: initial?.creditEnforceRequestDeadline ?? true,
     creditMaxParallelRequests: initial?.creditMaxParallelRequests ?? "",
-    creditMaxExecutionLevel: initial?.creditMaxExecutionLevel ?? "",
     creditRequireKyc: initial?.creditRequireKyc !== false,
     creditTradingEnabled: initial?.creditTradingEnabled ?? true,
     creditMaxAmount: initial?.creditMaxAmount ?? "",
@@ -235,7 +234,6 @@ function LevelFormModal({ title, initial, onClose, onSave, loading }: {
     creditEnforceOnExpiry: form.creditEnforceOnExpiry,
     creditEnforceRequestDeadline: form.creditEnforceRequestDeadline,
     creditMaxParallelRequests: form.creditMaxParallelRequests,
-    creditMaxExecutionLevel: form.creditMaxExecutionLevel,
     creditRequireKyc: form.creditRequireKyc,
     creditTradingEnabled: form.creditTradingEnabled,
     creditMaxAmount: form.creditMaxAmount,
@@ -298,7 +296,6 @@ function LevelFormModal({ title, initial, onClose, onSave, loading }: {
     if (form.creditEnforceOnExpiry) payload.creditEnforceOnExpiry = form.creditEnforceOnExpiry;
     payload.creditEnforceRequestDeadline = form.creditEnforceRequestDeadline;
     if (form.creditMaxParallelRequests) payload.creditMaxParallelRequests = +form.creditMaxParallelRequests;
-    if (form.creditMaxExecutionLevel) payload.creditMaxExecutionLevel = +form.creditMaxExecutionLevel;
     payload.creditRequireKyc = form.creditRequireKyc;
     payload.creditTradingEnabled = form.creditTradingEnabled;
     if (form.creditMaxAmount !== "") payload.creditMaxAmount = +form.creditMaxAmount;
@@ -492,10 +489,6 @@ function CreditFields({ value, onChange, currencySymbols, currencyField, fixedCu
       <div className="field">
         <label>حداکثر درخواست‌های موازی</label>
         <input className="input mono" type="number" min={1} value={num(v.creditMaxParallelRequests)} onChange={(e) => onChange({ creditMaxParallelRequests: e.target.value })} placeholder="مثال: 5" />
-      </div>
-      <div className="field">
-        <label>حداکثر سطح اجرا (Hops)</label>
-        <input className="input mono" type="number" min={1} value={num(v.creditMaxExecutionLevel)} onChange={(e) => onChange({ creditMaxExecutionLevel: e.target.value })} placeholder="مثال: 2" />
       </div>
       <div className="field">
         <label>حداکثر مبلغ اعتبار (0 = نامحدود)</label>
