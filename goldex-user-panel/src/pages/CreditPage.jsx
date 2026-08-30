@@ -168,16 +168,39 @@ export default function CreditPage() {
               </div>
             </div>
 
+            {/* Outstanding negative positions block settlement until covered */}
+            {(() => {
+              const negativePositions = (overview?.positions || []).filter((p) => Number(p.netXau) < 0)
+              if (negativePositions.length === 0) return null
+              return (
+                <div style={{ marginTop: '1.25rem' }}>
+                  <Alert type="error">
+                    <div style={{ fontWeight: 600, marginBottom: '0.35rem' }}>{t('credit.negativePositionsTitle')}</div>
+                    <ul style={{ margin: 0, paddingInlineStart: '1.1rem' }}>
+                      {negativePositions.map((p) => (
+                        <li key={p.symbolId}>
+                          {t('credit.negativePositionLine', { amount: fmtNum(Math.abs(Number(p.netXau))), symbol: p.baseSymbolSlug })}
+                        </li>
+                      ))}
+                    </ul>
+                  </Alert>
+                </div>
+              )
+            })()}
+
             <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '1.25rem' }}>
-              <Button onClick={async () => {
-                if (!window.confirm(t('credit.settleConfirm'))) return
-                try {
-                  await creditApi.settleCredit(activeCredit.id)
-                  await load()
-                } catch (err) {
-                  alert(err?.response?.data?.message || err.message || t('credit.settlementFailed'))
-                }
-              }}>
+              <Button
+                disabled={overview?.settlementEligible === false}
+                title={overview?.settlementEligible === false ? t('credit.settleBlockedTooltip') : undefined}
+                onClick={async () => {
+                  if (!window.confirm(t('credit.settleConfirm'))) return
+                  try {
+                    await creditApi.settleCredit(activeCredit.id)
+                    await load()
+                  } catch (err) {
+                    alert(err?.response?.data?.message || err.message || t('credit.settlementFailed'))
+                  }
+                }}>
                 {t('credit.settleCredit')}
               </Button>
             </div>

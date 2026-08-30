@@ -631,15 +631,43 @@ function CreateCreditModal({ onClose, onSave, loading }: { onClose: () => void; 
 function SettleCreditModal({ credit, onClose, onSave, loading }: { credit: Credit; onClose: () => void; onSave: (d: any) => void; loading: boolean }) {
   const [desc, setDesc] = useState("");
   const [imgPath, setImgPath] = useState("");
+  const [force, setForce] = useState(false);
+
+  const eligibility = useQuery({
+    queryKey: ["credit-settlement-eligibility", credit.id],
+    queryFn: async () => unwrap<any>((await api.get(`/admin/credits/${credit.id}/settlement-eligibility`)).data),
+  });
+  const elig = eligibility.data;
+  const negativePositions = (elig?.positions || []).filter((p: any) => Number(p.netXau) < 0);
+  const blocked = elig && elig.eligible === false;
 
   return (
     <Modal title={`تسویه اعتبار ${credit.creditCode}`} onClose={onClose}>
-      <form className="modal-form" onSubmit={(e) => { e.preventDefault(); onSave({ description: desc, imagePath: imgPath || undefined }); }}>
+      <form className="modal-form" onSubmit={(e) => { e.preventDefault(); onSave({ description: desc, imagePath: imgPath || undefined, force: blocked ? force : undefined }); }}>
         <div style={{ background: "var(--bg)", padding: 12, borderRadius: 8, marginBottom: 16, fontSize: 13, color: "var(--text-faint)", lineHeight: 1.6 }}>
           با تسویه این اعتبار، مبلغ قرض‌گرفته‌شده از کیف‌پول اعتبار بازپس‌گرفته می‌شود؛ در صورت کمبود،
           دارایی‌های مسدودشده (وثیقه) برای پوشش آن نقد می‌شوند. سپس کیف‌پول‌های کاربر رفع انسداد شده و
           کاربر می‌تواند دوباره معامله کند. {isMarginCalled(credit) && "این اعتبار به‌دلیل فراخوان سرمایه مسدود شده و تسویه آن کاربر را رفع انسداد می‌کند."}
         </div>
+
+        {blocked && (
+          <div style={{ background: "var(--red-bg, #3a1414)", color: "var(--red)", padding: "10px 12px", borderRadius: 8, marginBottom: 16, fontSize: 13, lineHeight: 1.6 }}>
+            <div style={{ fontWeight: 600, marginBottom: 4 }}>
+              کیف‌پول‌های اعتبار این کاربر منفی است و تسویه معمولی مسدود شده (کسری {fmtNum(elig.shortfall)} ریال پس از وثیقه).
+            </div>
+            {negativePositions.length > 0 && (
+              <ul style={{ margin: "4px 0 8px", paddingInlineStart: 18 }}>
+                {negativePositions.map((p: any) => (
+                  <li key={p.symbolId}>بدهکار {fmtNum(Math.abs(Number(p.netXau)))} {p.baseSymbolSlug}</li>
+                ))}
+              </ul>
+            )}
+            <label style={{ display: "flex", alignItems: "center", gap: 6, fontWeight: 600, cursor: "pointer" }}>
+              <input type="checkbox" checked={force} onChange={(e) => setForce(e.target.checked)} />
+              تسویه اجباری با وجود کسری (force) — کسری به‌عنوان نکول ثبت می‌شود
+            </label>
+          </div>
+        )}
 
         <div className="form-grid">
           <div className="field" style={{ gridColumn: "1 / -1" }}>
@@ -654,8 +682,8 @@ function SettleCreditModal({ credit, onClose, onSave, loading }: { credit: Credi
 
         <div className="modal-actions">
           <button type="button" className="btn ghost" onClick={onClose}>انصراف</button>
-          <button type="submit" className="btn" disabled={loading}>
-            {loading ? <><span className="spin" /> در حال تسویه…</> : "تسویه اعتبار"}
+          <button type="submit" className="btn" disabled={loading || (blocked && !force)}>
+            {loading ? <><span className="spin" /> در حال تسویه…</> : blocked ? "تسویه اجباری" : "تسویه اعتبار"}
           </button>
         </div>
       </form>
@@ -901,6 +929,12 @@ function CreditDetailModal({ credit, onClose }: { credit: Credit; onClose: () =>
           {riskData && (
             <div style={{ background: "var(--bg)", padding: 12, borderRadius: 8 }}>
               <h4 style={{ margin: "0 0 12px 0", fontSize: 14 }}>ارزیابی ریسک (Mark-to-Market)</h4>
+              {riskData.eligible === false && (
+                <div style={{ background: "var(--red-bg, #3a1414)", color: "var(--red)", padding: "8px 10px", borderRadius: 6, fontSize: 12.5, marginBottom: 10, fontWeight: 600 }}>
+                  تسویه داوطلبانه مسدود است: کسری {fmtNum(riskData.valuation?.shortfall)} ریال پس از وثیقه باقی می‌ماند.
+                  کاربر باید موقعیت منفی را بازخرید کند یا کیف‌پول واریز را شارژ کند (یا از گزینه «تسویه اجباری» استفاده کنید).
+                </div>
+              )}
               {riskData.stateError ? (
                 <div style={{ color: "var(--red)", fontSize: 13 }}>قیمت مارک در دسترس نیست ({riskData.stateError})</div>
               ) : riskData.valuation ? (
@@ -936,7 +970,9 @@ function CreditDetailModal({ credit, onClose }: { credit: Credit; onClose: () =>
                         {riskData.valuation.positions.map((p: any, i: number) => (
                           <tr key={i}>
                             <td className="mono">{p.baseSymbolSlug}</td>
-                            <td className="mono">{fmtNum(p.netXau)}</td>
+                            <td className="mono" style={Number(p.netXau) < 0 ? { color: "var(--red)", fontWeight: 600 } : undefined}>
+                              {fmtNum(p.netXau)}
+                            </td>
                             <td className="mono">{fmtNum(p.markPrice)}</td>
                           </tr>
                         ))}
@@ -1250,7 +1286,21 @@ function CreditDetailModal({ credit, onClose }: { credit: Credit; onClose: () =>
                               <button className="btn sm" onClick={async () => { await api.post(`/admin/credits/settlements/${s.id}/verify`); settlements.refetch(); }}>تأیید دارایی</button>
                             )}
                             {s.status === "ASSET_VERIFIED" && (
-                              <button className="btn sm" onClick={async () => { await api.post(`/admin/credits/settlements/${s.id}/clear-liability`); settlements.refetch(); }}>تسویه بدهی</button>
+                              <button className="btn sm" onClick={async () => {
+                                try {
+                                  await api.post(`/admin/credits/settlements/${s.id}/clear-liability`);
+                                } catch (e: any) {
+                                  const msg = apiError(e);
+                                  if (String(msg).includes("CREDIT_NOT_SETTLEABLE_NEGATIVE_POSITION")) {
+                                    if (!window.confirm(`${msg}\n\nتسویه اجباری با وجود کسری انجام شود؟ کسری به‌عنوان نکول ثبت می‌شود.`)) return;
+                                    await api.post(`/admin/credits/settlements/${s.id}/clear-liability`, { force: true });
+                                  } else {
+                                    alert(msg);
+                                    return;
+                                  }
+                                }
+                                settlements.refetch();
+                              }}>تسویه بدهی</button>
                             )}
                             {s.status === "LIABILITY_CLEARED" && (
                               <button className="btn sm" onClick={async () => { await api.post(`/admin/credits/settlements/${s.id}/settle-asset`); settlements.refetch(); }}>تسویه دارایی</button>
