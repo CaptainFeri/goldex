@@ -1,0 +1,194 @@
+services:
+  goldex-service-dev:
+    container_name: goldex-service-dev
+    restart: always
+    build:
+      context: .
+      dockerfile: Dockerfile
+    env_file:
+      - .env
+    environment:
+      - BASE_APP_POSTGRES_URL=postgres-dev
+      - BASE_APP_REDIS_URL=redis-dev
+    depends_on:
+      - postgres-dev
+      - redis-dev
+    ports:
+      - "${GOLDEX_APP_EXTERNAL_PORT}:${GOLDEX_APP_INTERNAL_PORT}"
+    networks:
+      - goldex-network-dev
+    volumes:
+      - static_volume:/app/public
+      - logs_volume:/app/logs
+    user: root # temporarily elevate
+
+  postgres-dev:
+    image: postgres:15-alpine
+    container_name: goldex-postgres-db-dev
+    restart: always
+    env_file:
+      - .env
+    environment:
+      - POSTGRES_USER=${GOLDEX_AUTH_POSTGRES_USERNAME}
+      - POSTGRES_PASSWORD=${GOLDEX_AUTH_POSTGRES_PASSWORD}
+      - POSTGRES_DB=${GOLDEX_AUTH_POSTGRES_DBNAME}
+    volumes:
+      - postgres_data_dev:/var/lib/postgresql/data
+    ports:
+      - "${GOLDEX_AUTH_POSTGRES_EXTERNAL_PORT}:${GOLDEX_AUTH_POSTGRES_INTERNAL_PORT}"
+    networks:
+      - goldex-network-dev
+
+  pgadmin-dev:
+    image: dpage/pgadmin4:latest
+    container_name: goldex-pgadmin-dev
+    restart: always
+    env_file:
+      - .env
+    environment:
+      - PGADMIN_DEFAULT_EMAIL=${GOLDEX_PGADMIN_DEFAULT_EMAIL}
+      - PGADMIN_DEFAULT_PASSWORD=${GOLDEX_PGADMIN_DEFAULT_PASSWORD}
+    ports:
+      - "${GOLDEX_PG_EXTERNAL_PORT}:${GOLDEX_PG_INTERNAL_PORT}"
+    networks:
+      - goldex-network-dev
+    volumes:
+      - pgadmin_data:/var/lib/pgadmin
+
+  redis-dev:
+    image: redis:7-alpine
+    container_name: goldex-redis-server-dev
+    ports:
+      - "${GOLDEX_REDIS_EXTERNAL_PORT}:${GOLDEX_REDIS_INTERNAL_PORT}"
+    environment:
+      - REDIS_HOST=${GOLDEX_REDIS_HOST}
+      - REDIS_PORT=${GOLDEX_REDIS_EXTERNAL_PORT}
+      - REDIS_TTL=${GOLDEX_REDIS_TTL}
+    command: redis-server --appendonly yes
+    networks:
+      - goldex-network-dev
+    volumes:
+      - redis_data:/data
+
+  redis-insight-dev:
+    image: redis/redisinsight:latest
+    container_name: goldex-redis-insight-dev
+    restart: always
+    ports:
+      - "${GOLDEX_REDIS_INSIGHT_EXTERNAL_PORT}:5540"
+    environment:
+      - RI_REDIS_HOST=${GOLDEX_REDIS_HOST}
+      - RI_REDIS_PORT=${GOLDEX_REDIS_INTERNAL_PORT}
+      - RI_SERVER_PORT=5540
+    volumes:
+      - redis_insight_data:/db
+    networks:
+      - goldex-network-dev
+    depends_on:
+      - redis-dev
+
+  rabbitmq-dev:
+    image: rabbitmq:4-management-alpine
+    container_name: goldex-rabbitmq-dev
+    restart: always
+    ports:
+      - "${GOLDEX_RABBITMQ_PORT:-5672}:5672"
+      - "${GOLDEX_RABBITMQ_MGMT_PORT:-15672}:15672"
+    environment:
+      - RABBITMQ_DEFAULT_USER=${RABBITMQ_USER:-guest}
+      - RABBITMQ_DEFAULT_PASS=${RABBITMQ_PASS:-guest}
+    networks:
+      - goldex-network-dev
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+
+  minio-dev:
+    image: minio/minio:latest
+    container_name: goldex-minio-dev
+    restart: always
+    command: server /data --console-address ":${GOLDEX_MINIO_CONSOLE_INTERNAL_PORT}"
+    env_file:
+      - .env
+    environment:
+      - MINIO_ROOT_USER=${GOLDEX_MINIO_ROOT_USER}
+      - MINIO_ROOT_PASSWORD=${GOLDEX_MINIO_ROOT_PASSWORD}
+      - MINIO_USE_SSL=false
+    ports:
+      - "${GOLDEX_MINIO_API_EXTERNAL_PORT}:9000"
+      - "${GOLDEX_MINIO_CONSOLE_EXTERNAL_PORT}:${GOLDEX_MINIO_CONSOLE_INTERNAL_PORT}"
+    volumes:
+      - minio_data:/data
+      - ./certs:/root/.minio/certs # Mount SSL certificates
+    networks:
+      - goldex-network-dev
+
+  # elasticsearch-dev:
+  #   image: docker.elastic.co/elasticsearch/elasticsearch:8.13.4
+  #   container_name: elasticsearch-dev
+  #   environment:
+  #     - discovery.type=single-node
+  #     - xpack.security.enabled=false
+  #   volumes:
+  #     - elasticsearch_data:/usr/share/elasticsearch/data
+  #   ports:
+  #     - "${GOLDEX_ELASTIC_EXTERNAL_PORT}:${GOLDEX_ELASTIC_INTERNAL_PORT}"
+  #   networks:
+  #     - goldex-network-dev
+
+  # kibana-dev:
+  #   image: docker.elastic.co/kibana/kibana:8.13.4
+  #   container_name: kibana-dev
+  #   ports:
+  #     - "${GOLDEX_KIBANA_EXTERNAL_PORT}:${GOLDEX_KIBANA_INTERNAL_PORT}"
+  #   environment:
+  #     - ELASTICSEARCH_HOSTS=http://${GOLDEX_ELASTIC_HOST}:${GOLDEX_ELASTIC_INTERNAL_PORT}
+  #   depends_on:
+  #     - elasticsearch-dev
+  #   networks:
+  #     - goldex-network-dev
+
+  # filebeat-dev:
+  #   image: docker.elastic.co/beats/filebeat:8.13.4
+  #   container_name: filebeat-dev
+  #   user: root
+  #   environment:
+  #     - ELASTIC_HOST=${GOLDEX_ELASTIC_HOST}
+  #     - KIBANA_HOST=${GOLDEX_KIBANA_HOST}
+  #     - ELASTIC_PORT=${GOLDEX_ELASTIC_INTERNAL_PORT}
+  #     - KIBANA_PORT=${GOLDEX_KIBANA_INTERNAL_PORT}
+  #   depends_on:
+  #     - elasticsearch-dev
+  #     - kibana-dev
+  #   volumes:
+  #     - logs_volume:/usr/share/filebeat/logs:ro # <- use the shared volume
+  #     - ./filebeat.yml:/usr/share/filebeat/filebeat.yml
+  #   command: >
+  #     sh -c "chmod 644 ./filebeat.yml &&
+  #          chown root:root /usr/share/filebeat/filebeat.yml &&
+  #          exec filebeat -e"
+  #   networks:
+  #     - goldex-network-dev
+
+volumes:
+  postgres_data_dev:
+    name: goldex_postgres_data_dev_volume
+  static_volume:
+    name: goldex_static_dev_volume
+  pgadmin_data:
+    name: goldex_pgadmin_dev_volume
+  redis_insight_data:
+    name: goldex_redis_insight_dev_volume
+  minio_data:
+    name: goldex_minio_dev_volume
+  rabbitmq_data:
+    name: goldex_rabbitmq_dev_volume
+  elasticsearch_data:
+    name: goldex_elastic_dev_volume
+  logs_volume:
+    name: logs_dev_volume
+  redis_data:
+    name: redis_data
+
+networks:
+  goldex-network-dev:
+    external: true

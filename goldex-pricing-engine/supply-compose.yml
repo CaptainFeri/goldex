@@ -1,0 +1,54 @@
+version: '3.8'
+
+services:
+  redis:
+    image: redis:7-alpine
+    container_name: signalr-redis
+    ports:
+      - '6379:6379'
+    volumes:
+      - redis-data:/data
+    command: redis-server --appendonly yes --save 60 1 --loglevel warning
+    restart: unless-stopped
+    networks:
+      - signalr-network
+
+  redis-insight:
+    image: redis/redisinsight:latest
+    container_name: signalr-redis-insight
+    ports:
+      - '5540:5540'
+    volumes:
+      - redis-insight-data:/db
+    restart: unless-stopped
+    networks:
+      - signalr-network
+    depends_on:
+      - redis
+
+  rabbitmq:
+    image: rabbitmq:4-management-alpine
+    container_name: signalr-rabbitmq
+    ports:
+      - '5672:5672'
+      - '15672:15672'
+    environment:
+      RABBITMQ_DEFAULT_USER: guest
+      RABBITMQ_DEFAULT_PASS: guest
+    volumes:
+      - rabbitmq-data:/var/lib/rabbitmq
+    restart: unless-stopped
+    networks:
+      - signalr-network
+
+volumes:
+  redis-data:
+    driver: local
+  redis-insight-data:
+    driver: local
+  rabbitmq-data:
+    driver: local
+
+networks:
+  signalr-network:
+    driver: bridge

@@ -1,0 +1,8 @@
+export enum SettlementStateEnum {
+  GREEN = "GREEN",
+  YELLOW = "YELLOW",
+  RED = "RED",
+  ADMIN_REVIEW = "ADMIN_REVIEW",
+  AUTO_LIQUIDATION = "AUTO_LIQUIDATION",
+  SETTLED = "SETTLED",
+}

@@ -1,0 +1,7 @@
+export enum CreditNotificationTypeEnum {
+  REMINDER = "REMINDER",
+  MARGIN_CALL = "MARGIN_CALL",
+  EXPIRY_WARNING = "EXPIRY_WARNING",
+  SETTLEMENT = "SETTLEMENT",
+  EXPIRED = "EXPIRED",
+}
