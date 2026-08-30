@@ -2,6 +2,7 @@ import { useEffect, useState, useCallback } from 'react'
 import { useTranslation } from 'react-i18next'
 import { creditApi, walletApi, levelApi, marketApi } from '../services/api'
 import { Spinner, Alert, Button, Field, ConfirmDialog } from '../components/UI'
+import CreditCashoutDialog from '../components/CreditCashoutDialog'
 import { useToast } from '../context/ToastContext'
 
 const fmtNum = (n) => (n ?? 0).toLocaleString('en-US')
@@ -58,6 +59,7 @@ export default function CreditPage() {
   const [tab, setTab] = useState('history') // history | notifications
   const [confirmSettle, setConfirmSettle] = useState(false)
   const [settling, setSettling] = useState(false)
+  const [cashoutOpen, setCashoutOpen] = useState(false)
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -191,14 +193,36 @@ export default function CreditPage() {
               )
             })()}
 
-            <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '1.25rem' }}>
-              <Button
-                disabled={overview?.settlementEligible === false}
-                title={overview?.settlementEligible === false ? t('credit.settleBlockedTooltip') : undefined}
-                onClick={() => setConfirmSettle(true)}>
-                {t('credit.settleCredit')}
-              </Button>
+            {/* Two ways out of a credit purchase: cash one out and keep the
+                facility, or settle everything and close it. */}
+            <div style={{ marginTop: '1.5rem' }}>
+              <div style={{ fontWeight: 600, fontSize: '0.9rem', marginBottom: '0.75rem' }}>{t('credit.exitOptionsTitle')}</div>
+              <div className="credit-exit-options">
+                <div className="credit-exit-option">
+                  <div className="credit-exit-option-title">{t('credit.cashoutOptionTitle')}</div>
+                  <p className="credit-exit-option-desc">{t('credit.cashoutOptionDesc')}</p>
+                  <Button variant="ghost" onClick={() => setCashoutOpen(true)}>{t('credit.cashoutOptionAction')}</Button>
+                </div>
+                <div className="credit-exit-option">
+                  <div className="credit-exit-option-title">{t('credit.settleOptionTitle')}</div>
+                  <p className="credit-exit-option-desc">{t('credit.settleOptionDesc')}</p>
+                  <Button
+                    disabled={overview?.settlementEligible === false}
+                    title={overview?.settlementEligible === false ? t('credit.settleBlockedTooltip') : undefined}
+                    onClick={() => setConfirmSettle(true)}>
+                    {t('credit.settleCredit')}
+                  </Button>
+                </div>
+              </div>
             </div>
+
+            {cashoutOpen && (
+              <CreditCashoutDialog
+                creditId={activeCredit.id}
+                onClose={() => setCashoutOpen(false)}
+                onDone={load}
+              />
+            )}
 
             {confirmSettle && (
               <ConfirmDialog
