@@ -225,7 +225,7 @@ export default function CreditPage() {
               />
             )}
 
-            <SettlementWorkflows creditId={activeCredit.id} onChanged={load} />
+            <SettlementWorkflows creditId={activeCredit.id} nettingEnabled={!!activeCredit.nettingEnabled} onChanged={load} />
           </div>
         ) : (
           <CreditRequestForm onCreated={load} />
@@ -326,7 +326,13 @@ export default function CreditPage() {
   )
 }
 
-function SettlementWorkflows({ creditId, onChanged }) {
+function methodLabel(t, method) {
+  if (!method) return null
+  const key = { FULL: 'methodFullTitle', NET: 'methodNetTitle', TOPUP: 'methodTopupTitle' }[method]
+  return key ? t(`credit.${key}`) : method
+}
+
+function SettlementWorkflows({ creditId, nettingEnabled, onChanged }) {
   const { t } = useTranslation()
   const toast = useToast()
   const [items, setItems] = useState(null)
@@ -390,7 +396,7 @@ function SettlementWorkflows({ creditId, onChanged }) {
             <div key={s.id} style={{ border: '1px solid var(--border)', borderRadius: 'var(--radius-md)', padding: '0.85rem 1rem', display: 'flex', flexDirection: 'column', gap: 6 }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                 <span className="badge badge-info">{s.status}</span>
-                {s.settlementMethod && <span style={{ fontSize: '0.8rem', fontFamily: 'monospace' }}>{s.settlementMethod}</span>}
+                {s.settlementMethod && <span style={{ fontSize: '0.78rem', color: 'var(--gold)', fontWeight: 600 }}>{methodLabel(t, s.settlementMethod)}</span>}
               </div>
               <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
                 {t('credit.required')}: {fmtNum(s.requiredAmount)} · {t('credit.received')}: {fmtNum(s.receivedAmount)} · {t('credit.funded')}: {fmtNum(s.fundedAmount ?? 0)}
@@ -406,10 +412,13 @@ function SettlementWorkflows({ creditId, onChanged }) {
                 {(s.status === 'METHOD_SELECTED' || s.status === 'FUNDING_REQUIRED' || s.status === 'READY') && Number(s.shortfall) > 0 && (
                   <button className="btn sm" onClick={() => setDialog({ kind: 'fund', settlementId: s.id })}>{t('credit.fund')}</button>
                 )}
-                {(s.status === 'APPROVED' || s.status === 'VALUATED' || s.status === 'METHOD_SELECTED' || s.status === 'FUNDING_REQUIRED' || s.status === 'READY' || s.status === 'ASSET_RECEIVED' || s.status === 'ASSET_VERIFIED') && (
+                {s.settlementMethod !== 'TOPUP' && (s.status === 'APPROVED' || s.status === 'VALUATED' || s.status === 'METHOD_SELECTED' || s.status === 'FUNDING_REQUIRED' || s.status === 'READY' || s.status === 'ASSET_RECEIVED' || s.status === 'ASSET_VERIFIED') && (
                   <button className="btn sm" onClick={() => setDialog({ kind: 'deliver', settlementId: s.id })}>{t('credit.deliver')}</button>
                 )}
               </div>
+              {s.settlementMethod === 'TOPUP' && (s.status === 'ASSET_VERIFIED' || s.status === 'LIABILITY_CLEARED' || s.status === 'ASSET_SETTLED' || s.status === 'COLLATERAL_RELEASED') && (
+                <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>{t('credit.topupAwaitingAdmin')}</div>
+              )}
             </div>
           ))}
         </div>
@@ -419,6 +428,7 @@ function SettlementWorkflows({ creditId, onChanged }) {
         <SettlementActionDialog
           kind={dialog.kind}
           currentMethod={dialog.currentMethod}
+          nettingEnabled={nettingEnabled}
           submitting={submitting}
           onCancel={() => setDialog(null)}
           onSubmit={submitDialog}
@@ -428,7 +438,7 @@ function SettlementWorkflows({ creditId, onChanged }) {
   )
 }
 
-function SettlementActionDialog({ kind, currentMethod, submitting, onCancel, onSubmit }) {
+function SettlementActionDialog({ kind, currentMethod, nettingEnabled, submitting, onCancel, onSubmit }) {
   const { t } = useTranslation()
   const [method, setMethod] = useState(currentMethod || 'FULL')
   const [amount, setAmount] = useState('')
@@ -444,9 +454,19 @@ function SettlementActionDialog({ kind, currentMethod, submitting, onCancel, onS
     deliver: t('credit.deliverHint'),
   }
 
+  const methodOptions = [
+    { value: 'FULL', title: t('credit.methodFullTitle'), desc: t('credit.methodFullDesc'), disabled: false },
+    { value: 'NET', title: t('credit.methodNetTitle'), desc: nettingEnabled ? t('credit.methodNetDesc') : t('credit.methodNetDisabledHint'), disabled: !nettingEnabled },
+    { value: 'TOPUP', title: t('credit.methodTopupTitle'), desc: t('credit.methodTopupDesc'), disabled: false },
+  ]
+
   const submit = (e) => {
     e.preventDefault()
-    if (kind === 'method') { onSubmit(method); return }
+    if (kind === 'method') {
+      if (methodOptions.find((o) => o.value === method)?.disabled) return
+      onSubmit(method)
+      return
+    }
     const n = Number(amount)
     if (!(n > 0)) return
     onSubmit(n)
@@ -454,7 +474,7 @@ function SettlementActionDialog({ kind, currentMethod, submitting, onCancel, onS
 
   return (
     <div className="modal-overlay" onClick={onCancel}>
-      <div className="card" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 400 }}>
+      <div className="card" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 440 }}>
         <div className="card-title">{titles[kind]}</div>
         <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', lineHeight: 1.6, margin: '0.5rem 0 1rem' }}>
           {descriptions[kind]}
@@ -462,12 +482,34 @@ function SettlementActionDialog({ kind, currentMethod, submitting, onCancel, onS
         <form onSubmit={submit} style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
           {kind === 'method' ? (
             <div className="field">
-              <label>{t('credit.settlementMethod')}</label>
-              <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap' }}>
-                {['FULL', 'NET', 'TOPUP'].map((m) => (
-                  <label key={m} style={{ display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer', fontFamily: 'monospace' }}>
-                    <input type="radio" name="settlement-method" value={m} checked={method === m} onChange={() => setMethod(m)} />
-                    {m}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.6rem' }}>
+                {methodOptions.map((o) => (
+                  <label
+                    key={o.value}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'flex-start',
+                      gap: 8,
+                      padding: '0.6rem 0.75rem',
+                      borderRadius: 'var(--radius-md)',
+                      border: `1px solid ${method === o.value ? 'var(--gold)' : 'var(--border)'}`,
+                      cursor: o.disabled ? 'not-allowed' : 'pointer',
+                      opacity: o.disabled ? 0.55 : 1,
+                    }}
+                  >
+                    <input
+                      type="radio"
+                      name="settlement-method"
+                      value={o.value}
+                      checked={method === o.value}
+                      disabled={o.disabled}
+                      onChange={() => setMethod(o.value)}
+                      style={{ marginTop: 3 }}
+                    />
+                    <span>
+                      <span style={{ display: 'block', fontWeight: 600, fontSize: '0.88rem' }}>{o.title}</span>
+                      <span style={{ display: 'block', fontSize: '0.78rem', color: 'var(--text-muted)', marginTop: 2 }}>{o.desc}</span>
+                    </span>
                   </label>
                 ))}
               </div>
