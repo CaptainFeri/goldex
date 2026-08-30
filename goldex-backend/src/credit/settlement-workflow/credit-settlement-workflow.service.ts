@@ -618,6 +618,20 @@ export class CreditSettlementWorkflowService {
     });
   }
 
+  /**
+   * Admin-wide approval queue: every settlement currently awaiting admin
+   * review (PENDING_ADMIN_REVIEW), across all credit facilities, oldest
+   * first. Used by the admin panel's pending-approvals panel so an admin
+   * doesn't have to open each credit individually to find what needs action.
+   */
+  async findPendingReview(): Promise<CreditSettlementEntity[]> {
+    return this.settlementRepo.find({
+      where: { status: SettlementWorkflowStatusEnum.PENDING_ADMIN_REVIEW },
+      relations: { credit: { user: true } },
+      order: { requestedAt: "ASC" },
+    });
+  }
+
   // ── helpers ──────────────────────────────────────────────────────────────
 
   private requiredForTrade(co: CreditOrderEntity): {
