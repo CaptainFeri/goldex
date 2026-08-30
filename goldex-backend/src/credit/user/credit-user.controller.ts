@@ -4,6 +4,8 @@ import { CreditService } from "../credit.service";
 import { RequestCreditDto } from "../dto/request-credit.dto";
 import { RequestSettlementDto, ReceiveSettlementAssetDto, SelectSettlementMethodDto, FundSettlementDto } from "../dto/settlement-workflow.dto";
 import { CreditSettlementWorkflowService } from "../settlement-workflow/credit-settlement-workflow.service";
+import { CreditCashoutService } from "../cashout/credit-cashout.service";
+import { CashoutCreditDto } from "../dto/cashout-credit.dto";
 import { UserAuthGuard } from "../../user/auth/Guard/user.guard";
 import { UserLevelGuard } from "../../user-level/user-level.guard";
 
@@ -15,6 +17,7 @@ export class CreditUserController {
   constructor(
     private readonly creditService: CreditService,
     private readonly settlementWorkflowService: CreditSettlementWorkflowService,
+    private readonly cashoutService: CreditCashoutService,
   ) {}
 
   @Post("request")
@@ -27,6 +30,41 @@ export class CreditUserController {
   @ApiOperation({ summary: "User self-settle: repay credit and release assets to deposit wallet" })
   async settleCredit(@Req() req: any, @Param("id") id: string) {
     return { data: await this.creditService.settleFromUser(req.user.id, id) };
+  }
+
+  @Get(":id/cashout-options")
+  @ApiOperation({
+    summary:
+      "Cash-out option 1: list the credit purchases that can be converted into cash " +
+      "(paid from the deposit wallet or the frozen collateral) without closing the facility",
+  })
+  async cashoutOptions(@Req() req: any, @Param("id") id: string) {
+    await this.assertCreditOwned(req.user.id, id);
+    return { data: await this.cashoutService.getCashoutOptions(id) };
+  }
+
+  @Post(":id/cashout")
+  @ApiOperation({
+    summary:
+      "Cash out one credit purchase: pay it off from the deposit wallet or the frozen " +
+      "collateral, release the asset to the deposit wallet and keep the facility open",
+  })
+  async cashout(@Req() req: any, @Param("id") id: string, @Body() dto: CashoutCreditDto) {
+    await this.assertCreditOwned(req.user.id, id);
+    return {
+      data: await this.cashoutService.cashout(
+        id,
+        { creditOrderId: dto.creditOrderId, source: dto.source, notes: dto.notes },
+        { userId: req.user.id },
+      ),
+    };
+  }
+
+  @Get(":id/cashouts")
+  @ApiOperation({ summary: "Cash-out history of a credit facility" })
+  async cashouts(@Req() req: any, @Param("id") id: string) {
+    await this.assertCreditOwned(req.user.id, id);
+    return { data: await this.cashoutService.findByCredit(id) };
   }
 
   @Get(":id/settlement-eligibility")

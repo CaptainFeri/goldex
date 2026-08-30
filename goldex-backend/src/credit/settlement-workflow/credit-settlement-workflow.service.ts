@@ -671,6 +671,8 @@ export class CreditSettlementWorkflowService {
     for (const co of orders) {
       const o = co.order;
       if (!o || !(Number(o.executedQuantity) > 0)) continue;
+      // Cashed-out trades were already paid off outside the facility.
+      if (co.status === CreditOrderStatusEnum.CASHED_OUT) continue;
       const qty = Number(o.executedQuantity);
       if (o.side === "SELL") {
         borrowedBase = borrowedBase.plus(qty);

@@ -8,6 +8,8 @@ import { CreditQueryDto } from "../dto/credit-query.dto";
 import { ExtendCreditDto, AdjustCreditLimitDto } from "../dto/extend-credit.dto";
 import { RequestSettlementDto, ReceiveSettlementAssetDto, FailSettlementDto, ApproveSettlementDto, RejectSettlementDto, SettlementPolicyDto, SelectSettlementMethodDto, FundSettlementDto } from "../dto/settlement-workflow.dto";
 import { CreditSettlementWorkflowService } from "../settlement-workflow/credit-settlement-workflow.service";
+import { CreditCashoutService } from "../cashout/credit-cashout.service";
+import { CashoutCreditDto } from "../dto/cashout-credit.dto";
 import { AdminAuthGuard } from "../../admin/auth/Guard/admin.guard";
 import { AdminRoles } from "../../admin/role/admin.role.decorator";
 import { AdminRole } from "../../admin/role/admin.roles.enum";
@@ -21,6 +23,7 @@ export class CreditAdminController {
   constructor(
     private readonly creditService: CreditService,
     private readonly settlementWorkflowService: CreditSettlementWorkflowService,
+    private readonly cashoutService: CreditCashoutService,
   ) {}
 
   @Post()
@@ -33,9 +36,13 @@ export class CreditAdminController {
 
   @Get("stats")
   @AdminRoles(AdminRole.FINANCE, AdminRole.SUPER_ADMIN, AdminRole.ADMIN)
-  @ApiOperation({ summary: "Aggregate credit KPIs for the dashboard" })
+  @ApiOperation({ summary: "Aggregate credit KPIs for the dashboard (including cash-out volume and platform profit)" })
   async stats() {
-    return { data: await this.creditService.getCreditStats() };
+    const [stats, cashout] = await Promise.all([
+      this.creditService.getCreditStats(),
+      this.cashoutService.getStats(),
+    ]);
+    return { data: { ...stats, cashout } };
   }
 
   @Get("export")
@@ -156,6 +163,33 @@ export class CreditAdminController {
         summary: await this.creditService.getCollateralLockSummary(id),
         locks: await this.creditService.getCollateralLocks(id),
       },
+    };
+  }
+
+  @Get(":id/cashouts")
+  @AdminRoles(AdminRole.FINANCE, AdminRole.SUPER_ADMIN, AdminRole.ADMIN)
+  @ApiOperation({ summary: "Cash-outs of a credit facility with their platform-profit totals" })
+  async listCashouts(@Param("id") id: string) {
+    return { data: await this.cashoutService.findByCredit(id) };
+  }
+
+  @Get(":id/cashout-options")
+  @AdminRoles(AdminRole.FINANCE, AdminRole.SUPER_ADMIN, AdminRole.ADMIN)
+  @ApiOperation({ summary: "Credit purchases of a facility that can still be cashed out" })
+  async cashoutOptions(@Param("id") id: string) {
+    return { data: await this.cashoutService.getCashoutOptions(id) };
+  }
+
+  @Post(":id/cashout")
+  @AdminRoles(AdminRole.FINANCE, AdminRole.SUPER_ADMIN, AdminRole.ADMIN)
+  @ApiOperation({ summary: "Cash out a credit purchase on the user's behalf (facility stays open)" })
+  async cashout(@Req() req: any, @Param("id") id: string, @Body() dto: CashoutCreditDto) {
+    return {
+      data: await this.cashoutService.cashout(
+        id,
+        { creditOrderId: dto.creditOrderId, source: dto.source, notes: dto.notes },
+        { adminId: req.admin?.id },
+      ),
     };
   }
 
