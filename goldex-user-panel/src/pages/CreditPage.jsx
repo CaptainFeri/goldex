@@ -1,7 +1,8 @@
 import { useEffect, useState, useCallback } from 'react'
 import { useTranslation } from 'react-i18next'
 import { creditApi, walletApi, levelApi, marketApi } from '../services/api'
-import { Spinner, Alert, Button, Field } from '../components/UI'
+import { Spinner, Alert, Button, Field, ConfirmDialog } from '../components/UI'
+import { useToast } from '../context/ToastContext'
 
 const fmtNum = (n) => (n ?? 0).toLocaleString('en-US')
 const fmtDate = (d) =>
@@ -47,6 +48,7 @@ function KV({ label, value, accent }) {
 
 export default function CreditPage() {
   const { t } = useTranslation()
+  const toast = useToast()
   const [activeCredit, setActiveCredit] = useState(null)
   const [overview, setOverview] = useState(null)
   const [history, setHistory] = useState([])
@@ -54,6 +56,8 @@ export default function CreditPage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [tab, setTab] = useState('history') // history | notifications
+  const [confirmSettle, setConfirmSettle] = useState(false)
+  const [settling, setSettling] = useState(false)
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -192,18 +196,34 @@ export default function CreditPage() {
               <Button
                 disabled={overview?.settlementEligible === false}
                 title={overview?.settlementEligible === false ? t('credit.settleBlockedTooltip') : undefined}
-                onClick={async () => {
-                  if (!window.confirm(t('credit.settleConfirm'))) return
-                  try {
-                    await creditApi.settleCredit(activeCredit.id)
-                    await load()
-                  } catch (err) {
-                    alert(err?.response?.data?.message || err.message || t('credit.settlementFailed'))
-                  }
-                }}>
+                onClick={() => setConfirmSettle(true)}>
                 {t('credit.settleCredit')}
               </Button>
             </div>
+
+            {confirmSettle && (
+              <ConfirmDialog
+                title={t('credit.settleCredit')}
+                message={t('credit.settleConfirm')}
+                confirmLabel={t('credit.settleCredit')}
+                cancelLabel={t('common.cancel')}
+                loading={settling}
+                onCancel={() => setConfirmSettle(false)}
+                onConfirm={async () => {
+                  setSettling(true)
+                  try {
+                    await creditApi.settleCredit(activeCredit.id)
+                    toast.success(t('credit.settlementSucceeded'))
+                    setConfirmSettle(false)
+                    await load()
+                  } catch (err) {
+                    toast.error(err?.response?.data?.message || err.message || t('credit.settlementFailed'))
+                  } finally {
+                    setSettling(false)
+                  }
+                }}
+              />
+            )}
 
             <SettlementWorkflows creditId={activeCredit.id} onChanged={load} />
           </div>
@@ -308,7 +328,10 @@ export default function CreditPage() {
 
 function SettlementWorkflows({ creditId, onChanged }) {
   const { t } = useTranslation()
+  const toast = useToast()
   const [items, setItems] = useState(null)
+  const [dialog, setDialog] = useState(null) // { kind: 'method'|'fund'|'deliver', settlementId, currentMethod }
+  const [submitting, setSubmitting] = useState(false)
 
   const load = useCallback(async () => {
     try {
@@ -321,27 +344,39 @@ function SettlementWorkflows({ creditId, onChanged }) {
 
   useEffect(() => { load() }, [load])
 
-  const act = async (fn) => {
+  const act = async (fn, successMessage) => {
     try {
       await fn()
+      if (successMessage) toast.success(successMessage)
       await load()
       if (onChanged) onChanged()
     } catch (err) {
-      alert(err?.response?.data?.message || err.message || t('credit.settlementFailed'))
+      toast.error(err?.response?.data?.message || err.message || t('credit.settlementFailed'))
     }
   }
 
-  const promptAmount = (label) => {
-    const v = window.prompt(label)
-    if (v === null || v === '') return null
-    return Number(v)
+  const submitDialog = async (value) => {
+    if (!dialog) return
+    setSubmitting(true)
+    try {
+      if (dialog.kind === 'method') {
+        await act(() => creditApi.selectSettlementMethod(creditId, dialog.settlementId, value), t('credit.methodSaved'))
+      } else if (dialog.kind === 'fund') {
+        await act(() => creditApi.fundSettlement(creditId, dialog.settlementId, value), t('credit.fundSaved'))
+      } else {
+        await act(() => creditApi.deliverAsset(creditId, dialog.settlementId, value), t('credit.deliverSaved'))
+      }
+      setDialog(null)
+    } finally {
+      setSubmitting(false)
+    }
   }
 
   return (
     <div style={{ marginTop: '1.25rem', borderTop: '1px solid var(--border)', paddingTop: '1rem' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem' }}>
         <span style={{ fontWeight: 600, fontSize: '0.9rem', color: 'var(--text-primary)' }}>{t('credit.settlementWorkflows')}</span>
-        <Button variant="ghost" onClick={() => act(() => creditApi.requestSettlement(creditId))}>
+        <Button variant="ghost" onClick={() => act(() => creditApi.requestSettlement(creditId), t('credit.settlementRequested'))}>
           {t('credit.requestSettlement')}
         </Button>
       </div>
@@ -363,34 +398,93 @@ function SettlementWorkflows({ creditId, onChanged }) {
               </div>
               <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
                 {(s.status === 'APPROVED' || s.status === 'VALUATED') && (
-                  <button className="btn sm" onClick={() => act(() => creditApi.valuateSettlement(creditId, s.id))}>{t('credit.valuate')}</button>
+                  <button className="btn sm" onClick={() => act(() => creditApi.valuateSettlement(creditId, s.id), t('credit.valuated'))}>{t('credit.valuate')}</button>
                 )}
                 {(s.status === 'APPROVED' || s.status === 'VALUATED' || s.status === 'METHOD_SELECTED' || s.status === 'FUNDING_REQUIRED') && (
-                  <button className="btn sm" onClick={() => {
-                    const m = window.prompt('FULL/NET/TOPUP', s.settlementMethod || 'FULL')
-                    if (!m) return
-                    act(() => creditApi.selectSettlementMethod(creditId, s.id, m.toUpperCase()))
-                  }}>{t('credit.selectMethod')}</button>
+                  <button className="btn sm" onClick={() => setDialog({ kind: 'method', settlementId: s.id, currentMethod: s.settlementMethod })}>{t('credit.selectMethod')}</button>
                 )}
                 {(s.status === 'METHOD_SELECTED' || s.status === 'FUNDING_REQUIRED' || s.status === 'READY') && Number(s.shortfall) > 0 && (
-                  <button className="btn sm" onClick={() => {
-                    const a = promptAmount(t('credit.fund'))
-                    if (a === null || !(a > 0)) return
-                    act(() => creditApi.fundSettlement(creditId, s.id, a))
-                  }}>{t('credit.fund')}</button>
+                  <button className="btn sm" onClick={() => setDialog({ kind: 'fund', settlementId: s.id })}>{t('credit.fund')}</button>
                 )}
                 {(s.status === 'APPROVED' || s.status === 'VALUATED' || s.status === 'METHOD_SELECTED' || s.status === 'FUNDING_REQUIRED' || s.status === 'READY' || s.status === 'ASSET_RECEIVED' || s.status === 'ASSET_VERIFIED') && (
-                  <button className="btn sm" onClick={() => {
-                    const a = promptAmount(t('credit.deliver'))
-                    if (a === null || !(a > 0)) return
-                    act(() => creditApi.deliverAsset(creditId, s.id, a))
-                  }}>{t('credit.deliver')}</button>
+                  <button className="btn sm" onClick={() => setDialog({ kind: 'deliver', settlementId: s.id })}>{t('credit.deliver')}</button>
                 )}
               </div>
             </div>
           ))}
         </div>
       )}
+
+      {dialog && (
+        <SettlementActionDialog
+          kind={dialog.kind}
+          currentMethod={dialog.currentMethod}
+          submitting={submitting}
+          onCancel={() => setDialog(null)}
+          onSubmit={submitDialog}
+        />
+      )}
+    </div>
+  )
+}
+
+function SettlementActionDialog({ kind, currentMethod, submitting, onCancel, onSubmit }) {
+  const { t } = useTranslation()
+  const [method, setMethod] = useState(currentMethod || 'FULL')
+  const [amount, setAmount] = useState('')
+
+  const titles = {
+    method: t('credit.selectMethod'),
+    fund: t('credit.fund'),
+    deliver: t('credit.deliver'),
+  }
+  const descriptions = {
+    method: t('credit.selectMethodHint'),
+    fund: t('credit.fundHint'),
+    deliver: t('credit.deliverHint'),
+  }
+
+  const submit = (e) => {
+    e.preventDefault()
+    if (kind === 'method') { onSubmit(method); return }
+    const n = Number(amount)
+    if (!(n > 0)) return
+    onSubmit(n)
+  }
+
+  return (
+    <div className="modal-overlay" onClick={onCancel}>
+      <div className="card" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 400 }}>
+        <div className="card-title">{titles[kind]}</div>
+        <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', lineHeight: 1.6, margin: '0.5rem 0 1rem' }}>
+          {descriptions[kind]}
+        </p>
+        <form onSubmit={submit} style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+          {kind === 'method' ? (
+            <div className="field">
+              <label>{t('credit.settlementMethod')}</label>
+              <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap' }}>
+                {['FULL', 'NET', 'TOPUP'].map((m) => (
+                  <label key={m} style={{ display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer', fontFamily: 'monospace' }}>
+                    <input type="radio" name="settlement-method" value={m} checked={method === m} onChange={() => setMethod(m)} />
+                    {m}
+                  </label>
+                ))}
+              </div>
+            </div>
+          ) : (
+            <div className="field">
+              <label>{kind === 'fund' ? t('credit.fundAmountLabel') : t('credit.deliverAmountLabel')}</label>
+              <input className="form-input" dir="ltr" type="number" step="0.00000001" min="0" autoFocus
+                value={amount} onChange={(e) => setAmount(e.target.value)} required />
+            </div>
+          )}
+          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.6rem' }}>
+            <Button type="button" variant="ghost" onClick={onCancel} disabled={submitting}>{t('common.cancel')}</Button>
+            <Button type="submit" loading={submitting}>{t('common.submit')}</Button>
+          </div>
+        </form>
+      </div>
     </div>
   )
 }
