@@ -189,6 +189,13 @@ export class CreditAdminController {
     };
   }
 
+  @Get("settlements/pending-review")
+  @AdminRoles(AdminRole.FINANCE, AdminRole.SUPER_ADMIN, AdminRole.ADMIN)
+  @ApiOperation({ summary: "Admin-wide approval queue: every settlement awaiting admin review, across all credits" })
+  async pendingReviewSettlements() {
+    return { data: await this.settlementWorkflowService.findPendingReview() };
+  }
+
   @Post("settlements/:settlementId/approve")
   @AdminRoles(AdminRole.FINANCE, AdminRole.SUPER_ADMIN, AdminRole.ADMIN)
   @ApiOperation({ summary: "Approve a pending settlement (PENDING_ADMIN_REVIEW → APPROVED)" })

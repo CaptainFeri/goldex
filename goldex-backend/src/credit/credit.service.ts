@@ -7,6 +7,8 @@ import { CreditEntity } from "./entity/credit.entity";
 import { CreditOrderEntity } from "./entity/credit-order.entity";
 import { CreditNotificationEntity } from "./entity/credit-notification.entity";
 import { CollateralLockEntity } from "./entity/collateral-lock.entity";
+import { CreditSettlementEntity } from "./entity/credit-settlement.entity";
+import { SettlementWorkflowStatusEnum } from "./enum/settlement-workflow-status.enum";
 import { CreditStatusEnum } from "./enum/credit-status.enum";
 import { CreditOrderStatusEnum } from "./enum/credit-order-status.enum";
 import { CollateralLockStatusEnum } from "./enum/collateral-lock-status.enum";
@@ -55,6 +57,8 @@ export class CreditService {
     private creditNotificationRepository: Repository<CreditNotificationEntity>,
     @InjectRepository(CollateralLockEntity)
     private collateralLockRepository: Repository<CollateralLockEntity>,
+    @InjectRepository(CreditSettlementEntity)
+    private creditSettlementRepository: Repository<CreditSettlementEntity>,
     @InjectRepository(WalletEntity)
     private walletRepository: Repository<WalletEntity>,
     @InjectRepository(TransactionEntity)
@@ -1897,6 +1901,10 @@ export class CreditService {
       riskDist[c.riskState] = (riskDist[c.riskState] || 0) + 1;
     }
 
+    const pendingApproval = await this.creditSettlementRepository.count({
+      where: { status: SettlementWorkflowStatusEnum.PENDING_ADMIN_REVIEW },
+    });
+
     return {
       totals: {
         credits: all.length,
@@ -1920,6 +1928,7 @@ export class CreditService {
       },
       settlementDistribution: settlementDist,
       riskDistribution: riskDist,
+      pendingApproval,
     };
   }
 
