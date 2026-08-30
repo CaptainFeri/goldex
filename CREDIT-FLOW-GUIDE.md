@@ -195,6 +195,39 @@ Modes: `USER_SELF`, `ADMIN`, `DRAWDOWN`, `MARGIN_CALL`, `EXPIRY`, `FORCE`.
 
 ---
 
+## 6b. Flow 4b — Cash-out (utilised credit, facility stays open)
+
+A credit holder has **two ways out** of a credit purchase:
+
+| Option | What happens |
+|---|---|
+| **1. Cash out the utilised credit** | One purchase made with credit is paid off and becomes a fully-paid holding. The facility stays `ACTIVE`. |
+| **2. Settle and close** | The whole facility is valued, closed and the collateral returned (Flow 4 above). |
+
+**Endpoints (user):** `GET /credits/:id/cashout-options`, `POST /credits/:id/cashout`, `GET /credits/:id/cashouts`.
+**Endpoints (admin):** the same three under `/admin/credits/:id/…` (an admin can cash out on the user's behalf).
+
+**Engine:** `CreditCashoutService.cashout` — atomic, one credit trade at a time.
+
+1. Only a **completed credit BUY** still belonging to the facility can be cashed out (a short position must go through settlement).
+2. The purchase is priced exactly as it was settled: `amount = executedQty × price` (plus the IRR commission for QUOTE buys), and the asset released is what actually landed in the CREDIT wallet (`qty × (1 − buyCommission%)`, or the full qty for QUOTE).
+3. The user pays `amount + cash-out fee` from one of two sources:
+   - **`DEPOSIT`** — debited from the DEPOSIT wallet in the credit currency.
+   - **`COLLATERAL`** — the equivalent units are consumed from the frozen collateral at the current mark price (only collateral not backing an open trade; blocked in MARGIN_CALL / default).
+4. The purchased asset moves **CREDIT → DEPOSIT**; the repaid `amount` returns to the CREDIT wallet's free balance (available credit goes back up).
+5. Paying from collateral **shrinks the facility proportionally**: `ratio = consumedUnits / collateralAmount` removes `ratio × creditLimit` of BUY capacity and `ratio × sellCapacity` of SELL capacity, and reduces `collateralAmount`, `initialCollateralValue` (so the drawdown baseline stays honest) and `currentCollateralValue`. The reduction is rejected if it would push a credit wallet negative.
+6. The trade becomes `CASHED_OUT` and leaves the facility entirely: the settlement engine, the used-credit sums and the drawdown all skip it, and its collateral lock is released.
+
+### System profit
+| Source | Booked as | Unit |
+|---|---|---|
+| Cash-out fee (`credit.cashoutFeePercent`, admin-managed per facility) | `SystemLedgerType.CREDIT_CASHOUT_FEE` | credit currency |
+| Collateral conversion commission (pair `sellCommission`, only for the COLLATERAL source) | `SystemLedgerType.CREDIT_CASHOUT_SPREAD` | collateral units |
+
+Both are stored on the `credit_cashout` row (`feeAmount`, `spreadProfit`, `systemProfitValue`), aggregated per facility in the admin credit detail's **cash-out tab** — where the fee rate is edited — and platform-wide in `GET /admin/credits/stats` (`cashout`), shown as dashboard KPIs.
+
+---
+
 ## 7. Flow 5 — Rejection / Cancellation
 
 - **Create-time failure** (e.g. freeze fails): order → `REJECTED`, its credit order → `CANCELLED`, locked balance released, no hop counted, no used-credit change.
@@ -260,6 +293,7 @@ Checked at **order time** and by the **risk cron** (every 5 min):
 **Backend**
 - `src/credit/credit.service.ts`
 - `src/credit/settlement/credit-settlement.service.ts`
+- `src/credit/cashout/credit-cashout.service.ts`
 - `src/credit/credit-cron.service.ts`
 - `src/credit/user/credit-user.controller.ts`
 - `src/credit/admin/credit-admin.controller.ts`
@@ -269,8 +303,10 @@ Checked at **order time** and by the **risk cron** (every 5 min):
 - `src/rabbitmq/consumers/order-status.consumer.ts`
 - `src/quote-request/quote-request.service.ts`
 - `src/user-level/user-level.service.ts`
-- Migrations: `1000000000057` … `1000000000084`
+- Migrations: `1000000000057` … `1000000000089`
 
 **Panels**
 - `goldex-user-panel/src/pages/{TradePage,EliteTradePage,OfferPage,CreditPage,WalletPage}.jsx`
+- `goldex-user-panel/src/components/CreditCashoutDialog.jsx`
 - `goldex-admin-panel/src/pages/{CreditsPage,LevelsPage,WalletsPage}.tsx`
+- `goldex-admin-panel/src/pages/credit/detail/CashoutPanel.tsx`

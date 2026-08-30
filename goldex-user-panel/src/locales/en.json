@@ -19,7 +19,8 @@
     "nonBinary": "Non-binary",
     "more": "More",
     "or": "or",
-    "backToSignIn": "Back to sign in"
+    "backToSignIn": "Back to sign in",
+    "close": "Close"
   },
   "ui": {
     "themeToggle": "Toggle light/dark theme",
@@ -627,7 +628,52 @@
     "notifSettlement": "Settlement",
     "notifExpired": "Expired",
     "depositFirst": "Please deposit into your wallet first",
-    "insufficientCollateral": "Insufficient balance. Please deposit into your wallet first."
+    "insufficientCollateral": "Insufficient balance. Please deposit into your wallet first.",
+    "exitOptionsTitle": "Your two options",
+    "cashoutOptionTitle": "Cash out a credit purchase",
+    "cashoutOptionDesc": "Turn one purchase you made with credit into a fully-paid holding. The amount comes out of your deposit wallet or your frozen gold, and your credit facility stays open.",
+    "cashoutOptionAction": "Cash out",
+    "settleOptionTitle": "Settle and close the credit",
+    "settleOptionDesc": "Repay everything you owe, get your remaining collateral back and close the facility. No further credit trading afterwards.",
+    "cashoutTitle": "Cash out utilized credit",
+    "cashoutIntro": "Pick a purchase you made with credit and pay it off. The asset moves to your deposit wallet, the repaid amount returns to your available credit and the facility stays open.",
+    "cashoutBalances": "Available to pay with",
+    "cashoutDepositAvailable": "Deposit wallet",
+    "cashoutCollateralAvailable": "Frozen collateral",
+    "cashoutFee": "Fee",
+    "cashoutNoTrades": "You have no credit purchases to cash out right now.",
+    "cashoutPurchase": "Purchase",
+    "cashoutAmountDue": "Amount to pay",
+    "cashoutRelease": "You receive",
+    "cashoutTradedAt": "Traded",
+    "cashoutFromDeposit": "Pay from deposit wallet",
+    "cashoutFromCollateral": "Pay from collateral ({{amount}})",
+    "cashoutDepositShort": "Your deposit wallet needs {{amount}} to cover this purchase.",
+    "cashoutCollateralShort": "You need {{amount}} of free collateral to cover this purchase.",
+    "cashoutCollateralUnavailable": "Paying from collateral isn't available for this credit right now.",
+    "cashoutNotEligible": "This purchase can't be cashed out right now.",
+    "cashoutConfirmTitle": "Confirm cash-out",
+    "cashoutConfirmDeposit": "{{amount}} will be taken from your deposit wallet and {{asset}} will be moved into it. Your credit facility stays open.",
+    "cashoutConfirmCollateral": "{{units}} of your frozen collateral will be used to pay this purchase and {{asset}} will move to your deposit wallet. Your credit limit drops by {{limit}} because that collateral no longer backs it.",
+    "cashoutConfirm": "Cash out",
+    "cashoutSucceeded": "Done — the purchase is paid off and the asset is in your deposit wallet.",
+    "cashoutFailed": "We couldn't cash this purchase out — please try again, or contact support if it keeps happening.",
+    "cashoutLoadFailed": "Failed to load your cash-out options",
+    "cashoutUnavailable": "Cash-out isn't available for this credit.",
+    "cashoutHistory": "Previous cash-outs",
+    "cashoutReleased": "released",
+    "cashoutSource": {
+      "DEPOSIT": "from deposit wallet",
+      "COLLATERAL": "from collateral"
+    },
+    "cashoutReason": {
+      "CREDIT_NOT_ACTIVE": "This credit is not active.",
+      "CASHOUT_NOT_SUPPORTED_FOR_LEGACY_CREDIT": "This credit was opened by an admin and can only be settled, not cashed out.",
+      "CASHOUT_ASSET_NOT_HELD": "The purchased asset is no longer in your credit wallet — it was traded away or is locked by an open order.",
+      "CREDIT_NO_MARK_PRICE": "No live price for your collateral right now.",
+      "CASHOUT_COLLATERAL_BLOCKED_MARGIN_CALL": "Your credit is under a margin call — collateral can't be used until that clears.",
+      "CASHOUT_COLLATERAL_BLOCKED_DEFAULT": "Your credit has an outstanding shortfall — collateral can't be used."
+    }
   },
   "level": {
     "title": "Account Level",

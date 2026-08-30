@@ -4,6 +4,7 @@ import { CreditService } from "./credit.service";
 import { CreditCronService } from "./credit-cron.service";
 import { CreditSettlementService } from "./settlement/credit-settlement.service";
 import { CreditSettlementWorkflowService } from "./settlement-workflow/credit-settlement-workflow.service";
+import { CreditCashoutService } from "./cashout/credit-cashout.service";
 import { CreditAdminController } from "./admin/credit-admin.controller";
 import { CreditUserController } from "./user/credit-user.controller";
 import { CreditEntity } from "./entity/credit.entity";
@@ -11,6 +12,7 @@ import { CreditOrderEntity } from "./entity/credit-order.entity";
 import { CreditNotificationEntity } from "./entity/credit-notification.entity";
 import { CollateralLockEntity } from "./entity/collateral-lock.entity";
 import { CreditSettlementEntity } from "./entity/credit-settlement.entity";
+import { CreditCashoutEntity } from "./entity/credit-cashout.entity";
 import { WalletEntity } from "../wallet/entities/wallet.entity";
 import { TransactionEntity } from "../wallet/entities/transaction.entity";
 import { SymbolEntity } from "../admin-symbol/entity/symbol.entity";
@@ -30,6 +32,7 @@ import { WalletCoreModule } from "../wallet/wallet-core.module";
       CreditNotificationEntity,
       CollateralLockEntity,
       CreditSettlementEntity,
+      CreditCashoutEntity,
       WalletEntity,
       TransactionEntity,
       SymbolEntity,
@@ -43,7 +46,7 @@ import { WalletCoreModule } from "../wallet/wallet-core.module";
     WalletCoreModule,
   ],
   controllers: [CreditAdminController, CreditUserController],
-  providers: [CreditService, CreditCronService, CreditSettlementService, CreditSettlementWorkflowService],
-  exports: [CreditService, CreditSettlementService, CreditSettlementWorkflowService],
+  providers: [CreditService, CreditCronService, CreditSettlementService, CreditSettlementWorkflowService, CreditCashoutService],
+  exports: [CreditService, CreditSettlementService, CreditSettlementWorkflowService, CreditCashoutService],
 })
 export class CreditModule {}

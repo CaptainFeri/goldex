@@ -1789,3 +1789,38 @@ table.level-feature-table {
 
 ::-webkit-scrollbar { width: 8px; height: 8px; }
 
+
+/* ─── Credit exit options (cash out / settle & close) ────── */
+.credit-exit-options {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1rem;
+}
+
+.credit-exit-option {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  align-items: flex-start;
+  padding: 1rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+}
+
+.credit-exit-option-title {
+  font-weight: 600;
+  font-size: 0.92rem;
+  color: var(--text-primary);
+}
+
+.credit-exit-option-desc {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  line-height: 1.7;
+  margin: 0;
+  flex: 1;
+}
+
+@media (max-width: 640px) {
+  .credit-exit-options { grid-template-columns: 1fr; }
+}
