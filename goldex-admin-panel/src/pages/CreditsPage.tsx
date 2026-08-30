@@ -871,6 +871,11 @@ function UserCreditsModal({ userId, credit, onClose }: { userId: string; credit:
 }
 
 function CreditDetailModal({ credit, onClose }: { credit: Credit; onClose: () => void }) {
+  const notify = useNotify().notify;
+  const [prompt, setPrompt] = useState<{ kind: "reject" | "method" | "fund" | "receive" | "fail"; settlementId: string; currentMethod?: string | null } | null>(null);
+  const [forceSettlementId, setForceSettlementId] = useState<string | null>(null);
+  const [actionBusy, setActionBusy] = useState(false);
+
   const creditDetail = useQuery({
     queryKey: ["credit-detail", credit.id],
     queryFn: async () => unwrap<Credit>((await api.get(`/admin/credits/${credit.id}`)).data),
@@ -919,7 +924,77 @@ function CreditDetailModal({ credit, onClose }: { credit: Credit; onClose: () =>
     queryFn: async () => unwrap<CreditSettlement[]>((await api.get(`/admin/credits/${credit.id}/settlements`)).data),
   });
 
+  // Runs a settlement-workflow step and reports the outcome as a toast
+  // instead of leaving the admin guessing (the previous version had no
+  // success feedback at all, and errors were silently swallowed).
+  async function runSettlementAction(fn: () => Promise<any>, successTitle: string) {
+    setActionBusy(true);
+    try {
+      await fn();
+      notify({ title: successTitle, kind: "success" });
+      settlements.refetch();
+    } catch (e: any) {
+      notify({ title: "خطا در عملیات تسویه", body: apiError(e), kind: "error" });
+      throw e;
+    } finally {
+      setActionBusy(false);
+    }
+  }
+
+  // Separate from runSettlementAction: a negative-position rejection here
+  // isn't a generic error, it's a decision point (offer the force-settle
+  // modal), so it gets its own message instead of a duplicate error toast.
+  async function clearLiability(settlementId: string, force?: boolean) {
+    setActionBusy(true);
+    try {
+      await api.post(`/admin/credits/settlements/${settlementId}/clear-liability`, force ? { force: true } : undefined);
+      notify({ title: force ? "تسویه بدهی به‌صورت اجباری ثبت شد" : "بدهی تسویه شد", kind: "success" });
+      settlements.refetch();
+      setForceSettlementId(null);
+    } catch (e: any) {
+      const msg = apiError(e);
+      if (!force && String(msg).includes("CREDIT_NOT_SETTLEABLE_NEGATIVE_POSITION")) {
+        setForceSettlementId(settlementId);
+      } else {
+        notify({ title: "خطا در تسویه بدهی", body: msg, kind: "error" });
+      }
+    } finally {
+      setActionBusy(false);
+    }
+  }
+
+  function submitPrompt(value: string) {
+    if (!prompt) return;
+    const { kind, settlementId } = prompt;
+    const actions: Record<"reject" | "method" | "fund" | "receive" | "fail", { fn: () => Promise<any>; success: string }> = {
+      reject: {
+        fn: () => api.post(`/admin/credits/settlements/${settlementId}/reject`, { reason: value }),
+        success: "درخواست تسویه رد شد",
+      },
+      method: {
+        fn: () => api.post(`/admin/credits/settlements/${settlementId}/select-method`, { method: value }),
+        success: "روش تسویه ثبت شد",
+      },
+      fund: {
+        fn: () => api.post(`/admin/credits/settlements/${settlementId}/fund`, { amount: Number(value) }),
+        success: "تأمین کسری ثبت شد",
+      },
+      receive: {
+        fn: () => api.post(`/admin/credits/settlements/${settlementId}/receive`, { amount: Number(value) }),
+        success: "تحویل دارایی ثبت شد",
+      },
+      fail: {
+        fn: () => api.post(`/admin/credits/settlements/${settlementId}/fail`, { reason: value }),
+        success: "تسویه به‌عنوان ناموفق ثبت شد",
+      },
+    };
+    runSettlementAction(actions[kind].fn, actions[kind].success)
+      .then(() => setPrompt(null))
+      .catch(() => {});
+  }
+
   return (
+    <>
     <Modal title={`جزئیات اعتبار ${c.creditCode}`} onClose={onClose} wide>
       {creditDetail.isLoading ? (
         <Loading />
@@ -1266,53 +1341,39 @@ function CreditDetailModal({ credit, onClose }: { credit: Credit; onClose: () =>
                           <div className="row" style={{ gap: 4, flexWrap: "wrap" }}>
                             {s.status === "PENDING_ADMIN_REVIEW" && (
                               <>
-                                <button className="btn sm" onClick={async () => { await api.post(`/admin/credits/settlements/${s.id}/approve`, { reason: "approved" }); settlements.refetch(); }}>تأیید</button>
-                                <button className="btn sm" onClick={async () => { const r = window.prompt("دلیل رد:"); if (r === null) return; await api.post(`/admin/credits/settlements/${s.id}/reject`, { reason: r }); settlements.refetch(); }}>رد</button>
+                                <button className="btn sm" disabled={actionBusy} onClick={() => runSettlementAction(() => api.post(`/admin/credits/settlements/${s.id}/approve`, { reason: "approved" }), "درخواست تسویه تأیید شد")}>تأیید</button>
+                                <button className="btn sm ghost" disabled={actionBusy} onClick={() => setPrompt({ kind: "reject", settlementId: s.id })}>رد</button>
                               </>
                             )}
                             {(s.status === "APPROVED" || s.status === "VALUATED") && (
-                              <button className="btn sm" onClick={async () => { await api.post(`/admin/credits/settlements/${s.id}/valuate`); settlements.refetch(); }}>ارزش‌گذاری</button>
+                              <button className="btn sm" disabled={actionBusy} onClick={() => runSettlementAction(() => api.post(`/admin/credits/settlements/${s.id}/valuate`), "ارزش‌گذاری انجام شد")}>ارزش‌گذاری</button>
                             )}
                             {(s.status === "APPROVED" || s.status === "VALUATED" || s.status === "METHOD_SELECTED" || s.status === "FUNDING_REQUIRED") && (
-                              <button className="btn sm" onClick={async () => { const m = window.prompt("روش تسویه (FULL/NET/TOPUP):", s.settlementMethod || "FULL"); if (!m) return; await api.post(`/admin/credits/settlements/${s.id}/select-method`, { method: m.toUpperCase() }); settlements.refetch(); }}>روش</button>
+                              <button className="btn sm" disabled={actionBusy} onClick={() => setPrompt({ kind: "method", settlementId: s.id, currentMethod: s.settlementMethod })}>روش</button>
                             )}
                             {(s.status === "METHOD_SELECTED" || s.status === "FUNDING_REQUIRED" || s.status === "READY") && Number(s.shortfall) > 0 && (
-                              <button className="btn sm" onClick={async () => { const a = window.prompt("مبلغ تأمین کسری:"); if (!a) return; await api.post(`/admin/credits/settlements/${s.id}/fund`, { amount: Number(a) }); settlements.refetch(); }}>تأمین</button>
+                              <button className="btn sm" disabled={actionBusy} onClick={() => setPrompt({ kind: "fund", settlementId: s.id })}>تأمین</button>
                             )}
                             {(s.status === "APPROVED" || s.status === "VALUATED" || s.status === "METHOD_SELECTED" || s.status === "FUNDING_REQUIRED" || s.status === "READY" || s.status === "ASSET_RECEIVED" || s.status === "ASSET_VERIFIED") && (
-                              <button className="btn sm" onClick={async () => { const a = window.prompt("مقدار تحویل دارایی:"); if (!a) return; await api.post(`/admin/credits/settlements/${s.id}/receive`, { amount: Number(a) }); settlements.refetch(); }}>تحویل</button>
+                              <button className="btn sm" disabled={actionBusy} onClick={() => setPrompt({ kind: "receive", settlementId: s.id })}>تحویل</button>
                             )}
                             {s.status === "ASSET_RECEIVED" && (
-                              <button className="btn sm" onClick={async () => { await api.post(`/admin/credits/settlements/${s.id}/verify`); settlements.refetch(); }}>تأیید دارایی</button>
+                              <button className="btn sm" disabled={actionBusy} onClick={() => runSettlementAction(() => api.post(`/admin/credits/settlements/${s.id}/verify`), "دارایی تأیید شد")}>تأیید دارایی</button>
                             )}
                             {s.status === "ASSET_VERIFIED" && (
-                              <button className="btn sm" onClick={async () => {
-                                try {
-                                  await api.post(`/admin/credits/settlements/${s.id}/clear-liability`);
-                                } catch (e: any) {
-                                  const msg = apiError(e);
-                                  if (String(msg).includes("CREDIT_NOT_SETTLEABLE_NEGATIVE_POSITION")) {
-                                    if (!window.confirm(`${msg}\n\nتسویه اجباری با وجود کسری انجام شود؟ کسری به‌عنوان نکول ثبت می‌شود.`)) return;
-                                    await api.post(`/admin/credits/settlements/${s.id}/clear-liability`, { force: true });
-                                  } else {
-                                    alert(msg);
-                                    return;
-                                  }
-                                }
-                                settlements.refetch();
-                              }}>تسویه بدهی</button>
+                              <button className="btn sm" disabled={actionBusy} onClick={() => clearLiability(s.id)}>تسویه بدهی</button>
                             )}
                             {s.status === "LIABILITY_CLEARED" && (
-                              <button className="btn sm" onClick={async () => { await api.post(`/admin/credits/settlements/${s.id}/settle-asset`); settlements.refetch(); }}>تسویه دارایی</button>
+                              <button className="btn sm" disabled={actionBusy} onClick={() => runSettlementAction(() => api.post(`/admin/credits/settlements/${s.id}/settle-asset`), "دارایی تسویه شد")}>تسویه دارایی</button>
                             )}
                             {s.status === "ASSET_SETTLED" && (
-                              <button className="btn sm" onClick={async () => { await api.post(`/admin/credits/settlements/${s.id}/release-collateral`); settlements.refetch(); }}>آزادسازی وثیقه</button>
+                              <button className="btn sm" disabled={actionBusy} onClick={() => runSettlementAction(() => api.post(`/admin/credits/settlements/${s.id}/release-collateral`), "وثیقه آزاد شد")}>آزادسازی وثیقه</button>
                             )}
                             {s.status === "COLLATERAL_RELEASED" && (
-                              <button className="btn sm" onClick={async () => { await api.post(`/admin/credits/settlements/${s.id}/close`); settlements.refetch(); }}>بستن</button>
+                              <button className="btn sm" disabled={actionBusy} onClick={() => runSettlementAction(() => api.post(`/admin/credits/settlements/${s.id}/close`), "تسویه با موفقیت بسته شد")}>بستن</button>
                             )}
                             {s.status !== "CLOSED" && s.status !== "REJECTED" && s.status !== "FAILED" && (
-                              <button className="btn sm ghost" onClick={async () => { const r = window.prompt("دلیل شکست:"); if (r === null) return; await api.post(`/admin/credits/settlements/${s.id}/fail`, { reason: r }); settlements.refetch(); }}>شکست</button>
+                              <button className="btn sm ghost" disabled={actionBusy} onClick={() => setPrompt({ kind: "fail", settlementId: s.id })}>شکست</button>
                             )}
                           </div>
                         </td>
@@ -1368,6 +1429,183 @@ function CreditDetailModal({ credit, onClose }: { credit: Credit; onClose: () =>
           </div>
         </div>
       )}
+    </Modal>
+
+    {prompt && (
+      <SettlementPromptModal
+        kind={prompt.kind}
+        currentMethod={prompt.currentMethod}
+        submitting={actionBusy}
+        onClose={() => setPrompt(null)}
+        onSubmit={submitPrompt}
+      />
+    )}
+
+    {forceSettlementId && (
+      <ForceClearLiabilityModal
+        creditId={credit.id}
+        submitting={actionBusy}
+        onClose={() => setForceSettlementId(null)}
+        onConfirm={() => clearLiability(forceSettlementId, true)}
+      />
+    )}
+    </>
+  );
+}
+
+const SETTLEMENT_PROMPT_META: Record<
+  "reject" | "method" | "fund" | "receive" | "fail",
+  { title: string; submitLabel: string; description: string }
+> = {
+  reject: { title: "رد درخواست تسویه", submitLabel: "رد کردن", description: "دلیل رد را برای کاربر ثبت کنید." },
+  method: { title: "انتخاب روش تسویه", submitLabel: "ثبت روش", description: "یکی از روش‌های تسویه فعال را انتخاب کنید." },
+  fund: { title: "تأمین کسری", submitLabel: "ثبت تأمین", description: "مبلغی که برای پوشش کسری تأمین شده را وارد کنید." },
+  receive: { title: "ثبت تحویل دارایی", submitLabel: "ثبت تحویل", description: "مقدار دارایی دریافت‌شده از کاربر را وارد کنید." },
+  fail: { title: "ثبت شکست تسویه", submitLabel: "ثبت شکست", description: "دلیل شکست را برای پیگیری بعدی ثبت کنید." },
+};
+
+function SettlementPromptModal({
+  kind,
+  currentMethod,
+  submitting,
+  onClose,
+  onSubmit,
+}: {
+  kind: "reject" | "method" | "fund" | "receive" | "fail";
+  currentMethod?: string | null;
+  submitting: boolean;
+  onClose: () => void;
+  onSubmit: (value: string) => void;
+}) {
+  const [reason, setReason] = useState("");
+  const [method, setMethod] = useState(currentMethod || "FULL");
+  const [amount, setAmount] = useState("");
+  const meta = SETTLEMENT_PROMPT_META[kind];
+  const isAmount = kind === "fund" || kind === "receive";
+  const isReason = kind === "reject" || kind === "fail";
+
+  function submit(e: React.FormEvent) {
+    e.preventDefault();
+    if (kind === "method") { onSubmit(method); return; }
+    if (isAmount) {
+      const n = Number(amount);
+      if (!(n > 0)) return;
+      onSubmit(String(n));
+      return;
+    }
+    if (!reason.trim()) return;
+    onSubmit(reason.trim());
+  }
+
+  return (
+    <Modal title={meta.title} onClose={onClose}>
+      <form className="modal-form" onSubmit={submit}>
+        <div style={{ fontSize: 13, color: "var(--text-faint)", marginBottom: 12, lineHeight: 1.6 }}>{meta.description}</div>
+
+        {kind === "method" && (
+          <div className="field" style={{ gridColumn: "1 / -1" }}>
+            <label>روش تسویه</label>
+            <div className="row" style={{ gap: 12 }}>
+              {(["FULL", "NET", "TOPUP"] as const).map((m) => (
+                <label key={m} style={{ display: "flex", alignItems: "center", gap: 4, cursor: "pointer", fontFamily: "monospace" }}>
+                  <input type="radio" name="settlement-method" value={m} checked={method === m} onChange={() => setMethod(m)} />
+                  {m}
+                </label>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {isAmount && (
+          <div className="field" style={{ gridColumn: "1 / -1" }}>
+            <label>{kind === "fund" ? "مبلغ تأمین (ریال)" : "مقدار دارایی"}</label>
+            <input
+              className="input mono"
+              dir="ltr"
+              type="number"
+              step="0.00000001"
+              min="0"
+              autoFocus
+              placeholder="0"
+              value={amount}
+              onChange={(e) => setAmount(e.target.value)}
+              required
+            />
+          </div>
+        )}
+
+        {isReason && (
+          <div className="field" style={{ gridColumn: "1 / -1" }}>
+            <label>دلیل</label>
+            <textarea
+              className="input"
+              rows={3}
+              autoFocus
+              placeholder="دلیل را وارد کنید…"
+              value={reason}
+              onChange={(e) => setReason(e.target.value)}
+              required
+            />
+          </div>
+        )}
+
+        <div className="modal-actions">
+          <button type="button" className="btn ghost" onClick={onClose}>انصراف</button>
+          <button type="submit" className="btn" disabled={submitting}>
+            {submitting ? <><span className="spin" /> در حال ثبت…</> : meta.submitLabel}
+          </button>
+        </div>
+      </form>
+    </Modal>
+  );
+}
+
+function ForceClearLiabilityModal({
+  creditId,
+  submitting,
+  onClose,
+  onConfirm,
+}: {
+  creditId: string;
+  submitting: boolean;
+  onClose: () => void;
+  onConfirm: () => void;
+}) {
+  const [ack, setAck] = useState(false);
+  const eligibility = useQuery({
+    queryKey: ["credit-settlement-eligibility", creditId],
+    queryFn: async () => unwrap<SettlementEligibility>((await api.get(`/admin/credits/${creditId}/settlement-eligibility`)).data),
+  });
+  const elig = eligibility.data;
+  const negativePositions = (elig?.positions || []).filter((p) => Number(p.netXau) < 0);
+
+  return (
+    <Modal title="تسویه بدهی با وجود کسری" onClose={onClose}>
+      <div style={{ background: "var(--red-bg, #3a1414)", color: "var(--red)", padding: "10px 12px", borderRadius: 8, marginBottom: 16, fontSize: 13, lineHeight: 1.6 }}>
+        <div style={{ fontWeight: 600, marginBottom: 4 }}>
+          موجودی کاربر پس از احتساب وثیقه هنوز منفی است{elig?.shortfall ? ` — کسری ${fmtNum(elig.shortfall)} ریال` : ""}.
+        </div>
+        {negativePositions.length > 0 && (
+          <ul style={{ margin: "4px 0 8px", paddingInlineStart: 18 }}>
+            {negativePositions.map((p) => (
+              <li key={p.symbolId}>بدهکار {fmtNum(Math.abs(Number(p.netXau)))} {p.baseSymbolSlug}</li>
+            ))}
+          </ul>
+        )}
+        <div>در صورت ادامه، این کسری به‌عنوان نکول ثبت و برای پیگیری بعدی علامت‌گذاری می‌شود.</div>
+      </div>
+
+      <label style={{ display: "flex", alignItems: "center", gap: 6, fontWeight: 600, cursor: "pointer", marginBottom: 16, fontSize: 13.5 }}>
+        <input type="checkbox" checked={ack} onChange={(e) => setAck(e.target.checked)} />
+        متوجه‌ام و می‌خواهم با وجود کسری، تسویه را نهایی کنم
+      </label>
+
+      <div className="modal-actions">
+        <button type="button" className="btn ghost" onClick={onClose}>انصراف</button>
+        <button type="button" className="btn danger" disabled={!ack || submitting} onClick={onConfirm}>
+          {submitting ? <><span className="spin" /> در حال تسویه…</> : "تسویه اجباری"}
+        </button>
+      </div>
     </Modal>
   );
 }

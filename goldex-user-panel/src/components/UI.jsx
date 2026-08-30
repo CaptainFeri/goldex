@@ -92,6 +92,26 @@ export function Button({ children, loading = false, variant = 'primary', classNa
   )
 }
 
+// A styled confirmation dialog to replace window.confirm() — same
+// modal-overlay/card shell used across the app's deposit/withdraw modals,
+// so it matches the rest of the UI instead of a native browser popup.
+export function ConfirmDialog({ title, message, confirmLabel, cancelLabel, danger, loading, onConfirm, onCancel }) {
+  return (
+    <div className="modal-overlay" onClick={onCancel}>
+      <div className="card" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 400 }}>
+        <div className="card-title">{title}</div>
+        <p style={{ fontSize: '0.9rem', color: 'var(--text-secondary)', lineHeight: 1.7, margin: '0.75rem 0 1.25rem' }}>
+          {message}
+        </p>
+        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.6rem' }}>
+          <Button variant="ghost" onClick={onCancel} disabled={loading}>{cancelLabel}</Button>
+          <Button variant={danger ? 'danger' : 'primary'} onClick={onConfirm} loading={loading}>{confirmLabel}</Button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 export function Field({ label, children, hint }) {
   return (
     <div className="form-group">
