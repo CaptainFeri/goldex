@@ -383,6 +383,92 @@ export interface Credit {
   [k: string]: any;
 }
 
+// ---- Credit cash-out (pay off one purchase, facility stays open) ----
+export type CashoutSource = "DEPOSIT" | "COLLATERAL";
+
+export interface CreditCashout {
+  id: string;
+  creditId: string;
+  creditOrderId: string;
+  orderId: string | null;
+  source: CashoutSource;
+  /** Credit repaid (credit currency). */
+  amount: number;
+  feePercent: number;
+  feeAmount: number;
+  /** Conversion commission booked in collateral units. */
+  spreadProfit: number;
+  /** Total platform profit, valued in the credit currency. */
+  systemProfitValue: number;
+  assetSymbolId: string | null;
+  assetAmount: number;
+  collateralConsumed: number;
+  markPrice: number;
+  creditLimitReduction: number;
+  sellCapacityReduction: number;
+  requestedBy: string | null;
+  adminId: string | null;
+  notes: string | null;
+  metadata: any;
+  createAt: string;
+}
+
+export interface CashoutTotals {
+  count: number;
+  volume: number;
+  fees: number;
+  spreadProfit: number;
+  systemProfit: number;
+  collateralConsumed: number;
+  creditLimitReduction: number;
+}
+
+export interface CashoutTradeOption {
+  creditOrderId: string;
+  orderId: string;
+  orderCode: string;
+  pairKey: string;
+  executedQuantity: number;
+  price: number;
+  executedAt: string | null;
+  amount: number;
+  feePercent: number;
+  feeAmount: number;
+  totalDue: number;
+  systemProfitValue: number;
+  assetSymbolId: string | null;
+  assetSymbolSlug: string;
+  assetAmount: number;
+  assetHeld: number;
+  eligible: boolean;
+  reason: string | null;
+  deposit: { required: number; available: number; sufficient: boolean };
+  collateral: {
+    requiredUnits: number;
+    available: number;
+    sufficient: boolean;
+    blockedReason: string | null;
+    creditLimitReduction: number;
+    sellCapacityReduction: number;
+    spreadProfit: number;
+  };
+}
+
+export interface CashoutOptions {
+  supported: boolean;
+  reason: string | null;
+  creditId: string;
+  creditCode: string;
+  markPrice: number;
+  creditBaseSymbolId: string | null;
+  collateralSymbolId: string | null;
+  depositBalance: number;
+  collateralAvailable: number;
+  feePercent: number;
+  collateralConversionPercent: number;
+  trades: CashoutTradeOption[];
+}
+
 // ---- Credit settlement (delivery-based workflow, handoff §7/§13) ----
 export type SettlementWorkflowStatus =
   | "SETTLEMENT_REQUESTED" | "PENDING_ADMIN_REVIEW" | "APPROVED" | "VALUATED" | "METHOD_SELECTED"
