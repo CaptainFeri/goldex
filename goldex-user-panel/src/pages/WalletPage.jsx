@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback } from 'react'
 import { useTranslation } from 'react-i18next'
-import { walletApi, warehouseApi, depositApi, withdrawApi } from '../services/api'
+import { walletApi, warehouseApi, depositApi, withdrawApi, creditApi } from '../services/api'
 import { Spinner, Alert, Button } from '../components/UI'
 
 
@@ -454,24 +454,27 @@ export default function WalletPage() {
   const [requests, setRequests] = useState([])
   const [deposits, setDeposits] = useState([])
   const [withdraws, setWithdraws] = useState([])
+  const [creditOverview, setCreditOverview] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [modal, setModal] = useState(null)
 
   const load = useCallback(async () => {
     try {
-      const [w, t, r, d, wd] = await Promise.all([
+      const [w, t, r, d, wd, co] = await Promise.all([
         walletApi.getWallets(),
         walletApi.getTransactions({ limit: 25 }).catch(() => ({ transactions: [] })),
         warehouseApi.getRequests({ limit: '20' }).catch(() => ({ requests: [] })),
         depositApi.list({ limit: 20 }).catch(() => ({ items: [] })),
         withdrawApi.list({ limit: 20 }).catch(() => ({ items: [] })),
+        creditApi.getOverview().catch(() => null),
       ])
       setWallets(Array.isArray(w) ? w : [])
       setTxs(t?.transactions || [])
       setRequests(Array.isArray(r) ? r : r?.requests || [])
       setDeposits(d?.items || [])
       setWithdraws(wd?.items || [])
+      setCreditOverview(co || null)
     } catch (_) {
       setError(t('wallet.walletLoadFailed'))
     } finally {
@@ -567,7 +570,14 @@ export default function WalletPage() {
                     const avail = Number(w.freeBalance) || 0
                     const locked = Number(w.lockedBalance) || 0
                     const cap = Number(w.creditBalance) || 0
-                    const used = Math.max(0, cap - avail - locked)
+                    // Real signed exposure for this symbol (negative = owed —
+                    // e.g. sold this asset on credit). Falls back to the
+                    // floored capacity-used estimate when no trades have
+                    // priced a position yet (no mark price / no orders).
+                    const position = creditOverview?.positions?.find(p => p.symbolId === w.symbol?.id)
+                    const netXau = position ? Number(position.netXau) || 0 : null
+                    const used = netXau !== null ? -netXau : Math.max(0, cap - avail - locked)
+                    const isNegative = used < 0
                     return (
                       <div key={w.id} className="wallet-card" style={{ borderColor: 'var(--gold)', borderWidth: '2px' }}>
                         <div className="wallet-card-head">
@@ -580,8 +590,18 @@ export default function WalletPage() {
                         <div className="wallet-total" style={{ color: 'var(--gold)' }}>{fmt(cap || 0)}</div>
                         <div className="wallet-bal-row"><span className="k">{t('wallet.creditLimit')}</span><span className="v" style={{ color: 'var(--gold)' }}>{fmt(cap || 0)}</span></div>
                         <div className="wallet-bal-row"><span className="k">{t('wallet.available')}</span><span className="v" style={{ color: 'var(--gold)' }}>{fmt(avail)}</span></div>
-                        <div className="wallet-bal-row"><span className="k">{t('wallet.used')}</span><span className="v">{fmt(used)}</span></div>
+                        <div className="wallet-bal-row">
+                          <span className="k">{t('wallet.used')}</span>
+                          <span className="v" style={isNegative ? { color: 'var(--danger)', fontWeight: 700 } : undefined}>
+                            {isNegative ? `-${fmt(Math.abs(used))}` : fmt(used)}
+                          </span>
+                        </div>
                         {locked > 0 && <div className="wallet-bal-row"><span className="k">{t('wallet.lockedPending')}</span><span className="v">{fmt(locked)}</span></div>}
+                        {isNegative && (
+                          <div style={{ marginTop: '0.4rem', fontSize: '0.72rem', color: 'var(--danger)' }}>
+                            {t('wallet.negativeCreditWarning', { amount: fmt(Math.abs(used)), symbol: sym })}
+                          </div>
+                        )}
                         {w.status && w.status !== 'ACTIVE' && (
                           <div style={{ marginTop: '0.6rem' }}>
                             <span className="badge badge-danger">{w.status}</span>
