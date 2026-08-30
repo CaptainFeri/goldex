@@ -5,7 +5,7 @@ import {
   NotFoundException,
 } from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
-import { DataSource, Repository, In } from "typeorm";
+import { DataSource, Repository, In, IsNull } from "typeorm";
 import Decimal from "decimal.js";
 import { CreditEntity } from "../entity/credit.entity";
 import { CreditOrderEntity } from "../entity/credit-order.entity";
@@ -92,7 +92,7 @@ export class CreditSettlementWorkflowService {
       const existing = await manager.findOne(CreditSettlementEntity, {
         where: {
           creditId: credit.id,
-          creditOrderId: opts.creditOrderId || null,
+          creditOrderId: opts.creditOrderId ? opts.creditOrderId : IsNull(),
           status: In(this.activeSettlementStatuses()),
         },
       });
