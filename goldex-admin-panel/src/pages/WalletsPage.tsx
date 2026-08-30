@@ -342,6 +342,7 @@ export default function WalletsPage() {
                 <th>قابل برداشت</th>
                 <th>مسدود شده</th>
                 <th>قفل‌شده</th>
+                <th>استفاده‌شده (اعتبار)</th>
                 <th>وضعیت</th>
                 <th>عملیات</th>
               </tr>
@@ -350,6 +351,15 @@ export default function WalletsPage() {
               {wallets.map((w) => {
                 const frozen = isFrozen(w);
                 const wt = walletTypeMeta(w);
+                // CREDIT wallets hold a leveraged capacity (creditBalance) rather
+                // than real funds — "used" is what's been drawn from that
+                // capacity. This should never go negative (wallet-level guards
+                // block any debit past it), so a negative reading here flags a
+                // data anomaly worth investigating rather than a normal state.
+                const isCredit = w.walletType === "CREDIT";
+                const used = isCredit
+                  ? num(w.creditBalance) - num(w.calculatedStats?.availableBalance, w.freeBalance, w.free) - num(w.lockedBalance, w.locked)
+                  : null;
                 return (
                   <tr key={w.id}>
                     <td title={w.id}>
@@ -364,6 +374,9 @@ export default function WalletsPage() {
                     <td className="mono">{fmtNum(num(w.calculatedStats?.availableBalance, w.freeBalance - w.frozenFreeBalance, w.freeBalance, w.free), 6)}</td>
                     <td className="mono" style={{ color: "var(--danger)" }}>{fmtNum(num(w.frozenFreeBalance, 0), 6)}</td>
                     <td className="mono">{fmtNum(num(w.lockedBalance, w.locked), 6)}</td>
+                    <td className="mono" style={used !== null && used < 0 ? { color: "var(--danger)", fontWeight: 700 } : undefined}>
+                      {used === null ? "—" : fmtNum(used, 6)}
+                    </td>
                     <td>{frozen ? <Badge kind="red">{w.status}</Badge> : <Badge kind="green">فعال</Badge>}</td>
                     <td>
                       <div className="row">
