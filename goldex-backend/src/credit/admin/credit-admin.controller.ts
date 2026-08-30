@@ -69,7 +69,16 @@ export class CreditAdminController {
   @AdminRoles(AdminRole.FINANCE, AdminRole.SUPER_ADMIN, AdminRole.ADMIN)
   @ApiOperation({ summary: "Settle a credit with optional description and image" })
   async settle(@Req() req: any, @Param("id") id: string, @Body() dto: SettleCreditDto) {
-    return { data: await this.creditService.settleCredit(req.admin.id, id, dto.description, dto.imagePath) };
+    return {
+      data: await this.creditService.settleCredit(req.admin.id, id, dto.description, dto.imagePath, dto.force),
+    };
+  }
+
+  @Get(":id/settlement-eligibility")
+  @AdminRoles(AdminRole.FINANCE, AdminRole.SUPER_ADMIN, AdminRole.ADMIN)
+  @ApiOperation({ summary: "Preview whether the facility can settle right now (credit wallets net to zero or positive)" })
+  async settlementEligibility(@Param("id") id: string) {
+    return { data: await this.creditService.getSettlementEligibility(id) };
   }
 
   @Post(":id/liquidate")
@@ -232,11 +241,16 @@ export class CreditAdminController {
   @Post("settlements/:settlementId/clear-liability")
   @AdminRoles(AdminRole.FINANCE, AdminRole.SUPER_ADMIN, AdminRole.ADMIN)
   @ApiOperation({ summary: "Clear the negative credit liability (settlement engine; consumes/releases collateral locks)" })
-  async clearLiability(@Req() req: any, @Param("settlementId") settlementId: string) {
+  async clearLiability(
+    @Req() req: any,
+    @Param("settlementId") settlementId: string,
+    @Body() body: { force?: boolean } = {},
+  ) {
     return {
       data: await this.settlementWorkflowService.clearLiability(settlementId, {
         adminId: req.admin?.id,
         mode: "ADMIN",
+        force: body?.force,
       }),
     };
   }
