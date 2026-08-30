@@ -135,20 +135,51 @@ export default function CrmUser360Page() {
 
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1rem", marginBottom: "1rem" }}>
         <Card title="کیف‌پول‌ها">
+          {data.creditExposure && (
+            <div style={{
+              marginBottom: "0.75rem",
+              padding: "8px 10px",
+              borderRadius: 6,
+              fontSize: 12.5,
+              fontWeight: 600,
+              background: data.creditExposure.settlementEligible === false ? "var(--red-bg, #3a1414)" : "var(--bg)",
+              color: data.creditExposure.settlementEligible === false ? "var(--red)" : "var(--text-faint)",
+            }}>
+              {data.creditExposure.settlementEligible === false
+                ? `کاربر موقعیت منفی دارد و نمی‌تواند تسویه داوطلبانه کند (کسری ${data.creditExposure.settlementShortfall} پس از وثیقه).`
+                : "اعتبار فعال این کاربر قابل تسویه است (بدون کسری)."}
+              {(data.creditExposure.positions || []).filter((p) => p.netXau < 0).length > 0 && (
+                <ul style={{ margin: "4px 0 0", paddingInlineStart: 18, fontWeight: 400 }}>
+                  {data.creditExposure.positions.filter((p) => p.netXau < 0).map((p) => (
+                    <li key={p.symbolId}>بدهکار {Math.abs(p.netXau)} {p.baseSymbolSlug}</li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          )}
           {data.wallets?.length === 0 ? <div className="empty-state">بدون کیف‌پول</div> : (
             <table className="data-table">
               <thead>
-                <tr><th>نماد</th><th>آزاد</th><th>مسدود</th><th>کل</th></tr>
+                <tr><th>نماد</th><th>نوع</th><th>آزاد</th><th>مسدود</th><th>کل</th></tr>
               </thead>
               <tbody>
-                {data.wallets?.map((w: any, i: number) => (
-                  <tr key={i}>
-                    <td>{w.symbol}</td>
-                    <td>{w.free}</td>
-                    <td>{w.locked}</td>
-                    <td>{w.total}</td>
-                  </tr>
-                ))}
+                {data.wallets?.map((w, i) => {
+                  const negative = w.walletType === "CREDIT" &&
+                    (data.creditExposure?.positions || []).some((p) => p.baseSymbolSlug === w.symbol && p.netXau < 0);
+                  return (
+                    <tr key={i}>
+                      <td>{w.symbol}</td>
+                      <td>
+                        {w.walletType === "CREDIT" ? <Badge kind="gold">اعتبار</Badge>
+                          : w.walletType === "COLLATERAL" ? <Badge kind="gray">وثیقه</Badge>
+                          : <Badge kind="green">واریز</Badge>}
+                      </td>
+                      <td style={negative ? { color: "var(--red)", fontWeight: 600 } : undefined}>{w.free}</td>
+                      <td>{w.locked}</td>
+                      <td>{w.total}</td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           )}

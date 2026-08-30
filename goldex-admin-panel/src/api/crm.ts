@@ -122,10 +122,33 @@ export interface CommunicationLog {
   sentAt: string;
 }
 
+export interface Customer360Wallet {
+  symbol: string;
+  walletType?: "DEPOSIT" | "CREDIT" | "COLLATERAL";
+  free: number;
+  locked: number;
+  total: number;
+}
+
+export interface Customer360CreditPosition {
+  symbolId: string;
+  baseSymbolSlug: string;
+  netXau: number;
+  markPrice: number;
+}
+
+export interface Customer360CreditExposure {
+  creditId: string;
+  positions: Customer360CreditPosition[];
+  settlementEligible: boolean | null;
+  settlementShortfall: number;
+}
+
 export interface Customer360 {
   user?: any;
   kyc?: any;
-  wallets?: any[];
+  wallets?: Customer360Wallet[];
+  creditExposure?: Customer360CreditExposure | null;
   tags?: CustomerTag[];
   segments?: CustomerSegment[];
   notes?: CustomerNote[];

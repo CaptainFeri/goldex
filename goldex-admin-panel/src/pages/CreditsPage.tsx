@@ -3,7 +3,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api, unwrap, apiError } from "../api/client";
 import { Card, Badge, Loading, ErrorState, Empty, Modal } from "../components/ui";
 import { useNotify } from "../notifications/NotifyProvider";
-import type { Credit } from "../api/types";
+import type { Credit, CreditSettlement, SettlementEligibility } from "../api/types";
 
 const STATUS_LABELS: Record<string, string> = {
   PENDING: "در انتظار",
@@ -635,7 +635,7 @@ function SettleCreditModal({ credit, onClose, onSave, loading }: { credit: Credi
 
   const eligibility = useQuery({
     queryKey: ["credit-settlement-eligibility", credit.id],
-    queryFn: async () => unwrap<any>((await api.get(`/admin/credits/${credit.id}/settlement-eligibility`)).data),
+    queryFn: async () => unwrap<SettlementEligibility>((await api.get(`/admin/credits/${credit.id}/settlement-eligibility`)).data),
   });
   const elig = eligibility.data;
   const negativePositions = (elig?.positions || []).filter((p: any) => Number(p.netXau) < 0);
@@ -916,7 +916,7 @@ function CreditDetailModal({ credit, onClose }: { credit: Credit; onClose: () =>
   // Delivery-based settlement workflows (handoff §7).
   const settlements = useQuery({
     queryKey: ["credit-settlements", credit.id],
-    queryFn: async () => unwrap<any[]>((await api.get(`/admin/credits/${credit.id}/settlements`)).data),
+    queryFn: async () => unwrap<CreditSettlement[]>((await api.get(`/admin/credits/${credit.id}/settlements`)).data),
   });
 
   return (

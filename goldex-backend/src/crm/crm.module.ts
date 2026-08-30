@@ -24,9 +24,11 @@ import { WalletEntity } from "../wallet/entities/wallet.entity";
 import { OrderEntity } from "../order/order.entity";
 import { DepositEntity } from "../deposit/deposit.entity";
 import { WithdrawEntity } from "../withdraw/withdraw.entity";
+import { CreditModule } from "../credit/credit.module";
 
 @Module({
   imports: [
+    CreditModule,
     TypeOrmModule.forFeature([
       CustomerNoteEntity,
       SupportTicketEntity,
