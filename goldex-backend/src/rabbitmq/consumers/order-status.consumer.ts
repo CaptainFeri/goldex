@@ -171,12 +171,5 @@ export class OrderStatusConsumer implements OnModuleInit {
         await this.collateralLockRepo.save(lock);
       }
     }
-    if (status === CreditOrderStatusEnum.COMPLETED) {
-      await this.creditRepo.increment(
-        { id: creditOrder.creditId },
-        'executedTradeLevel',
-        1,
-      );
-    }
   }
 }

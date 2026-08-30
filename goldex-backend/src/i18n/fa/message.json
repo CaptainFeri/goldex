@@ -116,7 +116,6 @@
   "YOUR ACCOUNT IS SUSPENDED": "حساب شما تعلیق شده است",
   "FINANCE OPERATIONS ARE ONLY ALLOWED DURING SCHEDULED WORK HOURS (SATURDAY-WEDNESDAY, 9AM-6PM IR TIME)": "عملیات مالی فقط در ساعات کاری مجاز می‌باشد (شنبه تا چهارشنبه، ۹ صبح تا ۶ عصر به وقت ایران)",
 
-  "CREDIT_EXECUTION_LIMIT_REACHED": "محدودیت تعداد معاملات اعتباری شما به پایان رسیده است. لطفاً برای ادامه معامله، اعتبار را تسویه کنید.",
   "WALLET_FROZEN_CREDIT_EXPIRED": "کیف پول شما به دلیل انقضای اعتبار مسدود شده است. لطفاً با پشتیبانی تماس بگیرید.",
 
   "ALREADY_SENT": "{property} قبلاً ارسال شده است",

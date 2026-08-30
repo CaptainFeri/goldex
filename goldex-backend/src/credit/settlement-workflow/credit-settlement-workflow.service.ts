@@ -502,7 +502,7 @@ export class CreditSettlementWorkflowService {
         mode: opts.mode === "ADMIN" ? "ADMIN" : "USER_SELF",
         adminId: opts.adminId ?? null,
         reason: `SETTLEMENT_WORKFLOW:${s.id}`,
-        allowDepositTopUp: opts.mode !== "ADMIN",
+        allowDepositTopUp: s.settlementMethod === SettlementMethodEnum.TOPUP ? true : opts.mode !== "ADMIN",
         force: opts.mode === "ADMIN" ? opts.force : false,
       });
 
