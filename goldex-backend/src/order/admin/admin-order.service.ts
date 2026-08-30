@@ -16,7 +16,6 @@ import { QuoteRequestEntity, QuoteRequestStatus } from "../../quote-request/quot
 import { WalletOrderService } from "../../wallet/services/wallet-order.service";
 import { OrderBookService } from "../../order-book/order-book.service";
 import { CreditOrderEntity } from "../../credit/entity/credit-order.entity";
-import { CreditEntity } from "../../credit/entity/credit.entity";
 import { CreditOrderStatusEnum } from "../../credit/enum/credit-order-status.enum";
 
 @Injectable()
@@ -345,13 +344,6 @@ export class AdminOrderService {
       if (creditOrder) {
         creditOrder.status = CreditOrderStatusEnum.COMPLETED;
         await this.creditOrderRepo.save(creditOrder);
-        // A completed credit trade is one "hop" — only completed orders count.
-        await this.creditOrderRepo.manager.increment(
-          CreditEntity,
-          { id: creditOrder.creditId },
-          "executedTradeLevel",
-          1,
-        );
       }
     }
   }

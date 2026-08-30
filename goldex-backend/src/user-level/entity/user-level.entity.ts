@@ -66,10 +66,6 @@ export class UserLevelEntity extends myBaseEntity {
   @Column({ type: "int", nullable: true, name: "credit_max_parallel_requests" })
   creditMaxParallelRequests: number;
 
-  // Max hops a user can do with credit (IRR→XAU = 1, XAU→AED = 2).
-  @Column({ type: "int", nullable: true, name: "credit_max_execution_level" })
-  creditMaxExecutionLevel: number;
-
   // Max nominal (notional) exposure a facility on this level may hold, in the
   // credit base symbol units (0/null = unlimited). Handoff §9 max_credit_notional.
   @Column({ type: "decimal", precision: 20, scale: 8, nullable: true, name: "credit_max_notional" })

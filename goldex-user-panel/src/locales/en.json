@@ -546,7 +546,6 @@
     "maxLockedCollateral": "Max Locked Collateral",
     "drawdown": "Drawdown",
     "reminderEvery": "Reminder Every",
-    "maxExecutionLevel": "Max Execution Level",
     "increasedWallets": "Increased Wallets",
     "creditWallet": "Credit Wallet",
     "autoReminder": "Auto Reminder",
