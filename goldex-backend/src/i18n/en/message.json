@@ -116,7 +116,6 @@
   "YOUR ACCOUNT IS SUSPENDED": "Your account is suspended",
   "FINANCE OPERATIONS ARE ONLY ALLOWED DURING SCHEDULED WORK HOURS (SATURDAY-WEDNESDAY, 9AM-6PM IR TIME)": "Finance operations are only allowed during scheduled work hours (Saturday-Wednesday, 9AM-6PM IR time)",
 
-  "CREDIT_EXECUTION_LIMIT_REACHED": "Your credit execution limit has been reached. Please settle the credit to continue trading.",
   "WALLET_FROZEN_CREDIT_EXPIRED": "Your wallet is frozen due to an expired credit. Please contact support.",
 
   "ALREADY_SENT": "{property} already sent",

@@ -8,7 +8,7 @@ import { fmtNum, isMarginCalled } from "./labels";
 export function CreateCreditModal({ onClose, onSave, loading }: { onClose: () => void; onSave: (d: any) => void; loading: boolean }) {
   const [form, setForm] = useState({
     userId: "", amount: 0, hasCallMargin: false, callMarginPercent: 0,
-    reminderTimerHours: 24, notes: "", maxExecutionTradeLevel: 0,
+    reminderTimerHours: 24, notes: "",
   });
   const [frozenWallets, setFrozenWallets] = useState<Record<string, number>>({});
   const [increasedWallets, setIncreasedWallets] = useState<Record<string, number>>({});
@@ -76,7 +76,6 @@ export function CreateCreditModal({ onClose, onSave, loading }: { onClose: () =>
     onSave({
       ...form,
       amount: totalAmount,
-      maxExecutionTradeLevel: form.maxExecutionTradeLevel > 0 ? form.maxExecutionTradeLevel : undefined,
       increasedWallets: inc,
       frozenWallets: fw,
     });
@@ -135,11 +134,6 @@ export function CreateCreditModal({ onClose, onSave, loading }: { onClose: () =>
           <div className="field">
             <label>مدت زمان یادآوری (ساعت)</label>
             <input className="input" type="number" min={1} placeholder="مثال: 24" value={form.reminderTimerHours} onChange={(e) => setForm({ ...form, reminderTimerHours: +e.target.value })} />
-          </div>
-
-          <div className="field">
-            <label>حداکثر سطح اجرا (پوزیشن باز همزمان)</label>
-            <input className="input" type="number" min={0} placeholder="0 = نامحدود" value={form.maxExecutionTradeLevel} onChange={(e) => setForm({ ...form, maxExecutionTradeLevel: +e.target.value })} />
           </div>
 
           <div className="field" style={{ gridColumn: "1 / -1" }}>

@@ -80,13 +80,6 @@ export class CreateCreditDto {
   @IsNumber()
   @Min(1)
   @Type(() => Number)
-  maxExecutionTradeLevel?: number;
-
-  @ApiProperty({ required: false })
-  @IsOptional()
-  @IsNumber()
-  @Min(1)
-  @Type(() => Number)
   maxConcurrentOrders?: number;
 
   @ApiProperty({ required: false })

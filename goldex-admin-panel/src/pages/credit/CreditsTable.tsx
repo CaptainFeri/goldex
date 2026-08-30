@@ -49,7 +49,6 @@ export function CreditsTable({
             <th>بازه اخطار</th>
             <th>انقضا</th>
             <th>فراخوان سرمایه</th>
-            <th>سطح اجرا</th>
             <th>عملیات</th>
           </tr>
         </thead>
@@ -112,11 +111,6 @@ export function CreditsTable({
                 {c.hasCallMargin
                   ? <Badge kind="gold">{c.callMarginPercent ?? "—"}%</Badge>
                   : <Badge kind="gray">ندارد</Badge>}
-              </td>
-              <td>
-                {c.maxExecutionTradeLevel != null
-                  ? `${c.executedTradeLevel ?? 0}/${c.maxExecutionTradeLevel}`
-                  : "—"}
               </td>
               <td>
                 <div className="row" style={{ gap: 4, flexWrap: "wrap" }}>

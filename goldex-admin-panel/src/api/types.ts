@@ -350,8 +350,6 @@ export interface Credit {
   settledAt: string | null;
   notes: string | null;
   settleImagePath: string | null;
-  maxExecutionTradeLevel: number | null;
-  executedTradeLevel: number;
   settlementState: SettlementState;
   riskState: RiskState;
   greenDurationHours: number;
