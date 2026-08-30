@@ -360,8 +360,6 @@ export class CreditService {
         hasCallMargin: dto.hasCallMargin || false,
         callMarginPercent: dto.callMarginPercent,
         reminderTimerHours: dto.reminderTimerHours || 24,
-        maxExecutionTradeLevel: dto.maxExecutionTradeLevel,
-        executedTradeLevel: 0,
         maxConcurrentOrders: dto.maxConcurrentOrders,
         maxTradeChainDepth: dto.maxTradeChainDepth,
         currentTradeChainDepth: 0,
@@ -632,7 +630,6 @@ export class CreditService {
           collateralWalletId: savedCollateralWallet.id,
           depositWalletId: depositWallet.id,
           maxParallelRequests: level.creditMaxParallelRequests,
-          maxExecutionLevel: level.creditMaxExecutionLevel,
           creditConfigs: level.creditConfigs || {},
         },
       });

@@ -151,7 +151,6 @@ export default function CreditPage() {
               {overview?.maxConcurrentOrders != null && <KV label={t('credit.maxParallelTrades')} value={overview.maxConcurrentOrders} />}
               {overview?.maxCreditNotional != null && <KV label={t('credit.maxCreditNotional')} value={`${fmtNum(overview.maxCreditNotional)} IRR`} />}
               {overview?.maxTotalLockedCollateral != null && <KV label={t('credit.maxLockedCollateral')} value={`${(Number(overview.maxTotalLockedCollateral) * 100).toFixed(0)}%`} />}
-              {activeCredit.maxExecutionTradeLevel != null && <KV label={t('credit.maxExecutionLevel')} value={`${activeCredit.executedTradeLevel ?? 0} / ${activeCredit.maxExecutionTradeLevel}`} />}
               <KV label={t('credit.reminderEvery')} value={`${activeCredit.reminderTimerHours} hr`} />
               {activeCredit.metadata?.increasedWallets?.length
                 ? <KV label={t('credit.increasedWallets')} value={activeCredit.metadata.increasedWallets.map((iw) => `${iw.symbolName || iw.symbolId}: ${fmtNum(iw.amount)}`).join('، ')} />
