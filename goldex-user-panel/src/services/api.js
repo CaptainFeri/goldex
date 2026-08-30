@@ -215,6 +215,16 @@ export const creditApi = {
 
   deliverAsset: async (creditId, settlementId, amount) =>
     unwrap(await http.post(`/credits/${creditId}/settlement/${settlementId}/deliver`, { amount })),
+
+  // Cash-out: pay off one credit purchase without closing the facility
+  getCashoutOptions: async (creditId) =>
+    unwrap(await http.get(`/credits/${creditId}/cashout-options`)),
+
+  cashout: async (creditId, payload) =>
+    unwrap(await http.post(`/credits/${creditId}/cashout`, payload)),
+
+  getCashouts: async (creditId) =>
+    unwrap(await http.get(`/credits/${creditId}/cashouts`)),
 }
 
 export const baseInfoApi = {

@@ -19,7 +19,8 @@
     "nonBinary": "غیر باینری",
     "more": "بیشتر",
     "or": "یا",
-    "backToSignIn": "بازگشت به ورود"
+    "backToSignIn": "بازگشت به ورود",
+    "close": "بستن"
   },
   "ui": {
     "themeToggle": "تغییر تم تاریک/روشن",
@@ -627,7 +628,52 @@
     "notifSettlement": "تسویه",
     "notifExpired": "منقضی شده",
     "depositFirst": "لطفاً ابتدا به کیف پول خود واریز کنید",
-    "insufficientCollateral": "موجودی کافی نیست. لطفاً ابتدا به کیف پول خود واریز کنید."
+    "insufficientCollateral": "موجودی کافی نیست. لطفاً ابتدا به کیف پول خود واریز کنید.",
+    "exitOptionsTitle": "دو گزینه شما",
+    "cashoutOptionTitle": "نقد کردن یک خرید اعتباری",
+    "cashoutOptionDesc": "یکی از خریدهایی که با اعتبار انجام داده‌اید را کاملاً تسویه و به دارایی خودتان تبدیل کنید. مبلغ آن از کیف پول واریزی یا از طلای بلوکه‌شده کسر می‌شود و اعتبار شما باز می‌ماند.",
+    "cashoutOptionAction": "نقد کردن",
+    "settleOptionTitle": "تسویه و بستن اعتبار",
+    "settleOptionDesc": "تمام بدهی اعتباری تسویه می‌شود، باقیمانده وثیقه به شما برمی‌گردد و پرونده اعتبار بسته می‌شود. پس از آن معامله اعتباری ندارید.",
+    "cashoutTitle": "نقد کردن اعتبار مصرف‌شده",
+    "cashoutIntro": "یکی از خریدهای اعتباری خود را انتخاب و تسویه کنید. دارایی به کیف پول واریزی شما منتقل می‌شود، مبلغ پرداختی به اعتبار در دسترس بازمی‌گردد و اعتبار شما باز می‌ماند.",
+    "cashoutBalances": "منابع قابل استفاده",
+    "cashoutDepositAvailable": "کیف پول واریزی",
+    "cashoutCollateralAvailable": "وثیقه بلوکه‌شده",
+    "cashoutFee": "کارمزد",
+    "cashoutNoTrades": "در حال حاضر خرید اعتباری قابل نقد کردن ندارید.",
+    "cashoutPurchase": "خرید",
+    "cashoutAmountDue": "مبلغ قابل پرداخت",
+    "cashoutRelease": "دریافت می‌کنید",
+    "cashoutTradedAt": "تاریخ معامله",
+    "cashoutFromDeposit": "پرداخت از کیف پول واریزی",
+    "cashoutFromCollateral": "پرداخت از وثیقه ({{amount}})",
+    "cashoutDepositShort": "برای این خرید به {{amount}} موجودی در کیف پول واریزی نیاز دارید.",
+    "cashoutCollateralShort": "برای این خرید به {{amount}} وثیقه آزاد نیاز دارید.",
+    "cashoutCollateralUnavailable": "پرداخت از وثیقه در حال حاضر برای این اعتبار امکان‌پذیر نیست.",
+    "cashoutNotEligible": "این خرید در حال حاضر قابل نقد کردن نیست.",
+    "cashoutConfirmTitle": "تأیید نقد کردن",
+    "cashoutConfirmDeposit": "مبلغ {{amount}} از کیف پول واریزی شما کسر و {{asset}} به آن اضافه می‌شود. اعتبار شما باز می‌ماند.",
+    "cashoutConfirmCollateral": "{{units}} از وثیقه بلوکه‌شده شما بابت این خرید مصرف می‌شود و {{asset}} به کیف پول واریزی شما منتقل می‌گردد. سقف اعتبار شما به اندازه {{limit}} کاهش می‌یابد، چون آن وثیقه دیگر پشتوانه اعتبار نیست.",
+    "cashoutConfirm": "نقد کن",
+    "cashoutSucceeded": "انجام شد — خرید تسویه و دارایی به کیف پول واریزی شما منتقل شد.",
+    "cashoutFailed": "نقد کردن این خرید انجام نشد — دوباره تلاش کنید یا با پشتیبانی تماس بگیرید.",
+    "cashoutLoadFailed": "دریافت گزینه‌های نقد کردن ناموفق بود",
+    "cashoutUnavailable": "نقد کردن برای این اعتبار در دسترس نیست.",
+    "cashoutHistory": "نقد کردن‌های قبلی",
+    "cashoutReleased": "آزاد شده",
+    "cashoutSource": {
+      "DEPOSIT": "از کیف پول واریزی",
+      "COLLATERAL": "از وثیقه"
+    },
+    "cashoutReason": {
+      "CREDIT_NOT_ACTIVE": "این اعتبار فعال نیست.",
+      "CASHOUT_NOT_SUPPORTED_FOR_LEGACY_CREDIT": "این اعتبار توسط ادمین ایجاد شده و فقط قابل تسویه است، نه نقد کردن.",
+      "CASHOUT_ASSET_NOT_HELD": "دارایی خریداری‌شده دیگر در کیف پول اعتباری شما نیست — معامله شده یا در سفارش باز قفل است.",
+      "CREDIT_NO_MARK_PRICE": "در حال حاضر قیمت زنده‌ای برای وثیقه شما موجود نیست.",
+      "CASHOUT_COLLATERAL_BLOCKED_MARGIN_CALL": "اعتبار شما در وضعیت مارجین کال است — تا رفع آن نمی‌توان از وثیقه استفاده کرد.",
+      "CASHOUT_COLLATERAL_BLOCKED_DEFAULT": "اعتبار شما کسری تسویه‌نشده دارد — استفاده از وثیقه ممکن نیست."
+    }
   },
   "level": {
     "title": "سطح حساب",
