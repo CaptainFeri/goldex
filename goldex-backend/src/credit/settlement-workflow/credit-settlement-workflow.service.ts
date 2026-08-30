@@ -293,10 +293,27 @@ export class CreditSettlementWorkflowService {
       if (s.status !== SettlementWorkflowStatusEnum.FUNDING_REQUIRED) {
         s.status = SettlementWorkflowStatusEnum.METHOD_SELECTED;
       }
-      // If there is a shortfall, funding is required before delivery.
+
+      // TOPUP is cash-only: the user doesn't deliver the borrowed asset at
+      // all, they just top up the IRR shortfall and the engine consumes
+      // collateral for the rest at clearLiability. Void the delivery
+      // obligation so this settlement can skip straight past the
+      // receive/verify-asset steps (FULL/NET still require physical
+      // delivery of the full required amount).
+      const isTopup = method === SettlementMethodEnum.TOPUP;
+      if (isTopup) {
+        s.requiredAssetSymbolId = null;
+        s.requiredAmount = 0;
+      }
+
+      // If there is a shortfall, funding is required before delivery/clearing.
       if (new Decimal(s.shortfall || 0).greaterThan(0)) {
         s.status = SettlementWorkflowStatusEnum.FUNDING_REQUIRED;
         s.requiredTopUp = s.shortfall;
+      } else if (isTopup) {
+        // Nothing to fund and nothing to deliver — already clear to settle.
+        s.status = SettlementWorkflowStatusEnum.ASSET_VERIFIED;
+        s.verifiedAt = s.verifiedAt || new Date();
       } else {
         s.status = SettlementWorkflowStatusEnum.READY;
       }
@@ -313,8 +330,10 @@ export class CreditSettlementWorkflowService {
 
   /**
    * Record funding toward the settlement shortfall (handoff §6.5). When the
-   * accumulated funding covers the shortfall, the workflow becomes READY;
-   * otherwise it stays FUNDING_REQUIRED (partial funding is allowed).
+   * accumulated funding covers the shortfall, the workflow becomes READY
+   * (FULL/NET, still awaiting asset delivery) or ASSET_VERIFIED (TOPUP,
+   * which has no delivery step — see selectMethod); otherwise it stays
+   * FUNDING_REQUIRED (partial funding is allowed).
    */
   async fund(
     settlementId: string,
@@ -341,7 +360,14 @@ export class CreditSettlementWorkflowService {
       s.fundedAmount = funded.toNumber();
       s.requiredTopUp = Decimal.max(0, new Decimal(s.shortfall || 0).minus(funded)).toNumber();
       if (funded.greaterThanOrEqualTo(s.shortfall || 0)) {
-        s.status = SettlementWorkflowStatusEnum.READY;
+        // TOPUP has no asset to deliver (see selectMethod) — once the
+        // shortfall is fully funded it's already clear to settle.
+        if (s.settlementMethod === SettlementMethodEnum.TOPUP) {
+          s.status = SettlementWorkflowStatusEnum.ASSET_VERIFIED;
+          s.verifiedAt = s.verifiedAt || new Date();
+        } else {
+          s.status = SettlementWorkflowStatusEnum.READY;
+        }
       } else {
         s.status = SettlementWorkflowStatusEnum.FUNDING_REQUIRED;
       }
@@ -367,6 +393,11 @@ export class CreditSettlementWorkflowService {
       if (!s) throw new NotFoundException("Settlement not found");
       if (!this.isActive(s.status)) {
         throw new BadRequestException(`Settlement is already ${s.status}`);
+      }
+      if (s.settlementMethod === SettlementMethodEnum.TOPUP) {
+        throw new BadRequestException(
+          "TOPUP is a cash-only settlement — fund the shortfall instead of delivering an asset",
+        );
       }
       if (!this.canReceive(s.status)) {
         throw new BadRequestException(
@@ -428,7 +459,8 @@ export class CreditSettlementWorkflowService {
    * deficit, closes the open credit trades and releases per-trade collateral
    * locks. It only proceeds once the asset has been received and verified
    * (delivery-first rule) and, for exposure > collateral, the shortfall has been
-   * funded.
+   * funded. For a TOPUP settlement there is no asset to deliver — ASSET_VERIFIED
+   * is reached directly once the shortfall is funded (see selectMethod/fund).
    */
   async clearLiability(
     settlementId: string,
