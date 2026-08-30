@@ -7,6 +7,18 @@ export interface CreditStats {
   settlementDistribution: Record<string, number>;
   riskDistribution: Record<string, number>;
   pendingApproval: number;
+  /** Cash-out volume and the platform profit booked on it. */
+  cashout?: {
+    count: number;
+    volume: number;
+    fees: number;
+    spreadProfit: number;
+    systemProfit: number;
+    collateralConsumed: number;
+    creditLimitReduction: number;
+    byDeposit: number;
+    byCollateral: number;
+  };
 }
 
 export function CreditKpis({ stats, onPendingApprovalClick }: { stats: CreditStats; onPendingApprovalClick?: () => void }) {
@@ -24,6 +36,13 @@ export function CreditKpis({ stats, onPendingApprovalClick }: { stats: CreditSta
       <KpiCard label="هشدار" value={stats.risk.warning} tone="gold" />
       <KpiCard label="بررسی ادمین" value={stats.risk.adminReview} tone="blue" />
       <KpiCard label="تعلیق شده" value={stats.risk.suspended} tone="red" />
+      {stats.cashout && (
+        <>
+          <KpiCard label="نقد کردن اعتبار" value={stats.cashout.count} tone="blue" />
+          <KpiCard label="مبلغ نقدشده" value={stats.cashout.volume} tone="gold" currency />
+          <KpiCard label="سود سیستم از نقد کردن" value={stats.cashout.systemProfit} tone="green" currency />
+        </>
+      )}
       {onPendingApprovalClick ? (
         <button
           type="button"
