@@ -179,6 +179,14 @@ export class CreditEntity extends myBaseEntity {
   @Column({ type: "boolean", default: false, name: "netting_enabled" })
   nettingEnabled: boolean;
 
+  /**
+   * Platform fee (%) charged on a credit cash-out — converting a credit
+   * purchase into a fully-paid holding without closing the facility. Managed
+   * by the admin per facility; 0 means the cash-out is free.
+   */
+  @Column({ type: "decimal", precision: 5, scale: 2, default: 0, name: "cashout_fee_percent" })
+  cashoutFeePercent: number;
+
   @OneToMany(() => CreditOrderEntity, (co) => co.credit)
   creditOrders: CreditOrderEntity[];
 }

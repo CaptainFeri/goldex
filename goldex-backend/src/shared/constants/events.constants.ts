@@ -16,6 +16,7 @@ export const CreditEvents = {
   EXPIRED: "credit.expired",
   MARGIN_CALL: "credit.margin_call",
   SETTLED: "credit.settled",
+  CASHED_OUT: "credit.cashed_out",
   REMINDER: "credit.reminder",
   PRICE_UPDATE: "credit.price_update",
   SETTLEMENT_STATE_CHANGED: "credit.settlement_state_changed",

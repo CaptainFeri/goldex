@@ -8,6 +8,7 @@ import { PnlSection, type CreditPnl } from "./detail/PnlSection";
 import { CollateralLocksPanel } from "./detail/CollateralLocksPanel";
 import { SettlementWorkflowPanel } from "./detail/SettlementWorkflowPanel";
 import { SettlementPolicyPanel } from "./detail/SettlementPolicyPanel";
+import { CashoutPanel } from "./detail/CashoutPanel";
 import { CreditMetadata } from "./detail/CreditMetadata";
 import { Tabs } from "./detail/Tabs";
 
@@ -69,6 +70,11 @@ export function CreditDetailModal({ credit, onClose }: { credit: Credit; onClose
                 key: "settlement",
                 label: "تسویه",
                 content: <SettlementWorkflowPanel credit={c} />,
+              },
+              {
+                key: "cashout",
+                label: "نقد کردن و سود سیستم",
+                content: <CashoutPanel credit={c} onChanged={() => creditDetail.refetch()} />,
               },
               {
                 key: "collateral",

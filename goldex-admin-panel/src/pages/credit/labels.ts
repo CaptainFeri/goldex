@@ -74,6 +74,23 @@ export const CREDIT_ORDER_STATUS_LABELS: Record<string, string> = {
   MARGIN_CALLED: "فراخوان",
   COMPLETED: "انجام شده",
   CANCELLED: "لغو شده",
+  CLOSED: "بسته شده",
+  CASHED_OUT: "نقد شده",
+};
+
+export const CASHOUT_SOURCE_LABELS: Record<string, string> = {
+  DEPOSIT: "کیف پول واریزی",
+  COLLATERAL: "وثیقه بلوکه‌شده",
+};
+
+/** Why a purchase (or a payment source) can't be cashed out right now. */
+export const CASHOUT_REASON_LABELS: Record<string, string> = {
+  CREDIT_NOT_ACTIVE: "اعتبار فعال نیست",
+  CASHOUT_NOT_SUPPORTED_FOR_LEGACY_CREDIT: "اعتبار قدیمی (ایجادشده توسط ادمین) — فقط قابل تسویه است",
+  CASHOUT_ASSET_NOT_HELD: "دارایی خریداری‌شده در کیف پول اعتباری موجود نیست",
+  CREDIT_NO_MARK_PRICE: "قیمت زنده وثیقه در دسترس نیست",
+  CASHOUT_COLLATERAL_BLOCKED_MARGIN_CALL: "اعتبار در وضعیت فراخوان سرمایه است",
+  CASHOUT_COLLATERAL_BLOCKED_DEFAULT: "اعتبار کسری تسویه‌نشده دارد",
 };
 
 export const fmtNum = (n: any) => (n ?? 0).toLocaleString("fa-IR");
