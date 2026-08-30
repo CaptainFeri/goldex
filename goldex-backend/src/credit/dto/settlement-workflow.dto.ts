@@ -1,4 +1,4 @@
-import { IsUUID, IsOptional, IsNumber, IsString, Min, IsBoolean, IsArray, IsEnum, ValidateIf } from "class-validator";
+import { IsUUID, IsOptional, IsNumber, IsString, Min, Max, IsBoolean, IsArray, IsEnum, ValidateIf } from "class-validator";
 import { Type } from "class-transformer";
 import { ApiProperty, ApiPropertyOptional } from "@nestjs/swagger";
 import { SettlementMethodEnum } from "../enum/settlement-workflow-status.enum";
@@ -82,4 +82,12 @@ export class SettlementPolicyDto {
   @IsOptional()
   @IsBoolean()
   nettingEnabled?: boolean;
+
+  @ApiPropertyOptional({ description: "Platform fee (%) charged when a credit purchase is cashed out" })
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  @Max(100)
+  @Type(() => Number)
+  cashoutFeePercent?: number;
 }

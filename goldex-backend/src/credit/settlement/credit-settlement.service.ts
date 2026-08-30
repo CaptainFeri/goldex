@@ -624,6 +624,9 @@ export class CreditSettlementService {
     for (const co of creditOrders) {
       const o = co.order;
       if (!o || !(Number(o.executedQuantity) > 0)) continue;
+      // A cashed-out trade was paid off and handed to the deposit wallet — it
+      // no longer belongs to the facility's position.
+      if (co.status === CreditOrderStatusEnum.CASHED_OUT) continue;
       const qty = new Decimal(Number(o.executedQuantity) || 0);
       const pair = o.pricePair;
       const baseId = pair?.baseId || pair?.baseSymbol?.id;

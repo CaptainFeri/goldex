@@ -1536,6 +1536,8 @@ export class CreditService {
       const o = co.order;
       if (!o) continue;
       if (o.status !== "COMPLETED") continue;
+      // Cashed-out trades repaid their credit — they no longer use the line.
+      if (co.status === CreditOrderStatusEnum.CASHED_OUT) continue;
       const price = Number(o.price) || Number(co.priceAtOrderTime) || 0;
       const qty = Number(o.executedQuantity) > 0 ? Number(o.executedQuantity) : Number(o.quantity || 0);
       total = total.plus(new Decimal(qty).mul(price));
@@ -1557,6 +1559,7 @@ export class CreditService {
     for (const co of rows) {
       const o = co.order;
       if (!o || o.status !== "COMPLETED") continue;
+      if (co.status === CreditOrderStatusEnum.CASHED_OUT) continue;
       const price = Number(o.price) || Number(co.priceAtOrderTime) || 0;
       const qty = Number(o.executedQuantity) > 0 ? Number(o.executedQuantity) : Number(o.quantity || 0);
       total = total.plus(new Decimal(qty).mul(price));
@@ -1578,6 +1581,7 @@ export class CreditService {
     for (const co of rows) {
       const o = co.order;
       if (!o || o.status !== "COMPLETED") continue;
+      if (co.status === CreditOrderStatusEnum.CASHED_OUT) continue;
       const price = Number(o.price) || Number(co.priceAtOrderTime) || 0;
       const qty = Number(o.executedQuantity) > 0 ? Number(o.executedQuantity) : Number(o.quantity || 0);
       map[co.creditId] = new Decimal(map[co.creditId] || 0).plus(new Decimal(qty).mul(price)).toNumber();
@@ -2811,6 +2815,7 @@ export class CreditService {
       requireAdminApprovalForSettlement?: boolean;
       settlementMethods?: string[];
       nettingEnabled?: boolean;
+      cashoutFeePercent?: number;
     },
     reason?: string,
   ): Promise<CreditEntity> {
@@ -2825,6 +2830,9 @@ export class CreditService {
     }
     if (dto.nettingEnabled != null) {
       credit.nettingEnabled = dto.nettingEnabled;
+    }
+    if (dto.cashoutFeePercent != null) {
+      credit.cashoutFeePercent = dto.cashoutFeePercent;
     }
     const saved = await this.creditRepository.save(credit);
 
@@ -2841,6 +2849,7 @@ export class CreditService {
           requireAdminApprovalForSettlement: saved.requireAdminApprovalForSettlement,
           settlementMethods: saved.settlementMethods,
           nettingEnabled: saved.nettingEnabled,
+          cashoutFeePercent: saved.cashoutFeePercent,
         },
         actionTime: new Date(),
       }),
