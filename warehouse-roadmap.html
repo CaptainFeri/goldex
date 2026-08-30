@@ -1,0 +1,426 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Gold Trading and Warehousing System Architecture</title>
+    <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+    <script>
+      mermaid.initialize({ startOnLoad: true, theme: "default" });
+    </script>
+    <style>
+      body {
+        font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+        line-height: 1.6;
+        color: #333;
+        max-width: 900px;
+        margin: 0 auto;
+        padding: 20px;
+      }
+      h1,
+      h2,
+      h3,
+      h4 {
+        color: #2c3e50;
+        border-bottom: 2px solid #f1c40f;
+        padding-bottom: 5px;
+        margin-top: 30px;
+      }
+      h1 {
+        text-align: center;
+        background: #f1c40f;
+        color: #000;
+        padding: 20px;
+        border-radius: 8px;
+        border: none;
+      }
+      .persian-section {
+        direction: rtl;
+        text-align: right;
+        font-family: "Tahoma", sans-serif;
+        background: #fdfdfd;
+        padding: 20px;
+        border-right: 5px solid #f1c40f;
+        margin-bottom: 40px;
+      }
+      .english-section {
+        direction: ltr;
+        text-align: left;
+        background: #fdfdfd;
+        padding: 20px;
+        border-left: 5px solid #f1c40f;
+        margin-bottom: 40px;
+      }
+      .diagram-container {
+        background: #f9f9f9;
+        border: 1px solid #ddd;
+        padding: 20px;
+        margin: 20px 0;
+        border-radius: 8px;
+        text-align: center;
+      }
+      .diagram-title {
+        font-weight: bold;
+        font-size: 1.2em;
+        margin-bottom: 15px;
+        color: #2c3e50;
+      }
+      code {
+        background: #eee;
+        padding: 2px 5px;
+        border-radius: 4px;
+        font-family: "Consolas", monospace;
+      }
+      .page-break {
+        page-break-before: always;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>
+      Designing a Comprehensive Gold Trading and Warehousing System<br />طراحی
+      سیستم جامع معاملات و انبارداری طلا
+    </h1>
+
+    <!-- PERSIAN SECTION -->
+    <div class="persian-section">
+      <h2>مقدمه</h2>
+      <p>
+        طراحی یک پلتفرم معاملات طلا که کاربران بتوانند به صورت لحظه‌ای (Market
+        Order) خرید و فروش کنند و سیستم به صورت خودکار بهترین قیمت را از میان
+        تامین‌کنندگان پیدا کند، یک چالش مالی است. اما پیچیدگی اصلی زمانی آغاز
+        می‌شود که این سیستم باید با یک انبار فیزیکی طلا هماهنگ باشد. چالش اصلی
+        در این سیستم‌ها، تطبیق دقت مالی (Financial Precision) در سطح دیجیتال با
+        دقت فیزیکی (Physical Precision) در دنیای واقعی است. این مقاله به بررسی
+        معماری، فرایندها و الگوریتم‌های هوشمند برای مدیریت چرخه حیات طلای فیزیکی
+        از ورود تا خروج، و یکپارچه‌سازی آن با کیف پول دیجیتال کاربران می‌پردازد.
+      </p>
+
+      <h2>۱. معماری داده‌ها (Data Model)</h2>
+      <p>
+        برای پوشش این سیستم دوگانه (دیجیتال/فیزیکی)، موجودیت‌های دیتابیس باید به
+        گونه‌ای طراحی شوند که استقلال دارایی مجازی را از اشیاء فیزیکی حفظ کنند،
+        اما از طریق یک مخرج مشترک به هم متصل باشند. مخرج مشترک تمام محاسبات در
+        این سیستم، طلای عیار ۷۵۰ است.
+      </p>
+      <ul>
+        <li>
+          <strong>کیف پول (Wallet):</strong> موجودی مجازی کاربران که تماماً بر
+          حسب گرم طلای ۷۵۰ ذخیره و محاسبه می‌شود.
+        </li>
+        <li>
+          <strong>رسید ورودی انبار (Inbound Receipt):</strong> ثبت اولیه طلاهای
+          دریافتی از تامین‌کننده جهت تسویه حساب.
+        </li>
+        <li>
+          <strong>بسته فیزیکی (Package/Bar):</strong> واحد اصلی معامله در انبار
+          که پس از بسته‌بندی ایجاد می‌شود. این موجودیت شامل وضعیت‌های مختلف
+          (یتیم، رزرو شده، تحویل شده، در حال شکستن) است.
+        </li>
+        <li>
+          <strong>درخواست برداشت (Withdrawal Request):</strong> درخواست کاربر
+          برای تبدیل موجودی دیجیتال به تحویل فیزیکی.
+        </li>
+      </ul>
+
+      <h2>۲. فرایند ورود به انبار (Inbound Process)</h2>
+      <p>
+        فرایند ورود طلا به انبار باید به صورت دو مرحله‌ای طراحی شود تا خطای
+        انسانی و سیستم به حداقل برسد:
+      </p>
+      <ol>
+        <li>
+          <strong>مرحله ثبت اولیه (Pre-Packing):</strong> ادمین سیستم، طلای
+          دریافتی از تامین‌کننده را ثبت می‌کند. در اینجا سیستم صرفاً ثبت می‌کند
+          که مثلاً ۱۰۰ گرم طلا به عنوان تسویه حساب از تامین‌کننده "الف" وارد
+          انبار شده است.
+        </li>
+        <li>
+          <strong>مرحله بسته‌بندی و کنترل کیفیت (Packing & QC):</strong> ادمین
+          طلا را روی ترازو قرار داده و مشخصات دقیق فیزیکی را وارد می‌کند (وزن
+          ظاهری، عیار، انگی، تصویر ترازو). سپس سیستم به صورت خودکار وزن باطنی را
+          محاسبه می‌کند:
+          <code>وزن باطنی (۷۵۰) = (وزن ظاهری × عیار) / 750</code>. این بسته با
+          یک شناسه یکتا ثبت شده و وضعیت آن "بسته یتیم" (Orphan Package) می‌شود.
+        </li>
+      </ol>
+
+      <h2>
+        ۳. فرایند خروج و الگوریتم تخصیص هوشمند (Outbound & Allocation Algorithm)
+      </h2>
+      <p>
+        هسته اصلی این سیستم، زمانی است که کاربری قصد برداشت طلای خود را دارد. در
+        این مرحله، سیستم باید تصمیم بگیرد که کدام بسته‌ها به کاربر تحویل داده
+        شود. با توجه به نیاز کاربران به دریافت بسته‌های یکپارچه، الگوریتم تخصیص
+        باید اولویت‌هایی را دنبال کند:
+      </p>
+      <ul>
+        <li>بررسی سپرده قبلی کاربر.</li>
+        <li>تطابق دقیق (Exact Match).</li>
+        <li>
+          کمترین اختلاف منفی (Best Fit - Lower Bound): پیدا کردن بسته‌ای که وزن
+          باطنی آن کمتر از درخواست کاربر باشد، اما به آن نزدیک‌ترین باشد.
+        </li>
+        <li>ترکیب بسته‌ها با کمترین تعداد.</li>
+      </ul>
+      <p>
+        <strong>سناریوی عملیاتی:</strong> کاربر درخواست ۵۰ گرم طلای ۷۵۰ می‌کند.
+        سیستم بسته‌ای با وزن باطنی ۴۸ گرم را پیدا می‌کند. ۴۸ گرم فیزیکی به کاربر
+        تحویل داده می‌شود و مابه‌التفاوت (۲ گرم) به صورت دیجیتال به کیف پول
+        کاربر بازمی‌گردد.
+      </p>
+
+      <h2>۴. مدیریت ریزخطاها: تلورانس و انگی</h2>
+      <ul>
+        <li>
+          <strong>حد تلورانس (Tolerance Threshold):</strong> اگر اختلاف وزن کمتر
+          از حد تلورانس (مثلاً ۰.۰۵ گرم) باشد، سیستم آن را صفر در نظر می‌گیرد.
+        </li>
+        <li>
+          <strong>مدیریت انگی (Wastage):</strong> جمع وزن باطنی بسته‌های جدید به
+          علاوه انگی، باید دقیقاً برابر با وزن باطنی بسته مادر باشد.
+        </li>
+      </ul>
+
+      <h2>۵. توصیه‌های فنی</h2>
+      <p>
+        استفاده از تراکنش‌های ACID، قفل‌گذاری رکوردها (Row Locking)، سیستم
+        لاگ‌گذاری دقیق (Audit Trail) و معماری حسابداری دوگانه (Double-Entry
+        Ledger) الزامی است.
+      </p>
+    </div>
+
+    <!-- ENGLISH SECTION -->
+    <div class="english-section page-break">
+      <h2>Introduction</h2>
+      <p>
+        Designing a gold trading platform where users can place instant market
+        orders to buy and sell, and the system automatically finds the best
+        price among various suppliers, is a financial challenge in itself.
+        However, the core complexity begins when this system must be
+        synchronized with a physical gold vault. The primary challenge in such
+        systems is aligning financial precision at the digital level with
+        physical precision in the real world. This article explores the
+        architecture, processes, and intelligent algorithms required to manage
+        the lifecycle of physical gold from inbound to outbound, seamlessly
+        integrated with users' digital wallets.
+      </p>
+
+      <h2>1. Data Model Architecture</h2>
+      <p>
+        To support this dual (digital/physical) system, database entities must
+        be designed to maintain the independence of virtual assets from physical
+        objects while connecting them through a common denominator. The common
+        denominator for all calculations in this system is 750-millesimal
+        fineness gold (18-karat).
+      </p>
+      <ul>
+        <li>
+          <strong>Wallet:</strong> The users' virtual balance, stored and
+          calculated entirely in grams of 750 gold.
+        </li>
+        <li>
+          <strong>Inbound Receipt:</strong> The initial registration of gold
+          received from a supplier for settlement.
+        </li>
+        <li>
+          <strong>Physical Package/Bar:</strong> The main tradable unit in the
+          warehouse, created after the packing process. This entity has various
+          statuses (Orphan, Reserved, Delivered, Splitting).
+        </li>
+        <li>
+          <strong>Withdrawal Request:</strong> The user's request to convert
+          their digital balance into physical delivery.
+        </li>
+      </ul>
+
+      <h2>2. Inbound Process (Warehousing)</h2>
+      <p>
+        The gold intake process must be designed in two phases to minimize human
+        and system errors:
+      </p>
+      <ol>
+        <li>
+          <strong>Pre-Packing Phase:</strong> The system admin registers the
+          gold received from the supplier. The system simply records that, for
+          example, 100 grams of gold have entered the warehouse from Supplier
+          "A".
+        </li>
+        <li>
+          <strong>Packing & QC Phase:</strong> The admin places the gold on a
+          scale and enters the precise physical specifications (Apparent weight,
+          Fineness, Wastage, Scale image). The system then automatically
+          calculates the Net Weight:
+          <code>Net Weight (750) = (Apparent Weight × Fineness) / 750</code>.
+          This package is registered and its status is set to "Orphan Package".
+        </li>
+      </ol>
+
+      <h2>3. Outbound Process & Smart Allocation Algorithm</h2>
+      <p>
+        The core of this system is triggered when a user requests to withdraw
+        their gold. The system must decide which package or combination of
+        packages should be delivered. The allocation algorithm should follow
+        these priorities:
+      </p>
+      <ul>
+        <li>Previous Deposit Check.</li>
+        <li>Exact Match.</li>
+        <li>
+          Lowest Negative Variance (Best Fit - Lower Bound): Find a package
+          whose net weight is less than the user's request but is the closest
+          match.
+        </li>
+        <li>Package Combination with minimum count.</li>
+      </ul>
+      <p>
+        <strong>Operational Scenario:</strong> A user requests 50g of 750 gold.
+        The system finds a package with a net weight of 48g. The 48g physical
+        package is delivered to the user, and the difference (2g) is
+        automatically refunded back to the user's digital wallet.
+      </p>
+
+      <h2>4. Handling Micro-errors: Tolerance and Wastage</h2>
+      <ul>
+        <li>
+          <strong>Tolerance Threshold:</strong> If the difference between the
+          requested weight and the delivered package weight is less than a
+          defined tolerance (e.g., 0.05g), the system considers it zero.
+        </li>
+        <li>
+          <strong>Wastage Management:</strong> The sum of the net weights of the
+          new packages plus the wastage must exactly equal the net weight of the
+          parent package.
+        </li>
+      </ul>
+
+      <h2>5. Technical Implementation Recommendations</h2>
+      <p>
+        Using ACID Database Transactions, Row Locking (Pessimistic Locking),
+        Comprehensive Audit Trails, and Double-Entry Ledger Architecture is
+        mandatory.
+      </p>
+    </div>
+
+    <!-- DIAGRAMS SECTION -->
+    <div class="english-section page-break">
+      <h2>System Sequence Diagrams</h2>
+      <p>
+        Below are the sequence diagrams illustrating the core processes of the
+        system.
+      </p>
+
+      <div class="diagram-container">
+        <div class="diagram-title">
+          1. Inbound Process (Receiving & Packing Gold)
+        </div>
+        <pre class="mermaid">
+sequenceDiagram
+    actor Admin
+    participant System as System API
+    participant DB as Database
+    
+    Note over Admin, DB: Step 1: Initial Supplier Settlement
+    Admin->>System: Register Inbound Receipt (Supplier ID, Total Weight)
+    System->>DB: Save Inbound Receipt (Status: Pending Packing)
+    DB-->>System: Receipt ID
+    System-->>Admin: Receipt Created Successfully
+
+    Note over Admin, DB: Step 2: Packing & Quality Control
+    Admin->>System: Submit Package Details (Apparent Weight, Fineness, Wastage, Scale Image)
+    
+    System->>System: Calculate Net Weight (750) = (Apparent * Fineness) / 750
+    System->>System: Generate Unique Package ID (QR/Barcode)
+    
+    System->>DB: Save Package (Status: Orphan, Net Weight, Image URL)
+    System->>DB: Update Inbound Receipt (Status: Packed)
+    
+    DB-->>System: Success
+    System-->>Admin: Package Registered as Orphan
+            </pre
+        >
+      </div>
+
+      <div class="diagram-container">
+        <div class="diagram-title">
+          2. Outbound Process (User Withdrawal & Smart Allocation)
+        </div>
+        <pre class="mermaid">
+sequenceDiagram
+    actor User
+    actor Admin
+    participant System as System API
+    participant Wallet as Wallet Service
+    participant Engine as Allocation Engine
+    participant DB as Database
+
+    User->>System: Request Withdrawal (50g of 750 Gold)
+    System->>Wallet: Check Balance
+    Wallet-->>System: Sufficient Balance
+    
+    System->>Wallet: Block/Hold 50g from User Wallet
+    Wallet->>DB: Update Wallet (Status: Pending Withdrawal)
+    
+    System->>Engine: Request Package Allocation (Target: 50g)
+    
+    loop Search for Best Fit
+        Engine->>DB: Query Orphan Packages
+        DB-->>Engine: Return Available Packages (e.g., 60g, 48g, 2.64g)
+        Engine->>Engine: Apply Algorithm (Exact > Lower Bound > Combo)
+    end
+    
+    Note over Engine: Algorithm selects Package B (48g)<br/>Difference = 50g - 48g = 2g
+    
+    Engine->>DB: Lock Package B (Status: Reserved for User)
+    Engine-->>System: Return Allocation Result (Package B, Refund: 2g)
+    
+    System->>DB: Create Withdrawal Request (Status: Awaiting Admin QC)
+    System-->>Admin: Notify: New Withdrawal Awaiting QC
+
+    Note over Admin: Physical Handover & QC
+    Admin->>System: Confirm Delivery & Upload Handover Scale Image
+    System->>DB: Update Package B (Status: Delivered)
+    System->>Wallet: Settle Difference (Refund 2g to User Wallet)
+    Wallet->>DB: Update Wallet (Add 2g, Deduct final 48g)
+    System->>DB: Update Withdrawal Request (Status: Completed)
+    
+    System-->>User: Notification: Withdrawal Completed (48g delivered, 2g refunded)
+            </pre>
+      </div>
+
+      <div class="diagram-container">
+        <div class="diagram-title">
+          3. Package Splitting Process (Admin Management)
+        </div>
+        <pre class="mermaid">
+sequenceDiagram
+    actor Admin
+    participant System as System API
+    participant DB as Database
+
+    Admin->>System: Request to Split Package (Parent Package ID)
+    System->>DB: Fetch Parent Package Details
+    DB-->>System: Parent Package (e.g., 60g Net Weight)
+    
+    Admin->>System: Submit Split Details (Child A: 20g, Child B: 39.9g, Wastage: 0.1g)
+    
+    System->>System: Validate Mass Conservation: (20 + 39.9 + 0.1 == 60)
+    
+    alt Validation Fails
+        System-->>Admin: Error: Net weights do not match parent package
+    else Validation Passes
+        System->>DB: Update Parent Package (Status: Split/Archived)
+        
+        System->>DB: Create Child Package A (Status: Orphan, 20g)
+        System->>DB: Create Child Package B (Status: Orphan, 39.9g)
+        System->>DB: Log Wastage Record (0.1g loss)
+        
+        DB-->>System: Success
+        System-->>Admin: Package successfully split. New Orphan packages created.
+    end
+            </pre
+        >
+      </div>
+    </div>
+  </body>
+</html>

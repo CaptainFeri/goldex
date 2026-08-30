@@ -1,0 +1,7 @@
+fastapi
+uvicorn
+paddlepaddle==2.6.2
+paddleocr==2.7.0.3
+Pillow
+numpy<2
+pydantic

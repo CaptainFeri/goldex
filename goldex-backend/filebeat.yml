@@ -1,0 +1,12 @@
+logging.level: debug
+filebeat.inputs:
+  - type: log
+    enabled: true
+    paths:
+      - /usr/share/filebeat/logs/*.log
+
+output.elasticsearch:
+  hosts: ["http://${ELASTIC_HOST}:${ELASTIC_PORT}"]
+
+setup.kibana:
+  host: "http://${KIBANA_HOST}:${KIBANA_PORT}"

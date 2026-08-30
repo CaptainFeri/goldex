@@ -1,0 +1,496 @@
+import { useState } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { api, unwrap, apiError } from "../api/client";
+import { Card, Loading, ErrorState, Empty, Badge, Modal } from "../components/ui";
+import { fmtNum } from "../lib/format";
+import { GAIN_TYPES, SYMBOL_TYPES, UNIT_TYPES, PAYMENT_GATEWAYS, MARKET_TYPES_ENUM, DEPOSIT_TYPES, WITHDRAW_TYPES, SYMBOL_TYPE_DEPOSIT_MAP, SYMBOL_TYPE_WITHDRAW_MAP, SYMBOL_TYPE_DEPOSIT_GATEWAY_MAP, SYMBOL_TYPE_WITHDRAW_GATEWAY_MAP, GATEWAY_PROVIDERS } from "../lib/enums";
+
+function toArray(x: any): any[] {
+  if (Array.isArray(x)) return x;
+  if (x && Array.isArray(x.items)) return x.items;
+  if (x && Array.isArray(x.data)) return x.data;
+  return [];
+}
+
+function getDefaultDepositTypes(symbolType: string): string[] {
+  return SYMBOL_TYPE_DEPOSIT_MAP[symbolType] ?? ["manual"];
+}
+
+function getDefaultWithdrawTypes(symbolType: string): string[] {
+  return SYMBOL_TYPE_WITHDRAW_MAP[symbolType] ?? ["manual"];
+}
+
+function getDefaultDepositGateways(symbolType: string): string[] {
+  return SYMBOL_TYPE_DEPOSIT_GATEWAY_MAP[symbolType] ?? [];
+}
+
+function getDefaultWithdrawGateways(symbolType: string): string[] {
+  return SYMBOL_TYPE_WITHDRAW_GATEWAY_MAP[symbolType] ?? [];
+}
+
+const EMPTY = {
+  name: "",
+  slug: "",
+  picPath: "",
+  gain: 0,
+  gainType: "number",
+  symbolType: "material",
+  unitType: "number",
+  marketType: "formal",
+  paymentGateWayType: "up",
+  hasPaymentGateway: false,
+  isActive: true,
+  depositTypes: getDefaultDepositTypes("material"),
+  withdrawTypes: getDefaultWithdrawTypes("material"),
+  depositGateways: getDefaultDepositGateways("material"),
+  withdrawGateways: getDefaultWithdrawGateways("material"),
+  defaultDepositGateway: "",
+  defaultWithdrawGateway: "",
+};
+
+function toggle(arr: string[], v: string): string[] {
+  return arr.includes(v) ? arr.filter((x) => x !== v) : [...arr, v];
+}
+
+function SymbolForm({ initial, onClose }: { initial?: any; onClose: () => void }) {
+  const qc = useQueryClient();
+  const editing = !!initial?.id;
+  const [form, setForm] = useState<any>({ ...EMPTY, ...initial });
+  const set = (k: string, v: any) => setForm((f: any) => ({ ...f, [k]: v }));
+
+  const save = useMutation({
+    mutationFn: (body: any) =>
+      editing ? api.patch(`/admin/symbols/${initial.id}`, body) : api.post("/admin/symbols", body),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["symbols"] });
+      onClose();
+    },
+  });
+
+  function handleSymbolTypeChange(v: string) {
+    const dGateways = getDefaultDepositGateways(v);
+    const wGateways = getDefaultWithdrawGateways(v);
+    setForm((f: any) => ({
+      ...f,
+      symbolType: v,
+      hasPaymentGateway: v === "rial" ? true : f.hasPaymentGateway,
+      depositTypes: getDefaultDepositTypes(v),
+      withdrawTypes: getDefaultWithdrawTypes(v),
+      depositGateways: dGateways,
+      withdrawGateways: wGateways,
+      defaultDepositGateway: dGateways.length ? dGateways[0] : "",
+      defaultWithdrawGateway: wGateways.length ? wGateways[0] : "",
+    }));
+  }
+
+  function handleRialDepositMode(v: string) {
+    const gateway = v === "payment-gateway";
+    setForm((f: any) => ({
+      ...f,
+      depositTypes: gateway ? ["manual", "payment-gateway"] : ["manual"],
+      depositGateways: gateway ? getDefaultDepositGateways(f.symbolType) : [],
+      defaultDepositGateway: gateway ? (f.defaultDepositGateway || getDefaultDepositGateways(f.symbolType)[0] || "") : "",
+    }));
+  }
+
+  function handleRialWithdrawMode(v: string) {
+    const gateway = v === "auto";
+    setForm((f: any) => ({
+      ...f,
+      withdrawTypes: gateway ? ["manual", "auto"] : ["manual"],
+      withdrawGateways: gateway ? getDefaultWithdrawGateways(f.symbolType) : [],
+      defaultWithdrawGateway: gateway ? (f.defaultWithdrawGateway || getDefaultWithdrawGateways(f.symbolType)[0] || "") : "",
+    }));
+  }
+
+  function handleRialDepositGateway(g: string) {
+    setForm((f: any) => ({ ...f, defaultDepositGateway: g, depositGateways: g ? [g] : [] }));
+  }
+
+  function handleRialWithdrawGateway(g: string) {
+    setForm((f: any) => ({ ...f, defaultWithdrawGateway: g, withdrawGateways: g ? [g] : [] }));
+  }
+
+  function submit(e: React.FormEvent) {
+    e.preventDefault();
+    const payload: any = {
+      name: form.name,
+      slug: form.slug,
+      picPath: form.picPath || "/icons/default.png",
+      gain: Number(form.gain) || 0,
+      gainType: form.gainType,
+      symbolType: form.symbolType,
+      unitType: form.unitType,
+      marketType: form.marketType,
+      hasPaymentGateway: !!form.hasPaymentGateway,
+      isActive: !!form.isActive,
+      depositTypes: form.depositTypes,
+      withdrawTypes: form.withdrawTypes,
+    };
+    if (form.symbolType === "rial") {
+      payload.paymentGateWayType = form.paymentGateWayType;
+      payload.hasPaymentGateway = true;
+    }
+    if (form.hasPaymentGateway) {
+      payload.depositGateways = form.depositGateways || [];
+      payload.withdrawGateways = form.withdrawGateways || [];
+      payload.defaultDepositGateway = form.defaultDepositGateway || undefined;
+      payload.defaultWithdrawGateway = form.defaultWithdrawGateway || undefined;
+    }
+    save.mutate(payload);
+  }
+
+  return (
+    <Modal title={editing ? "ویرایش نماد" : "افزودن نماد"} onClose={onClose}>
+      <form onSubmit={submit}>
+        <div className="grid grid-2">
+          <div className="field">
+            <label>نام</label>
+            <input className="input" value={form.name} onChange={(e) => set("name", e.target.value)} required />
+          </div>
+          <div className="field">
+            <label>اسلاگ (مثل XAU)</label>
+            <input className="input mono" dir="ltr" value={form.slug} onChange={(e) => set("slug", e.target.value)} required />
+          </div>
+          <div className="field">
+            <label>نوع نماد</label>
+            <select className="select" value={form.symbolType} onChange={(e) => handleSymbolTypeChange(e.target.value)}>
+              {SYMBOL_TYPES.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+            </select>
+          </div>
+          <div className="field">
+            <label>نوع بازار</label>
+            <select className="select" value={form.marketType} onChange={(e) => set("marketType", e.target.value)}>
+              {MARKET_TYPES_ENUM.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+            </select>
+          </div>
+          <div className="field">
+            <label>واحد</label>
+            <select className="select" value={form.unitType} onChange={(e) => set("unitType", e.target.value)}>
+              {UNIT_TYPES.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+            </select>
+          </div>
+          <div className="field">
+            <label>سود (gain)</label>
+            <input className="input mono" dir="ltr" value={form.gain} onChange={(e) => set("gain", e.target.value)} />
+          </div>
+          <div className="field">
+            <label>نوع سود</label>
+            <select className="select" value={form.gainType} onChange={(e) => set("gainType", e.target.value)}>
+              {GAIN_TYPES.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+            </select>
+          </div>
+          {form.symbolType === "rial" && (
+            <div className="field">
+              <label>درگاه پرداخت (الزامی برای ریال)</label>
+              <select className="select" value={form.paymentGateWayType} onChange={(e) => set("paymentGateWayType", e.target.value)} required>
+                {PAYMENT_GATEWAYS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+              </select>
+            </div>
+          )}
+          <div className="field">
+            <label>مسیر آیکون</label>
+            <input className="input mono" dir="ltr" value={form.picPath} onChange={(e) => set("picPath", e.target.value)} placeholder="/icons/xau.png" />
+          </div>
+        </div>
+        <div className="grid grid-2" style={{ margin: "12px 0" }}>
+          <div className="field">
+            <label>نوع واریز</label>
+            {form.symbolType === "rial" ? (
+              <div className="checkbox-group">
+                <label className="row" style={{ gap: 6, margin: "4px 0" }}>
+                  <input type="radio" name="dep-mode" checked={(form.depositTypes || []).includes("payment-gateway")} onChange={() => handleRialDepositMode("payment-gateway")} />
+                  درگاه پرداخت
+                </label>
+                <label className="row" style={{ gap: 6, margin: "4px 0" }}>
+                  <input type="radio" name="dep-mode" checked={!(form.depositTypes || []).includes("payment-gateway")} onChange={() => handleRialDepositMode("manual")} />
+                  دستی
+                </label>
+                {(form.depositTypes || []).includes("payment-gateway") && (
+                  <div className="field" style={{ marginTop: 6 }}>
+                    <label style={{ fontSize: 12 }}>انتخاب درگاه واریز</label>
+                    <select className="select" value={form.defaultDepositGateway || ""} onChange={(e) => handleRialDepositGateway(e.target.value)} required>
+                      <option value="">— انتخاب درگاه —</option>
+                      {GATEWAY_PROVIDERS.filter((o) => getDefaultDepositGateways("rial").includes(o.value)).map((o) => (
+                        <option key={o.value} value={o.value}>{o.label}</option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+              </div>
+            ) : (
+              <div className="checkbox-group">
+                {DEPOSIT_TYPES.map((o) => (
+                  <label key={o.value} className="row" style={{ gap: 6, margin: "4px 0" }}>
+                    <input
+                      type="checkbox"
+                      checked={(form.depositTypes || []).includes(o.value)}
+                      onChange={() => set("depositTypes", toggle(form.depositTypes || [], o.value))}
+                    />
+                    {o.label}
+                  </label>
+                ))}
+              </div>
+            )}
+          </div>
+          <div className="field">
+            <label>نوع برداشت</label>
+            {form.symbolType === "rial" ? (
+              <div className="checkbox-group">
+                <label className="row" style={{ gap: 6, margin: "4px 0" }}>
+                  <input type="radio" name="wd-mode" checked={(form.withdrawTypes || []).includes("auto")} onChange={() => handleRialWithdrawMode("auto")} />
+                  درگاه
+                </label>
+                <label className="row" style={{ gap: 6, margin: "4px 0" }}>
+                  <input type="radio" name="wd-mode" checked={!(form.withdrawTypes || []).includes("auto")} onChange={() => handleRialWithdrawMode("manual")} />
+                  دستی
+                </label>
+                {(form.withdrawTypes || []).includes("auto") && (
+                  <div className="field" style={{ marginTop: 6 }}>
+                    <label style={{ fontSize: 12 }}>انتخاب درگاه برداشت</label>
+                    <select className="select" value={form.defaultWithdrawGateway || ""} onChange={(e) => handleRialWithdrawGateway(e.target.value)} required>
+                      <option value="">— انتخاب درگاه —</option>
+                      {GATEWAY_PROVIDERS.filter((o) => getDefaultWithdrawGateways("rial").includes(o.value)).map((o) => (
+                        <option key={o.value} value={o.value}>{o.label}</option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+              </div>
+            ) : (
+              <div className="checkbox-group">
+                {WITHDRAW_TYPES.map((o) => (
+                  <label key={o.value} className="row" style={{ gap: 6, margin: "4px 0" }}>
+                    <input
+                      type="checkbox"
+                      checked={(form.withdrawTypes || []).includes(o.value)}
+                      onChange={() => set("withdrawTypes", toggle(form.withdrawTypes || [], o.value))}
+                    />
+                    {o.label}
+                  </label>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+        <div className="row" style={{ gap: 20, margin: "4px 0 16px" }}>
+          {form.symbolType !== "rial" && (
+            <label className="row" style={{ gap: 6 }}>
+              <input type="checkbox" checked={form.hasPaymentGateway} onChange={(e) => set("hasPaymentGateway", e.target.checked)} />
+              دارای درگاه پرداخت
+            </label>
+          )}
+          <label className="row" style={{ gap: 6 }}>
+            <input type="checkbox" checked={form.isActive} onChange={(e) => set("isActive", e.target.checked)} />
+            فعال
+          </label>
+        </div>
+        {form.hasPaymentGateway && form.symbolType !== "rial" && (
+          <div className="grid grid-2" style={{ margin: "0 0 16px" }}>
+            <div className="field">
+              <label>درگاه‌های واریز</label>
+              <div className="checkbox-group">
+                {GATEWAY_PROVIDERS.map((o) => (
+                  <label key={o.value} className="row" style={{ gap: 6, margin: "4px 0" }}>
+                    <input
+                      type="checkbox"
+                      checked={(form.depositGateways || []).includes(o.value)}
+                      onChange={() => set("depositGateways", toggle(form.depositGateways || [], o.value))}
+                    />
+                    {o.label}
+                  </label>
+                ))}
+              </div>
+              <label style={{ fontSize: 12, marginTop: 8 }}>درگاه پیش‌فرض واریز</label>
+              <select className="select" value={form.defaultDepositGateway || ""} onChange={(e) => set("defaultDepositGateway", e.target.value)}>
+                <option value="">— بدون پیش‌فرض —</option>
+                {(form.depositGateways || []).map((g: string) => (
+                  <option key={g} value={g}>{GATEWAY_PROVIDERS.find((p) => p.value === g)?.label ?? g}</option>
+                ))}
+              </select>
+            </div>
+            <div className="field">
+              <label>درگاه‌های برداشت</label>
+              <div className="checkbox-group">
+                {GATEWAY_PROVIDERS.map((o) => (
+                  <label key={o.value} className="row" style={{ gap: 6, margin: "4px 0" }}>
+                    <input
+                      type="checkbox"
+                      checked={(form.withdrawGateways || []).includes(o.value)}
+                      onChange={() => set("withdrawGateways", toggle(form.withdrawGateways || [], o.value))}
+                    />
+                    {o.label}
+                  </label>
+                ))}
+              </div>
+              <label style={{ fontSize: 12, marginTop: 8 }}>درگاه پیش‌فرض برداشت</label>
+              <select className="select" value={form.defaultWithdrawGateway || ""} onChange={(e) => set("defaultWithdrawGateway", e.target.value)}>
+                <option value="">— بدون پیش‌فرض —</option>
+                {(form.withdrawGateways || []).map((g: string) => (
+                  <option key={g} value={g}>{GATEWAY_PROVIDERS.find((p) => p.value === g)?.label ?? g}</option>
+                ))}
+              </select>
+            </div>
+          </div>
+        )}
+        {save.isError && <div className="error-text">{apiError(save.error)}</div>}
+        <div className="row" style={{ justifyContent: "flex-end", gap: 10 }}>
+          <button type="button" className="btn ghost" onClick={onClose}>انصراف</button>
+          <button className="btn primary" disabled={save.isPending}>{save.isPending ? <span className="spin" /> : "ذخیره"}</button>
+        </div>
+      </form>
+    </Modal>
+  );
+}
+
+const SYMBOL_TYPE_OPTIONS = [
+  { value: "", label: "همه انواع" },
+  ...SYMBOL_TYPES,
+];
+
+function DetailsModal({ id, onClose }: { id: string; onClose: () => void }) {
+  const q = useQuery({
+    queryKey: ["symbol-detail", id],
+    queryFn: async () => unwrap<any>((await api.get(`/admin/symbols/${id}`)).data),
+  });
+  const s = q.data;
+  return (
+    <Modal title="جزئیات نماد" onClose={onClose}>
+      {q.isLoading ? (
+        <Loading />
+      ) : q.isError ? (
+        <ErrorState message={apiError(q.error)} />
+      ) : s ? (
+        <div className="kv">
+          <span className="k">شناسه</span>
+          <span className="mono" style={{ fontSize: 12 }}>{s.id}</span>
+          <span className="k">نام</span>
+          <span>{s.name ?? "—"}</span>
+          <span className="k">اسلاگ</span>
+          <span className="mono">{s.slug ?? "—"}</span>
+          <span className="k">نوع</span>
+          <span>{s.symbolType ?? "—"}</span>
+          <span className="k">بازار</span>
+          <span>{s.marketType === "informal" ? "غیررسمی" : "رسمی"}</span>
+          <span className="k">واحد</span>
+          <span>{s.unitType ?? "—"}</span>
+          <span className="k">وضعیت</span>
+          <span>{s.isActive ? <Badge kind="green">فعال</Badge> : <Badge kind="gray">غیرفعال</Badge>}</span>
+          <span className="k">سود (gain)</span>
+          <span className="mono">{fmtNum(s.gain, 4)}</span>
+          <span className="k">نوع سود</span>
+          <span>{s.gainType ?? "—"}</span>
+          <span className="k">مسیر آیکون</span>
+          <span className="mono">{s.picPath || "—"}</span>
+          <span className="k">درگاه پرداخت</span>
+          <span>{s.paymentGateWayType ?? "—"}</span>
+          <span className="k">نوع واریز</span>
+          <span>{(s.depositTypes && Array.isArray(s.depositTypes) ? s.depositTypes.join("، ") : "—") || "—"}</span>
+          <span className="k">نوع برداشت</span>
+          <span>{(s.withdrawTypes && Array.isArray(s.withdrawTypes) ? s.withdrawTypes.join("، ") : "—") || "—"}</span>
+          <span className="k">درگاه‌های واریز</span>
+          <span>{(s.depositGateways && Array.isArray(s.depositGateways) && s.depositGateways.length ? s.depositGateways.join("، ") : "—") || "—"}</span>
+          <span className="k">درگاه‌های برداشت</span>
+          <span>{(s.withdrawGateways && Array.isArray(s.withdrawGateways) && s.withdrawGateways.length ? s.withdrawGateways.join("، ") : "—") || "—"}</span>
+          <span className="k">درگاه پیش‌فرض واریز</span>
+          <span>{s.defaultDepositGateway || "—"}</span>
+          <span className="k">درگاه پیش‌فرض برداشت</span>
+          <span>{s.defaultWithdrawGateway || "—"}</span>
+        </div>
+      ) : null}
+    </Modal>
+  );
+}
+
+export default function SymbolsPage() {
+  const qc = useQueryClient();
+  const [form, setForm] = useState<{ open: boolean; initial?: any }>({ open: false });
+  const [detailId, setDetailId] = useState<string | null>(null);
+  const [filterType, setFilterType] = useState("");
+
+  const list = useQuery({
+    queryKey: ["symbols"],
+    queryFn: async () => unwrap<any>((await api.get("/admin/symbols/active")).data),
+  });
+  const toggle = useMutation({
+    mutationFn: (p: { id: string; isActive: boolean }) => api.patch(`/admin/symbols/${p.id}/status`, { isActive: p.isActive }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["symbols"] }),
+  });
+  const remove = useMutation({
+    mutationFn: (id: string) => api.delete(`/admin/symbols/${id}`),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["symbols"] }),
+  });
+
+  let symbols = toArray(list.data);
+  if (filterType) symbols = symbols.filter((s) => s.symbolType === filterType);
+
+  return (
+    <Card
+      title="نمادها"
+      action={
+        <div className="row" style={{ gap: 8 }}>
+          <select className="select" value={filterType} onChange={(e) => setFilterType(e.target.value)} style={{ minWidth: 130 }}>
+            {SYMBOL_TYPE_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+          </select>
+          <button className="btn primary sm" onClick={() => setForm({ open: true })}>+ افزودن نماد</button>
+        </div>
+      }
+    >
+      {(toggle.isError || remove.isError) && <div className="error-text">{apiError(toggle.error || remove.error)}</div>}
+      {list.isLoading ? (
+        <Loading />
+      ) : list.isError ? (
+        <ErrorState message={apiError(list.error)} />
+      ) : symbols.length === 0 ? (
+        <Empty />
+      ) : (
+        <div className="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>نام</th>
+                <th>اسلاگ</th>
+                <th>نوع</th>
+                <th>بازار</th>
+                <th>واحد</th>
+                <th>وضعیت</th>
+                <th>واریز</th>
+                <th>برداشت</th>
+                <th>عملیات</th>
+              </tr>
+            </thead>
+            <tbody>
+              {symbols.map((s) => (
+                <tr key={s.id}>
+                  <td>{s.name ?? "—"}</td>
+                  <td className="mono">{s.slug ?? "—"}</td>
+                  <td>{s.symbolType ?? "—"}</td>
+                  <td>{s.marketType === "informal" ? <Badge kind="gold">غیررسمی</Badge> : <Badge kind="green">رسمی</Badge>}</td>
+                  <td>{s.unitType ?? "—"}</td>
+                  <td>{s.isActive ? <Badge kind="green">فعال</Badge> : <Badge kind="gray">غیرفعال</Badge>}</td>
+                  <td style={{ fontSize: 12 }}>{s.depositTypes?.join(", ") || "—"}</td>
+                  <td style={{ fontSize: 12 }}>{s.withdrawTypes?.join(", ") || "—"}</td>
+                  <td>
+                    <div className="row">
+                      <button className="btn sm" onClick={() => setDetailId(s.id)}>جزئیات</button>
+                      <button className="btn sm" onClick={() => setForm({ open: true, initial: s })}>ویرایش</button>
+                      <button className="btn sm" disabled={toggle.isPending} onClick={() => toggle.mutate({ id: s.id, isActive: !s.isActive })}>
+                        {s.isActive ? "غیرفعال" : "فعال"}
+                      </button>
+                      <button className="btn sm danger" disabled={remove.isPending} onClick={() => window.confirm("حذف نماد؟") && remove.mutate(s.id)}>
+                        حذف
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {detailId && <DetailsModal id={detailId} onClose={() => setDetailId(null)} />}
+      {form.open && <SymbolForm initial={form.initial} onClose={() => setForm({ open: false })} />}
+    </Card>
+  );
+}

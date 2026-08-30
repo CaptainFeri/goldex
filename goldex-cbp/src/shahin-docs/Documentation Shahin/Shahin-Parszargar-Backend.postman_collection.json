@@ -1,0 +1,215 @@
+{
+  "info": {
+    "name": "Shahin - بک‌اند پارسزرگر",
+    "description": "مجموعه درخواست‌های سرویس شاهین از طریق بک‌اند اصلی. ابتدا Login را اجرا کنید تا توکن در متغیر token ذخیره شود.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "baseUrl", "value": "https://api.parszargar.com" },
+    { "key": "token", "value": "" }
+  ],
+  "auth": {
+    "type": "bearer",
+    "bearer": [
+      { "key": "token", "value": "{{token}}", "type": "string" }
+    ]
+  },
+  "item": [
+    {
+      "name": "Auth",
+      "item": [
+        {
+          "name": "Login",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "var json = pm.response.json();",
+                  "if (json && json.accessToken) {",
+                  "    pm.collectionVariables.set('token', json.accessToken);",
+                  "    pm.environment.set('token', json.accessToken);",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"mobile\": \"+989123456789\",\n  \"password\": \"your_password\"\n}"
+            },
+            "url": "{{baseUrl}}/auth/login",
+            "description": "لاگین با موبایل و رمز. پس از پاسخ موفق، accessToken در متغیر token ذخیره می‌شود."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Shahin - Account",
+      "item": [
+        {
+          "name": "موجودی حساب (Account Balance)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"bank\": \"BKV\",\n  \"nationalCode\": \"1234567890\",\n  \"sourceAccount\": \"1092152517\"\n}"
+            },
+            "url": "{{baseUrl}}/api/shahin/account/balance",
+            "description": "دریافت موجودی حساب. فیلدهای bank و nationalCode و sourceAccount اجباری هستند."
+          }
+        },
+        {
+          "name": "گردش حساب (Account Statement)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"bank\": \"BKV\",\n  \"nationalCode\": \"1234567890\",\n  \"sourceAccount\": \"1092152517\",\n  \"fromDate\": \"2025-01-01\",\n  \"toDate\": \"2025-02-15\"\n}"
+            },
+            "url": "{{baseUrl}}/api/shahin/account/statement",
+            "description": "دریافت گردش حساب. fromDate و toDate اختیاری؛ می‌توانند میلادی YYYY-MM-DD یا شمسی YYYYMMDD باشند."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Shahin - Transfer",
+      "item": [
+        {
+          "name": "درخواست OTP برای انتقال (Request Transfer)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"destinationAccountNumber\": \"1234567890\",\n  \"amount\": 100000,\n  \"sourceAccount\": \"1092152517\"\n}"
+            },
+            "url": "{{baseUrl}}/api/shahin/request-transfer",
+            "description": "ارسال کد OTP به موبایل کاربر. قبل از transfer یا batch-transfer این را اجرا کنید."
+          }
+        },
+        {
+          "name": "انتقال وجه (Transfer)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"bank\": \"BKV\",\n  \"nationalCode\": \"1234567890\",\n  \"sourceAccount\": \"1092152517\",\n  \"destinationAccountNumber\": \"9876543210\",\n  \"destinationBank\": \"BKV\",\n  \"amount\": 500000,\n  \"transferType\": \"normal\",\n  \"withdrawDescription\": \"پرداخت\",\n  \"otpcode\": \"123456\"\n}"
+            },
+            "url": "{{baseUrl}}/api/shahin/transfer",
+            "description": "انتقال تک‌حساب. حتماً قبل از آن request-transfer را بزنید و otpcode را با کد دریافتی پر کنید."
+          }
+        },
+        {
+          "name": "انتقال دسته‌ای (Batch Transfer)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"bank\": \"BKV\",\n  \"nationalCode\": \"1234567890\",\n  \"sourceAccount\": \"1092152517\",\n  \"oneWithdraw\": true,\n  \"otpcode\": \"123456\",\n  \"destination\": [\n    { \"destinationAccountNumber\": \"1111111111\", \"amount\": 100000 },\n    { \"destinationAccountNumber\": \"2222222222\", \"amount\": 200000 }\n  ]\n}"
+            },
+            "url": "{{baseUrl}}/api/shahin/batch-transfer",
+            "description": "انتقال به چند حساب. قبل از آن request-transfer و سپس otpcode را وارد کنید."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Shahin - Stored Data",
+      "item": [
+        {
+          "name": "لیست حساب‌های ذخیره‌شده (GET accounts)",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/api/shahin/accounts?page=1&limit=50",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "shahin", "accounts"],
+              "query": [
+                { "key": "page", "value": "1" },
+                { "key": "limit", "value": "50" },
+                { "key": "accountNumber", "value": "", "disabled": true },
+                { "key": "bankCode", "value": "", "disabled": true }
+              ]
+            },
+            "description": "لیست حساب‌های ذخیره‌شده با صفحه‌بندی."
+          }
+        },
+        {
+          "name": "جزئیات یک حساب (GET accounts/:id)",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/shahin/accounts/1",
+            "description": "دریافت جزئیات حساب با id."
+          }
+        },
+        {
+          "name": "لاگ یک حساب (GET accounts/:id/entries)",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/api/shahin/accounts/1/entries?page=1&limit=50",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "shahin", "accounts", "1", "entries"],
+              "query": [
+                { "key": "page", "value": "1" },
+                { "key": "limit", "value": "50" }
+              ]
+            },
+            "description": "گردش/لاگ مربوط به یک حساب."
+          }
+        },
+        {
+          "name": "لیست کل لاگ‌ها (GET entries)",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/api/shahin/entries?page=1&limit=50",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "shahin", "entries"],
+              "query": [
+                { "key": "page", "value": "1" },
+                { "key": "limit", "value": "50" },
+                { "key": "type", "value": "", "disabled": true },
+                { "key": "status", "value": "", "disabled": true },
+                { "key": "accountId", "value": "", "disabled": true },
+                { "key": "userId", "value": "", "disabled": true }
+              ]
+            },
+            "description": "لیست کل اندری‌های شاهین با فیلتر."
+          }
+        },
+        {
+          "name": "جزئیات یک لاگ (GET entries/:id)",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/shahin/entries/1",
+            "description": "دریافت جزئیات یک اندری با id."
+          }
+        }
+      ]
+    }
+  ]
+}
