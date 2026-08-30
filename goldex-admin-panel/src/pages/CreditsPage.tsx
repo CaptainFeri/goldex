@@ -39,6 +39,12 @@ const SETTLEMENT_STATE_KINDS: Record<string, string> = {
   SETTLED: "blue",
 };
 
+const SETTLEMENT_METHOD_LABELS: Record<string, string> = {
+  FULL: "بازپرداخت کامل",
+  NET: "خالص‌سازی (Net)",
+  TOPUP: "تأمین نقدی کسری",
+};
+
 const RISK_STATE_LABELS: Record<string, string> = {
   NORMAL: "عادی",
   WARNING: "هشدار",
@@ -872,7 +878,7 @@ function UserCreditsModal({ userId, credit, onClose }: { userId: string; credit:
 
 function CreditDetailModal({ credit, onClose }: { credit: Credit; onClose: () => void }) {
   const notify = useNotify().notify;
-  const [prompt, setPrompt] = useState<{ kind: "reject" | "method" | "fund" | "receive" | "fail"; settlementId: string; currentMethod?: string | null } | null>(null);
+  const [prompt, setPrompt] = useState<{ kind: "reject" | "method" | "fund" | "receive" | "fail"; settlementId: string; currentMethod?: string | null; nettingEnabled?: boolean } | null>(null);
   const [forceSettlementId, setForceSettlementId] = useState<string | null>(null);
   const [actionBusy, setActionBusy] = useState(false);
 
@@ -1333,7 +1339,7 @@ function CreditDetailModal({ credit, onClose }: { credit: Credit; onClose: () =>
                         <td className="mono" style={{ fontSize: 11, color: Number(s.shortfall) > 0 ? "var(--red)" : "inherit" }}>
                           {Number(s.shortfall) > 0 ? fmtNum(s.shortfall) : "—"}
                         </td>
-                        <td className="mono">{s.settlementMethod || "—"}</td>
+                        <td className="mono">{s.settlementMethod ? SETTLEMENT_METHOD_LABELS[s.settlementMethod] ?? s.settlementMethod : "—"}</td>
                         <td className="mono">{fmtNum(s.requiredAmount)}</td>
                         <td className="mono">{fmtNum(s.receivedAmount)}</td>
                         <td className="mono">{fmtNum(s.fundedAmount ?? 0)}</td>
@@ -1349,13 +1355,16 @@ function CreditDetailModal({ credit, onClose }: { credit: Credit; onClose: () =>
                               <button className="btn sm" disabled={actionBusy} onClick={() => runSettlementAction(() => api.post(`/admin/credits/settlements/${s.id}/valuate`), "ارزش‌گذاری انجام شد")}>ارزش‌گذاری</button>
                             )}
                             {(s.status === "APPROVED" || s.status === "VALUATED" || s.status === "METHOD_SELECTED" || s.status === "FUNDING_REQUIRED") && (
-                              <button className="btn sm" disabled={actionBusy} onClick={() => setPrompt({ kind: "method", settlementId: s.id, currentMethod: s.settlementMethod })}>روش</button>
+                              <button className="btn sm" disabled={actionBusy} onClick={() => setPrompt({ kind: "method", settlementId: s.id, currentMethod: s.settlementMethod, nettingEnabled: !!c.nettingEnabled })}>روش</button>
                             )}
                             {(s.status === "METHOD_SELECTED" || s.status === "FUNDING_REQUIRED" || s.status === "READY") && Number(s.shortfall) > 0 && (
                               <button className="btn sm" disabled={actionBusy} onClick={() => setPrompt({ kind: "fund", settlementId: s.id })}>تأمین</button>
                             )}
-                            {(s.status === "APPROVED" || s.status === "VALUATED" || s.status === "METHOD_SELECTED" || s.status === "FUNDING_REQUIRED" || s.status === "READY" || s.status === "ASSET_RECEIVED" || s.status === "ASSET_VERIFIED") && (
+                            {s.settlementMethod !== "TOPUP" && (s.status === "APPROVED" || s.status === "VALUATED" || s.status === "METHOD_SELECTED" || s.status === "FUNDING_REQUIRED" || s.status === "READY" || s.status === "ASSET_RECEIVED" || s.status === "ASSET_VERIFIED") && (
                               <button className="btn sm" disabled={actionBusy} onClick={() => setPrompt({ kind: "receive", settlementId: s.id })}>تحویل</button>
+                            )}
+                            {s.settlementMethod === "TOPUP" && s.status === "ASSET_VERIFIED" && (
+                              <span style={{ fontSize: 11, color: "var(--text-faint)", alignSelf: "center" }}>بدون تحویل — آماده تسویه بدهی</span>
                             )}
                             {s.status === "ASSET_RECEIVED" && (
                               <button className="btn sm" disabled={actionBusy} onClick={() => runSettlementAction(() => api.post(`/admin/credits/settlements/${s.id}/verify`), "دارایی تأیید شد")}>تأیید دارایی</button>
@@ -1435,6 +1444,7 @@ function CreditDetailModal({ credit, onClose }: { credit: Credit; onClose: () =>
       <SettlementPromptModal
         kind={prompt.kind}
         currentMethod={prompt.currentMethod}
+        nettingEnabled={prompt.nettingEnabled}
         submitting={actionBusy}
         onClose={() => setPrompt(null)}
         onSubmit={submitPrompt}
@@ -1464,15 +1474,23 @@ const SETTLEMENT_PROMPT_META: Record<
   fail: { title: "ثبت شکست تسویه", submitLabel: "ثبت شکست", description: "دلیل شکست را برای پیگیری بعدی ثبت کنید." },
 };
 
+const SETTLEMENT_METHOD_OPTIONS: Array<{ value: "FULL" | "NET" | "TOPUP"; title: string; desc: string }> = [
+  { value: "FULL", title: "بازپرداخت کامل", desc: "کاربر همان مقدار دارایی یا وجهی که با اعتبار گرفته را کامل تحویل/بازپرداخت می‌کند." },
+  { value: "NET", title: "خالص‌سازی (Net)", desc: "معاملات خرید و فروش مخالف روی یک دارایی با هم همپوشانی می‌شوند و فقط مابه‌التفاوت تسویه می‌شود." },
+  { value: "TOPUP", title: "تأمین نقدی کسری", desc: "بدون تحویل دارایی — کاربر فقط کسری بین وثیقه و بدهی را نقداً تأمین می‌کند و مستقیم به مرحله تسویه بدهی می‌رود." },
+];
+
 function SettlementPromptModal({
   kind,
   currentMethod,
+  nettingEnabled,
   submitting,
   onClose,
   onSubmit,
 }: {
   kind: "reject" | "method" | "fund" | "receive" | "fail";
   currentMethod?: string | null;
+  nettingEnabled?: boolean;
   submitting: boolean;
   onClose: () => void;
   onSubmit: (value: string) => void;
@@ -1486,7 +1504,11 @@ function SettlementPromptModal({
 
   function submit(e: React.FormEvent) {
     e.preventDefault();
-    if (kind === "method") { onSubmit(method); return; }
+    if (kind === "method") {
+      if (method === "NET" && !nettingEnabled) return;
+      onSubmit(method);
+      return;
+    }
     if (isAmount) {
       const n = Number(amount);
       if (!(n > 0)) return;
@@ -1504,14 +1526,41 @@ function SettlementPromptModal({
 
         {kind === "method" && (
           <div className="field" style={{ gridColumn: "1 / -1" }}>
-            <label>روش تسویه</label>
-            <div className="row" style={{ gap: 12 }}>
-              {(["FULL", "NET", "TOPUP"] as const).map((m) => (
-                <label key={m} style={{ display: "flex", alignItems: "center", gap: 4, cursor: "pointer", fontFamily: "monospace" }}>
-                  <input type="radio" name="settlement-method" value={m} checked={method === m} onChange={() => setMethod(m)} />
-                  {m}
-                </label>
-              ))}
+            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+              {SETTLEMENT_METHOD_OPTIONS.map((o) => {
+                const disabled = o.value === "NET" && !nettingEnabled;
+                return (
+                  <label
+                    key={o.value}
+                    style={{
+                      display: "flex",
+                      alignItems: "flex-start",
+                      gap: 8,
+                      padding: "8px 10px",
+                      borderRadius: 6,
+                      border: `1px solid ${method === o.value ? "var(--gold)" : "var(--border)"}`,
+                      cursor: disabled ? "not-allowed" : "pointer",
+                      opacity: disabled ? 0.5 : 1,
+                    }}
+                  >
+                    <input
+                      type="radio"
+                      name="settlement-method"
+                      value={o.value}
+                      checked={method === o.value}
+                      disabled={disabled}
+                      onChange={() => setMethod(o.value)}
+                      style={{ marginTop: 3 }}
+                    />
+                    <span>
+                      <span style={{ display: "block", fontWeight: 600, fontSize: 13 }}>{o.title}</span>
+                      <span style={{ display: "block", fontSize: 11.5, color: "var(--text-faint)", marginTop: 2 }}>
+                        {disabled ? "غیرفعال — قابلیت خالص‌سازی روی این تسهیلات فعال نشده است." : o.desc}
+                      </span>
+                    </span>
+                  </label>
+                );
+              })}
             </div>
           </div>
         )}
@@ -1551,7 +1600,7 @@ function SettlementPromptModal({
 
         <div className="modal-actions">
           <button type="button" className="btn ghost" onClick={onClose}>انصراف</button>
-          <button type="submit" className="btn" disabled={submitting}>
+          <button type="submit" className="btn" disabled={submitting || (kind === "method" && method === "NET" && !nettingEnabled)}>
             {submitting ? <><span className="spin" /> در حال ثبت…</> : meta.submitLabel}
           </button>
         </div>
