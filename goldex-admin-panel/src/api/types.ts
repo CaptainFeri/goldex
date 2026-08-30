@@ -68,15 +68,41 @@ export interface KycRecord {
 }
 
 // ---- Wallet ----
+export type WalletType = "DEPOSIT" | "CREDIT" | "COLLATERAL";
+
 export interface Wallet {
   id: string;
   userId?: string;
-  symbol?: string;
+  walletType?: WalletType;
+  symbolId?: string;
+  symbol?: SymbolItem | string;
+  status?: string;
+  freeBalance?: number;
+  lockedBalance?: number;
+  // Capacity issued to a CREDIT wallet (the credit line/leverage limit), not
+  // a real fund balance — freeBalance is drawn down against it as the user
+  // trades. Never negative at the wallet-row level; see the credit
+  // settlement engine's signed `netXau` positions for the real exposure.
+  creditBalance?: number;
+  availableBalance?: number;
+  frozenFreeBalance?: number;
+  frozenLockedBalance?: number;
+  frozenAt?: string | null;
+  adminNote?: string | null;
+  totalBalance?: number;
+  calculatedStats?: {
+    totalBalance?: number;
+    availableBalance?: number;
+    totalBalancePrecise?: string;
+    availableBalancePrecise?: string;
+  };
+  updatedAt?: string;
+  createAt?: string;
+  // Legacy/loose aliases some endpoints still return.
   asset?: string;
   balance?: number;
   free?: number;
   locked?: number;
-  status?: string;
   [k: string]: any;
 }
 
@@ -357,6 +383,76 @@ export interface Credit {
   creditOrders?: any[];
   createAt: string;
   [k: string]: any;
+}
+
+// ---- Credit settlement (delivery-based workflow, handoff §7/§13) ----
+export type SettlementWorkflowStatus =
+  | "SETTLEMENT_REQUESTED" | "PENDING_ADMIN_REVIEW" | "APPROVED" | "VALUATED" | "METHOD_SELECTED"
+  | "FUNDING_REQUIRED" | "READY" | "ASSET_RECEIVED" | "ASSET_VERIFIED" | "LIABILITY_CLEARED"
+  | "ASSET_SETTLED" | "COLLATERAL_RELEASED" | "CLOSED" | "REJECTED" | "FAILED";
+export type SettlementMethod = "FULL" | "NET" | "TOPUP";
+export type SettlementValuationState = "EXPOSURE_LT_COLLATERAL" | "EXPOSURE_GT_COLLATERAL" | "EXPOSURE_EQ_COLLATERAL";
+
+export interface CreditSettlement {
+  id: string;
+  creditId: string;
+  creditOrderId: string | null;
+  requiredAssetSymbolId: string | null;
+  requiredAmount: number;
+  receivedAmount: number;
+  status: SettlementWorkflowStatus;
+  requestedBy: string | null;
+  requestedAt: string | null;
+  receivedAt: string | null;
+  verifiedAt: string | null;
+  liabilityClearedAt: string | null;
+  assetSettledAt: string | null;
+  collateralReleasedAt: string | null;
+  closedAt: string | null;
+  notes: string | null;
+  settlementMethod: SettlementMethod | null;
+  valuationState: SettlementValuationState | null;
+  collateralValue: number;
+  exposureValue: number;
+  shortfall: number;
+  requiredTopUp: number;
+  fundedAmount: number;
+  releaseAmount: number;
+  realizedPnL: number;
+  finalCollateralState: any;
+  approvedBy: string | null;
+  approvedAt: string | null;
+  approvalReason: string | null;
+  rejectedBy: string | null;
+  rejectedAt: string | null;
+  rejectionReason: string | null;
+  createAt: string;
+  [k: string]: any;
+}
+
+// ---- Credit settlement engine (mark-to-market valuation) ----
+export interface BaseSymbolPosition {
+  symbolId: string;
+  baseSymbolSlug: string;
+  // Signed net position in the base symbol at the credit's mark price.
+  // Negative = short/owed (e.g. sold this asset on credit) — the "negative
+  // used balance" the credit wallets model as drawn-down capacity.
+  netXau: number;
+  markPrice: number;
+}
+
+export interface SettlementEligibility {
+  // Whether the facility could complete a voluntary settlement right now —
+  // i.e. whether it nets to zero or positive after collateral, with no
+  // outstanding shortfall.
+  eligible: boolean;
+  legacy: boolean;
+  markPrice: number | null;
+  positions: BaseSymbolPosition[];
+  netEquity: number;
+  deficit: number;
+  shortfall: number;
+  collateralValue: number;
 }
 
 export type FinanceAction =

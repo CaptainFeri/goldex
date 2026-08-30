@@ -9,6 +9,7 @@ import { CustomerTagService } from "./customer-tag.service";
 import { SupportTicketService } from "./support-ticket.service";
 import { CommunicationLogService } from "./communication-log.service";
 import { CustomerSegmentService } from "./customer-segment.service";
+import { CreditService } from "../../credit/credit.service";
 
 @Injectable()
 export class Customer360Service {
@@ -24,6 +25,7 @@ export class Customer360Service {
     private readonly ticketService: SupportTicketService,
     private readonly communicationLogService: CommunicationLogService,
     private readonly segmentService: CustomerSegmentService,
+    private readonly creditService: CreditService,
   ) {}
 
   async getCustomer360(userId: string) {
@@ -43,10 +45,25 @@ export class Customer360Service {
 
     const walletSummary = wallets.map((w) => ({
       symbol: w.symbol?.slug || w.symbolId,
+      walletType: w.walletType,
       free: Number(w.freeBalance),
       locked: Number(w.lockedBalance),
       total: Number(w.freeBalance) + Number(w.lockedBalance),
     }));
+
+    // Live, signed credit exposure ("negative used balance") for the user's
+    // active credit facility, if any — same computation the credit panels use
+    // to gate settlement, so a CRM agent can see at a glance whether this user
+    // owes anything and whether they could settle right now.
+    const creditOverview = await this.creditService.getCreditOverview(userId).catch(() => null);
+    const creditExposure = creditOverview
+      ? {
+          creditId: creditOverview.id,
+          positions: creditOverview.positions,
+          settlementEligible: creditOverview.settlementEligible,
+          settlementShortfall: creditOverview.settlementShortfall,
+        }
+      : null;
 
     return {
       user: {
@@ -73,6 +90,7 @@ export class Customer360Service {
         slug: (user.level as any).slug,
       } : null,
       wallets: walletSummary,
+      creditExposure,
       tags,
       segments,
       notes,
