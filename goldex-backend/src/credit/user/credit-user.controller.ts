@@ -29,6 +29,13 @@ export class CreditUserController {
     return { data: await this.creditService.settleFromUser(req.user.id, id) };
   }
 
+  @Get(":id/settlement-eligibility")
+  @ApiOperation({ summary: "Preview whether the facility can settle right now (credit wallets net to zero or positive)" })
+  async settlementEligibility(@Req() req: any, @Param("id") id: string) {
+    await this.assertCreditOwned(req.user.id, id);
+    return { data: await this.creditService.getSettlementEligibility(id) };
+  }
+
   @Post(":id/settlement")
   @ApiOperation({ summary: "Request a delivery-based settlement workflow for a credit trade" })
   async requestSettlement(@Req() req: any, @Param("id") id: string, @Body() dto: RequestSettlementDto) {
