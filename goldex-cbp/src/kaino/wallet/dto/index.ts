@@ -42,7 +42,6 @@ export class PaymentOrderDto {
   beneficiaryId: string;
   beneficiaryName: string;
   beneficiaryIban: string;
-  externalReference?: string;
   description?: string;
   username?: string;
   tenant: string;
@@ -85,6 +84,7 @@ export interface PageQuery {
 export class PaymentOrderQueryDto implements PageQuery {
   from: number | string;
   size: number | string;
+  accountNumber?: string;
   username?: string;
   tenantCode?: string;
   state?: string;
