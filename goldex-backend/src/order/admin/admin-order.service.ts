@@ -17,6 +17,12 @@ import { WalletOrderService } from "../../wallet/services/wallet-order.service";
 import { OrderBookService } from "../../order-book/order-book.service";
 import { CreditOrderEntity } from "../../credit/entity/credit-order.entity";
 import { CreditOrderStatusEnum } from "../../credit/enum/credit-order-status.enum";
+import { OrderBookStatus } from "../../order-book/interfaces/order-book.types";
+import {
+  MarketPoolType,
+  MarketStatus,
+  PairPoolStatusEntity,
+} from "../../market-status/entity/pair-pool-status.entity";
 
 @Injectable()
 export class AdminOrderService {
@@ -37,6 +43,8 @@ export class AdminOrderService {
     private readonly quoteRequestRepository: Repository<QuoteRequestEntity>,
     @InjectRepository(CreditOrderEntity)
     private readonly creditOrderRepo: Repository<CreditOrderEntity>,
+    @InjectRepository(PairPoolStatusEntity)
+    private readonly poolStatusRepo: Repository<PairPoolStatusEntity>,
     private readonly dataSource: DataSource,
     private readonly walletOrderService: WalletOrderService,
     private readonly orderBookService: OrderBookService,
@@ -621,5 +629,66 @@ export class AdminOrderService {
     });
     if (!order) throw new NotFoundException("Order not found");
     return order;
+  }
+
+  /**
+   * Shared Limit Market book state for every pair, joined with that pair's
+   * LIMIT pool status. Lets an admin answer "which books are live, which are
+   * empty, and which are closed" without opening each pair in turn.
+   */
+  async getOrderBookOverview(): Promise<{
+    pairs: (OrderBookStatus & {
+      limitPoolStatus: MarketStatus | null;
+      limitPoolOverridden: boolean;
+    })[];
+    summary: {
+      totalPairs: number;
+      validPairs: number;
+      withBook: number;
+      openPools: number;
+      withRestingOrders: number;
+      totalRestingOrders: number;
+      /** Valid pairs whose pool is open but whose book has nothing in it. */
+      emptyWhileOpen: number;
+      /** In-memory book and database disagree — the restore missed orders. */
+      outOfSync: number;
+      crossed: number;
+      /** Valid pairs with no in-memory book at all; a LIMIT order would fail. */
+      missingBook: number;
+    };
+  }> {
+    const [statuses, poolRows] = await Promise.all([
+      this.orderBookService.getAllStatuses(),
+      this.poolStatusRepo.find({ where: { poolType: MarketPoolType.LIMIT } }),
+    ]);
+
+    const poolByPair = new Map(poolRows.map((row) => [row.pairId, row]));
+
+    const pairs = statuses.map((status) => {
+      const pool = poolByPair.get(status.pairId);
+      return {
+        ...status,
+        limitPoolStatus: pool?.effectiveStatus ?? null,
+        limitPoolOverridden: !!pool?.adminOverride,
+      };
+    });
+
+    const isOpen = (p: (typeof pairs)[number]) => p.limitPoolStatus !== MarketStatus.CLOSED;
+
+    return {
+      pairs,
+      summary: {
+        totalPairs: pairs.length,
+        validPairs: pairs.filter((p) => p.isValid).length,
+        withBook: pairs.filter((p) => p.hasBook).length,
+        openPools: pairs.filter(isOpen).length,
+        withRestingOrders: pairs.filter((p) => p.restingOrders > 0).length,
+        totalRestingOrders: pairs.reduce((sum, p) => sum + p.restingOrders, 0),
+        emptyWhileOpen: pairs.filter((p) => p.isValid && isOpen(p) && p.restingOrders === 0).length,
+        outOfSync: pairs.filter((p) => !p.inSync).length,
+        crossed: pairs.filter((p) => p.crossed).length,
+        missingBook: pairs.filter((p) => p.isValid && !p.hasBook).length,
+      },
+    };
   }
 }

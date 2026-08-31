@@ -28,6 +28,7 @@ import { AdminWalletModule } from "./admin-wallet/admin-wallet.module";
 import { WebSocketModule } from "./websocket/websocket.module";
 import { AdminOrderModule } from "./order/admin/admin-order.module";
 import { OrderModule } from "./order/order.module";
+import { OrderBookModule } from "./order-book/order-book.module";
 import { RabbitMQModule } from "./rabbitmq/rabbitmq.module";
 import { ProviderPairMappingModule } from "./provider-pair-mapping/provider-pair-mapping.module";
 import { WalletCoreModule } from "./wallet/wallet-core.module";
@@ -141,6 +142,11 @@ import { ScheduleModule } from "@nestjs/schedule";
     AdminWalletModule,
     AdminOrderModule,
     OrderModule,
+    // @Global: exactly one shared Limit Market book per pair. Declaring
+    // OrderBookService as a provider anywhere else creates a second, private
+    // book that order matching, the admin views and market-close would each
+    // see differently.
+    OrderBookModule,
     RabbitMQModule,
     ProviderPairMappingModule,
     WalletCoreModule,

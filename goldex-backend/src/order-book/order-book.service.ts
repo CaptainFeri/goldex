@@ -7,7 +7,7 @@ import { PricePairEntity } from "../admin-pair/entity/price.pair.entity";
 import { OrderEntity } from "../order/order.entity";
 import { OrderStatusEnum } from "../order/enum/order.status.enum";
 import { OrderTypeEnum } from "../order/enum/order.type.enum";
-import { OrderSource, DepthLevel, MatchedOrder } from "./interfaces/order-book.types";
+import { OrderSource, DepthLevel, MatchedOrder, OrderBookStatus } from "./interfaces/order-book.types";
 import { MESQAL_TO_GRAM } from "../common/constants";
 
 /**
@@ -221,6 +221,110 @@ export class OrderBookService implements OnModuleInit {
    */
   hasCustomerBook(pairId: string): boolean {
     return this.limitBooks.has(pairId);
+  }
+
+  /**
+   * Make sure a pair has a book, restoring any resting LIMIT orders into it.
+   *
+   * Books are otherwise only created in `onModuleInit` for pairs that were
+   * valid at boot, so a pair validated afterwards had no book and its first
+   * LIMIT order threw "No Limit Market book for pair". Call this whenever a
+   * pair becomes valid.
+   */
+  async ensureBook(pairId: string): Promise<boolean> {
+    if (this.limitBooks.has(pairId)) return false;
+
+    const pendingByPair = await this.loadPendingLimitOrders();
+    const snapshot = this.buildRestoreSnapshot(pendingByPair.get(pairId) ?? []);
+    this.limitBooks.set(pairId, new OrderBook({ snapshot }));
+
+    const restored = this.countSnapshotOrders(snapshot);
+    this.logger.log(
+      `Opened Limit Market book for pair ${pairId}` +
+        (restored > 0 ? ` (restored ${restored} resting order(s))` : ""),
+    );
+    return true;
+  }
+
+  /** Drop a pair's book entirely (the pair is no longer tradable). */
+  closeBook(pairId: string): boolean {
+    return this.limitBooks.delete(pairId);
+  }
+
+  /**
+   * Live state of every pair's shared book, including pairs that have none.
+   * `dbPendingOrders` is counted from the database so a book that failed to
+   * restore is visible rather than silently empty.
+   */
+  async getAllStatuses(): Promise<OrderBookStatus[]> {
+    const pairs = await this.pricePairRepo.find({
+      relations: { baseSymbol: true, quoteSymbol: true },
+    });
+    const pendingByPair = await this.loadPendingLimitOrders();
+
+    // Books needing attention first, then the busiest, then alphabetically —
+    // so a crossed or out-of-sync book is never buried below quiet pairs.
+    const attention = (s: OrderBookStatus) =>
+      s.crossed || !s.inSync || (s.isValid && !s.hasBook) ? 0 : 1;
+
+    return pairs
+      .map((pair) => this.buildStatus(pair, pendingByPair.get(pair.id)?.length ?? 0))
+      .sort(
+        (a, b) =>
+          attention(a) - attention(b) ||
+          b.restingOrders - a.restingOrders ||
+          a.pairLabel.localeCompare(b.pairLabel),
+      );
+  }
+
+  /** Live state of a single pair's shared book. */
+  async getStatusForPair(pairId: string): Promise<OrderBookStatus | null> {
+    const pair = await this.pricePairRepo.findOne({
+      where: { id: pairId },
+      relations: { baseSymbol: true, quoteSymbol: true },
+    });
+    if (!pair) return null;
+
+    const pendingByPair = await this.loadPendingLimitOrders();
+    return this.buildStatus(pair, pendingByPair.get(pairId)?.length ?? 0);
+  }
+
+  private buildStatus(pair: PricePairEntity, dbPendingOrders: number): OrderBookStatus {
+    const baseSlug = pair.baseSymbol?.slug ?? null;
+    const quoteSlug = pair.quoteSymbol?.slug ?? null;
+    const hasBook = this.limitBooks.has(pair.id);
+    const { bids, asks } = this.getDepth(pair.id);
+
+    const restingOrders =
+      bids.reduce((sum, l) => sum + l.orderCount, 0) +
+      asks.reduce((sum, l) => sum + l.orderCount, 0);
+
+    const bestBid = bids.length > 0 ? bids[0].price : null;
+    const bestAsk = asks.length > 0 ? asks[0].price : null;
+    const spread = bestBid != null && bestAsk != null ? Number((bestAsk - bestBid).toFixed(4)) : null;
+    const spreadPercent =
+      spread != null && bestAsk ? Number(((spread / bestAsk) * 100).toFixed(4)) : null;
+
+    return {
+      pairId: pair.id,
+      baseSlug,
+      quoteSlug,
+      pairLabel: `${baseSlug ?? "?"}/${quoteSlug ?? "?"}`,
+      isValid: !!pair.isValid,
+      hasBook,
+      bidLevels: bids.length,
+      askLevels: asks.length,
+      restingOrders,
+      dbPendingOrders,
+      inSync: restingOrders === dbPendingOrders,
+      totalBidSize: Number(bids.reduce((sum, l) => sum + l.size, 0).toFixed(4)),
+      totalAskSize: Number(asks.reduce((sum, l) => sum + l.size, 0).toFixed(4)),
+      bestBid,
+      bestAsk,
+      spread,
+      spreadPercent,
+      crossed: bestBid != null && bestAsk != null && bestBid >= bestAsk,
+    };
   }
 
   // ---------------------------------------------------------------------------

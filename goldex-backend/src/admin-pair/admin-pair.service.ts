@@ -1,5 +1,6 @@
 import {
   Injectable,
+  Logger,
   NotFoundException,
   ConflictException,
   BadRequestException,
@@ -14,15 +15,40 @@ import { UpdatePricePairDto } from "./dto/update-price-paird.dto";
 import { OrderEntity } from "../order/order.entity";
 import { QuoteRequestEntity } from "../quote-request/quote-request.entity";
 import { PendDeadlineStateEnum } from "../credit/enum/pend-deadline-state.enum";
+import { OrderBookService } from "../order-book/order-book.service";
 
 @Injectable()
 export class AdminPairService {
+  private readonly logger = new Logger(AdminPairService.name);
+
   constructor(
     @InjectSymbolRepository(SymbolEntity)
     private symbolRepository: Repository<SymbolEntity>,
     @InjectRepository(PricePairEntity)
-    private pricePairRepository: Repository<PricePairEntity>
+    private pricePairRepository: Repository<PricePairEntity>,
+    private readonly orderBookService: OrderBookService
   ) {}
+
+  /**
+   * Books are only created at boot for pairs that were valid then, so a pair
+   * that becomes valid later must have its book opened now — otherwise its
+   * first LIMIT order fails with "No Limit Market book for pair".
+   */
+  private async syncOrderBook(pair: PricePairEntity): Promise<void> {
+    try {
+      if (pair.isValid) {
+        await this.orderBookService.ensureBook(pair.id);
+      } else {
+        this.orderBookService.closeBook(pair.id);
+      }
+    } catch (err) {
+      // Never fail a pair write because the in-memory book could not be
+      // synced; the overview surfaces the mismatch.
+      this.logger.error(
+        `Could not sync the order book for pair ${pair.id}: ${(err as Error).message}`
+      );
+    }
+  }
 
   async create(createPricePairDto: CreatePricePairDto): Promise<PricePairEntity> {
     const existingPair = await this.pricePairRepository.findOne({
@@ -62,7 +88,9 @@ export class AdminPairService {
       lastUpdated: new Date(),
     });
 
-    return this.pricePairRepository.save(pricePair);
+    const saved = await this.pricePairRepository.save(pricePair);
+    await this.syncOrderBook(saved);
+    return saved;
   }
 
   async findAll(): Promise<PricePairEntity[]> {
@@ -102,7 +130,9 @@ export class AdminPairService {
 
     Object.assign(pricePair, updatePricePairDto);
 
-    return this.pricePairRepository.save(pricePair);
+    const saved = await this.pricePairRepository.save(pricePair);
+    await this.syncOrderBook(saved);
+    return saved;
   }
 
   async remove(id: string): Promise<void> {
@@ -110,6 +140,7 @@ export class AdminPairService {
     if (result.affected === 0) {
       throw new NotFoundException(`Price pair with ID "${id}" not found`);
     }
+    this.orderBookService.closeBook(id);
   }
 
   async findByBaseCode(baseCode: string): Promise<PricePairEntity[]> {
@@ -143,8 +174,13 @@ export class AdminPairService {
 
   async toggleValidity(id: string): Promise<PricePairEntity> {
     const pricePair = await this.pricePairRepository.findOne({ where: { id } });
+    if (!pricePair) {
+      throw new NotFoundException(`Price pair with ID "${id}" not found`);
+    }
     pricePair.isValid = !pricePair.isValid;
-    return this.pricePairRepository.save(pricePair);
+    const saved = await this.pricePairRepository.save(pricePair);
+    await this.syncOrderBook(saved);
+    return saved;
   }
 
   async getRequestsOverview(pairId: string): Promise<{
