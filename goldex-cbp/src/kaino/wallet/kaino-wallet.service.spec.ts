@@ -68,19 +68,20 @@ describe("KainoWalletService.chargeWallet", () => {
       )
       .digest("hex");
     expect(bodies[0].sign).toBe(expectedSign);
-    // the body carries the signed fields plus unsigned extras (validCards...).
+    // body follows the reference key sequence + unsigned extras (validCards...).
     expect(bodies[0]).toEqual({
       identifier: "PAY001",
-      tenant: "TENANT001",
-      amount: "300000.0",
-      username: "2000004855092",
-      localDate: "2026-01-15 10:30:00",
+      amount: 300000,
       callBackUrl: "https://example.com/callback",
+      sign: expectedSign,
+      date: expect.any(String),
+      localDate: "2026-01-15 10:30:00",
+      username: "2000004855092",
+      tenant: "TENANT001",
       currency: "IRR",
       payerMobileNumber: "09123456789",
       autoVerify: true,
       validCards: ["603799", "627412"],
-      sign: expectedSign,
     });
   });
 });
