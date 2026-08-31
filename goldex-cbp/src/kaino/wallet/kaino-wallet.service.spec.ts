@@ -59,12 +59,12 @@ describe("KainoWalletService.chargeWallet", () => {
       localDate: "2026-01-15 10:30:00",
     });
 
-    // Reference SDK order: identifier, tenant, amount (plain),
+    // Reference SDK order: identifier, tenant, amount (Double.toString),
     // username, localDate, callBackUrl (dropping empty fields).
     const expectedSign = crypto
       .createHmac("sha256", "secret-key")
       .update(
-        "#PAY001#TENANT001#300000#2000004855092#2026-01-15 10:30:00#https://example.com/callback#",
+        "#PAY001#TENANT001#300000.0#2000004855092#2026-01-15 10:30:00#https://example.com/callback#",
       )
       .digest("hex");
     expect(bodies[0].sign).toBe(expectedSign);
@@ -72,7 +72,7 @@ describe("KainoWalletService.chargeWallet", () => {
     expect(bodies[0]).toEqual({
       identifier: "PAY001",
       tenant: "TENANT001",
-      amount: "300000",
+      amount: "300000.0",
       username: "2000004855092",
       localDate: "2026-01-15 10:30:00",
       callBackUrl: "https://example.com/callback",
