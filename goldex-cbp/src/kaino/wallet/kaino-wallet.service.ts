@@ -62,18 +62,6 @@ export class KainoWalletService {
     return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
   }
 
-  /** Java-style date serialization: "Aug 31, 2026 3:19:35 PM" */
-  private javaDate(d: Date): string {
-    const months = [
-      "Jan", "Feb", "Mar", "Apr", "May", "Jun",
-      "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
-    ];
-    const pad = (n: number) => String(n).padStart(2, "0");
-    const hour = d.getHours() % 12 || 12;
-    const ampm = d.getHours() < 12 ? "AM" : "PM";
-    return `${months[d.getMonth()]} ${pad(d.getDate())}, ${d.getFullYear()} ${hour}:${pad(d.getMinutes())}:${pad(d.getSeconds())} ${ampm}`;
-  }
-
   private buildSign(params: Record<string, any>, keys: string[]): string {
     return this.sig.sign(this.sig.build(params, keys), this.channelKey);
   }
@@ -158,7 +146,6 @@ export class KainoWalletService {
       amount: Number(dto.amount),
       callBackUrl: dto.callBackUrl,
       sign,
-      date: this.javaDate(new Date()),
       localDate: params.localDate,
       username: params.username,
       tenant: dto.tenant,
