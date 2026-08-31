@@ -1,13 +1,3 @@
-export interface WalletBeneficiary {
-  accountNumber: string;
-  amount: number | string;
-}
-
-export interface IbanBeneficiary {
-  iban: string;
-  amount: number | string;
-}
-
 export class ChargeWalletDto {
   tenant: string;
   identifier: string;
@@ -15,15 +5,6 @@ export class ChargeWalletDto {
   callBackUrl: string;
   username?: string;
   currency?: string;
-  payerMobileNumber?: string;
-  accountNumber?: string;
-  ipgTenantCode?: string;
-  description?: string;
-  autoVerify?: boolean;
-  validCards?: string[];
-  walletBeneficiaries?: WalletBeneficiary[];
-  ibanBeneficiaries?: IbanBeneficiary[];
-  additionalData?: Record<string, any>;
   localDate?: string;
 }
 

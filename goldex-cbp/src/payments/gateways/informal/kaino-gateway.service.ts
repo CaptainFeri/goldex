@@ -60,13 +60,7 @@ export class KainoGatewayService implements IPaymentGateway {
       tenant: kaino.tenant,
       currency: "IRR",
       amount: this.plainAmount(params.amount),
-      payerMobileNumber:
-        params.meta?.mobile ?? kaino.payerMobile ?? undefined,
-      accountNumber: params.meta?.accountNumber,
       callBackUrl: params.callbackUrl,
-      autoVerify: true,
-      validCards: params.meta?.validCards,
-      description: params.meta?.description,
       localDate,
     });
     return {

@@ -53,9 +53,6 @@ describe("KainoWalletService.chargeWallet", () => {
       currency: "IRR",
       amount: "300000",
       callBackUrl: "https://example.com/callback",
-      payerMobileNumber: "09123456789",
-      autoVerify: true,
-      validCards: ["603799", "627412"],
       localDate: "2026-01-15 10:30:00",
     });
 
@@ -68,19 +65,16 @@ describe("KainoWalletService.chargeWallet", () => {
       )
       .digest("hex");
     expect(bodies[0].sign).toBe(expectedSign);
-    // body follows the reference key sequence + unsigned extras (validCards...).
+    // body carries exactly the accepted reference fields, no unsigned extras.
     expect(bodies[0]).toEqual({
       identifier: "PAY001",
-      amount: 300000,
+      amount: "300000.0",
       callBackUrl: "https://example.com/callback",
       sign: expectedSign,
       localDate: "2026-01-15 10:30:00",
       username: "2000004855092",
       tenant: "TENANT001",
       currency: "IRR",
-      payerMobileNumber: "09123456789",
-      autoVerify: true,
-      validCards: ["603799", "627412"],
     });
   });
 });
