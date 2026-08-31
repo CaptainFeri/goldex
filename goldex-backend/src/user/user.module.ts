@@ -29,7 +29,7 @@ import { MinioModule } from "../minio/minio.module";
 import { UserKycDocumentEntity } from "./entity/user.kyc.document.entity";
 import { WalletEntity } from "../wallet/entities/wallet.entity";
 import { TransactionEntity } from "../wallet/entities/transaction.entity";
-import { UserWalletService } from "../user-wallet/user-wallet.service";
+import { UserWalletModule } from "../user-wallet/user-wallet.module";
 import { SymbolEntity } from "../admin-symbol/entity/symbol.entity";
 import { UserMarketTypeEntity } from "./entity/user.market.type.entity";
 import { UserLevelModule } from "../user-level/user-level.module";
@@ -69,8 +69,12 @@ import { UserLevelModule } from "../user-level/user-level.module";
         },
       }),
     }),
+    // UserWalletService is owned by UserWalletModule. Declaring it here as well
+    // built a second instance whose dependencies had to be satisfied from this
+    // module's imports, so anything added to its constructor broke startup.
+    UserWalletModule,
   ],
-  providers: [UserService, JibitProvider, UserKycService, UserWalletService],
+  providers: [UserService, JibitProvider, UserKycService],
   controllers: [AuthUserController, UserProfileController, UserKycController],
   exports: [UserKycService],
 })
