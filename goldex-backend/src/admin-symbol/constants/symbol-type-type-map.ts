@@ -1,33 +1,66 @@
-﻿import { SymbolTypeEnum } from "../enum/symbol.type.enum";
+import { SymbolTypeEnum } from "../enum/symbol.type.enum";
+import { DepositTypeEnum } from "../enum/deposit-type.enum";
+import { WithdrawTypeEnum } from "../enum/withdraw-type.enum";
 
-export const SYMBOL_TYPE_DEPOSIT_MAP: Record<SymbolTypeEnum, string[]> = {
-  [SymbolTypeEnum.RIAL]: ["manual", "payment-gateway"],
-  [SymbolTypeEnum.CRYPTO]: ["manual", "hdwallet"],
-  [SymbolTypeEnum.FIAT]: ["manual", "payment-gateway"],
-  [SymbolTypeEnum.MATERIAL]: ["warehouse", "borrow"],
+/**
+ * Single source of truth for what a symbol of a given type can do.
+ *
+ * goldex-cbp keeps a copy of the deposit/withdraw maps because it is a
+ * separate deployable, but the admin panel no longer does — it reads
+ * `GET /admin/symbols/capabilities`, which is built from this file plus the
+ * live gateway registry.
+ */
+export const SYMBOL_TYPE_DEPOSIT_MAP: Record<SymbolTypeEnum, DepositTypeEnum[]> = {
+  [SymbolTypeEnum.RIAL]: [DepositTypeEnum.MANUAL, DepositTypeEnum.PAYMENT_GATEWAY],
+  [SymbolTypeEnum.CRYPTO]: [DepositTypeEnum.MANUAL, DepositTypeEnum.HDWALLET],
+  [SymbolTypeEnum.FIAT]: [DepositTypeEnum.MANUAL, DepositTypeEnum.PAYMENT_GATEWAY],
+  [SymbolTypeEnum.MATERIAL]: [DepositTypeEnum.WAREHOUSE, DepositTypeEnum.BORROW],
 };
 
-export const SYMBOL_TYPE_WITHDRAW_MAP: Record<SymbolTypeEnum, string[]> = {
-  [SymbolTypeEnum.RIAL]: ["manual", "auto"],
-  [SymbolTypeEnum.CRYPTO]: ["manual", "auto"],
-  [SymbolTypeEnum.FIAT]: ["manual", "auto"],
-  [SymbolTypeEnum.MATERIAL]: ["warehouse", "borrow"],
+export const SYMBOL_TYPE_WITHDRAW_MAP: Record<SymbolTypeEnum, WithdrawTypeEnum[]> = {
+  [SymbolTypeEnum.RIAL]: [WithdrawTypeEnum.MANUAL, WithdrawTypeEnum.AUTO],
+  [SymbolTypeEnum.CRYPTO]: [WithdrawTypeEnum.MANUAL, WithdrawTypeEnum.AUTO],
+  [SymbolTypeEnum.FIAT]: [WithdrawTypeEnum.MANUAL, WithdrawTypeEnum.AUTO],
+  [SymbolTypeEnum.MATERIAL]: [WithdrawTypeEnum.WAREHOUSE, WithdrawTypeEnum.BORROW],
 };
 
 /**
  * Types that are bound to a payment gateway provider (goldex-cbp) instead
- * of the manual (image proof) flow.
+ * of the manual (image proof) flow. Selecting one of these requires the
+ * symbol to carry at least one gateway for that direction.
  */
 export const GATEWAY_BOUND_TYPES: ReadonlySet<string> = new Set([
-  "payment-gateway",
-  "auto",
+  DepositTypeEnum.PAYMENT_GATEWAY,
+  WithdrawTypeEnum.AUTO,
 ]);
+
+export const GATEWAY_BOUND_DEPOSIT_TYPES: DepositTypeEnum[] = [DepositTypeEnum.PAYMENT_GATEWAY];
+export const GATEWAY_BOUND_WITHDRAW_TYPES: WithdrawTypeEnum[] = [WithdrawTypeEnum.AUTO];
+
+/**
+ * Which goldex-cbp gateway categories may serve a symbol of each type.
+ *
+ * Not a strict equality with the symbol type: rial and fiat symbols both move
+ * money and either a rial gateway (shahin) or a fiat one (kaino) can carry
+ * them. It does keep a crypto gateway off a rial symbol, and material symbols
+ * never touch a gateway at all.
+ */
+export const SYMBOL_TYPE_GATEWAY_CATEGORIES: Record<SymbolTypeEnum, string[]> = {
+  [SymbolTypeEnum.RIAL]: ["rial", "fiat"],
+  [SymbolTypeEnum.FIAT]: ["rial", "fiat"],
+  [SymbolTypeEnum.CRYPTO]: ["crypto"],
+  [SymbolTypeEnum.MATERIAL]: [],
+};
 
 /**
  * Default gateway provider codes per symbol type, for the gateway-bound
  * deposit/withdraw types (deposit "payment-gateway" -> deposit gateways,
  * withdraw "auto" -> withdraw gateways).
  *  - RIAL: deposit via kaino (informal wallet), withdraw via shahin (bank).
+ *
+ * These are only pre-selections for a new symbol. What is actually allowed is
+ * decided by SYMBOL_TYPE_GATEWAY_CATEGORIES against the live registry, so
+ * adding a gateway to cbp makes it selectable without touching this file.
  */
 export const SYMBOL_TYPE_DEPOSIT_GATEWAY_MAP: Record<SymbolTypeEnum, string[]> = {
   [SymbolTypeEnum.RIAL]: ["kaino-informal"],
@@ -51,19 +84,30 @@ export function getDefaultWithdrawGateways(symbolType: SymbolTypeEnum): string[]
   return [...(SYMBOL_TYPE_WITHDRAW_GATEWAY_MAP[symbolType] ?? [])];
 }
 
-export function getDefaultDepositTypes(symbolType: SymbolTypeEnum): string[] {
+export function getDefaultDepositTypes(symbolType: SymbolTypeEnum): DepositTypeEnum[] {
   return [...(SYMBOL_TYPE_DEPOSIT_MAP[symbolType] ?? [])];
 }
 
-export function getDefaultWithdrawTypes(symbolType: SymbolTypeEnum): string[] {
+export function getDefaultWithdrawTypes(symbolType: SymbolTypeEnum): WithdrawTypeEnum[] {
   return [...(SYMBOL_TYPE_WITHDRAW_MAP[symbolType] ?? [])];
+}
+
+/** Gateway categories a symbol of this type may draw from. */
+export function getEligibleGatewayCategories(symbolType: SymbolTypeEnum): string[] {
+  return [...(SYMBOL_TYPE_GATEWAY_CATEGORIES[symbolType] ?? [])];
+}
+
+/** Whether at least one of the selected types needs a gateway configured. */
+export function requiresGateway(types: readonly string[]): boolean {
+  return types.some((t) => GATEWAY_BOUND_TYPES.has(t));
 }
 
 export function validateDepositTypes(symbolType: SymbolTypeEnum, types: string[]): string | null {
   const allowed = SYMBOL_TYPE_DEPOSIT_MAP[symbolType];
   if (!allowed) return `Unknown symbol type: ${symbolType}`;
   for (const t of types) {
-    if (!allowed.includes(t)) return `Deposit type "${t}" is not allowed for symbol type "${symbolType}". Allowed: ${allowed.join(", ")}`;
+    if (!allowed.includes(t as DepositTypeEnum))
+      return `Deposit type "${t}" is not allowed for symbol type "${symbolType}". Allowed: ${allowed.join(", ")}`;
   }
   if (types.length === 0) return `At least one deposit type is required for symbol type "${symbolType}"`;
   return null;
@@ -73,7 +117,8 @@ export function validateWithdrawTypes(symbolType: SymbolTypeEnum, types: string[
   const allowed = SYMBOL_TYPE_WITHDRAW_MAP[symbolType];
   if (!allowed) return `Unknown symbol type: ${symbolType}`;
   for (const t of types) {
-    if (!allowed.includes(t)) return `Withdraw type "${t}" is not allowed for symbol type "${symbolType}". Allowed: ${allowed.join(", ")}`;
+    if (!allowed.includes(t as WithdrawTypeEnum))
+      return `Withdraw type "${t}" is not allowed for symbol type "${symbolType}". Allowed: ${allowed.join(", ")}`;
   }
   if (types.length === 0) return `At least one withdraw type is required for symbol type "${symbolType}"`;
   return null;

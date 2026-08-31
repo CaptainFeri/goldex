@@ -841,3 +841,41 @@ export interface MarketStatusSummary {
   stalePricePairs: number;
   byPool: Record<MarketPoolType, { open: number; closed: number; overridden: number }>;
 }
+
+// ---- Symbol capabilities ----
+export interface GatewayOption {
+  code: string;
+  name: string;
+  /** rial | fiat | crypto | material */
+  category: string;
+  /** formal | informal */
+  kind: string;
+  /** up | down | not_configured | unknown — absent when cbp did not answer. */
+  status?: string;
+  statusMessage?: string;
+}
+
+export interface TransferTypeOption {
+  value: string;
+  /** Selecting this type requires at least one gateway for that direction. */
+  gatewayBound: boolean;
+}
+
+export interface SymbolTypeCapability {
+  symbolType: string;
+  depositTypes: TransferTypeOption[];
+  withdrawTypes: TransferTypeOption[];
+  defaultDepositTypes: string[];
+  defaultWithdrawTypes: string[];
+  eligibleGatewayCategories: string[];
+  eligibleGateways: string[];
+  defaultDepositGateways: string[];
+  defaultWithdrawGateways: string[];
+}
+
+export interface SymbolCapabilities {
+  symbolTypes: SymbolTypeCapability[];
+  gateways: GatewayOption[];
+  gatewayRegistryAvailable: boolean;
+  gatewayRegistryError?: string;
+}

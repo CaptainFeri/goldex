@@ -14,35 +14,6 @@ export const UNIT_TYPES = [
   { value: "geram", label: "گرم" },
   { value: "litre", label: "لیتر" },
 ];
-export const PAYMENT_GATEWAYS = [
-  { value: "up", label: "آسان‌پرداخت" },
-  { value: "mellat", label: "ملت" },
-  { value: "pasargad", label: "پاسارگاد" },
-  { value: "custom", label: "سفارشی (غیررسمی)" },
-];
-
-// Gateway provider codes registered in goldex-cbp. When adding a provider
-// to cbp's registry, add it here so admins can select it on symbols.
-export const GATEWAY_PROVIDERS = [
-  { value: "kaino-informal", label: "کاینو (غیررسمی)" },
-  { value: "shahin", label: "شاهین (پارس زرگر)" },
-];
-
-// Per-symbol-type default gateway provider codes for the gateway-bound
-// deposit/withdraw types (deposit "payment-gateway" / withdraw "auto").
-export const SYMBOL_TYPE_DEPOSIT_GATEWAY_MAP: Record<string, string[]> = {
-  rial: ["kaino-informal"],
-  fiat: ["kaino-informal"],
-  crypto: [],
-  material: [],
-};
-
-export const SYMBOL_TYPE_WITHDRAW_GATEWAY_MAP: Record<string, string[]> = {
-  rial: ["shahin"],
-  fiat: ["shahin"],
-  crypto: [],
-  material: [],
-};
 
 export const MARKET_TYPES_ENUM = [
   { value: "formal", label: "رسمی" },
@@ -59,6 +30,8 @@ export const MARKET_KINDS_ENUM = [
   { value: "OFFER", label: "پیشنهاد (Offer — تلگرام)" },
 ];
 
+// Labels only. Which types a symbol type allows, and which need a gateway,
+// comes from GET /admin/symbols/capabilities — the backend owns those rules.
 export const DEPOSIT_TYPES = [
   { value: "manual", label: "دستی" },
   { value: "payment-gateway", label: "درگاه پرداخت" },
@@ -74,18 +47,21 @@ export const WITHDRAW_TYPES = [
   { value: "borrow", label: "اعتباری" },
 ];
 
-// Map symbol type to allowed deposit types (for auto-select)
-export const SYMBOL_TYPE_DEPOSIT_MAP: Record<string, string[]> = {
-  rial: ["manual", "payment-gateway"],
-  crypto: ["manual", "hdwallet"],
-  fiat: ["manual", "payment-gateway"],
-  material: ["warehouse", "borrow"],
-};
+const DEPOSIT_TYPE_LABELS = new Map(DEPOSIT_TYPES.map((o) => [o.value, o.label]));
+const WITHDRAW_TYPE_LABELS = new Map(WITHDRAW_TYPES.map((o) => [o.value, o.label]));
 
-// Map symbol type to allowed withdraw types (for auto-select)
-export const SYMBOL_TYPE_WITHDRAW_MAP: Record<string, string[]> = {
-  rial: ["manual", "auto"],
-  crypto: ["manual", "auto"],
-  fiat: ["manual", "auto"],
-  material: ["warehouse", "borrow"],
+export function depositTypeLabel(value: string): string {
+  return DEPOSIT_TYPE_LABELS.get(value) ?? value;
+}
+
+export function withdrawTypeLabel(value: string): string {
+  return WITHDRAW_TYPE_LABELS.get(value) ?? value;
+}
+
+// Gateway health as reported by goldex-cbp.
+export const GATEWAY_STATUS_LABELS: Record<string, { label: string; kind: "green" | "red" | "gold" | "gray" }> = {
+  up: { label: "در دسترس", kind: "green" },
+  down: { label: "قطع", kind: "red" },
+  not_configured: { label: "پیکربندی نشده", kind: "gold" },
+  unknown: { label: "نامشخص", kind: "gray" },
 };

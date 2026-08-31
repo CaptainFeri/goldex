@@ -46,8 +46,12 @@ export class SymbolSyncConsumer implements OnModuleInit {
       });
       this.logger.log(`Symbol synced: ${symbol.slug} (${symbol.id})`);
     } catch (err) {
+      // A validation failure here means cbp's copy of the symbol-type rules
+      // disagrees with the backend's, which owns them — the message names the
+      // list cbp will accept.
       this.logger.error(
-        `Failed to sync symbol: ${(err as Error)?.message ?? err}`,
+        `Failed to sync symbol "${(msg.data as SymbolSyncMessage)?.slug ?? "?"}": ` +
+          `${(err as Error)?.message ?? err}`,
       );
     }
   }

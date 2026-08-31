@@ -1,14 +1,15 @@
-import { IsString, IsNumber, IsOptional, IsObject } from "class-validator";
+import { IsString, IsNumber, IsOptional, IsObject, IsEnum } from "class-validator";
 import { ApiProperty } from "@nestjs/swagger";
+import { WithdrawTypeEnum } from "../../admin-symbol/enum/withdraw-type.enum";
 
 export class CreateWithdrawDto {
   @IsString()
   @ApiProperty()
   symbolId: string;
 
-  @IsString()
-  @ApiProperty()
-  type: string;
+  @IsEnum(WithdrawTypeEnum)
+  @ApiProperty({ enum: WithdrawTypeEnum })
+  type: WithdrawTypeEnum;
 
   @IsNumber()
   @ApiProperty()
