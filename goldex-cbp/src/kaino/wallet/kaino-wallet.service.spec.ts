@@ -74,7 +74,6 @@ describe("KainoWalletService.chargeWallet", () => {
       amount: 300000,
       callBackUrl: "https://example.com/callback",
       sign: expectedSign,
-      date: expect.any(String),
       localDate: "2026-01-15 10:30:00",
       username: "2000004855092",
       tenant: "TENANT001",
