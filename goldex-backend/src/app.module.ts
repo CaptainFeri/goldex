@@ -29,6 +29,7 @@ import { WebSocketModule } from "./websocket/websocket.module";
 import { AdminOrderModule } from "./order/admin/admin-order.module";
 import { OrderModule } from "./order/order.module";
 import { OrderBookModule } from "./order-book/order-book.module";
+import { PricingRouteModule } from "./pricing-route/pricing-route.module";
 import { RabbitMQModule } from "./rabbitmq/rabbitmq.module";
 import { ProviderPairMappingModule } from "./provider-pair-mapping/provider-pair-mapping.module";
 import { WalletCoreModule } from "./wallet/wallet-core.module";
@@ -147,6 +148,8 @@ import { ScheduleModule } from "@nestjs/schedule";
     // book that order matching, the admin views and market-close would each
     // see differently.
     OrderBookModule,
+    // @Global: one resolver, one cached pair graph, one answer per pair.
+    PricingRouteModule,
     RabbitMQModule,
     ProviderPairMappingModule,
     WalletCoreModule,

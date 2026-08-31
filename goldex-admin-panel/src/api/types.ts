@@ -813,6 +813,7 @@ export type MarketStatusReason =
   | "price-fresh"
   | "stale-price"
   | "no-price"
+  | "bridge-price"
   | "pool-default-open"
   | "admin-override";
 
@@ -828,6 +829,8 @@ export interface PairPoolStatusView {
   adminOverride: MarketStatusValue | null;
   effectiveStatus: MarketStatusValue;
   reason: MarketStatusReason;
+  /** Bridge symbol carrying the price, when the reason is `bridge-price`. */
+  bridgeSlug: string | null;
   /** False when the row was derived on the fly and no sweep has written it yet. */
   persisted: boolean;
   updatedAt: string | null;
@@ -839,6 +842,7 @@ export interface MarketStatusSummary {
   fullyClosedPairs: number;
   overriddenPools: number;
   stalePricePairs: number;
+  bridgedPairs: number;
   byPool: Record<MarketPoolType, { open: number; closed: number; overridden: number }>;
 }
 
@@ -878,4 +882,56 @@ export interface SymbolCapabilities {
   gateways: GatewayOption[];
   gatewayRegistryAvailable: boolean;
   gatewayRegistryError?: string;
+}
+
+// ---- Price routing ----
+export type RoutingMode = "AUTO" | "DIRECT" | "BRIDGE" | "BEST";
+export type RouteKind = "DIRECT" | "BRIDGE";
+
+export interface RouteLeg {
+  pairId: string;
+  baseSlug: string;
+  quoteSlug: string;
+  /** True when the stored pair is quote/base and its price was inverted. */
+  inverted: boolean;
+  price: number;
+  provider: string | null;
+  lastUpdated: string | null;
+  stale: boolean;
+}
+
+export interface RouteCandidate {
+  kind: RouteKind;
+  side: "BUY" | "SELL";
+  bridgeSlug: string | null;
+  bridgeSymbolId: string | null;
+  legs: RouteLeg[];
+  price: number | null;
+  usable: boolean;
+  rejection: string | null;
+  note: string | null;
+  deviationPercent: number | null;
+}
+
+export interface PriceRoute {
+  pairId: string;
+  pairLabel: string;
+  side: "BUY" | "SELL";
+  routingMode: RoutingMode;
+  selected: RouteCandidate | null;
+  direct: RouteCandidate | null;
+  bridges: RouteCandidate[];
+  deviationBlocked: boolean;
+}
+
+export interface PairRoutes {
+  pairId: string;
+  pairLabel: string;
+  routingMode: RoutingMode;
+  configuredBridgeSlug: string | null;
+  bridgeMaxDeviationPercent: number | null;
+  buy: PriceRoute;
+  sell: PriceRoute;
+  usesBridge: boolean;
+  unpriceable: boolean;
 }

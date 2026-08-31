@@ -2,6 +2,7 @@ import { SymbolEntity } from "../../admin-symbol/entity/symbol.entity";
 import { myBaseEntity } from "../../shared/entity/base.entity";
 import { Entity, Column, ManyToOne, JoinColumn, Index, ManyToMany } from "typeorm";
 import { UserLevelEntity } from "../../user-level/entity/user-level.entity";
+import { RoutingModeEnum } from "../../pricing-route/enum/routing-mode.enum";
 
 @Entity("price_pairs")
 @Index(["baseId", "quoteId"], { unique: true })
@@ -94,6 +95,35 @@ export class PricePairEntity extends myBaseEntity {
   // Excluded days from deadline calculation (0=Sunday, 1=Monday, ..., 5=Friday, 6=Saturday)
   @Column({ type: "int", array: true, nullable: true, name: "excluded_days" })
   excludedDays: number[];
+
+  // ── Price routing (direct vs bridged) ───────────────────────────
+  /**
+   * How this pair picks between its direct quote and one composed through a
+   * bridge symbol (e.g. XAU/IRR from XAU/USD × USD/IRR).
+   */
+  @Column({ type: "varchar", length: 10, default: RoutingModeEnum.AUTO, name: "routing_mode" })
+  routingMode: RoutingModeEnum;
+
+  /** Preferred bridge symbol. Null lets the resolver search every eligible one. */
+  @Column({ name: "bridge_symbol_id", type: "uuid", nullable: true })
+  bridgeSymbolId: string | null;
+
+  @ManyToOne(() => SymbolEntity, { nullable: true, onDelete: "SET NULL" })
+  @JoinColumn({ name: "bridge_symbol_id" })
+  bridgeSymbol: SymbolEntity | null;
+
+  /**
+   * Refuse a bridged price that differs from a usable direct price by more than
+   * this percentage — a guard against one stale leg poisoning the quote.
+   */
+  @Column({
+    type: "decimal",
+    precision: 10,
+    scale: 4,
+    nullable: true,
+    name: "bridge_max_deviation_percent",
+  })
+  bridgeMaxDeviationPercent: number | null;
 
   @ManyToMany(() => UserLevelEntity, (l) => l.pairs)
   levels: UserLevelEntity[];

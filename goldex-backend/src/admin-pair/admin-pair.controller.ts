@@ -3,6 +3,7 @@ import { PricePairEntity } from "./entity/price.pair.entity";
 import { AdminPairService } from "./admin-pair.service";
 import { CreatePricePairDto } from "./dto/create-pair.dto";
 import { UpdatePricePairDto } from "./dto/update-price-paird.dto";
+import { UpdatePairRoutingDto } from "./dto/update-pair-routing.dto";
 import { ApiBearerAuth, ApiTags } from "@nestjs/swagger";
 import { AdminAuthGuard } from "../admin/auth/Guard/admin.guard";
 import { AdminRoles } from "../admin/role/admin.role.decorator";
@@ -27,6 +28,22 @@ export class AdminPairController {
   @AdminRoles(AdminRole.ADMIN, AdminRole.SUPER_ADMIN)
   async findAll(): Promise<{ data: PricePairEntity[] }> {
     return { data: await this.pricePairService.findAll() };
+  }
+
+  @Get("routes")
+  @UseGuards(AdminAuthGuard)
+  @ApiBearerAuth()
+  @AdminRoles(AdminRole.ADMIN, AdminRole.SUPER_ADMIN)
+  async getAllRoutes() {
+    return { data: await this.pricePairService.getAllRoutes() };
+  }
+
+  @Get("bridge-candidates")
+  @UseGuards(AdminAuthGuard)
+  @ApiBearerAuth()
+  @AdminRoles(AdminRole.ADMIN, AdminRole.SUPER_ADMIN)
+  async getBridgeCandidates() {
+    return { data: await this.pricePairService.getBridgeCandidates() };
   }
 
   @Get("valid")
@@ -97,6 +114,25 @@ export class AdminPairController {
   @AdminRoles(AdminRole.ADMIN, AdminRole.SUPER_ADMIN)
   async getRequestsOverview(@Param("id", ParseUUIDPipe) id: string) {
     return { data: await this.pricePairService.getRequestsOverview(id) };
+  }
+
+  @Get(":id/route")
+  @UseGuards(AdminAuthGuard)
+  @ApiBearerAuth()
+  @AdminRoles(AdminRole.ADMIN, AdminRole.SUPER_ADMIN)
+  async getRoute(@Param("id", ParseUUIDPipe) id: string) {
+    return { data: await this.pricePairService.getRoutes(id) };
+  }
+
+  @Patch(":id/routing")
+  @UseGuards(AdminAuthGuard)
+  @ApiBearerAuth()
+  @AdminRoles(AdminRole.ADMIN, AdminRole.SUPER_ADMIN)
+  async updateRouting(
+    @Param("id", ParseUUIDPipe) id: string,
+    @Body() dto: UpdatePairRoutingDto
+  ): Promise<{ data: PricePairEntity }> {
+    return { data: await this.pricePairService.updateRouting(id, dto) };
   }
 
   @Delete(":id")

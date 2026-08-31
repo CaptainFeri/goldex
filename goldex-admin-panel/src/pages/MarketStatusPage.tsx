@@ -29,6 +29,7 @@ const REASON_LABEL: Record<MarketStatusReason, string> = {
   "price-fresh": "قیمت تازه تأمین‌کننده",
   "stale-price": "قیمت تأمین‌کننده کهنه شده",
   "no-price": "هیچ تأمین‌کننده‌ای قیمت نداده",
+  "bridge-price": "قیمت‌گذاری غیرمستقیم (از مسیر واسط)",
   "pool-default-open": "به‌صورت پیش‌فرض باز",
   "admin-override": "تغییر اجباری توسط ادمین",
 };
@@ -56,6 +57,8 @@ interface PairGroup {
   isValid: boolean;
   lastPriceAt: string | null;
   pools: Partial<Record<MarketPoolType, PairPoolStatusView>>;
+  /** Set when the MARKET pool is priced through a bridge. */
+  bridgeSlug: string | null;
   hasOpen: boolean;
   hasClosed: boolean;
   hasOverride: boolean;
@@ -119,7 +122,14 @@ function PoolControls({ group }: { group: PairGroup }) {
                     {s.adminOverride ? <StatusBadge s={s.adminOverride} /> : <span className="muted">—</span>}
                   </td>
                   <td><StatusBadge s={s.effectiveStatus} /></td>
-                  <td style={{ fontSize: 12 }}>{REASON_LABEL[s.reason] ?? s.reason}</td>
+                  <td style={{ fontSize: 12 }}>
+                    {REASON_LABEL[s.reason] ?? s.reason}
+                    {s.bridgeSlug && (
+                      <span className="mono muted" style={{ marginInlineStart: 6 }}>
+                        ({s.bridgeSlug})
+                      </span>
+                    )}
+                  </td>
                   <td className="mono" style={{ fontSize: 12 }}>
                     {s.persisted ? fmtDate(s.updatedAt) : <span className="muted">هنوز ثبت نشده</span>}
                   </td>
@@ -192,6 +202,7 @@ export default function MarketStatusPage() {
           isValid: row.isValid,
           lastPriceAt: row.lastPriceAt,
           pools: {},
+          bridgeSlug: null,
           hasOpen: false,
           hasClosed: false,
           hasOverride: false,
@@ -199,6 +210,7 @@ export default function MarketStatusPage() {
         byPair.set(row.pairId, g);
       }
       g.pools[row.poolType] = row;
+      if (row.poolType === "MARKET" && row.bridgeSlug) g.bridgeSlug = row.bridgeSlug;
       if (row.effectiveStatus === "OPEN") g.hasOpen = true;
       if (row.effectiveStatus === "CLOSED") g.hasClosed = true;
       if (row.adminOverride) g.hasOverride = true;
@@ -233,7 +245,7 @@ export default function MarketStatusPage() {
 
   return (
     <div style={{ display: "grid", gap: 16 }}>
-      <div className="grid grid-4">
+      <div className="grid grid-5">
         <Stat
           label="جفت‌ارز با استخر باز"
           value={`${summary?.openPairs ?? 0} / ${summary?.totalPairs ?? 0}`}
@@ -244,6 +256,11 @@ export default function MarketStatusPage() {
           label="قیمت کهنه"
           value={summary?.stalePricePairs ?? 0}
           sub="استخر بازار به دلیل کهنگی بسته"
+        />
+        <Stat
+          label="قیمت‌گذاری غیرمستقیم"
+          value={summary?.bridgedPairs ?? 0}
+          sub="از مسیر واسط قیمت می‌گیرند"
         />
       </div>
 
@@ -330,7 +347,12 @@ export default function MarketStatusPage() {
                           </td>
                         );
                       })}
-                      <td className="mono" style={{ fontSize: 12 }}>{fmtDate(g.lastPriceAt)}</td>
+                      <td className="mono" style={{ fontSize: 12 }}>
+                        {fmtDate(g.lastPriceAt)}
+                        {g.bridgeSlug && (
+                          <Badge kind="gold">واسط {g.bridgeSlug}</Badge>
+                        )}
+                      </td>
                       <td>
                         {g.hasOverride ? <Badge kind="gold">دارد</Badge> : <span className="muted">—</span>}
                       </td>

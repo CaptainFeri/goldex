@@ -12,6 +12,8 @@ export enum MarketStatusReason {
   STALE_PRICE = 'stale-price',
   /** MARKET: no provider has ever reported a best price for this pair. */
   NO_PRICE = 'no-price',
+  /** MARKET: the direct quote is unusable but a bridged route is live. */
+  BRIDGE_PRICE = 'bridge-price',
   /** LIMIT / QUOTE: open by default, no derivation applies. */
   POOL_DEFAULT_OPEN = 'pool-default-open',
   /** An admin forced this pool open or closed. */
@@ -32,6 +34,8 @@ export interface PairPoolStatusView {
   adminOverride: MarketStatus | null;
   effectiveStatus: MarketStatus;
   reason: MarketStatusReason;
+  /** Bridge symbol carrying the price, when the reason is `bridge-price`. */
+  bridgeSlug: string | null;
   /** False when the row is derived on the fly, not yet written by a sweep. */
   persisted: boolean;
   updatedAt: string | null;
@@ -45,5 +49,7 @@ export interface MarketStatusSummary {
   overriddenPools: number;
   /** Pairs whose MARKET pool is closed because the price went stale. */
   stalePricePairs: number;
+  /** Pairs quoted through a bridge rather than their own direct price. */
+  bridgedPairs: number;
   byPool: Record<MarketPoolType, { open: number; closed: number; overridden: number }>;
 }
