@@ -14,6 +14,8 @@ import { UserExpressRequest } from "../user/auth/types/user-express-request";
 import { UserMarketTypeEntity } from "../user/entity/user.market.type.entity";
 import { UserMarketKindEntity } from "../user/entity/user.market.kind.entity";
 import { UserLevelService } from "../user-level/user-level.service";
+import { PriceRouteService } from "../pricing-route/price-route.service";
+import { PairRoutes, RouteKind } from "../pricing-route/price-route.types";
 
 @ApiTags("Market")
 @ApiBearerAuth()
@@ -27,6 +29,7 @@ export class MarketController {
     @InjectRepository(UserMarketKindEntity)
     private readonly userMarketKindRepo: Repository<UserMarketKindEntity>,
     private readonly levelService: UserLevelService,
+    private readonly routeService: PriceRouteService,
   ) {}
 
   @Get("access")
@@ -92,19 +95,28 @@ export class MarketController {
       visible = pairs;
     }
 
-    return { data: visible.map((p) => this.toMarketView(p)) };
+    // One graph build for the whole list, not one per pair.
+    const routes = await this.routeService.resolveMany(visible);
+    return { data: visible.map((p) => this.toMarketView(p, routes.get(p.id))) };
   }
 
   // Mirrors MarketService/PairPriceConsumer: the price the user trades at is the
   // best price adjusted for commission and the base symbol's gain. Keeping this
   // identical means the REST snapshot matches what arrives over the socket.
-  private toMarketView(p: PricePairEntity) {
+  private toMarketView(p: PricePairEntity, routes?: PairRoutes) {
     const buyCommission = parseFloat(p.buyCommission as any) || 0;
     const sellCommission = parseFloat(p.sellCommission as any) || 0;
     const baseGain = parseFloat((p.baseSymbol?.gain as any) ?? 0) || 0;
     const baseGainType = p.baseSymbol?.gainType || GainTypeEnum.NUMBER;
-    const bestBuyPrice = parseFloat(p.bestBuyPrice as any) || 0;
-    const bestSellPrice = parseFloat(p.bestSellPrice as any) || 0;
+
+    // The best prices come from the resolved route, which is the pair's own
+    // quote unless it is unusable (or the pair is configured to prefer a
+    // bridge). Falls back to the stored bests when nothing resolves, so the
+    // behaviour is unchanged for a pair with a healthy direct quote.
+    const buyRoute = routes?.buy.selected ?? null;
+    const sellRoute = routes?.sell.selected ?? null;
+    const bestBuyPrice = buyRoute?.price ?? (parseFloat(p.bestBuyPrice as any) || 0);
+    const bestSellPrice = sellRoute?.price ?? (parseFloat(p.bestSellPrice as any) || 0);
 
     const gainAdjBuy = baseGainType === GainTypeEnum.PERCENT ? (bestBuyPrice * baseGain) / 100 : baseGain;
     const gainAdjSell = baseGainType === GainTypeEnum.PERCENT ? (bestSellPrice * baseGain) / 100 : baseGain;
@@ -125,6 +137,12 @@ export class MarketController {
       bestSellPrice,
       displayBuyPrice,
       displaySellPrice,
+      // How each side was priced, so the client can show "via USD".
+      buyPriceSource: buyRoute?.kind ?? RouteKind.DIRECT,
+      sellPriceSource: sellRoute?.kind ?? RouteKind.DIRECT,
+      bridgeSymbol: buyRoute?.bridgeSlug ?? sellRoute?.bridgeSlug ?? null,
+      buyRouteLegs: buyRoute?.legs.map((l) => `${l.baseSlug}/${l.quoteSlug}`) ?? null,
+      sellRouteLegs: sellRoute?.legs.map((l) => `${l.baseSlug}/${l.quoteSlug}`) ?? null,
       bestBuyGramPrice: bestBuyPrice / MESQAL_TO_GRAM,
       bestSellGramPrice: bestSellPrice / MESQAL_TO_GRAM,
       displayBuyGramPrice: displayBuyPrice / MESQAL_TO_GRAM,

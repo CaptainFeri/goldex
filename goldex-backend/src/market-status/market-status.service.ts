@@ -12,6 +12,8 @@ import {
 } from './entity/pair-pool-status.entity';
 import { MarketCloseService } from './market-close.service';
 import { MarketStatusReason, PairPoolStatusView, MarketStatusSummary } from './market-status.types';
+import { PriceRouteService } from '../pricing-route/price-route.service';
+import { PairRoutes, RouteKind } from '../pricing-route/price-route.types';
 
 const ALL_POOLS = [
   MarketPoolType.MARKET,
@@ -22,6 +24,8 @@ const ALL_POOLS = [
 interface DerivedStatus {
   status: MarketStatus;
   reason: MarketStatusReason;
+  /** Set when the pair is quotable only through a bridge. */
+  bridgeSlug?: string | null;
 }
 
 @Injectable()
@@ -56,6 +60,7 @@ export class MarketStatusService implements OnModuleInit {
     private readonly pairRepo: Repository<PricePairEntity>,
     private readonly rmq: RabbitMQService,
     private readonly closeService: MarketCloseService,
+    private readonly routeService: PriceRouteService,
   ) {}
 
   onModuleInit() {
@@ -78,9 +83,23 @@ export class MarketStatusService implements OnModuleInit {
     const pair = await this.pairRepo.findOne({ where: { id: pairId } });
     if (!pair) return;
 
+    const routes = await this.safeRoutes(pairId);
     for (const poolType of ALL_POOLS) {
-      const derived = this.deriveStatus(pair, poolType);
+      const derived = this.deriveStatus(pair, poolType, routes);
       await this.reconcile(pairId, poolType, derived);
+    }
+  }
+
+  /**
+   * Route resolution must never take market status down with it — a resolver
+   * failure falls back to direct-only derivation.
+   */
+  private async safeRoutes(pairId: string): Promise<PairRoutes | null> {
+    try {
+      return await this.routeService.resolvePair(pairId);
+    } catch (err) {
+      this.logger.warn(`route resolution failed for pair ${pairId}: ${(err as Error).message}`);
+      return null;
     }
   }
 
@@ -99,24 +118,42 @@ export class MarketStatusService implements OnModuleInit {
    * The reason travels with the status so the admin panel can say *why* a pool
    * is closed rather than only that it is.
    */
-  private deriveStatus(pair: PricePairEntity, poolType: MarketPoolType): DerivedStatus {
+  private deriveStatus(
+    pair: PricePairEntity,
+    poolType: MarketPoolType,
+    routes?: PairRoutes | null,
+  ): DerivedStatus {
     if (poolType !== MarketPoolType.MARKET) {
       return { status: MarketStatus.OPEN, reason: MarketStatusReason.POOL_DEFAULT_OPEN };
     }
 
     const hasBestPrice = pair.bestBuyPrice != null || pair.bestSellPrice != null;
-    if (!hasBestPrice) {
-      return { status: MarketStatus.CLOSED, reason: MarketStatusReason.NO_PRICE };
-    }
-
     const fresh =
       !!pair.lastUpdated &&
       Date.now() - new Date(pair.lastUpdated).getTime() <= this.freshnessMs();
-    if (!fresh) {
-      return { status: MarketStatus.CLOSED, reason: MarketStatusReason.STALE_PRICE };
+
+    if (hasBestPrice && fresh) {
+      return { status: MarketStatus.OPEN, reason: MarketStatusReason.PRICE_FRESH };
     }
 
-    return { status: MarketStatus.OPEN, reason: MarketStatusReason.PRICE_FRESH };
+    // The direct quote is unusable — but the pair is still tradable if a
+    // bridged route is live (XAU/IRR from XAU/USD × USD/IRR). Closing it then
+    // would deny trades the platform can actually price.
+    const bridged =
+      routes?.buy.selected?.kind === RouteKind.BRIDGE ||
+      routes?.sell.selected?.kind === RouteKind.BRIDGE;
+    if (bridged) {
+      return {
+        status: MarketStatus.OPEN,
+        reason: MarketStatusReason.BRIDGE_PRICE,
+        bridgeSlug: routes?.buy.selected?.bridgeSlug ?? routes?.sell.selected?.bridgeSlug ?? null,
+      };
+    }
+
+    if (!hasBestPrice) {
+      return { status: MarketStatus.CLOSED, reason: MarketStatusReason.NO_PRICE };
+    }
+    return { status: MarketStatus.CLOSED, reason: MarketStatusReason.STALE_PRICE };
   }
 
   private reconcile(
@@ -166,7 +203,7 @@ export class MarketStatusService implements OnModuleInit {
       const pair = await this.pairRepo.findOne({ where: { id: pairId } });
       if (!pair) throw new NotFoundException('Pair not found');
 
-      const derived = this.deriveStatus(pair, poolType);
+      const derived = this.deriveStatus(pair, poolType, await this.safeRoutes(pairId));
 
       let row = await this.statusRepo.findOne({ where: { pairId, poolType } });
       if (!row) {
@@ -219,7 +256,8 @@ export class MarketStatusService implements OnModuleInit {
     if (!pair) throw new NotFoundException('Pair not found');
 
     const rows = await this.statusRepo.find({ where: { pairId } });
-    return this.buildViews([pair], rows);
+    const routes = await this.safeRoutes(pairId);
+    return this.buildViews([pair], rows, routes ? new Map([[pairId, routes]]) : new Map());
   }
 
   /**
@@ -232,7 +270,13 @@ export class MarketStatusService implements OnModuleInit {
       this.pairRepo.find({ relations: { baseSymbol: true, quoteSymbol: true } }),
       this.statusRepo.find(),
     ]);
-    return this.buildViews(pairs, rows);
+    let routes = new Map<string, PairRoutes>();
+    try {
+      routes = await this.routeService.resolveMany(pairs);
+    } catch (err) {
+      this.logger.warn(`route resolution failed for the status matrix: ${(err as Error).message}`);
+    }
+    return this.buildViews(pairs, rows, routes);
   }
 
   async getSummary(): Promise<MarketStatusSummary> {
@@ -257,6 +301,9 @@ export class MarketStatusService implements OnModuleInit {
     const stalePairs = views.filter(
       (v) => v.poolType === MarketPoolType.MARKET && v.reason === MarketStatusReason.STALE_PRICE,
     );
+    const bridgedPairs = views.filter(
+      (v) => v.poolType === MarketPoolType.MARKET && v.reason === MarketStatusReason.BRIDGE_PRICE,
+    );
 
     return {
       totalPairs: pairIds.length,
@@ -264,6 +311,7 @@ export class MarketStatusService implements OnModuleInit {
       fullyClosedPairs: closedPairs.length,
       overriddenPools: views.filter((v) => v.adminOverride != null).length,
       stalePricePairs: stalePairs.length,
+      bridgedPairs: bridgedPairs.length,
       byPool,
     };
   }
@@ -271,6 +319,7 @@ export class MarketStatusService implements OnModuleInit {
   private buildViews(
     pairs: PricePairEntity[],
     rows: PairPoolStatusEntity[],
+    routes: Map<string, PairRoutes>,
   ): PairPoolStatusView[] {
     const byKey = new Map(rows.map((r) => [`${r.pairId}::${r.poolType}`, r]));
     const views: PairPoolStatusView[] = [];
@@ -281,7 +330,7 @@ export class MarketStatusService implements OnModuleInit {
 
       for (const poolType of ALL_POOLS) {
         const row = byKey.get(`${pair.id}::${poolType}`);
-        const derived = this.deriveStatus(pair, poolType);
+        const derived = this.deriveStatus(pair, poolType, routes.get(pair.id) ?? null);
 
         views.push({
           pairId: pair.id,
@@ -299,6 +348,7 @@ export class MarketStatusService implements OnModuleInit {
           reason: row?.adminOverride
             ? MarketStatusReason.ADMIN_OVERRIDE
             : derived.reason,
+          bridgeSlug: derived.bridgeSlug ?? null,
           persisted: !!row,
           updatedAt: row?.updatedAt ? new Date(row.updatedAt).toISOString() : null,
         });

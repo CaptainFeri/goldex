@@ -16,6 +16,11 @@ import { OrderEntity } from "../order/order.entity";
 import { QuoteRequestEntity } from "../quote-request/quote-request.entity";
 import { PendDeadlineStateEnum } from "../credit/enum/pend-deadline-state.enum";
 import { OrderBookService } from "../order-book/order-book.service";
+import { PriceRouteService } from "../pricing-route/price-route.service";
+import { UpdatePairRoutingDto } from "./dto/update-pair-routing.dto";
+import { PairRoutes } from "../pricing-route/price-route.types";
+import { UnitTypeEnum } from "../admin-symbol/enum/unit.type.enum";
+import { SymbolTypeEnum } from "../admin-symbol/enum/symbol.type.enum";
 
 @Injectable()
 export class AdminPairService {
@@ -26,7 +31,8 @@ export class AdminPairService {
     private symbolRepository: Repository<SymbolEntity>,
     @InjectRepository(PricePairEntity)
     private pricePairRepository: Repository<PricePairEntity>,
-    private readonly orderBookService: OrderBookService
+    private readonly orderBookService: OrderBookService,
+    private readonly routeService: PriceRouteService
   ) {}
 
   /**
@@ -41,6 +47,8 @@ export class AdminPairService {
       } else {
         this.orderBookService.closeBook(pair.id);
       }
+      // The route graph is built from valid pairs and their prices.
+      this.routeService.invalidate();
     } catch (err) {
       // Never fail a pair write because the in-memory book could not be
       // synced; the overview surfaces the mismatch.
@@ -141,6 +149,7 @@ export class AdminPairService {
       throw new NotFoundException(`Price pair with ID "${id}" not found`);
     }
     this.orderBookService.closeBook(id);
+    this.routeService.invalidate();
   }
 
   async findByBaseCode(baseCode: string): Promise<PricePairEntity[]> {
@@ -229,5 +238,67 @@ export class AdminPairService {
     }
 
     return { orders, quoteRequests, summary: { buy: buyCount, sell: sellCount, byState } };
+  }
+
+  // ── Price routing ────────────────────────────────────────────────────────
+
+  /** Every candidate route for a pair, both sides, with prices and reasons. */
+  async getRoutes(id: string): Promise<PairRoutes> {
+    return this.routeService.resolvePair(id);
+  }
+
+  /** One resolved line per pair, for the routing overview. */
+  async getAllRoutes(): Promise<PairRoutes[]> {
+    return this.routeService.resolveAll();
+  }
+
+  /**
+   * Symbols that may serve as a bridge: a plain currency, so the two legs'
+   * units cancel. The panel offers only these.
+   */
+  async getBridgeCandidates(): Promise<SymbolEntity[]> {
+    const symbols = await this.symbolRepository.find({ where: { isActive: true } });
+    return symbols.filter(
+      (s) =>
+        s.unitType === UnitTypeEnum.NUMBER &&
+        (s.symbolType === SymbolTypeEnum.FIAT || s.symbolType === SymbolTypeEnum.RIAL)
+    );
+  }
+
+  async updateRouting(id: string, dto: UpdatePairRoutingDto): Promise<PricePairEntity> {
+    const pair = await this.pricePairRepository.findOne({ where: { id } });
+    if (!pair) {
+      throw new NotFoundException(`Price pair with ID "${id}" not found`);
+    }
+
+    if (dto.bridgeSymbolId) {
+      const bridge = await this.symbolRepository.findOne({ where: { id: dto.bridgeSymbolId } });
+      if (!bridge) {
+        throw new NotFoundException(`Bridge symbol "${dto.bridgeSymbolId}" not found`);
+      }
+      // Reject an unusable bridge here rather than letting every resolve
+      // silently discard it.
+      if (
+        bridge.unitType !== UnitTypeEnum.NUMBER ||
+        (bridge.symbolType !== SymbolTypeEnum.FIAT && bridge.symbolType !== SymbolTypeEnum.RIAL)
+      ) {
+        throw new BadRequestException(
+          `"${bridge.slug}" cannot be a bridge: only a plain currency (unit "number", type fiat or rial) keeps the two legs' units consistent.`
+        );
+      }
+      if (bridge.id === pair.baseId || bridge.id === pair.quoteId) {
+        throw new BadRequestException("The bridge symbol cannot be one of the pair's own ends");
+      }
+    }
+
+    if (dto.routingMode !== undefined) pair.routingMode = dto.routingMode;
+    if (dto.bridgeSymbolId !== undefined) pair.bridgeSymbolId = dto.bridgeSymbolId;
+    if (dto.bridgeMaxDeviationPercent !== undefined) {
+      pair.bridgeMaxDeviationPercent = dto.bridgeMaxDeviationPercent;
+    }
+
+    const saved = await this.pricePairRepository.save(pair);
+    this.routeService.invalidate();
+    return saved;
   }
 }
