@@ -765,3 +765,43 @@ export interface ArbitrageConfigResponse {
   running: boolean | null;
   reportedAt: string | null;
 }
+
+// ---- Order book status ----
+export interface OrderBookStatus {
+  pairId: string;
+  baseSlug: string | null;
+  quoteSlug: string | null;
+  pairLabel: string;
+  isValid: boolean;
+  hasBook: boolean;
+  bidLevels: number;
+  askLevels: number;
+  restingOrders: number;
+  dbPendingOrders: number;
+  inSync: boolean;
+  totalBidSize: number;
+  totalAskSize: number;
+  bestBid: number | null;
+  bestAsk: number | null;
+  spread: number | null;
+  spreadPercent: number | null;
+  crossed: boolean;
+  limitPoolStatus: "OPEN" | "CLOSED" | null;
+  limitPoolOverridden: boolean;
+}
+
+export interface OrderBookOverview {
+  pairs: OrderBookStatus[];
+  summary: {
+    totalPairs: number;
+    validPairs: number;
+    withBook: number;
+    openPools: number;
+    withRestingOrders: number;
+    totalRestingOrders: number;
+    emptyWhileOpen: number;
+    outOfSync: number;
+    crossed: number;
+    missingBook: number;
+  };
+}
