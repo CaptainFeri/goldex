@@ -131,6 +131,35 @@ export class PricingRedisService implements OnModuleDestroy {
       .filter((x): x is ProviderPriceData => x !== null);
   }
 
+  /**
+   * The pricing-engine's own arbitrage snapshot (`arbitrage:current`). Read
+   * directly so the admin panel still has data when the RabbitMQ fan-out that
+   * normally fills the backend cache is unavailable.
+   */
+  async getArbitrageCurrent<T>(): Promise<T | null> {
+    const raw = await this.client.get("arbitrage:current");
+    if (!raw) return null;
+    try {
+      return JSON.parse(raw) as T;
+    } catch {
+      return null;
+    }
+  }
+
+  /** Most-recent-first arbitrage signal history (`arbitrage:history` ZSET). */
+  async getArbitrageHistory<T>(limit = 100): Promise<T[]> {
+    const raw = await this.client.zrevrange("arbitrage:history", 0, Math.max(0, limit - 1));
+    const out: T[] = [];
+    for (const entry of raw) {
+      try {
+        out.push(JSON.parse(entry) as T);
+      } catch {
+        /* skip malformed history entries */
+      }
+    }
+    return out;
+  }
+
   async isConnected(): Promise<boolean> {
     try {
       return (await this.client.ping()) === "PONG";

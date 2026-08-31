@@ -52,6 +52,12 @@ export enum MessagePatterns {
   // Arbitrage (published by the pricing-engine)
   ARBITRAGE_SCAN = 'arbitrage.scan',
   ARBITRAGE_SIGNAL = 'arbitrage.signal',
+  ARBITRAGE_STATS = 'arbitrage.stats',
+
+  // Backend -> pricing-engine arbitrage commands (command queue)
+  ARBITRAGE_COMMAND_CONFIG = 'arbitrage.command.config',
+  ARBITRAGE_COMMAND_SCAN = 'arbitrage.command.scan',
+  ARBITRAGE_COMMAND_STATS = 'arbitrage.command.stats',
 }
 
 export interface RabbitMQMessage {

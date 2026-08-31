@@ -35,3 +35,48 @@ export interface ArbitrageScanResult {
   opportunityCount: number;
   bestProfitToman: number;
 }
+
+/** Flattened metadata of the most recent scan, as cached for the panel. */
+export interface ArbitrageScanMeta {
+  scannedAt?: string;
+  trigger?: string;
+  totalProviders?: number;
+  totalItems?: number;
+  bestProfitToman?: number;
+  opportunityCount?: number;
+  source?: ArbitrageSource;
+}
+
+export interface ArbitrageConfig {
+  minProfitToman: number;
+  minProfitPercent: number;
+  maxSignals: number;
+  quoteFreshnessMs: number;
+  signalTtlMs: number;
+  scanIntervalMs: number;
+  recomputeDebounceMs: number;
+}
+
+/** Where the opportunities the panel is looking at actually came from. */
+export type ArbitrageSource = 'bus' | 'pricing-redis' | 'none';
+
+export interface ArbitrageStatus {
+  /** `bus` = the RabbitMQ fan-out cache, `pricing-redis` = read straight from
+   *  the engine's own Redis, `none` = neither had anything. */
+  source: ArbitrageSource;
+  scannedAt: string | null;
+  /** Age of the last scan in seconds, or null when there is no scan at all. */
+  ageSeconds: number | null;
+  /** A scan older than this is treated as stale by the panel. */
+  staleAfterSeconds: number;
+  stale: boolean;
+  trigger: string | null;
+  opportunityCount: number;
+  totalProviders: number;
+  totalItems: number;
+  bestProfitToman: number;
+  /** Whether the engine's Redis answered a PING just now. */
+  engineRedisReachable: boolean;
+  /** Set when nothing is arriving, so the panel can say why. */
+  message?: string;
+}

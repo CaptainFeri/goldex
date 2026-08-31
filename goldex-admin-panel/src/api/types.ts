@@ -701,3 +701,67 @@ export interface AdminOrder {
   cancelledAt?: string;
   [k: string]: any;
 }
+
+// ---- Arbitrage ----
+export interface ArbitrageLeg {
+  providerKey: string;
+  itemId: number;
+  /** `buy` = we buy from this provider (their sell side); `sell` = we sell to them. */
+  action: "buy" | "sell";
+  price: number;
+  priceStr: string;
+  timestamp: string;
+}
+
+export interface ArbitrageSignal {
+  id: string;
+  /** Stable identity: `<itemId>:<buyProvider>-><sellProvider>`. */
+  key: string;
+  itemId: number;
+  itemName: string;
+  groupId: number;
+  groupName: string;
+  unit: string;
+  buyLeg: ArbitrageLeg;
+  sellLeg: ArbitrageLeg;
+  legs: ArbitrageLeg[];
+  profitToman: number;
+  profitPercent: number;
+  /** Profit expressed in grams of gold, using `goldPriceRef`. */
+  profitGold: number;
+  goldPriceRef: number;
+  deadline: string;
+  detectedAt: string;
+}
+
+/** Which source answered, and how fresh it is. */
+export interface ArbitrageStatus {
+  source: "bus" | "pricing-redis" | "none";
+  scannedAt: string | null;
+  ageSeconds: number | null;
+  staleAfterSeconds: number;
+  stale: boolean;
+  trigger: string | null;
+  opportunityCount: number;
+  totalProviders: number;
+  totalItems: number;
+  bestProfitToman: number;
+  engineRedisReachable: boolean;
+  message?: string;
+}
+
+export interface ArbitrageConfig {
+  minProfitToman: number;
+  minProfitPercent: number;
+  maxSignals: number;
+  quoteFreshnessMs: number;
+  signalTtlMs: number;
+  scanIntervalMs: number;
+  recomputeDebounceMs: number;
+}
+
+export interface ArbitrageConfigResponse {
+  config: ArbitrageConfig | null;
+  running: boolean | null;
+  reportedAt: string | null;
+}
