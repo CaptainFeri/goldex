@@ -805,3 +805,39 @@ export interface OrderBookOverview {
     missingBook: number;
   };
 }
+
+// ---- Market status ----
+export type MarketPoolType = "MARKET" | "LIMIT" | "QUOTE";
+export type MarketStatusValue = "OPEN" | "CLOSED";
+export type MarketStatusReason =
+  | "price-fresh"
+  | "stale-price"
+  | "no-price"
+  | "pool-default-open"
+  | "admin-override";
+
+export interface PairPoolStatusView {
+  pairId: string;
+  pairLabel: string;
+  baseSlug: string | null;
+  quoteSlug: string | null;
+  isValid: boolean;
+  lastPriceAt: string | null;
+  poolType: MarketPoolType;
+  derivedStatus: MarketStatusValue;
+  adminOverride: MarketStatusValue | null;
+  effectiveStatus: MarketStatusValue;
+  reason: MarketStatusReason;
+  /** False when the row was derived on the fly and no sweep has written it yet. */
+  persisted: boolean;
+  updatedAt: string | null;
+}
+
+export interface MarketStatusSummary {
+  totalPairs: number;
+  openPairs: number;
+  fullyClosedPairs: number;
+  overriddenPools: number;
+  stalePricePairs: number;
+  byPool: Record<MarketPoolType, { open: number; closed: number; overridden: number }>;
+}
