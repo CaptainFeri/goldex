@@ -34,6 +34,7 @@ export const MessagePatterns = {
   ORDER_STATUS_CHANGED: 'provider.order.status.changed',
   ARBITRAGE_SCAN: 'arbitrage.scan',
   ARBITRAGE_SIGNAL: 'arbitrage.signal',
+  ARBITRAGE_STATS: 'arbitrage.stats',
 
   // Backend -> engine provider-management commands (consumed on the command queue)
   PROVIDER_COMMAND_CREATE: 'provider.command.create',
@@ -46,6 +47,11 @@ export const MessagePatterns = {
   PROVIDER_COMMAND_FETCH_ORDERS: 'provider.command.fetch-orders',
   PROVIDER_COMMAND_FETCH_BALANCE: 'provider.command.fetch-balance',
   PROVIDER_COMMAND_PLACE_ORDER: 'provider.command.place-order',
+
+  // Backend -> engine arbitrage commands (consumed on the command queue)
+  ARBITRAGE_COMMAND_CONFIG: 'arbitrage.command.config',
+  ARBITRAGE_COMMAND_SCAN: 'arbitrage.command.scan',
+  ARBITRAGE_COMMAND_STATS: 'arbitrage.command.stats',
 } as const;
 
 export type MessagePattern = (typeof MessagePatterns)[keyof typeof MessagePatterns];
