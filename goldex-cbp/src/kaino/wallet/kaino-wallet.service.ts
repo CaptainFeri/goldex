@@ -45,14 +45,9 @@ export class KainoWalletService {
     return `${this.prefix}${path}`;
   }
 
-  /**
-   * Java Double.toString() semantics: integral values keep a trailing ".0"
-   * (the Kaino server derives the sign plaintext from the parsed Double).
-   */
-  private javaDouble(v: number | string): string {
-    const n = Number(v);
-    if (Number.isInteger(n)) return `${n}.0`;
-    return String(n);
+  /** Plain amount without any decimal normalization. */
+  private plainAmount(v: number | string): string {
+    return String(Number(v));
   }
 
   /** Kaino localDate format: yyyy-MM-dd HH:mm:ss */
@@ -116,7 +111,7 @@ export class KainoWalletService {
   /**
    * POST /chargeWallet - IPG wallet charge (open gateway).
    * The sign is built over the reference SDK order: identifier, tenant,
-   * amount (Java Double.toString), username, localDate, callBackUrl —
+   * amount, username, localDate, callBackUrl —
    * dropping empty fields. Extra body fields (currency, payerMobileNumber,
    * autoVerify, validCards, ...) are sent unsigned.
    */
@@ -132,7 +127,7 @@ export class KainoWalletService {
     const body: Record<string, any> = {
       identifier: dto.identifier,
       tenant: dto.tenant,
-      amount: this.javaDouble(dto.amount),
+      amount: this.plainAmount(dto.amount),
       username: dto.username ?? this.username,
       localDate: dto.localDate ?? this.now(),
       callBackUrl: dto.callBackUrl,
