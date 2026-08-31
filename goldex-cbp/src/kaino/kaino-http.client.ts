@@ -29,7 +29,7 @@ export class KainoHttpClient {
   }
 
   private headers(): Record<string, string> {
-    return this.token ? { Authorization: `Bearer ${this.token}` } : {};
+    return this.token ? { Authorization: this.token } : {};
   }
 
   private static readonly SECRET_KEYS = [

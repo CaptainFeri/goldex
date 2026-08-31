@@ -62,6 +62,18 @@ export class KainoWalletService {
     return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
   }
 
+  /** Java-style date serialization: "Aug 31, 2026 3:19:35 PM" */
+  private javaDate(d: Date): string {
+    const months = [
+      "Jan", "Feb", "Mar", "Apr", "May", "Jun",
+      "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
+    ];
+    const pad = (n: number) => String(n).padStart(2, "0");
+    const hour = d.getHours() % 12 || 12;
+    const ampm = d.getHours() < 12 ? "AM" : "PM";
+    return `${months[d.getMonth()]} ${pad(d.getDate())}, ${d.getFullYear()} ${hour}:${pad(d.getMinutes())}:${pad(d.getSeconds())} ${ampm}`;
+  }
+
   private buildSign(params: Record<string, any>, keys: string[]): string {
     return this.sig.sign(this.sig.build(params, keys), this.channelKey);
   }
@@ -129,7 +141,7 @@ export class KainoWalletService {
       "localDate",
       "callBackUrl",
     ];
-    const body: Record<string, any> = {
+    const params: Record<string, any> = {
       identifier: dto.identifier,
       tenant: dto.tenant,
       amount: this.javaDouble(dto.amount),
@@ -137,7 +149,21 @@ export class KainoWalletService {
       localDate: dto.localDate ?? this.now(),
       callBackUrl: dto.callBackUrl,
     };
-    if (dto.currency) body.currency = dto.currency;
+    const sign = this.sig.sign(this.sig.build(params, keys), this.channelKey);
+    this.logger.log(
+      `chargeWallet identifier=${dto.identifier} signText=${this.sig.build(params, keys)} sign=${sign}`,
+    );
+    const body: Record<string, any> = {
+      identifier: dto.identifier,
+      amount: Number(dto.amount),
+      callBackUrl: dto.callBackUrl,
+      sign,
+      date: this.javaDate(new Date()),
+      localDate: params.localDate,
+      username: params.username,
+      tenant: dto.tenant,
+      currency: dto.currency,
+    };
     if (dto.payerMobileNumber) body.payerMobileNumber = dto.payerMobileNumber;
     if (dto.accountNumber) body.accountNumber = dto.accountNumber;
     if (dto.ipgTenantCode) body.ipgTenantCode = dto.ipgTenantCode;
@@ -149,16 +175,7 @@ export class KainoWalletService {
     if (dto.ibanBeneficiaries?.length)
       body.ibanBeneficiaries = dto.ibanBeneficiaries;
     if (dto.additionalData) body.additionalData = dto.additionalData;
-
-    const signText = this.sig.build(body, keys);
-    const sign = this.sig.sign(signText, this.channelKey);
-    this.logger.log(
-      `chargeWallet identifier=${dto.identifier} signText=${signText} sign=${sign}`,
-    );
-    return this.client.post<any>(this.p("/chargeWallet"), {
-      ...body,
-      sign,
-    });
+    return this.client.post<any>(this.p("/chargeWallet"), body);
   }
 
   /** POST /chargeWallet/verify - final IPG confirmation. */
