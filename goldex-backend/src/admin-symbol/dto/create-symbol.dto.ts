@@ -3,7 +3,6 @@ import { GainTypeEnum } from "../enum/gain.type.enum";
 import { MarketTypeEnum } from "../../admin-pair/enum/market.type.enum";
 import { SymbolTypeEnum } from "../enum/symbol.type.enum";
 import { UnitTypeEnum } from "../enum/unit.type.enum";
-import { PaymentGatewayEnum } from "../enum/payment.gateway.enum";
 import { DepositTypeEnum } from "../enum/deposit-type.enum";
 import { WithdrawTypeEnum } from "../enum/withdraw-type.enum";
 import { ApiProperty } from "@nestjs/swagger";
@@ -40,11 +39,6 @@ export class CreateSymbolDto {
   @IsEnum(MarketTypeEnum)
   @ApiProperty({ enum: MarketTypeEnum })
   marketType: MarketTypeEnum;
-
-  @IsOptional()
-  @IsEnum(PaymentGatewayEnum)
-  @ApiProperty({ enum: PaymentGatewayEnum, required: false })
-  paymentGateWayType?: PaymentGatewayEnum;
 
   @IsBoolean()
   @ApiProperty()

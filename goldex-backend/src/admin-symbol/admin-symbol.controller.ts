@@ -3,6 +3,7 @@ import { CreateSymbolDto } from "./dto/create-symbol.dto";
 import { UpdateSymbolDto } from "./dto/update-symbol.dto";
 import { SymbolTypeEnum } from "./enum/symbol.type.enum";
 import { AdminSymbolService } from "./admin-symbol.service";
+import { SymbolCapabilitiesService } from "./symbol-capabilities.service";
 import { ApiBearerAuth, ApiTags } from "@nestjs/swagger";
 import { AdminAuthGuard } from "../admin/auth/Guard/admin.guard";
 import { AdminRole } from "../admin/role/admin.roles.enum";
@@ -11,7 +12,24 @@ import { AdminRoles } from "../admin/role/admin.role.decorator";
 @ApiTags("Admin-Symbol-Management")
 @Controller("admin/symbols")
 export class AdminSymbolController {
-  constructor(private readonly symbolService: AdminSymbolService) {}
+  constructor(
+    private readonly symbolService: AdminSymbolService,
+    private readonly capabilities: SymbolCapabilitiesService
+  ) {}
+
+  /**
+   * Everything the symbol form needs to render itself: the deposit/withdraw
+   * types each symbol type allows, which of them need a gateway, and the
+   * gateways actually registered in goldex-cbp with their health. The admin
+   * panel keeps no copy of these rules.
+   */
+  @Get("capabilities")
+  @UseGuards(AdminAuthGuard)
+  @ApiBearerAuth()
+  @AdminRoles(AdminRole.ADMIN, AdminRole.SUPER_ADMIN)
+  async getCapabilities() {
+    return { data: await this.capabilities.getCapabilities() };
+  }
 
   @Get("active")
   @UseGuards(AdminAuthGuard)

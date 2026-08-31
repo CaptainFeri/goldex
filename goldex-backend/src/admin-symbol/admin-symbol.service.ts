@@ -10,8 +10,18 @@ import { UserMarketTypeEntity } from "../user/entity/user.market.type.entity";
 import { UserEntity } from "../user/entity/user.entity";
 import { WalletEntity } from "../wallet/entities/wallet.entity";
 import { WalletTypeEnum } from "../wallet/enum/wallet-type.enum";
-import { getDefaultDepositTypes, getDefaultWithdrawTypes, validateDepositTypes, validateWithdrawTypes, getDefaultDepositGateways, getDefaultWithdrawGateways } from "./constants/symbol-type-type-map";
+import {
+  getDefaultDepositTypes,
+  getDefaultWithdrawTypes,
+  validateDepositTypes,
+  validateWithdrawTypes,
+  getDefaultDepositGateways,
+  getDefaultWithdrawGateways,
+  getEligibleGatewayCategories,
+  requiresGateway,
+} from "./constants/symbol-type-type-map";
 import { PaymentBusService } from "../payment-bus/payment-bus.service";
+import { SymbolCapabilitiesService } from "./symbol-capabilities.service";
 
 @Injectable()
 export class AdminSymbolService {
@@ -27,6 +37,7 @@ export class AdminSymbolService {
     @InjectRepository(WalletEntity)
     private readonly walletRepo: Repository<WalletEntity>,
     private readonly paymentBus: PaymentBusService,
+    private readonly capabilities: SymbolCapabilitiesService,
   ) {}
 
   private resolveTypes(dto: CreateSymbolDto | UpdateSymbolDto): Partial<SymbolEntity> {
@@ -34,17 +45,17 @@ export class AdminSymbolService {
 
     if (dto.symbolType) {
       if (dto.depositTypes) {
-        const err = validateDepositTypes(dto.symbolType, dto.depositTypes as string[]);
+        const err = validateDepositTypes(dto.symbolType, dto.depositTypes);
         if (err) throw new BadRequestException(err);
-        updates.depositTypes = dto.depositTypes as string[];
+        updates.depositTypes = dto.depositTypes;
       } else {
         updates.depositTypes = getDefaultDepositTypes(dto.symbolType);
       }
 
       if (dto.withdrawTypes) {
-        const err = validateWithdrawTypes(dto.symbolType, dto.withdrawTypes as string[]);
+        const err = validateWithdrawTypes(dto.symbolType, dto.withdrawTypes);
         if (err) throw new BadRequestException(err);
-        updates.withdrawTypes = dto.withdrawTypes as string[];
+        updates.withdrawTypes = dto.withdrawTypes;
       } else {
         updates.withdrawTypes = getDefaultWithdrawTypes(dto.symbolType);
       }
@@ -72,7 +83,7 @@ export class AdminSymbolService {
   }
 
   async create(createSymbolDto: CreateSymbolDto): Promise<SymbolEntity> {
-    this.validateGateways(createSymbolDto);
+    await this.validateGateways(createSymbolDto);
     const types = this.resolveTypes(createSymbolDto);
     const gateways = this.resolveGateways(createSymbolDto);
     const symbol = this.symbolRepository.create({ ...createSymbolDto, ...types, ...gateways });
@@ -178,7 +189,7 @@ export class AdminSymbolService {
       if (err) throw new BadRequestException(err);
     }
 
-    this.validateGateways(updateSymbolDto);
+    await this.validateGateways(updateSymbolDto, symbol);
 
     Object.assign(symbol, updateSymbolDto);
     const saved = await this.symbolRepository.save(symbol);
@@ -186,28 +197,110 @@ export class AdminSymbolService {
     return saved;
   }
 
-  private validateGateways(dto: CreateSymbolDto | UpdateSymbolDto): void {
-    const hasGateway = dto.hasPaymentGateway !== undefined ? dto.hasPaymentGateway : undefined;
+  /**
+   * Validate the gateway side of a symbol write against the *effective* symbol,
+   * not the partial DTO: on a PATCH an omitted field means "unchanged", so the
+   * stored value has to stand in or the checks silently pass.
+   */
+  private async validateGateways(
+    dto: CreateSymbolDto | UpdateSymbolDto,
+    existing?: SymbolEntity,
+  ): Promise<void> {
+    const pick = <K extends keyof SymbolEntity>(
+      value: unknown,
+      key: K,
+    ): SymbolEntity[K] | undefined =>
+      value !== undefined ? (value as SymbolEntity[K]) : existing?.[key];
 
-    if (dto.depositGateways !== undefined && dto.depositGateways.length > 0 && hasGateway === false) {
-      throw new BadRequestException("Deposit gateways require hasPaymentGateway=true");
-    }
-    if (dto.withdrawGateways !== undefined && dto.withdrawGateways.length > 0 && hasGateway === false) {
-      throw new BadRequestException("Withdraw gateways require hasPaymentGateway=true");
+    const symbolType = pick(dto.symbolType, "symbolType") as SymbolTypeEnum | undefined;
+    const hasGateway = pick(dto.hasPaymentGateway, "hasPaymentGateway") as boolean | undefined;
+    const depositGateways = (pick(dto.depositGateways, "depositGateways") as string[]) ?? [];
+    const withdrawGateways = (pick(dto.withdrawGateways, "withdrawGateways") as string[]) ?? [];
+    const depositTypes = (pick(dto.depositTypes, "depositTypes") as string[]) ?? [];
+    const withdrawTypes = (pick(dto.withdrawTypes, "withdrawTypes") as string[]) ?? [];
+    const defaultDepositGateway = pick(dto.defaultDepositGateway, "defaultDepositGateway") as
+      | string
+      | undefined;
+    const defaultWithdrawGateway = pick(dto.defaultWithdrawGateway, "defaultWithdrawGateway") as
+      | string
+      | undefined;
+
+    if (hasGateway === false) {
+      if (depositGateways.length > 0 || withdrawGateways.length > 0) {
+        throw new BadRequestException("Gateways require hasPaymentGateway=true");
+      }
+      if (requiresGateway(depositTypes) || requiresGateway(withdrawTypes)) {
+        throw new BadRequestException(
+          "A gateway-bound deposit/withdraw type requires hasPaymentGateway=true",
+        );
+      }
     }
 
-    const validateDefault = (
-      field: string,
-      def: string | undefined,
-      list: string[] | undefined,
-    ) => {
-      if (def && Array.isArray(list) && list.length > 0 && !list.includes(def)) {
-        throw new BadRequestException(`${field} "${def}" is not in the selectable list: ${list.join(", ")}`);
+    // A gateway-bound type with nothing to route through would only fail later,
+    // at the customer's first deposit or withdrawal.
+    if (requiresGateway(depositTypes) && depositGateways.length === 0) {
+      throw new BadRequestException(
+        "Deposit type \"payment-gateway\" requires at least one deposit gateway",
+      );
+    }
+    if (requiresGateway(withdrawTypes) && withdrawGateways.length === 0) {
+      throw new BadRequestException(
+        "Withdraw type \"auto\" requires at least one withdraw gateway",
+      );
+    }
+
+    await this.assertGatewaysUsable("Deposit", depositGateways, symbolType);
+    await this.assertGatewaysUsable("Withdraw", withdrawGateways, symbolType);
+
+    const validateDefault = (field: string, def: string | undefined, list: string[]) => {
+      if (def && list.length > 0 && !list.includes(def)) {
+        throw new BadRequestException(
+          `${field} "${def}" is not in the selectable list: ${list.join(", ")}`,
+        );
       }
     };
 
-    validateDefault("defaultDepositGateway", dto.defaultDepositGateway, dto.depositGateways);
-    validateDefault("defaultWithdrawGateway", dto.defaultWithdrawGateway, dto.withdrawGateways);
+    validateDefault("defaultDepositGateway", defaultDepositGateway, depositGateways);
+    validateDefault("defaultWithdrawGateway", defaultWithdrawGateway, withdrawGateways);
+  }
+
+  /**
+   * Every selected gateway must be registered in goldex-cbp and serve a
+   * category this symbol type can use. When cbp is unreachable the codes cannot
+   * be checked — the write is allowed through rather than blocking symbol
+   * administration on a payment-service outage.
+   */
+  private async assertGatewaysUsable(
+    label: string,
+    codes: string[],
+    symbolType?: SymbolTypeEnum,
+  ): Promise<void> {
+    if (codes.length === 0) return;
+
+    const registered = await this.capabilities.getRegisteredCodes();
+    if (!registered) {
+      this.logger.warn(
+        `goldex-cbp is unreachable; accepting ${label.toLowerCase()} gateways [${codes.join(", ")}] unverified`,
+      );
+      return;
+    }
+
+    const categories = symbolType ? getEligibleGatewayCategories(symbolType) : null;
+
+    for (const code of codes) {
+      if (!registered.has(code)) {
+        throw new BadRequestException(
+          `${label} gateway "${code}" is not registered in goldex-cbp. Available: ${[...registered].join(", ") || "none"}`,
+        );
+      }
+      if (!categories) continue;
+      const gateway = await this.capabilities.getGateway(code);
+      if (gateway && !categories.includes(gateway.category)) {
+        throw new BadRequestException(
+          `${label} gateway "${code}" serves "${gateway.category}" payments, which a "${symbolType}" symbol cannot use. Allowed categories: ${categories.join(", ") || "none"}`,
+        );
+      }
+    }
   }
 
   async remove(id: string): Promise<void> {

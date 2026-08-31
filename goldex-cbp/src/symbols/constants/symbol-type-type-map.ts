@@ -1,5 +1,16 @@
 import { SymbolTypeEnum } from "../enum/symbol.type.enum";
 
+/**
+ * MIRROR of goldex-backend's
+ * `src/admin-symbol/constants/symbol-type-type-map.ts`, which owns these rules.
+ * cbp keeps its own copy because it is a separate deployable and must be able
+ * to refuse a configuration it cannot honour.
+ *
+ * If the two drift, a `symbol.sync` carrying a type this map rejects fails in
+ * SymbolSyncConsumer with the allowed list in the message — that log is the
+ * signal to reconcile the two files, starting from the backend's.
+ */
+
 export const SYMBOL_TYPE_DEPOSIT_MAP: Record<SymbolTypeEnum, string[]> = {
   [SymbolTypeEnum.RIAL]: ["manual", "payment-gateway"],
   [SymbolTypeEnum.CRYPTO]: ["manual", "hdwallet"],

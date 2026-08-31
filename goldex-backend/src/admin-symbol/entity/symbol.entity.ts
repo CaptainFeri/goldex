@@ -4,7 +4,8 @@ import { GainTypeEnum } from "../enum/gain.type.enum";
 import { MarketTypeEnum } from "../../admin-pair/enum/market.type.enum";
 import { SymbolTypeEnum } from "../enum/symbol.type.enum";
 import { UnitTypeEnum } from "../enum/unit.type.enum";
-import { PaymentGatewayEnum } from "../enum/payment.gateway.enum";
+import { DepositTypeEnum } from "../enum/deposit-type.enum";
+import { WithdrawTypeEnum } from "../enum/withdraw-type.enum";
 import { PricePairEntity } from "../../admin-pair/entity/price.pair.entity";
 
 @Entity("symbol")
@@ -28,13 +29,6 @@ export class SymbolEntity extends myBaseEntity {
     name: "market_type",
   })
   marketType: MarketTypeEnum;
-
-  @Column({
-    nullable: true,
-    default: PaymentGatewayEnum.UP,
-    name: "payment_gateway_type",
-  })
-  paymentGateWayType?: PaymentGatewayEnum;
 
   @Column({
     name: "pic_path",
@@ -78,19 +72,21 @@ export class SymbolEntity extends myBaseEntity {
   })
   isActive: boolean;
 
+  /** Deposit flows this symbol offers. Constrained by the symbol type. */
   @Column("jsonb", {
     nullable: true,
     default: [],
     name: "deposit_types",
   })
-  depositTypes: string[];
+  depositTypes: DepositTypeEnum[];
 
+  /** Withdraw flows this symbol offers. Constrained by the symbol type. */
   @Column("jsonb", {
     nullable: true,
     default: [],
     name: "withdraw_types",
   })
-  withdrawTypes: string[];
+  withdrawTypes: WithdrawTypeEnum[];
 
   /** Gateway provider codes selectable for deposits (e.g. "kaino-informal"). */
   @Column("jsonb", {
