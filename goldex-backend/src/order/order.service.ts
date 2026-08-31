@@ -24,6 +24,8 @@ import { UserMarketKindEntity } from "../user/entity/user.market.kind.entity";
 import { MarketKindEnum } from "../admin-pair/enum/market.kind.enum";
 import { defaultMarketKindsForRole } from "../shared/market-access.helper";
 import { OrderBookService } from "../order-book/order-book.service";
+import { PriceRouteService } from "../pricing-route/price-route.service";
+import { RouteCandidate, RouteKind } from "../pricing-route/price-route.types";
 import { Side } from "nodejs-order-book";
 import Decimal from "decimal.js";
 import { OrderSource } from "../order-book/interfaces/order-book.types";
@@ -60,6 +62,7 @@ export class OrderService {
     @InjectRepository(UserMarketKindEntity)
     private readonly userMarketKindRepo: Repository<UserMarketKindEntity>,
     private readonly orderBookService: OrderBookService,
+    private readonly routeService: PriceRouteService,
     @InjectRepository(CreditEntity)
     private readonly creditRepo: Repository<CreditEntity>,
     @InjectRepository(CreditOrderEntity)
@@ -70,6 +73,36 @@ export class OrderService {
     @InjectRepository(UserKycEntity)
     private readonly kycRepo: Repository<UserKycEntity>,
   ) {}
+
+  /**
+   * The route this order should be priced on, or null when none resolves.
+   *
+   * A null route is not an error here: the caller falls back to the pair's own
+   * stored best price, which is exactly the behaviour that existed before
+   * routing. Market status is what closes a pair nothing can price.
+   */
+  private async resolveRoute(
+    pricePairId: string,
+    side: OrderSideEnum,
+  ): Promise<RouteCandidate | null> {
+    try {
+      const route = await this.routeService.resolveSide(pricePairId, side);
+      if (route.selected?.kind === RouteKind.BRIDGE) {
+        this.logger.log(
+          `Pair ${pricePairId} ${side} priced through ${route.selected.bridgeSlug} ` +
+            `(${route.selected.legs.map((l) => `${l.baseSlug}/${l.quoteSlug}`).join(" x ")})`,
+        );
+      }
+      return route.selected;
+    } catch (err) {
+      // Never fail an order because the resolver could not answer; fall back to
+      // the pair's own price.
+      this.logger.warn(
+        `Route resolution failed for pair ${pricePairId}: ${(err as Error).message}`,
+      );
+      return null;
+    }
+  }
 
   async createOrder(userId: string, dto: CreateOrderDto): Promise<OrderEntity> {
     const queryRunner = this.dataSource.createQueryRunner();
@@ -220,25 +253,50 @@ export class OrderService {
         : { warnAt: null, expireAt: null, graceEndAt: null };
 
 
+      // How this pair is priced right now: its own quote, or one composed
+      // through a bridge symbol. The resolver returns the price in the pair's
+      // native units either way, so everything downstream is unchanged.
+      const route =
+        dto.orderType === OrderTypeEnum.LIMIT
+          ? null
+          : await this.resolveRoute(dto.pricePairId, dto.side);
+      const isBridged = route?.kind === RouteKind.BRIDGE;
+
       // Only MARKET and QUOTE orders need a provider mapping — LIMIT orders
       // are matched in the order book.
       let providerKey: string | undefined;
       let providerItemId: number | undefined;
+      // The pair a provider deal is actually placed against, and the price in
+      // THAT pair's quote currency. On a bridged route the fill happens on the
+      // material leg (XAU/USD), so the provider must be quoted in USD — sending
+      // it the composed IRR price would be wrong by the whole FX rate.
+      let providerLegPairId = dto.pricePairId;
+      let providerLegMesghalPrice: number | undefined;
 
       if (dto.orderType !== OrderTypeEnum.LIMIT) {
-        providerKey = dto.side === OrderSideEnum.BUY
-          ? pricePair.bestBuyProvider
-          : pricePair.bestSellProvider;
+        if (isBridged) {
+          const materialLeg = route!.legs[0];
+          providerLegPairId = materialLeg.pairId;
+          providerKey = materialLeg.provider ?? undefined;
+          providerLegMesghalPrice = materialLeg.price;
+        } else {
+          providerKey =
+            dto.side === OrderSideEnum.BUY
+              ? pricePair.bestBuyProvider
+              : pricePair.bestSellProvider;
+        }
 
         if (providerKey) {
-          const pairMappings = await this.mappingService.findByPair(dto.pricePairId);
+          const pairMappings = await this.mappingService.findByPair(providerLegPairId);
           const match = pairMappings.find((m) => m.providerKey === providerKey);
           providerItemId = match?.providerItemId;
         }
 
         if (!providerKey || !providerItemId) {
           throw new BadRequestException(
-            "No liquidity provider is currently available for this pair. Please try again shortly."
+            isBridged
+              ? "No liquidity provider is currently available for the bridged leg of this pair. Please try again shortly."
+              : "No liquidity provider is currently available for this pair. Please try again shortly."
           );
         }
       }
@@ -253,9 +311,11 @@ export class OrderService {
       const buyComm = Number(pricePair.buyCommission) || 0;
       const sellComm = Number(pricePair.sellCommission) || 0;
       const baseGain = Number(pricePair.baseSymbol?.gain) || 0;
+      // The routed price when one resolved, otherwise the pair's stored best —
+      // identical to the previous behaviour for a healthy direct quote.
       const bestBuy = Number(pricePair.bestBuyPrice) || 0;
       const bestSell = Number(pricePair.bestSellPrice) || 0;
-      const realMesghal = isBuy ? bestBuy : bestSell;
+      const realMesghal = route?.price ?? (isBuy ? bestBuy : bestSell);
       const realGramPrice = realMesghal / MESQAL_TO_GRAM;
       // For LIMIT orders the user supplies their own (gram) price.
       const gramPrice = dto.price || realGramPrice;
@@ -283,14 +343,16 @@ export class OrderService {
         displayMesghal = providerMesghalPrice;
         commissionAmt = dto.commission || 0;
       } else {
-        // MARKET: commission + gain baked into the display price.
+        // MARKET: commission + gain baked into the display price. Built from
+        // the routed price, so a bridged pair charges the composed price rather
+        // than the stale direct one it was routed away from.
         const gainAdj =
           pricePair.baseSymbol?.gainType === GainTypeEnum.PERCENT
             ? (realMesghal * baseGain) / 100
             : baseGain;
         displayMesghal = isBuy
-          ? Math.max(0, bestBuy * (1 + buyComm / 100) + gainAdj)
-          : Math.max(0, bestSell * (1 - sellComm / 100) - gainAdj);
+          ? Math.max(0, realMesghal * (1 + buyComm / 100) + gainAdj)
+          : Math.max(0, realMesghal * (1 - sellComm / 100) - gainAdj);
         displayGram = displayMesghal / MESQAL_TO_GRAM;
         commissionAmt = dto.commission || 0;
       }
@@ -336,7 +398,20 @@ export class OrderService {
         executedQuantity: 0,
         price: displayGram, // customer-shown GRAM price (= customerGramPrice) the user trades at
         customerPrice: displayGram, // customer-shown GRAM price (charged on a BUY)
-        mesghalPrice: providerMesghalPrice, // PURE provider price per mesghal (used to settle)
+        mesghalPrice: providerMesghalPrice, // PURE price per mesghal in the pair's quote currency (used to settle)
+        // Where that price came from. It does not change what mesghalPrice
+        // means, so settlement and credit re-pricing read it unchanged.
+        routeMode: route?.kind ?? null,
+        bridgeSymbolId: route?.bridgeSymbolId ?? null,
+        bridgeRate: route?.kind === RouteKind.BRIDGE ? (route.legs[1]?.price ?? null) : null,
+        routeLegs:
+          route?.legs.map((l) => ({
+            pair: `${l.baseSlug}/${l.quoteSlug}`,
+            pairId: l.pairId,
+            price: l.price,
+            provider: l.provider,
+            inverted: l.inverted,
+          })) ?? null,
         averagePrice: 0,
         totalValue: 0,
         commission: commissionAmt,
@@ -416,7 +491,9 @@ export class OrderService {
               itemId: providerItemId,
               dealType,
               count: providerGold,
-              price: providerMesghalPrice || undefined,
+              // On a bridged route this is the material leg's price, in that
+              // leg's quote currency — not the composed price the customer sees.
+              price: providerLegMesghalPrice ?? providerMesghalPrice ?? undefined,
               gramVolume: providerGold,
               gramPrice,
               customerPrice: displayMesghal,

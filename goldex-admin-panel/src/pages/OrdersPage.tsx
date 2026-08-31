@@ -148,6 +148,28 @@ function OrderDetailsModal({ orderId, onClose }: { orderId: string; onClose: () 
               <div className="mono">{fmtNum(order.commission, 2)}</div>
             </div>
             <div className="field">
+              <label>مسیر قیمت</label>
+              <div>
+                {order.routeMode === "BRIDGE" ? (
+                  <>
+                    <Badge kind="gold">غیرمستقیم</Badge>
+                    <div className="mono muted" style={{ fontSize: 11, marginTop: 3 }}>
+                      {(order.routeLegs ?? []).map((l: any) => l.pair).join(" × ") || "—"}
+                    </div>
+                    {order.bridgeRate != null && (
+                      <div className="mono muted" style={{ fontSize: 11 }}>
+                        نرخ واسط: {fmtNum(order.bridgeRate, 4)}
+                      </div>
+                    )}
+                  </>
+                ) : order.routeMode === "DIRECT" ? (
+                  <Badge kind="green">مستقیم</Badge>
+                ) : (
+                  <span className="muted">—</span>
+                )}
+              </div>
+            </div>
+            <div className="field">
               <label>وضعیت</label>
               <div>{statusBadge(order.status)}</div>
             </div>
