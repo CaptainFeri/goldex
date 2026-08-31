@@ -39,7 +39,7 @@ function mockClient(): { client: KainoHttpClient; bodies: Record<string, any>[] 
 }
 
 describe("KainoWalletService.chargeWallet", () => {
-  it("signs in the documented order and identifies the user by identifier (not username)", async () => {
+  it("signs identifier, tenant, amount, username, localDate, callBackUrl in the reference SDK order", async () => {
     const { client, bodies } = mockClient();
     const service = new KainoWalletService(
       client,
@@ -56,23 +56,25 @@ describe("KainoWalletService.chargeWallet", () => {
       payerMobileNumber: "09123456789",
       autoVerify: true,
       validCards: ["603799", "627412"],
+      localDate: "2026-01-15 10:30:00",
     });
 
-    // sign order: tenant, identifier, amount, callBackUrl, currency,
-    // payerMobileNumber, autoVerify (dropping empty fields).
+    // Reference SDK order: identifier, tenant, amount (Double.toString),
+    // username, localDate, callBackUrl (dropping empty fields).
     const expectedSign = crypto
       .createHmac("sha256", "secret-key")
       .update(
-        "#TENANT001#PAY001#300000#https://example.com/callback#IRR#09123456789#true#",
+        "#PAY001#TENANT001#300000.0#2000004855092#2026-01-15 10:30:00#https://example.com/callback#",
       )
       .digest("hex");
     expect(bodies[0].sign).toBe(expectedSign);
-    // the body uses the identifier key (no username) and only the signed
-    // non-empty fields + validCards.
+    // the body carries the signed fields plus unsigned extras (validCards...).
     expect(bodies[0]).toEqual({
-      tenant: "TENANT001",
       identifier: "PAY001",
-      amount: "300000",
+      tenant: "TENANT001",
+      amount: "300000.0",
+      username: "2000004855092",
+      localDate: "2026-01-15 10:30:00",
       callBackUrl: "https://example.com/callback",
       currency: "IRR",
       payerMobileNumber: "09123456789",

@@ -25,6 +25,7 @@ import {
 export class KainoWalletService {
   private readonly logger = new Logger(KainoWalletService.name);
   private readonly tenant: string;
+  private readonly username: string;
   private readonly channelKey: string;
   private readonly prefix: string;
 
@@ -35,12 +36,30 @@ export class KainoWalletService {
   ) {
     const kaino = this.config.get("app", { infer: true }).kaino;
     this.tenant = kaino.tenant;
+    this.username = kaino.username;
     this.channelKey = kaino.secret;
     this.prefix = kaino.walletPathPrefix;
   }
 
   private p(path: string): string {
     return `${this.prefix}${path}`;
+  }
+
+  /**
+   * Java Double.toString() semantics: integral values keep a trailing ".0"
+   * (the Kaino server derives the sign plaintext from the parsed Double).
+   */
+  private javaDouble(v: number | string): string {
+    const n = Number(v);
+    if (Number.isInteger(n)) return `${n}.0`;
+    return String(n);
+  }
+
+  /** Kaino localDate format: yyyy-MM-dd HH:mm:ss */
+  private now(): string {
+    const d = new Date();
+    const pad = (n: number) => String(n).padStart(2, "0");
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
   }
 
   private buildSign(params: Record<string, any>, keys: string[]): string {
@@ -95,31 +114,41 @@ export class KainoWalletService {
   }
 
   /**
-   * POST /chargeWallet - IPG wallet charge.
-   * The sign is built over the keys (in order): tenant, identifier, amount,
-   * callBackUrl, currency, payerMobileNumber, autoVerify — dropping empty
-   * fields. The user is identified by the `identifier` key (not username).
+   * POST /chargeWallet - IPG wallet charge (open gateway).
+   * The sign is built over the reference SDK order: identifier, tenant,
+   * amount (Java Double.toString), username, localDate, callBackUrl —
+   * dropping empty fields. Extra body fields (currency, payerMobileNumber,
+   * autoVerify, validCards, ...) are sent unsigned.
    */
   async chargeWallet(dto: ChargeWalletDto) {
     const keys = [
-      "tenant",
       "identifier",
+      "tenant",
       "amount",
+      "username",
+      "localDate",
       "callBackUrl",
-      "currency",
-      "payerMobileNumber",
-      "autoVerify",
     ];
     const body: Record<string, any> = {
-      tenant: dto.tenant,
       identifier: dto.identifier,
-      amount: dto.amount,
+      tenant: dto.tenant,
+      amount: this.javaDouble(dto.amount),
+      username: dto.username ?? this.username,
+      localDate: dto.localDate ?? this.now(),
       callBackUrl: dto.callBackUrl,
     };
     if (dto.currency) body.currency = dto.currency;
     if (dto.payerMobileNumber) body.payerMobileNumber = dto.payerMobileNumber;
+    if (dto.accountNumber) body.accountNumber = dto.accountNumber;
+    if (dto.ipgTenantCode) body.ipgTenantCode = dto.ipgTenantCode;
+    if (dto.description) body.description = dto.description;
     if (dto.autoVerify !== undefined) body.autoVerify = dto.autoVerify;
     if (dto.validCards?.length) body.validCards = dto.validCards;
+    if (dto.walletBeneficiaries?.length)
+      body.walletBeneficiaries = dto.walletBeneficiaries;
+    if (dto.ibanBeneficiaries?.length)
+      body.ibanBeneficiaries = dto.ibanBeneficiaries;
+    if (dto.additionalData) body.additionalData = dto.additionalData;
 
     const signText = this.sig.build(body, keys);
     const sign = this.sig.sign(signText, this.channelKey);
@@ -150,19 +179,30 @@ export class KainoWalletService {
 
   private paymentOrder(dto: PaymentOrderDto, path: string) {
     const keys = [
-      "sourceAccountNumber",
+      "tenant",
       "amount",
+      "sourceAccountNumber",
       "beneficiaryId",
       "beneficiaryName",
       "beneficiaryIban",
-      "externalReference",
-      "description",
       "username",
-      "tenant",
       "stan",
       "localDate",
+      "description",
     ];
-    return this.signPost<any>(path, dto as any, keys);
+    const body = {
+      sourceAccountNumber: dto.sourceAccountNumber,
+      amount: dto.amount,
+      beneficiaryId: dto.beneficiaryId,
+      beneficiaryName: dto.beneficiaryName,
+      beneficiaryIban: dto.beneficiaryIban,
+      description: dto.description,
+      username: dto.username,
+      tenant: dto.tenant,
+      stan: dto.stan,
+      localDate: dto.localDate,
+    };
+    return this.signPost<any>(path, body, keys);
   }
 
   /** POST /changePassword - change password. */
@@ -185,21 +225,22 @@ export class KainoWalletService {
   listTransactions(query: TransactionQueryDto) {
     const keys = [
       "tenant",
-      "from",
-      "size",
+      "username",
       "product",
       "fromDate",
       "toDate",
+      "currency",
+      "invoiceNumber",
+      "stan",
       "fromTransactionId",
       "toTransactionId",
-      "transactionTypes",
-      "voucherReference",
-      "invoiceNumber",
-      "includeDone",
-      "includeCanceled",
-      "includePending",
-      "transactionSign",
+      "channel",
+      "accountNumber",
+      "fromPostDate",
+      "toPostDate",
       "ascending",
+      "from",
+      "size",
     ];
     return this.signGet<any>(this.p("/transaction"), query as any, keys);
   }
@@ -217,16 +258,15 @@ export class KainoWalletService {
   /** GET /paymentOrder - paginated payment orders (PAYA/SATNA). */
   listPaymentOrders(query: PaymentOrderQueryDto) {
     const keys = [
-      "from",
-      "size",
+      "accountNumber",
       "username",
       "tenantCode",
-      "state",
-      "paymentReference",
       "fromAmount",
       "toAmount",
-      "fromStateDate",
-      "toStateDate",
+      "state",
+      "paymentReference",
+      "from",
+      "size",
     ];
     return this.signGet<any>(this.p("/paymentOrder"), query as any, keys);
   }

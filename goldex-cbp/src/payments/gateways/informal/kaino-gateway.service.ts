@@ -35,11 +35,11 @@ export class KainoGatewayService implements IPaymentGateway {
     return String(Number(v));
   }
 
-  /** Kaino date format: yyyyMMdd */
+  /** Kaino date format: yyyy-MM-dd HH:mm:ss */
   private now(): string {
     const d = new Date();
     const pad = (n: number) => String(n).padStart(2, "0");
-    return `${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}`;
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
   }
 
   private isSuccess(res: any): boolean {
@@ -104,7 +104,6 @@ export class KainoGatewayService implements IPaymentGateway {
       beneficiaryId: params.beneficiaryId,
       beneficiaryName: params.beneficiaryName,
       beneficiaryIban: params.iban,
-      externalReference: params.reference,
       description: params.meta?.description,
       username: params.userId,
       tenant: kaino.tenant,
