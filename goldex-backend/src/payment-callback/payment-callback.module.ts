@@ -1,9 +1,9 @@
 import { Module } from "@nestjs/common";
-import { HttpModule } from "@nestjs/axios";
+import { PaymentBusModule } from "../payment-bus/payment-bus.module";
 import { PaymentCallbackController } from "./payment-callback.controller";
 
 @Module({
-  imports: [HttpModule],
+  imports: [PaymentBusModule],
   controllers: [PaymentCallbackController],
 })
 export class PaymentCallbackModule {}

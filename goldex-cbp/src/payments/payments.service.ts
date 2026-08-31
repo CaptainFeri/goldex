@@ -431,6 +431,18 @@ export class PaymentsService {
     if (payment.status === PaymentStatusEnum.SUCCEEDED) {
       return { success: true, alreadyVerified: true };
     }
+    // Payer cancelled the payment on the IPG page: mark it rejected and let
+    // the backend close the deposit/withdraw as cancelled. No verify call.
+    if (body?.result === "false" || body?.result === false) {
+      if (payment.status !== PaymentStatusEnum.REJECTED) {
+        payment.status = PaymentStatusEnum.REJECTED;
+        payment.completedAt = new Date();
+        payment.rawResponse = { ...(payment.rawResponse ?? {}), callback: body };
+        const saved = await this.paymentRepo.save(payment);
+        this.events.rejected(saved);
+      }
+      return { success: true, cancelled: true };
+    }
     const gateway = this.registry.getByCode(payment.gatewayCode);
     if (!gateway.verify) {
       throw new BadRequestException(

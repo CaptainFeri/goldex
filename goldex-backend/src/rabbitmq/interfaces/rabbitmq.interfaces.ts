@@ -27,6 +27,7 @@ export enum MessagePatterns {
   PAYMENT_REQUEST_WITHDRAW = 'payment.request.withdraw',
   PAYMENT_REQUEST_WITHDRAW_APPROVE = 'payment.request.withdraw.approve',
   SYMBOL_SYNC = 'symbol.sync',
+  PAYMENT_CALLBACK = 'payment.callback',
   PAYMENT_PROCESSING = 'payment.processing',
   PAYMENT_SUCCEEDED = 'payment.succeeded',
   PAYMENT_FAILED = 'payment.failed',

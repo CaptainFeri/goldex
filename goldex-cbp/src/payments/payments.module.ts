@@ -3,16 +3,15 @@ import { TypeOrmModule } from "@nestjs/typeorm";
 import { SymbolsModule } from "../symbols/symbols.module";
 import { CbpAdminConsumer } from "./admin/cbp-admin.consumer";
 import { CbpAdminService } from "./admin/cbp-admin.service";
-import { KainoCallbackController } from "./callbacks/kaino-callback.controller";
+import { KainoCallbackConsumer } from "./callbacks/kaino-callback.consumer";
 import { PaymentEntity } from "./entity/payment.entity";
 import { GatewaysModule } from "./gateways/gateways.module";
 import { PaymentEventsService } from "./payment-events.service";
 import { PaymentsService } from "./payments.service";
 
 /**
- * Headless payment engine: no user/admin HTTP surface. Everything is
- * driven by RabbitMQ commands from goldex-backend; the only HTTP entry
- * is the external payment-provider callback endpoint.
+ * Headless payment engine: no HTTP surface at all. Everything is driven
+ * by RabbitMQ commands from goldex-backend, including provider callbacks.
  */
 @Module({
   imports: [
@@ -20,8 +19,13 @@ import { PaymentsService } from "./payments.service";
     SymbolsModule,
     GatewaysModule,
   ],
-  providers: [PaymentsService, PaymentEventsService, CbpAdminService, CbpAdminConsumer],
-  controllers: [KainoCallbackController],
+  providers: [
+    PaymentsService,
+    PaymentEventsService,
+    CbpAdminService,
+    CbpAdminConsumer,
+    KainoCallbackConsumer,
+  ],
   exports: [PaymentsService],
 })
 export class PaymentsModule {}
