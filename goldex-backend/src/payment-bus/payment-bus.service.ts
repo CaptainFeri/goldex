@@ -65,6 +65,14 @@ export class PaymentBusService {
     });
   }
 
+  /** Forwards an external provider callback to goldex-cbp over RabbitMQ. */
+  forwardCallback(
+    reference: string | undefined,
+    body: Record<string, any>,
+  ): void {
+    this.publish(MessagePatterns.PAYMENT_CALLBACK, { reference, body });
+  }
+
   syncSymbol(symbol: SymbolEntity): void {
     this.publish(MessagePatterns.SYMBOL_SYNC, {
       slug: symbol.slug,

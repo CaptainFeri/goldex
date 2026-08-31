@@ -4,6 +4,7 @@ export enum CbpMessagePatterns {
   PAYMENT_REQUEST_WITHDRAW = "payment.request.withdraw",
   PAYMENT_REQUEST_WITHDRAW_APPROVE = "payment.request.withdraw.approve",
   SYMBOL_SYNC = "symbol.sync",
+  PAYMENT_CALLBACK = "payment.callback",
 
   // Admin queries from goldex-backend (RabbitMQ RPC: request -> response)
   CBP_ADMIN_REQUEST = "cbp.admin.request",
@@ -79,6 +80,12 @@ export interface PaymentEventMessage {
   ipgReference?: string;
   gatewayUrl?: string;
   error?: string;
+}
+
+/** Provider callback forwarded from goldex-backend over RabbitMQ. */
+export interface PaymentCallbackMessage {
+  reference?: string;
+  body: Record<string, any>;
 }
 
 /** Admin query received from goldex-backend over RabbitMQ. */
