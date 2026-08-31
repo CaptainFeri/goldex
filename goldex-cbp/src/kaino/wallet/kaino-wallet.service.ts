@@ -117,8 +117,9 @@ export class KainoWalletService {
    * POST /chargeWallet - IPG wallet charge (open gateway).
    * The sign is built over the reference SDK order: identifier, tenant,
    * amount (Java Double.toString), username, localDate, callBackUrl —
-   * dropping empty fields. Extra body fields (currency, payerMobileNumber,
-   * autoVerify, validCards, ...) are sent unsigned.
+   * dropping empty fields. The request body carries exactly the accepted
+   * reference fields (no unsigned extras), amount sent as the signed
+   * Double.toString string so any server-side numeric parser reproduces it.
    */
   async chargeWallet(dto: ChargeWalletDto) {
     const keys = [
@@ -143,7 +144,7 @@ export class KainoWalletService {
     );
     const body: Record<string, any> = {
       identifier: dto.identifier,
-      amount: Number(dto.amount),
+      amount: params.amount,
       callBackUrl: dto.callBackUrl,
       sign,
       localDate: params.localDate,
@@ -151,17 +152,6 @@ export class KainoWalletService {
       tenant: dto.tenant,
       currency: dto.currency,
     };
-    if (dto.payerMobileNumber) body.payerMobileNumber = dto.payerMobileNumber;
-    if (dto.accountNumber) body.accountNumber = dto.accountNumber;
-    if (dto.ipgTenantCode) body.ipgTenantCode = dto.ipgTenantCode;
-    if (dto.description) body.description = dto.description;
-    if (dto.autoVerify !== undefined) body.autoVerify = dto.autoVerify;
-    if (dto.validCards?.length) body.validCards = dto.validCards;
-    if (dto.walletBeneficiaries?.length)
-      body.walletBeneficiaries = dto.walletBeneficiaries;
-    if (dto.ibanBeneficiaries?.length)
-      body.ibanBeneficiaries = dto.ibanBeneficiaries;
-    if (dto.additionalData) body.additionalData = dto.additionalData;
     return this.client.post<any>(this.p("/chargeWallet"), body);
   }
 
