@@ -3,9 +3,9 @@ import { useQuery } from "@tanstack/react-query";
 import { Line } from "react-chartjs-2";
 import { api, unwrap, apiError } from "../api/client";
 import { Card, Loading, ErrorState, Empty, Badge } from "../components/ui";
-import { colorFor, fmtNum, pairLabel } from "../lib/format";
+import { colorFor, fmtNum, fmtTime, pairLabel } from "../lib/format";
 import { gridColor } from "../lib/chart";
-import type { CompareResponse, PricePair, HistoryResponse, CurrentProviderResponse, ProviderSnapshotItem } from "../api/types";
+import type { CompareResponse, PricePair, HistoryResponse, ProviderSnapshot, ProviderSnapshotItem } from "../api/types";
 
 const MIN = 60_000;
 const HOUR = 60 * MIN;
@@ -54,6 +54,25 @@ export default function ComparePage() {
       {tab === "current" && <CurrentTab />}
     </Card>
   );
+}
+
+/**
+ * A provider's live snapshot. Backs both the snapshot table and the history
+ * tab's item picker, so the two always agree on which items exist.
+ */
+function useProviderSnapshot(provider: string, refetchInterval?: number) {
+  return useQuery({
+    queryKey: ["mon-snapshot", provider],
+    enabled: !!provider,
+    refetchInterval,
+    queryFn: async () =>
+      unwrap<ProviderSnapshot>((await api.get(`/admin/monitoring/current/${provider}`)).data),
+  });
+}
+
+/** "#101 — طلای آبشده" for the item pickers. */
+function itemOptionLabel(it: ProviderSnapshotItem): string {
+  return it.name ? `#${it.itemId} — ${it.name}` : `#${it.itemId}`;
 }
 
 function CompareTab() {
@@ -260,7 +279,14 @@ function HistoryTab() {
   const [limit, setLimit] = useState<number>(500);
 
   const effectiveProvider = provider || providers.data?.[0] || "";
-  const effectiveItemId = itemId || (providers.data?.[0] ? "" : ""); // no default — user picks
+
+  // The provider's items, so the admin picks a name instead of typing a raw id.
+  const snapshot = useProviderSnapshot(effectiveProvider);
+  const items = snapshot.data?.items ?? [];
+
+  // Keep the chosen item valid when the provider changes.
+  const itemExists = items.some((i) => String(i.itemId) === itemId);
+  const effectiveItemId = itemExists ? itemId : "";
 
   const history = useQuery({
     queryKey: ["mon-history", effectiveProvider, effectiveItemId, limit],
@@ -271,6 +297,8 @@ function HistoryTab() {
         (await api.get("/admin/monitoring/history", { params: { provider: effectiveProvider, itemId: effectiveItemId, limit } })).data
       ),
   });
+
+  const selected = items.find((i) => String(i.itemId) === effectiveItemId);
 
   const chart = useMemo(() => {
     const points = history.data?.points ?? [];
@@ -287,14 +315,39 @@ function HistoryTab() {
       <div className="toolbar" style={{ marginBottom: 16 }}>
         <div className="field" style={{ margin: 0, minWidth: 200 }}>
           <label>تأمین‌کننده</label>
-          <select className="select" value={effectiveProvider} onChange={(e) => setProvider(e.target.value)}>
+          <select
+            className="select"
+            value={effectiveProvider}
+            onChange={(e) => {
+              setProvider(e.target.value);
+              setItemId("");
+            }}
+          >
             <option value="">انتخاب…</option>
             {providers.data?.map((p) => <option key={p} value={p}>{p}</option>)}
           </select>
         </div>
-        <div className="field" style={{ margin: 0, minWidth: 150 }}>
-          <label>شناسه آیتم</label>
-          <input className="input mono" dir="ltr" value={effectiveItemId} onChange={(e) => setItemId(e.target.value)} placeholder="101" />
+        <div className="field" style={{ margin: 0, minWidth: 280 }}>
+          <label>آیتم</label>
+          <select
+            className="select"
+            value={effectiveItemId}
+            onChange={(e) => setItemId(e.target.value)}
+            disabled={!effectiveProvider || snapshot.isLoading}
+          >
+            <option value="">
+              {snapshot.isLoading
+                ? "در حال دریافت آیتم‌ها…"
+                : items.length === 0
+                  ? "آیتمی برای این تأمین‌کننده نیست"
+                  : "انتخاب آیتم…"}
+            </option>
+            {items.map((it) => (
+              <option key={it.itemId} value={String(it.itemId)}>
+                {itemOptionLabel(it)}
+              </option>
+            ))}
+          </select>
         </div>
         <div className="field" style={{ margin: 0, minWidth: 130 }}>
           <label>سقف نقاط</label>
@@ -302,7 +355,25 @@ function HistoryTab() {
         </div>
       </div>
 
-      {history.isLoading ? (
+      {selected && (
+        <div className="toolbar" style={{ marginBottom: 12, gap: 8, flexWrap: "wrap" }}>
+          <Badge kind="gray">گروه: {selected.groupName ?? "—"}</Badge>
+          <Badge kind="gray">واحد: {selected.unit ?? "—"}</Badge>
+          {selected.mappedPairs.length > 0 ? (
+            selected.mappedPairs.map((m) => (
+              <Badge key={m.pairId} kind="gold">{m.pairLabel}</Badge>
+            ))
+          ) : (
+            <Badge kind="gray">به هیچ جفت‌ارزی نگاشت نشده</Badge>
+          )}
+        </div>
+      )}
+
+      {snapshot.isError ? (
+        <ErrorState message={apiError(snapshot.error)} />
+      ) : !effectiveItemId ? (
+        <Empty label="یک تأمین‌کننده و آیتم انتخاب کنید" />
+      ) : history.isLoading ? (
         <Loading />
       ) : history.isError ? (
         <ErrorState message={apiError(history.error)} />
@@ -335,79 +406,126 @@ function CurrentTab() {
     queryFn: async () => unwrap<string[]>((await api.get("/admin/monitoring/providers")).data),
   });
   const [provider, setProvider] = useState<string>("");
+  const [search, setSearch] = useState("");
+  const [onlyMapped, setOnlyMapped] = useState(false);
   const effective = provider || providers.data?.[0] || "";
 
-  const current = useQuery({
-    queryKey: ["mon-current", effective],
-    enabled: !!effective,
-    refetchInterval: 10_000,
-    queryFn: async () =>
-      unwrap<CurrentProviderResponse>((await api.get(`/admin/monitoring/current/${effective}`)).data),
-  });
+  const current = useProviderSnapshot(effective, 10_000);
+  const snapshot = current.data;
 
   const items: ProviderSnapshotItem[] = useMemo(() => {
-    const d: any = current.data;
-    if (!d) return [];
-    if (Array.isArray(d)) return d;
-    if (Array.isArray(d.items)) return d.items;
-    if (d.snapshot && typeof d.snapshot === "object") {
-      return Object.entries(d.snapshot).map(([k, v]: [string, any]) => ({ itemId: Number(k), ...v }));
-    }
-    if (typeof d === "object") {
-      return Object.entries(d).map(([k, v]: [string, any]) => ({
-        itemId: Number(k),
-        name: v?.name ?? v?.slug,
-        buyPrice: v?.buyPrice ?? v?.buy,
-        sellPrice: v?.sellPrice ?? v?.sell,
-        unit: v?.unit,
-      }));
-    }
-    return [];
-  }, [current.data]);
+    const all = snapshot?.items ?? [];
+    const term = search.trim().toLowerCase();
+    return all.filter((it) => {
+      if (onlyMapped && it.mappedPairs.length === 0) return false;
+      if (!term) return true;
+      return (
+        String(it.itemId).includes(term) ||
+        (it.name ?? "").toLowerCase().includes(term) ||
+        (it.groupName ?? "").toLowerCase().includes(term) ||
+        it.mappedPairs.some((m) => m.pairLabel.toLowerCase().includes(term))
+      );
+    });
+  }, [snapshot, search, onlyMapped]);
 
   return (
     <>
       <div className="toolbar" style={{ marginBottom: 16 }}>
-        <div className="field" style={{ margin: 0, minWidth: 220 }}>
+        <div className="field" style={{ margin: 0, minWidth: 200 }}>
           <label>تأمین‌کننده</label>
           <select className="select" value={effective} onChange={(e) => setProvider(e.target.value)}>
             <option value="">انتخاب…</option>
             {providers.data?.map((p) => <option key={p} value={p}>{p}</option>)}
           </select>
         </div>
-        <div style={{ marginInlineStart: "auto", alignSelf: "flex-end" }}>
+        <div className="field" style={{ margin: 0, minWidth: 200 }}>
+          <label>جستجو</label>
+          <input
+            className="input"
+            placeholder="نام، گروه، شناسه یا جفت‌ارز…"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+          />
+        </div>
+        <label className="row" style={{ gap: 6, alignSelf: "flex-end", fontSize: 12, paddingBottom: 10 }}>
+          <input type="checkbox" checked={onlyMapped} onChange={(e) => setOnlyMapped(e.target.checked)} />
+          فقط آیتم‌های نگاشت‌شده
+        </label>
+        <div style={{ marginInlineStart: "auto", alignSelf: "flex-end", paddingBottom: 10 }}>
           {current.isFetching ? <Badge kind="gray">به‌روزرسانی…</Badge> : <Badge kind="green">زنده</Badge>}
         </div>
       </div>
+
+      {snapshot && (
+        <div className="toolbar" style={{ marginBottom: 12, gap: 8, fontSize: 12 }}>
+          <Badge kind="gray">{snapshot.totalItems} آیتم</Badge>
+          <Badge kind="green">{snapshot.pricedItems} دارای قیمت</Badge>
+          <Badge kind="gold">{snapshot.mappedItems} نگاشت‌شده</Badge>
+          <span className="muted">
+            آخرین بروزرسانی:{" "}
+            <span className="mono">{snapshot.lastUpdate ? fmtTime(snapshot.lastUpdate) : "—"}</span>
+          </span>
+        </div>
+      )}
 
       {current.isLoading ? (
         <Loading />
       ) : current.isError ? (
         <ErrorState message={apiError(current.error)} />
       ) : items.length === 0 ? (
-        <Empty label="آیتمی برای این تأمین‌کننده موجود نیست" />
+        <Empty
+          label={
+            (snapshot?.items.length ?? 0) > 0
+              ? "آیتمی با این فیلترها نیست"
+              : "آیتمی برای این تأمین‌کننده موجود نیست"
+          }
+        />
       ) : (
         <div className="table-wrap">
           <table>
             <thead>
               <tr>
                 <th>شناسه</th>
-                <th>نام</th>
-                <th>نماد</th>
+                <th>نام آیتم</th>
+                <th>گروه</th>
+                <th>جفت‌ارز نگاشت‌شده</th>
                 <th>خرید</th>
                 <th>فروش</th>
+                <th>اسپرد</th>
                 <th>واحد</th>
+                <th>وضعیت</th>
               </tr>
             </thead>
             <tbody>
               {items.map((it) => (
-                <tr key={String(it.itemId)}>
+                <tr key={String(it.itemId)} style={it.stale ? { opacity: 0.6 } : undefined}>
                   <td className="mono">{it.itemId}</td>
-                  <td>{it.name ?? "—"}</td>
-                  <td>{it.slug ? <Badge kind="gold">{it.slug}</Badge> : "—"}</td>
-                  <td className="mono">{fmtNum(it.buyPrice, 2)}</td>
-                  <td className="mono">{fmtNum(it.sellPrice, 2)}</td>
+                  <td>{it.name ?? <span className="muted">—</span>}</td>
+                  <td style={{ fontSize: 12 }}>{it.groupName ?? "—"}</td>
+                  <td style={{ whiteSpace: "normal", maxWidth: 220 }}>
+                    {it.mappedPairs.length === 0 ? (
+                      <span className="muted">—</span>
+                    ) : (
+                      it.mappedPairs.map((m) => (
+                        <Badge key={m.pairId} kind="gold">{m.pairLabel}</Badge>
+                      ))
+                    )}
+                  </td>
+                  <td className="mono" style={{ color: it.canBuy ? undefined : "var(--text-faint)" }}>
+                    {it.buyPrice == null ? "—" : fmtNum(it.buyPrice, 2)}
+                  </td>
+                  <td className="mono" style={{ color: it.canSell ? undefined : "var(--text-faint)" }}>
+                    {it.sellPrice == null ? "—" : fmtNum(it.sellPrice, 2)}
+                  </td>
+                  <td className="mono">{it.spread == null ? "—" : fmtNum(it.spread, 2)}</td>
                   <td>{it.unit ?? "—"}</td>
+                  <td>
+                    {it.stale ? (
+                      <Badge kind="gray">{it.timestamp ? "کهنه" : "بدون قیمت"}</Badge>
+                    ) : (
+                      <Badge kind="green">{it.timestamp ? fmtTime(it.timestamp) : "زنده"}</Badge>
+                    )}
+                  </td>
                 </tr>
               ))}
             </tbody>
