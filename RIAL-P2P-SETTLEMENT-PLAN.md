@@ -60,6 +60,10 @@ These mirror §17 of the spec and are adapted to what already exists in this rep
    (`SELECT … FOR UPDATE SKIP LOCKED` on `p2p_withdraw_part`).
 6. **Withdrawer reject or non-response always produces an escalation.** Never auto-settle.
 7. **Policies and timeouts are configurable at runtime** via a new settings table, not env.
+8. **Company bank accounts are a first-class, admin-managed resource** in their own shared
+   table — not a p2p implementation detail and not config. An admin creates an account and
+   flags it for deposit, withdraw, or both; the flags are what make it selectable in each
+   direction.
 
 ---
 
@@ -109,7 +113,7 @@ New tables, all prefixed `p2p_`, all extending `myBaseEntity` (uuid PK, `created
 
 `deposit_intent_id` FK, `withdraw_part_id` FK, `amount`, `score` numeric,
 `score_breakdown_json` jsonb, `source` (`CUSTOMER` \| `ADMIN`),
-`admin_account_id` uuid null (set when filled from an admin account),
+`admin_account_id` uuid null → `admin_bank_account.id` (set when filled from a company account),
 `reserved_at`, `reservation_expires_at`, `response_deadline_at`,
 `settlement_deadline_at`, `status` (see §4.3), `destination_snapshot_json` jsonb
 (bank/account/card/owner as shown to the depositor — frozen at reservation so a later
@@ -130,18 +134,72 @@ edit of the bank account cannot rewrite history).
 `resolution_note`, `resolved_by_admin_id`, `resolved_at`,
 `checker_admin_id` / `checked_at` (two-person control, §8.3).
 
-### 3.7 `p2p_admin_account`
+### 3.7 `admin_bank_account` — company accounts, created by an admin
 
-`section` enum (`DEPOSIT` \| `WITHDRAWAL`), `bank_name`, `account_number`, `card_number`,
-`iban`, `owner_name`, `priority` int, `daily_limit`, `per_tx_limit`,
-`active_from_hour` / `active_to_hour`, `status`, `used_today` numeric,
-`used_today_date` date.
+Deliberately **not** `p2p_`-prefixed. There is no company bank account table in the codebase
+today: `user_bank_account` is per-customer, `shahin_accounts` is provider-sourced customer
+data, and the existing `manual` deposit flow shows the user no destination at all. One
+shared table serves p2p admin settlement now and can give the `manual` flow a real
+destination later without a second migration.
 
-Admin liquidity reuses the existing wallet stack: a designated system user
-(`P2P_ADMIN_USER_ID` in config) owns a normal `WalletEntity` per rial symbol. Admin
-settlement is a `TransactionEntity` pair between that wallet and the customer wallet — so
-`admin_wallets` / `admin_wallet_transactions` from the spec's ERD are **not** new tables
-here, they are the existing `wallet` / `transaction`.
+| Column | Type | Notes |
+|---|---|---|
+| `title` | varchar | admin-facing label, e.g. «ملت – حساب اصلی» |
+| `bank_name` | varchar | |
+| `owner_name` | varchar | must match the IBAN inquiry result |
+| `account_number` | varchar null | |
+| `card_number` | varchar null | |
+| `iban` | varchar null, unique | |
+| `symbol_id` | uuid FK → `symbol.id` | which currency this account settles |
+| `use_for_deposit` | boolean default false | offered as a **destination** to depositors |
+| `use_for_withdraw` | boolean default false | used as the **source** for admin payouts |
+| `priority` | int default 0 | lower is tried first, evaluated per direction |
+| `deposit_daily_limit` / `deposit_per_tx_limit` | numeric null | null or 0 = unlimited |
+| `withdraw_daily_limit` / `withdraw_per_tx_limit` | numeric null | |
+| `deposit_used_today` / `withdraw_used_today` | numeric default 0 | |
+| `used_today_date` | date | rollover marker for the reset job |
+| `active_from_hour` / `active_to_hour` | smallint null | active window; null = 24h |
+| `status` | enum `ACTIVE` \| `INACTIVE` \| `SUSPENDED` | |
+| `verified_at` / `verification_json` | timestamptz / jsonb null | IBAN inquiry result |
+| `notes` | text null | |
+
+**"Deposit / withdraw / both" is two independent booleans, not a three-value enum.**
+Both-false is legal (a parked account) and both-true is the ordinary case — one company
+account that receives from depositors and pays out to withdrawers. Two flags keep selection
+a plain `WHERE use_for_deposit = true`, and let each direction carry its own limits, which
+matters because they are different risk controls: money coming in is a reconciliation
+problem, money going out is a loss problem. A single `daily_limit` would force one number
+to govern both.
+
+Partial indexes: `(priority) WHERE use_for_deposit AND status = 'ACTIVE'` and the
+`use_for_withdraw` equivalent.
+
+**Creation and verification.** Admin submits the account; before it can be flagged for
+either direction the backend calls the existing KYC provider —
+`IKycProvider.getIbanInfo(iban)` / `getCardInfo(cardNumber)`, already implemented by the
+Jibit provider — and rejects the account if the returned owner name does not match
+`owner_name`. The result is stored in `verification_json` and stamps `verified_at`. This
+reuses the same inquiry path already used to verify customer bank accounts.
+
+**Lifecycle.** Accounts are never hard-deleted (financial records reference them). Retiring
+one is `status = INACTIVE` or clearing both direction flags; either way in-flight matches
+are unaffected because `p2p_match.destination_snapshot_json` froze the account details at
+reservation time. Every create/update/flag-change writes a `p2p_audit_log` row with
+before/after, and the write endpoints are `SUPER_ADMIN`-only.
+
+**Selection.** Per direction, in priority order, filtered to `status = ACTIVE`, the matching
+symbol, inside the active-hours window, and with headroom on both the per-tx and remaining
+daily limit for that direction. If every candidate is exhausted the engine raises an
+`ADMIN_ACCOUNT_UNAVAILABLE` escalation rather than silently falling back to a customer match
+(spec §7.1).
+
+Admin *liquidity* — as opposed to the bank account itself — reuses the existing wallet
+stack: a designated system user (`P2P_ADMIN_USER_ID` in config) owns a normal
+`WalletEntity` per rial symbol. Admin settlement is a `TransactionEntity` pair between that
+wallet and the customer wallet, so `admin_wallets` / `admin_wallet_transactions` from the
+spec's ERD are **not** new tables here — they are the existing `wallet` / `transaction`.
+The bank account records where the *real* money moved; the wallet records the internal leg.
+`p2p_match.admin_account_id` ties the two together for reconciliation.
 
 ### 3.8 `p2p_setting`
 
@@ -236,8 +294,10 @@ amount_fit = 1 - |remaining - deposit_amount| / max(remaining, deposit_amount)
 
 If no candidate: apply `source_priority.deposit` — `CUSTOMER_FIRST` queues the intent
 (`NO_MATCH`, retried by the worker up to `matching_max_retry`), `ADMIN_FIRST` (or fallback
-after retries) reserves against the highest-priority eligible `p2p_admin_account` that has
-daily/per-tx headroom and is inside its active hours.
+after retries) reserves against the highest-priority eligible `admin_bank_account` with
+`use_for_deposit = true` that has per-tx and daily headroom and is inside its active hours.
+The withdrawal side does the mirror lookup on `use_for_withdraw = true` when a request
+falls into `ADMIN_SETTLEMENT`.
 
 ### 5.2 `P2pWithdrawService`
 
@@ -289,9 +349,14 @@ delete.
 `p2p_audit_log` with before/after, and for amounts above
 `two_person_approval_threshold` stores a maker decision that a second admin must check.
 
-### 5.6 `P2pSettingService` / `P2pAdminAccountService`
+### 5.6 `P2pSettingService` / `AdminBankAccountService`
 
-Straightforward CRUD + Redis-cached reads.
+`AdminBankAccountService`: CRUD, IBAN/card verification through the KYC provider,
+`setDirections(id, {useForDeposit, useForWithdraw})`, per-direction limit accounting
+(`reserveHeadroom` / `releaseHeadroom` called from settlement inside the same DB
+transaction, so a crashed settlement cannot leak limit budget), and
+`pickAccount(direction, symbolId, amount)` implementing the selection rules in §3.7.
+Reads are Redis-cached (30s) and busted on write. Settings service is the same shape.
 
 ---
 
@@ -314,7 +379,7 @@ async unlock(key: string, token: string): Promise<void>      // Lua compare-and-
 | `MatchingRetryWorker` | 1m | retry `NO_MATCH` intents; after `matching_max_retry` apply admin fallback |
 | `RequestExpiryWorker` | 5m | expire stale requests, release remaining locked balance |
 | `StuckCaseDetector` | 5m | rows sitting in a non-terminal state past 2× their deadline → alert |
-| `DailyLimitReset` | daily 00:00 | reset `p2p_admin_account.used_today` |
+| `DailyLimitReset` | daily 00:00 | reset `deposit_used_today` / `withdraw_used_today` on `admin_bank_account` when `used_today_date` rolls over |
 | `ReconciliationWorker` | hourly | assert `Σ confirmed parts == Σ settlement transactions`, and `Σ locked_amount == Σ wallet.lockedBalance` for p2p; mismatch → admin alert |
 
 ---
@@ -355,7 +420,11 @@ async unlock(key: string, token: string): Promise<void>      // Lua compare-and-
 - KYC-approved + verified `user_bank_account` required to create a p2p withdrawal (the
   destination shown to strangers must be a verified account).
 - Account/card numbers masked in every response except for the depositor of an *active*
-  reservation and for `FINANCE`/`SUPER_ADMIN`.
+  reservation and for `FINANCE`/`SUPER_ADMIN`. This covers company accounts too: a
+  depositor sees the full destination only while their reservation is live, and it comes
+  from `destination_snapshot_json`, not a live join.
+- Company bank accounts are `SUPER_ADMIN`-write / `FINANCE`-read; every create, edit,
+  direction-flag change and status change is audited with before/after.
 - Receipt objects stored in MinIO under `p2p/{matchId}/…`, served only via time-limited
   presigned URLs.
 - Rate limits on intent creation, proof submission, and confirm/reject.
@@ -404,14 +473,31 @@ reason, and a deep link.
 | GET | `/api/v1/admin/p2p/escalations` (filters: reason, amount, age, priority, user, bank, assignee) |
 | GET | `/api/v1/admin/p2p/escalations/:id` (full timeline) |
 | POST | `/api/v1/admin/p2p/escalations/:id/resolve` |
-| GET/POST/PATCH | `/api/v1/admin/p2p/accounts` |
 | GET/PATCH | `/api/v1/admin/p2p/settings` |
 | GET | `/api/v1/admin/p2p/audit-logs` |
 | GET | `/api/v1/admin/p2p/dashboard` |
 | GET | `/api/v1/admin/p2p/matches` |
 
+### Admin — company bank accounts
+| Method | Endpoint | Notes |
+|---|---|---|
+| GET | `/api/v1/admin/bank-accounts` | filters: `direction=deposit\|withdraw`, `symbolId`, `status` |
+| GET | `/api/v1/admin/bank-accounts/:id` | includes today's usage against both limits |
+| POST | `/api/v1/admin/bank-accounts` | create; runs IBAN/card inquiry before accepting |
+| PATCH | `/api/v1/admin/bank-accounts/:id` | edit details, limits, priority, active hours |
+| PATCH | `/api/v1/admin/bank-accounts/:id/directions` | set `useForDeposit` / `useForWithdraw` — either, both, or neither |
+| PATCH | `/api/v1/admin/bank-accounts/:id/status` | `ACTIVE` / `INACTIVE` / `SUSPENDED` (replaces delete) |
+| POST | `/api/v1/admin/bank-accounts/:id/verify` | re-run the owner-name inquiry |
+
+`CreateAdminBankAccountDto`: `title`, `bankName`, `ownerName`, `symbolId`,
+`iban?` (`@IsIBAN()`), `accountNumber?`, `cardNumber?`, `useForDeposit?`,
+`useForWithdraw?`, `priority?`, the four limit fields, `activeFromHour?`,
+`activeToHour?`, `notes?`. At least one of `iban` / `accountNumber` / `cardNumber` is
+required, and turning on either direction flag requires a `verified_at`.
+
 Roles: `FINANCE` + `ADMIN` + `SUPER_ADMIN` for escalations and settlement;
-`SUPER_ADMIN` only for settings and the checker step.
+`SUPER_ADMIN` only for settings, bank-account writes, and the checker step.
+`FINANCE` may read bank accounts unmasked; other roles see them masked.
 
 Dashboard cards: pending withdrawals, unmatched intents, waiting-confirmation,
 escalated, timeout-risk, admin liquidity, today completed.
@@ -424,21 +510,31 @@ escalated, timeout-risk, admin liquidity, today completed.
 src/p2p/
   p2p.module.ts
   entity/            p2p-withdraw-request | -part | -deposit-intent | -match
-                     | -payment-proof | -escalation | -admin-account | -setting | -audit-log
+                     | -payment-proof | -escalation | -setting | -audit-log
   enum/              (one file per state machine + reasons + decisions)
   state/transitions.ts
   dto/
   services/          matching | withdraw | deposit | settlement | escalation
-                     | setting | admin-account | audit
+                     | setting | audit
   p2p-withdraw.controller.ts
   p2p-deposit.controller.ts
   p2p-admin.controller.ts
   p2p-cron.service.ts
   listeners/
+
+src/admin-bank-account/          # shared, not p2p-scoped
+  admin-bank-account.module.ts
+  entity/admin-bank-account.entity.ts
+  enum/admin-bank-account-status.enum.ts
+  dto/
+  admin-bank-account.service.ts
+  admin-bank-account.controller.ts   # /api/v1/admin/bank-accounts
 ```
 
-Registered in `app.module.ts` after `WithdrawModule`. Migration:
-`src/migrations/1000000000090-p2pMatchingMig.ts` (tables + indexes + settings seed +
+Both registered in `app.module.ts` after `WithdrawModule` (`AdminBankAccountModule` first —
+`P2pModule` depends on it). Migrations:
+`src/migrations/1000000000090-adminBankAccountMig.ts` (the shared table + its two partial
+indexes) and `1000000000091-p2pMatchingMig.ts` (p2p tables + indexes + settings seed +
 `p2p` appended to rial symbols' `deposit_types` / `withdraw_types`).
 
 ---
@@ -451,7 +547,7 @@ Registered in `app.module.ts` after `WithdrawModule`. Migration:
 | 2 | Matching engine + reservation (`FOR UPDATE SKIP LOCKED`) + reservation-expiry worker | Two concurrent depositors race one part; exactly one wins |
 | 3 | Payment proof (MinIO + OCR) + withdrawer confirm/reject + settlement service + ledger transactions | 500+300+200 fills a 1B EXACT=3 request; balances conserved |
 | 4 | Escalation entity + queue + response-timeout and settlement-timeout workers + notifications | Reject and no-response both produce an OPEN escalation, no auto-settle |
-| 5 | Admin accounts + admin liquidity settlement + `SETTLE_FROM_ADMIN` + `ADMIN_FIRST` policy | Policy flip changes matching source correctly |
+| 5 | `admin_bank_account` CRUD + IBAN verification + direction flags + per-direction limits; admin liquidity settlement + `SETTLE_FROM_ADMIN` + `ADMIN_FIRST` policy | An account flagged for both directions is offered to depositors *and* used for payouts; policy flip changes matching source correctly |
 | 6 | Settings UI surface + scoring weights + reports/KPIs + reconciliation worker | Reconciliation reports zero mismatch on a seeded dataset |
 | 7 | Hardening: idempotency interceptor, rate limits, masking, two-person approval, load/concurrency tests | Acceptance list §12 green |
 
@@ -477,6 +573,16 @@ Registered in `app.module.ts` after `WithdrawModule`. Migration:
 11. A `COMPLETED` match cannot be mutated through any normal API path.
 12. Every state change and settings change produces a `p2p_audit_log` row with
     before/after.
+13. An admin creates a bank account with a mismatched `owner_name` → creation is rejected
+    by the IBAN inquiry; a matching one is accepted and stamped `verified_at`.
+14. An account flagged **deposit only** never appears as a payout source; **withdraw only**
+    is never offered to a depositor; **both** is used in each direction, and each direction
+    draws down its own daily counter independently.
+15. An account at its `deposit_daily_limit` is skipped for the next depositor and the
+    next-priority account is chosen; when none is eligible an `ADMIN_ACCOUNT_UNAVAILABLE`
+    escalation opens instead of a silent customer fallback.
+16. Deactivating an account mid-flight does not change the destination already shown to a
+    depositor (`destination_snapshot_json`), and the in-flight match still settles.
 
 ---
 
@@ -498,3 +604,11 @@ Registered in `app.module.ts` after `WithdrawModule`. Migration:
 5. **User trust / abuse.** Nothing here scores a user's reject rate yet (`W_RISK` is 0).
    A repeat-offender withdrawer can grief depositors. Worth a follow-up: feed
    reject/no-response rate into `risk_score`.
+6. **Company account scope.** `admin_bank_account` is planned per-symbol
+   (`symbol_id` FK), on the assumption that a rial account settles rial only. If one
+   account should serve several symbols, that becomes a join table — cheap now, expensive
+   after go-live.
+7. **Reconciling the real bank leg.** The platform records *that* an admin account paid or
+   was paid, not that the bank agrees. `shahin` already ingests bank statement entries
+   (`shahin_entry`); matching those against `admin_bank_account` movements would close the
+   loop automatically. Out of scope for v1 — flagging it as the natural phase-8.
