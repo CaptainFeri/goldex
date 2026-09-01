@@ -1,6 +1,11 @@
 import { Injectable } from "@nestjs/common";
 import { PricingRedisService } from "./pricing-redis.service";
 import { ProviderPairMappingService } from "../provider-pair-mapping/provider-pair-mapping.service";
+import {
+  MappedPairRef,
+  ProviderSnapshot,
+  ProviderSnapshotItem,
+} from "./monitoring.types";
 
 export interface ComparePoint {
   timestamp: string;
@@ -32,8 +37,104 @@ export class AdminMonitoringService {
     return this.pricingRedis.getHistory(providerKey, itemId, limit);
   }
 
+  /** Raw current prices, as the engine stored them. */
   getCurrent(providerKey: string) {
     return this.pricingRedis.getCurrent(providerKey);
+  }
+
+  /**
+   * A provider's live snapshot, shaped for display.
+   *
+   * The engine's price records call the item name `itemName` and carry no
+   * Goldex symbol at all, so a client reading `name`/`slug` off them gets
+   * nothing. This merges the metadata records (authoritative names, and items
+   * that currently have no quote) with the current prices, and resolves each
+   * item to the price pairs it feeds.
+   */
+  async getProviderSnapshot(providerKey: string): Promise<ProviderSnapshot> {
+    const [metadata, prices, mappings] = await Promise.all([
+      this.pricingRedis.getProviderItems(providerKey),
+      this.pricingRedis.getCurrent(providerKey),
+      this.mappingService.findByProvider(providerKey),
+    ]);
+
+    const priceByItem = new Map(prices.map((p) => [Number(p.itemId), p]));
+    const metaByItem = new Map(metadata.map((m) => [Number(m.itemId), m]));
+
+    const pairsByItem = new Map<number, MappedPairRef[]>();
+    for (const m of mappings) {
+      const baseSlug = m.pair?.baseSymbol?.slug ?? null;
+      const quoteSlug = m.pair?.quoteSymbol?.slug ?? null;
+      const list = pairsByItem.get(m.providerItemId) ?? [];
+      list.push({
+        pairId: m.pairId,
+        pairLabel: `${baseSlug ?? "?"}/${quoteSlug ?? "?"}`,
+        baseSlug,
+        quoteSlug,
+        useBuyPrice: m.useBuyPrice,
+        useSellPrice: m.useSellPrice,
+      });
+      pairsByItem.set(m.providerItemId, list);
+    }
+
+    // Metadata and prices can each carry items the other does not.
+    const itemIds = [...new Set([...metaByItem.keys(), ...priceByItem.keys()])].sort(
+      (a, b) => a - b,
+    );
+
+    const freshnessMs = this.freshnessMs();
+    const now = Date.now();
+
+    const items: ProviderSnapshotItem[] = itemIds.map((itemId) => {
+      const meta = metaByItem.get(itemId);
+      const price = priceByItem.get(itemId);
+      const ts = price?.timestamp ? new Date(price.timestamp).getTime() : NaN;
+
+      return {
+        itemId,
+        // Metadata wins; the price record's itemName is the fallback.
+        name: (meta?.name ?? meta?.itemName ?? price?.itemName ?? null) as string | null,
+        unit: (meta?.unit ?? price?.unit ?? null) as string | null,
+        groupId: (meta?.groupId ?? price?.groupId ?? null) as number | null,
+        groupName: (meta?.groupName ?? price?.groupName ?? null) as string | null,
+        buyPrice: this.num(price?.buyPrice),
+        sellPrice: this.num(price?.sellPrice),
+        buyPricePerGram: this.num(price?.buyPricePerGram),
+        sellPricePerGram: this.num(price?.sellPricePerGram),
+        canBuy: !!price?.canBuy,
+        canSell: !!price?.canSell,
+        spread: this.num(price?.spread),
+        spreadPercent: this.num(price?.spreadPercent),
+        timestamp: price?.timestamp ?? null,
+        stale: !price || Number.isNaN(ts) || now - ts > freshnessMs,
+        mappedPairs: pairsByItem.get(itemId) ?? [],
+      };
+    });
+
+    const timestamps = items
+      .map((i) => (i.timestamp ? new Date(i.timestamp).getTime() : 0))
+      .filter((t) => t > 0);
+
+    return {
+      providerKey,
+      items,
+      lastUpdate: timestamps.length ? new Date(Math.max(...timestamps)).toISOString() : null,
+      totalItems: items.length,
+      pricedItems: items.filter((i) => i.buyPrice != null || i.sellPrice != null).length,
+      mappedItems: items.filter((i) => i.mappedPairs.length > 0).length,
+    };
+  }
+
+  /** Same freshness window the market-status and routing services use. */
+  private freshnessMs(): number {
+    const parsed = parseInt(process.env.MARKET_PRICE_FRESHNESS_MS ?? "120000", 10);
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : 120000;
+  }
+
+  private num(v: unknown): number | null {
+    if (v === null || v === undefined || v === "") return null;
+    const n = Number(v);
+    return Number.isFinite(n) ? n : null;
   }
 
   /**

@@ -155,14 +155,44 @@ export interface PairMapping {
 }
 
 // ---- Provider snapshot (for the available-items dropdown) ----
+/** A price pair a provider item feeds. */
+export interface MappedPairRef {
+  pairId: string;
+  pairLabel: string;
+  baseSlug: string | null;
+  quoteSlug: string | null;
+  useBuyPrice: boolean;
+  useSellPrice: boolean;
+}
+
 export interface ProviderSnapshotItem {
   itemId: number;
-  name?: string;
-  slug?: string;
-  buyPrice?: number;
-  sellPrice?: number;
-  unit?: string;
-  [k: string]: any;
+  /** The provider's own item name. */
+  name: string | null;
+  unit: string | null;
+  groupId: number | null;
+  groupName: string | null;
+  buyPrice: number | null;
+  sellPrice: number | null;
+  buyPricePerGram: number | null;
+  sellPricePerGram: number | null;
+  canBuy: boolean;
+  canSell: boolean;
+  spread: number | null;
+  spreadPercent: number | null;
+  timestamp: string | null;
+  stale: boolean;
+  /** Goldex pairs this item feeds; empty when unmapped. */
+  mappedPairs: MappedPairRef[];
+}
+
+export interface ProviderSnapshot {
+  providerKey: string;
+  items: ProviderSnapshotItem[];
+  lastUpdate: string | null;
+  totalItems: number;
+  pricedItems: number;
+  mappedItems: number;
 }
 
 // ---- Warehouse ----
@@ -289,6 +319,19 @@ export interface HistoryResponse {
 export interface CurrentSnapshot {
   [k: string]: any;
 }
+/**
+ * An item as returned by /admin/pair-mappings/available-items — a narrower
+ * shape than the monitoring snapshot, with no group or mapping info.
+ */
+export interface ProviderAvailableItem {
+  itemId: number;
+  name: string;
+  unit: string;
+  buyPrice: number;
+  sellPrice: number;
+}
+
+/** @deprecated superseded by ProviderSnapshot, which the endpoint now returns. */
 export interface CurrentProviderResponse {
   provider: string;
   items: ProviderSnapshotItem[];
