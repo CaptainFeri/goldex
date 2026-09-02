@@ -95,12 +95,6 @@ export class AdminBankAccountEntity extends myBaseEntity {
   })
   status: AdminBankAccountStatusEnum;
 
-  @Column({ name: "verified_at", type: "timestamptz", nullable: true })
-  verifiedAt?: Date;
-
-  @Column({ name: "verification_json", type: "jsonb", nullable: true })
-  verificationJson?: Record<string, any>;
-
   @Column({ name: "notes", type: "text", nullable: true })
   notes?: string;
 }

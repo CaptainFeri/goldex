@@ -112,10 +112,6 @@ export default function BankAccountsPage() {
     onSuccess: invalidate,
   });
 
-  const verify = useMutation({
-    mutationFn: (id: string) => bankAccountsApi.verify(id),
-    onSuccess: invalidate,
-  });
 
   const rows = list.data?.items ?? [];
 
@@ -164,7 +160,6 @@ export default function BankAccountsPage() {
                 <th>مصرف امروز (واریز)</th>
                 <th>مصرف امروز (برداشت)</th>
                 <th>وضعیت</th>
-                <th>احراز</th>
                 <th>عملیات</th>
               </tr>
             </thead>
@@ -183,11 +178,6 @@ export default function BankAccountsPage() {
                   <td><LimitCell used={a.depositUsedToday} limit={a.depositDailyLimit} /></td>
                   <td><LimitCell used={a.withdrawUsedToday} limit={a.withdrawDailyLimit} /></td>
                   <td><Badge kind={STATUS_KIND[a.status] ?? "gray"}>{BANK_ACCOUNT_STATUS[a.status] ?? a.status}</Badge></td>
-                  <td>
-                    {a.verifiedAt
-                      ? <Badge kind="green">{fmtDate(a.verifiedAt)}</Badge>
-                      : <Badge kind="red">احراز نشده</Badge>}
-                  </td>
                   <td>
                     <div className="row" style={{ gap: 4, flexWrap: "wrap" }}>
                       <button className="btn sm ghost" onClick={() => { setSelected(a); setModal("edit"); }}>
@@ -213,11 +203,6 @@ export default function BankAccountsPage() {
                       >
                         {a.useForWithdraw ? "بستن برداشت" : "باز کردن برداشت"}
                       </button>
-                      {!a.verifiedAt && (
-                        <button className="btn sm ghost" disabled={verify.isPending} onClick={() => verify.mutate(a.id)}>
-                          احراز صاحب حساب
-                        </button>
-                      )}
                       <button
                         className="btn sm ghost"
                         disabled={setStatus.isPending}
@@ -241,10 +226,10 @@ export default function BankAccountsPage() {
         </div>
       )}
 
-      {(save.isError || setDirections.isError || setStatus.isError || verify.isError) && (
+      {(save.isError || setDirections.isError || setStatus.isError) && (
         <div style={{ marginTop: 12 }}>
           <ErrorState
-            message={apiError(save.error || setDirections.error || setStatus.error || verify.error)}
+            message={apiError(save.error || setDirections.error || setStatus.error)}
           />
         </div>
       )}
@@ -308,10 +293,6 @@ function BankAccountModal({
   );
 
   const identifierMissing = !form.iban && !form.accountNumber && !form.cardNumber;
-  // Turning on a direction requires a verified owner name; a brand-new account
-  // has not been through the inquiry yet, so the flags stay off until it has.
-  const directionsLocked = !account?.verifiedAt;
-
   const num = (v: any) => (v === "" || v === null ? undefined : Number(v));
 
   return (
@@ -354,7 +335,7 @@ function BankAccountModal({
           <div className="field">
             <label>نام صاحب حساب</label>
             <input className="input" value={form.ownerName} onChange={(e) => set("ownerName", e.target.value)} required />
-            <small style={{ color: "var(--text-muted)" }}>باید با نتیجه استعلام شبا یکسان باشد</small>
+            <small style={{ color: "var(--text-muted)" }}>همان‌طور که در حساب بانکی ثبت شده است</small>
           </div>
           <div className="field">
             <label>نماد</label>
@@ -385,16 +366,10 @@ function BankAccountModal({
 
         <fieldset style={{ border: "1px solid var(--border)", borderRadius: 8, padding: 12, marginTop: 16 }}>
           <legend style={{ fontSize: 13, padding: "0 6px" }}>جهت استفاده</legend>
-          {directionsLocked && (
-            <div style={{ fontSize: 12, color: "var(--text-muted)", marginBottom: 8 }}>
-              پس از ثبت، ابتدا صاحب حساب را احراز کنید تا بتوانید این حساب را برای واریز یا برداشت فعال کنید.
-            </div>
-          )}
           <label className="row" style={{ gap: 8, alignItems: "center", marginBottom: 6 }}>
             <input
               type="checkbox"
               checked={form.useForDeposit}
-              disabled={directionsLocked}
               onChange={(e) => set("useForDeposit", e.target.checked)}
             />
             <span>واریز — این حساب به‌عنوان مقصد به واریزکننده نمایش داده شود</span>
@@ -403,7 +378,6 @@ function BankAccountModal({
             <input
               type="checkbox"
               checked={form.useForWithdraw}
-              disabled={directionsLocked}
               onChange={(e) => set("useForWithdraw", e.target.checked)}
             />
             <span>برداشت — پرداخت به برداشت‌کننده از این حساب انجام شود</span>

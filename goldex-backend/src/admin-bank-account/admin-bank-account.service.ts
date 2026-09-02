@@ -15,19 +15,8 @@ import { CreateAdminBankAccountDto } from "./dto/create-admin-bank-account.dto";
 import { UpdateAdminBankAccountDto } from "./dto/update-admin-bank-account.dto";
 import { BankAccountQueryDto } from "./dto/bank-account-query.dto";
 import { SetDirectionsDto } from "./dto/set-directions.dto";
-import { KycService } from "../kyc/services/kyc.service";
 import { SymbolEntity } from "../admin-symbol/entity/symbol.entity";
 import { SymbolTypeEnum } from "../admin-symbol/enum/symbol.type.enum";
-
-/** Normalises a Persian/Arabic name for comparison against an inquiry result. */
-function normaliseName(name: string): string {
-  return String(name ?? "")
-    .replace(/[ي]/g, "ی") // Arabic yeh → Persian yeh
-    .replace(/[ك]/g, "ک") // Arabic kaf → Persian kaf
-    .replace(/[‌\s]+/g, " ") // ZWNJ and runs of whitespace → single space
-    .trim()
-    .toLowerCase();
-}
 
 @Injectable()
 export class AdminBankAccountService {
@@ -38,7 +27,6 @@ export class AdminBankAccountService {
     private readonly repo: Repository<AdminBankAccountEntity>,
     @InjectRepository(SymbolEntity)
     private readonly symbolRepo: Repository<SymbolEntity>,
-    private readonly kycService: KycService,
   ) {}
 
   // ─── Reads ─────────────────────────────────────────────────
@@ -78,16 +66,10 @@ export class AdminBankAccountService {
     this.assertIdentifier(dto);
     await this.assertSymbolUsable(dto.symbolId);
 
-    if (dto.useForDeposit || dto.useForWithdraw) {
-      throw new BadRequestException(
-        "Verify the account owner before enabling it for deposit or withdraw",
-      );
-    }
-
     const account = this.repo.create({
       ...dto,
-      useForDeposit: false,
-      useForWithdraw: false,
+      useForDeposit: dto.useForDeposit ?? false,
+      useForWithdraw: dto.useForWithdraw ?? false,
       priority: dto.priority ?? 0,
       status: AdminBankAccountStatusEnum.ACTIVE,
     });
@@ -102,33 +84,13 @@ export class AdminBankAccountService {
       await this.assertSymbolUsable(dto.symbolId);
     }
 
-    // Changing the identifiers invalidates the previous inquiry — the flags
-    // must go off until it is re-run against the new numbers.
-    const identityChanged =
-      (dto.iban !== undefined && dto.iban !== account.iban) ||
-      (dto.cardNumber !== undefined && dto.cardNumber !== account.cardNumber) ||
-      (dto.ownerName !== undefined && dto.ownerName !== account.ownerName);
-
     Object.assign(account, dto);
     this.assertIdentifier(account);
-
-    if (identityChanged) {
-      account.verifiedAt = null;
-      account.verificationJson = null;
-      account.useForDeposit = false;
-      account.useForWithdraw = false;
-    }
-
     return this.repo.save(account);
   }
 
   async setDirections(id: string, dto: SetDirectionsDto): Promise<AdminBankAccountEntity> {
     const account = await this.findById(id);
-    if ((dto.useForDeposit || dto.useForWithdraw) && !account.verifiedAt) {
-      throw new BadRequestException(
-        "Verify the account owner before enabling it for deposit or withdraw",
-      );
-    }
     account.useForDeposit = dto.useForDeposit;
     account.useForWithdraw = dto.useForWithdraw;
     return this.repo.save(account);
@@ -141,38 +103,6 @@ export class AdminBankAccountService {
     return this.repo.save(account);
   }
 
-  /**
-   * Runs the owner-name inquiry through the KYC provider already used to verify
-   * customer bank accounts, and refuses the account when the returned name does
-   * not match what the admin typed.
-   */
-  async verify(id: string): Promise<AdminBankAccountEntity> {
-    const account = await this.findById(id);
-    if (!account.iban && !account.cardNumber) {
-      throw new BadRequestException("An IBAN or card number is required to verify ownership");
-    }
-
-    const result = account.iban
-      ? await this.kycService.getIbanInfo(account.iban)
-      : await this.kycService.getCardInfo(account.cardNumber);
-
-    const owners = this.extractOwnerNames(result);
-    if (!owners.length) {
-      throw new BadRequestException("The inquiry returned no owner name for this account");
-    }
-
-    const expected = normaliseName(account.ownerName);
-    const matched = owners.some((o) => normaliseName(o) === expected);
-    if (!matched) {
-      throw new BadRequestException(
-        `Owner name does not match the inquiry result (${owners.join(", ")})`,
-      );
-    }
-
-    account.verifiedAt = new Date();
-    account.verificationJson = result;
-    return this.repo.save(account);
-  }
 
   // ─── Selection and limits (used by p2p settlement) ─────────
 
@@ -315,27 +245,4 @@ export class AdminBankAccountService {
     }
   }
 
-  /** The inquiry payload shape differs per provider and endpoint. */
-  private extractOwnerNames(result: any): string[] {
-    const names: string[] = [];
-    const push = (v: any) => {
-      if (typeof v === "string" && v.trim()) names.push(v.trim());
-    };
-
-    const info = result?.ibanInfo ?? result?.cardInfo ?? result;
-    push(info?.ownerName);
-    push(info?.name);
-    push(info?.fullName);
-
-    const owners = info?.owners ?? info?.owner;
-    for (const owner of Array.isArray(owners) ? owners : [owners]) {
-      if (!owner) continue;
-      push(owner.fullName);
-      push(owner.ownerName);
-      if (owner.firstName || owner.lastName) {
-        push(`${owner.firstName ?? ""} ${owner.lastName ?? ""}`);
-      }
-    }
-    return names;
-  }
 }

@@ -47,8 +47,6 @@ export class AdminBankAccountMig1000000000090 implements MigrationInterface {
         "active_from_hour"       smallint,
         "active_to_hour"         smallint,
         "status"                 "admin_bank_account_status_enum" NOT NULL DEFAULT 'ACTIVE',
-        "verified_at"            timestamptz,
-        "verification_json"      jsonb,
         "notes"                  text,
         CONSTRAINT "admin_bank_account_identifier_check"
           CHECK ("iban" IS NOT NULL OR "account_number" IS NOT NULL OR "card_number" IS NOT NULL)

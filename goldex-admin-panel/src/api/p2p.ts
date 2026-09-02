@@ -38,9 +38,6 @@ export const bankAccountsApi = {
   setStatus: async (id: string, status: AdminBankAccount["status"]) =>
     unwrap<AdminBankAccount>((await api.patch(`/admin/bank-accounts/${id}/status`, { status })).data),
 
-  /** Re-runs the owner-name inquiry against the IBAN/card. */
-  verify: async (id: string) =>
-    unwrap<AdminBankAccount>((await api.post(`/admin/bank-accounts/${id}/verify`)).data),
 };
 
 // ─── P2P matching / settlement ───────────────────────────────

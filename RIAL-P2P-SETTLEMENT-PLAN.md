@@ -146,7 +146,7 @@ destination later without a second migration.
 |---|---|---|
 | `title` | varchar | admin-facing label, e.g. «ملت – حساب اصلی» |
 | `bank_name` | varchar | |
-| `owner_name` | varchar | must match the IBAN inquiry result |
+| `owner_name` | varchar | as registered on the bank account |
 | `account_number` | varchar null | |
 | `card_number` | varchar null | |
 | `iban` | varchar null, unique | |
@@ -160,7 +160,6 @@ destination later without a second migration.
 | `used_today_date` | date | rollover marker for the reset job |
 | `active_from_hour` / `active_to_hour` | smallint null | active window; null = 24h |
 | `status` | enum `ACTIVE` \| `INACTIVE` \| `SUSPENDED` | |
-| `verified_at` / `verification_json` | timestamptz / jsonb null | IBAN inquiry result |
 | `notes` | text null | |
 
 **"Deposit / withdraw / both" is two independent booleans, not a three-value enum.**
@@ -174,12 +173,11 @@ to govern both.
 Partial indexes: `(priority) WHERE use_for_deposit AND status = 'ACTIVE'` and the
 `use_for_withdraw` equivalent.
 
-**Creation and verification.** Admin submits the account; before it can be flagged for
-either direction the backend calls the existing KYC provider —
-`IKycProvider.getIbanInfo(iban)` / `getCardInfo(cardNumber)`, already implemented by the
-Jibit provider — and rejects the account if the returned owner name does not match
-`owner_name`. The result is stored in `verification_json` and stamps `verified_at`. This
-reuses the same inquiry path already used to verify customer bank accounts.
+**Creation.** The admin submits the account and may flag it for either direction
+immediately. There is deliberately no owner-name inquiry: these are the company's own
+accounts, entered by a `SUPER_ADMIN`, so the ownership check that customer bank accounts
+need adds nothing here. If that changes, the hook is `IKycProvider.getIbanInfo(iban)` /
+`getCardInfo(cardNumber)` on the existing Jibit provider.
 
 **Lifecycle.** Accounts are never hard-deleted (financial records reference them). Retiring
 one is `status = INACTIVE` or clearing both direction flags; either way in-flight matches
@@ -359,7 +357,7 @@ delete.
 
 ### 5.6 `P2pSettingService` / `AdminBankAccountService`
 
-`AdminBankAccountService`: CRUD, IBAN/card verification through the KYC provider,
+`AdminBankAccountService`: CRUD,
 `setDirections(id, {useForDeposit, useForWithdraw})`, per-direction limit accounting
 (`reserveHeadroom` / `releaseHeadroom` called from settlement inside the same DB
 transaction, so a crashed settlement cannot leak limit budget), and
@@ -491,17 +489,16 @@ reason, and a deep link.
 |---|---|---|
 | GET | `/api/v1/admin/bank-accounts` | filters: `direction=deposit\|withdraw`, `symbolId`, `status` |
 | GET | `/api/v1/admin/bank-accounts/:id` | includes today's usage against both limits |
-| POST | `/api/v1/admin/bank-accounts` | create; runs IBAN/card inquiry before accepting |
+| POST | `/api/v1/admin/bank-accounts` | create |
 | PATCH | `/api/v1/admin/bank-accounts/:id` | edit details, limits, priority, active hours |
 | PATCH | `/api/v1/admin/bank-accounts/:id/directions` | set `useForDeposit` / `useForWithdraw` — either, both, or neither |
 | PATCH | `/api/v1/admin/bank-accounts/:id/status` | `ACTIVE` / `INACTIVE` / `SUSPENDED` (replaces delete) |
-| POST | `/api/v1/admin/bank-accounts/:id/verify` | re-run the owner-name inquiry |
 
 `CreateAdminBankAccountDto`: `title`, `bankName`, `ownerName`, `symbolId`,
 `iban?` (`@IsIBAN()`), `accountNumber?`, `cardNumber?`, `useForDeposit?`,
 `useForWithdraw?`, `priority?`, the four limit fields, `activeFromHour?`,
 `activeToHour?`, `notes?`. At least one of `iban` / `accountNumber` / `cardNumber` is
-required, and turning on either direction flag requires a `verified_at`.
+required.
 
 Roles: `FINANCE` + `ADMIN` + `SUPER_ADMIN` for escalations and settlement;
 `SUPER_ADMIN` only for settings, bank-account writes, and the checker step.
@@ -555,7 +552,7 @@ indexes) and `1000000000091-p2pMatchingMig.ts` (p2p tables + indexes + settings 
 | 2 | Matching engine + reservation (`FOR UPDATE SKIP LOCKED`) + reservation-expiry worker | Two concurrent depositors race one part; exactly one wins |
 | 3 | Payment proof (MinIO + OCR) + withdrawer confirm/reject + settlement service + ledger transactions | 500+300+200 fills a 1B EXACT=3 request; balances conserved |
 | 4 | Escalation entity + queue + response-timeout and settlement-timeout workers + notifications | Reject and no-response both produce an OPEN escalation, no auto-settle |
-| 5 | `admin_bank_account` CRUD + IBAN verification + direction flags + per-direction limits; admin liquidity settlement + `SETTLE_FROM_ADMIN` + `ADMIN_FIRST` policy | An account flagged for both directions is offered to depositors *and* used for payouts; policy flip changes matching source correctly |
+| 5 | `admin_bank_account` CRUD + direction flags + per-direction limits; admin liquidity settlement + `SETTLE_FROM_ADMIN` + `ADMIN_FIRST` policy | An account flagged for both directions is offered to depositors *and* used for payouts; policy flip changes matching source correctly |
 | 6 | Settings UI surface + scoring weights + reports/KPIs + reconciliation worker | Reconciliation reports zero mismatch on a seeded dataset |
 | 7 | Hardening: idempotency interceptor, rate limits, masking, two-person approval, load/concurrency tests | Acceptance list §12 green |
 
@@ -581,15 +578,13 @@ indexes) and `1000000000091-p2pMatchingMig.ts` (p2p tables + indexes + settings 
 11. A `COMPLETED` match cannot be mutated through any normal API path.
 12. Every state change and settings change produces a `p2p_audit_log` row with
     before/after.
-13. An admin creates a bank account with a mismatched `owner_name` → creation is rejected
-    by the IBAN inquiry; a matching one is accepted and stamped `verified_at`.
-14. An account flagged **deposit only** never appears as a payout source; **withdraw only**
+13. An account flagged **deposit only** never appears as a payout source; **withdraw only**
     is never offered to a depositor; **both** is used in each direction, and each direction
     draws down its own daily counter independently.
-15. An account at its `deposit_daily_limit` is skipped for the next depositor and the
+14. An account at its `deposit_daily_limit` is skipped for the next depositor and the
     next-priority account is chosen; when none is eligible an `ADMIN_ACCOUNT_UNAVAILABLE`
     escalation opens instead of a silent customer fallback.
-16. Deactivating an account mid-flight does not change the destination already shown to a
+15. Deactivating an account mid-flight does not change the destination already shown to a
     depositor (`destination_snapshot_json`), and the in-flight match still settles.
 
 ---

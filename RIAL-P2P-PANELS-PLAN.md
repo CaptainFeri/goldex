@@ -32,9 +32,6 @@ today.
 
 Other behaviour worth noting:
 
-- **Verification gates the flags.** A new account cannot be turned on for
-  either direction until the owner-name inquiry has run and stamped
-  `verified_at`. The checkboxes are disabled with an explanation until then.
 - **Retiring is a status change, never a delete** — settled matches reference
   these rows. The table offers ACTIVE ⇄ INACTIVE with a confirmation noting
   that in-flight matches are unaffected.
@@ -148,7 +145,6 @@ POST   /api/v1/admin/bank-accounts
 PATCH  /api/v1/admin/bank-accounts/:id
 PATCH  /api/v1/admin/bank-accounts/:id/directions   { useForDeposit, useForWithdraw }
 PATCH  /api/v1/admin/bank-accounts/:id/status       { status }
-POST   /api/v1/admin/bank-accounts/:id/verify
 ```
 
 **Admin p2p**
@@ -214,6 +210,6 @@ MinIO URL, per §8.2 of the backend plan — the panels render it directly.
 2. **Set `GOLDEX_P2P_ADMIN_USER_ID`** to a system user, and fund that user's
    rial wallet. Without it, admin-funded settlement is refused and the
    dashboard's liquidity card reads zero.
-3. **Create at least one company bank account** and verify it, then flag it for
-   deposit and/or withdraw. Until one is flagged for withdraw, the
+3. **Create at least one company bank account** and flag it for deposit and/or
+   withdraw. Until one is flagged for withdraw, the
    `SETTLE_FROM_ADMIN` decision has nothing to pay from and says so.

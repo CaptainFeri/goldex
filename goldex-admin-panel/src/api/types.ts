@@ -771,8 +771,6 @@ export interface AdminBankAccount {
   activeFromHour?: number | null;
   activeToHour?: number | null;
   status: BankAccountStatus;
-  verifiedAt?: string | null;
-  verificationJson?: any;
   notes?: string | null;
   createAt?: string;
   updateAt?: string;
