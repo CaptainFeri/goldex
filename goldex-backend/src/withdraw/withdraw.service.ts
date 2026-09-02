@@ -20,6 +20,9 @@ import { UserLevelService } from "../user-level/user-level.service";
 import { UserEntity } from "../user/entity/user.entity";
 import { UserKycEntity } from "../user/entity/user.kyc.entity";
 import { KycStatusEnum } from "../baseinfo/enum/kycStatus.enum";
+import { WithdrawTypeEnum } from "../admin-symbol/enum/withdraw-type.enum";
+import { P2pWithdrawService } from "../p2p/services/p2p-withdraw.service";
+import { P2pAuditActorEnum } from "../p2p/enum/p2p.enums";
 
 @Injectable()
 export class WithdrawService {
@@ -42,6 +45,7 @@ export class WithdrawService {
     private userRepo: Repository<UserEntity>,
     @InjectRepository(UserKycEntity)
     private kycRepo: Repository<UserKycEntity>,
+    private readonly p2pWithdraw: P2pWithdrawService,
   ) {}
 
   async create(userId: string, dto: CreateWithdrawDto): Promise<WithdrawEntity> {
@@ -118,6 +122,17 @@ export class WithdrawService {
       type: saved.type,
       symbolId: saved.symbolId,
     });
+
+    // p2p locks the balance up front — depositors are about to send real money
+    // against this request, so it cannot stay spendable.
+    if (saved.type === WithdrawTypeEnum.P2P) {
+      await this.p2pWithdraw.createForWithdraw(
+        saved,
+        { split: dto.split, constraints: dto.constraints },
+        { actorType: P2pAuditActorEnum.USER, actorId: userId },
+      );
+      return this.findById(saved.id);
+    }
 
     if (gatewayBound) {
       this.paymentBus.requestWithdraw({

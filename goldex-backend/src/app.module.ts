@@ -42,6 +42,8 @@ import { CreditModule } from "./credit/credit.module";
 import { FinanceLogModule } from "./finance-log/finance-log.module";
 import { AdminScheduleModule } from "./admin-schedule/admin-schedule.module";
 import { UserLevelModule } from "./user-level/user-level.module";
+import { AdminBankAccountModule } from "./admin-bank-account/admin-bank-account.module";
+import { P2pModule } from "./p2p/p2p.module";
 import { DepositModule } from "./deposit/deposit.module";
 import { WithdrawModule } from "./withdraw/withdraw.module";
 import { AdminTelegramMonitoringModule } from "./admin-telegram-monitoring/admin-telegram-monitoring.module";
@@ -156,6 +158,8 @@ import { ScheduleModule } from "@nestjs/schedule";
     UserTelegramModule,
     QuoteRequestModule,
     UserLevelModule,
+    AdminBankAccountModule,
+    P2pModule,
     DepositModule,
     WithdrawModule,
     AdminTelegramMonitoringModule,

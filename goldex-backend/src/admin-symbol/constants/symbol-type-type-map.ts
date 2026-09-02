@@ -1,14 +1,14 @@
 ﻿import { SymbolTypeEnum } from "../enum/symbol.type.enum";
 
 export const SYMBOL_TYPE_DEPOSIT_MAP: Record<SymbolTypeEnum, string[]> = {
-  [SymbolTypeEnum.RIAL]: ["manual", "payment-gateway"],
+  [SymbolTypeEnum.RIAL]: ["manual", "payment-gateway", "p2p"],
   [SymbolTypeEnum.CRYPTO]: ["manual", "hdwallet"],
   [SymbolTypeEnum.FIAT]: ["manual", "payment-gateway"],
   [SymbolTypeEnum.MATERIAL]: ["warehouse", "borrow"],
 };
 
 export const SYMBOL_TYPE_WITHDRAW_MAP: Record<SymbolTypeEnum, string[]> = {
-  [SymbolTypeEnum.RIAL]: ["manual", "auto"],
+  [SymbolTypeEnum.RIAL]: ["manual", "auto", "p2p"],
   [SymbolTypeEnum.CRYPTO]: ["manual", "auto"],
   [SymbolTypeEnum.FIAT]: ["manual", "auto"],
   [SymbolTypeEnum.MATERIAL]: ["warehouse", "borrow"],
