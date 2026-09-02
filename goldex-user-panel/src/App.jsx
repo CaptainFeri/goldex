@@ -18,6 +18,7 @@ import CreditPage from './pages/CreditPage'
 import LevelPage from './pages/LevelPage'
 import NotificationPage from './pages/NotificationPage'
 import SupportPage from './pages/SupportPage'
+import P2pPage from './pages/P2pPage'
 
 export default function App() {
   return (
@@ -39,6 +40,7 @@ export default function App() {
           <Route path="/elite-trade" element={<EliteTradePage />} />
           <Route path="/offer" element={<OfferPage />} />
           <Route path="/wallet" element={<WalletPage />} />
+          <Route path="/p2p" element={<P2pPage />} />
           <Route path="/warehouse" element={<WarehousePage />} />
           <Route path="/profile" element={<ProfilePage />} />
           <Route path="/kyc" element={<KycPage />} />

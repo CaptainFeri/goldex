@@ -1,5 +1,6 @@
 import { useEffect, useState, useCallback } from 'react'
 import { useTranslation } from 'react-i18next'
+import { useNavigate } from 'react-router-dom'
 import { walletApi, warehouseApi, depositApi, withdrawApi, creditApi } from '../services/api'
 import { Spinner, Alert, Button } from '../components/UI'
 
@@ -92,6 +93,7 @@ function OcrPreviewBox({ ocr, ocrLoading, ocrEdits, setOcrEdits, imageBase64 }) 
 
 function DepositModal({ symbolId, symbolSlug, depositTypes: allowedDepositTypes, depositGateways, defaultDepositGateway, onClose, onDone }) {
   const { t } = useTranslation()
+  const navigate = useNavigate()
   const [type, setType] = useState(allowedDepositTypes?.[0] || 'manual')
   const [gatewayCode, setGatewayCode] = useState(defaultDepositGateway || '')
   const [amount, setAmount] = useState('')
@@ -110,6 +112,9 @@ function DepositModal({ symbolId, symbolSlug, depositTypes: allowedDepositTypes,
   const [gatewayMsg, setGatewayMsg] = useState('')
   const isWarehouse = type === 'warehouse'
   const isGateway = type === 'payment-gateway'
+  // p2p creates a deposit *intent*; the destination account and the receipt
+  // upload happen afterwards on the p2p page, once matching has run.
+  const isP2p = type === 'p2p'
 
   useEffect(() => {
     if (allowedDepositTypes?.includes('warehouse')) {
@@ -210,6 +215,12 @@ function DepositModal({ symbolId, symbolSlug, depositTypes: allowedDepositTypes,
         if (isGateway && created?.id) {
           await openGatewayAfterCreate(created.id)
         }
+        if (isP2p) {
+          onDone()
+          onClose()
+          navigate('/p2p')
+          return
+        }
       }
       onDone()
       onClose()
@@ -275,6 +286,11 @@ function DepositModal({ symbolId, symbolSlug, depositTypes: allowedDepositTypes,
                   </select>
                 </div>
               )}
+              {isP2p && (
+                <div className="alert alert-warning" style={{ marginBottom: 0 }}>
+                  {t('wallet.p2pDepositHint')}
+                </div>
+              )}
               {type === 'manual' && (
                 <div className="field">
                   <label>{t('wallet.receiptPicture')}</label>
@@ -302,6 +318,7 @@ function DepositModal({ symbolId, symbolSlug, depositTypes: allowedDepositTypes,
 
 function WithdrawModal({ symbolId, symbolSlug, withdrawTypes: allowedWithdrawTypes, withdrawGateways, defaultWithdrawGateway, onClose, onDone }) {
   const { t } = useTranslation()
+  const navigate = useNavigate()
   const [type, setType] = useState(allowedWithdrawTypes?.[0] || 'manual')
   const [gatewayCode, setGatewayCode] = useState(defaultWithdrawGateway || '')
   const [beneficiaryIban, setBeneficiaryIban] = useState('')
@@ -313,8 +330,16 @@ function WithdrawModal({ symbolId, symbolSlug, withdrawTypes: allowedWithdrawTyp
   const [warehouseId, setWarehouseId] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState('')
+  // p2p splits the request into parts that depositors fill one at a time.
+  const [splitPolicy, setSplitPolicy] = useState('EXACT')
+  const [parts, setParts] = useState('1')
+  const [minParts, setMinParts] = useState('')
+  const [maxParts, setMaxParts] = useState('')
+  const [minPartAmount, setMinPartAmount] = useState('')
+  const [maxPartAmount, setMaxPartAmount] = useState('')
   const isWarehouse = type === 'warehouse'
   const isGateway = type === 'auto'
+  const isP2p = type === 'p2p'
 
   useEffect(() => {
     if (allowedWithdrawTypes?.includes('warehouse')) {
@@ -342,7 +367,25 @@ function WithdrawModal({ symbolId, symbolSlug, withdrawTypes: allowedWithdrawTyp
           payload.beneficiaryName = beneficiaryName || undefined
           payload.beneficiaryId = beneficiaryId || undefined
         }
+        if (isP2p) {
+          payload.split = {
+            policy: splitPolicy,
+            parts: splitPolicy === 'EXACT' ? Number(parts) : undefined,
+            minParts: splitPolicy === 'RANGE' ? Number(minParts) : undefined,
+            maxParts: splitPolicy === 'RANGE' || splitPolicy === 'MAXIMUM' ? Number(maxParts) : undefined,
+          }
+          payload.constraints = {
+            minPart: minPartAmount ? Number(minPartAmount) : undefined,
+            maxPart: maxPartAmount ? Number(maxPartAmount) : undefined,
+          }
+        }
         await withdrawApi.create(payload)
+        if (isP2p) {
+          onDone()
+          onClose()
+          navigate('/p2p')
+          return
+        }
       }
       onDone()
       onClose()
@@ -396,6 +439,61 @@ function WithdrawModal({ symbolId, symbolSlug, withdrawTypes: allowedWithdrawTyp
                 <input className="form-input" type="number" step="0.00000001" min="0.00000001"
                   value={amount} onChange={(e) => setAmount(e.target.value)} required placeholder={t('wallet.weightPlaceholder')} />
               </div>
+              {isP2p && (
+                <>
+                  <div className="alert alert-warning" style={{ marginBottom: 0 }}>
+                    {t('wallet.p2pWithdrawHint')}
+                  </div>
+                  <div className="field">
+                    <label>{t('wallet.splitPolicy')}</label>
+                    <select className="form-input" value={splitPolicy} onChange={(e) => setSplitPolicy(e.target.value)}>
+                      <option value="EXACT">{t('wallet.splitExact')}</option>
+                      <option value="MAXIMUM">{t('wallet.splitMaximum')}</option>
+                      <option value="RANGE">{t('wallet.splitRange')}</option>
+                    </select>
+                  </div>
+                  {splitPolicy === 'EXACT' && (
+                    <div className="field">
+                      <label>{t('wallet.exactParts')}</label>
+                      <input className="form-input" type="number" min="1" step="1"
+                        value={parts} onChange={(e) => setParts(e.target.value)} required />
+                    </div>
+                  )}
+                  {splitPolicy === 'MAXIMUM' && (
+                    <div className="field">
+                      <label>{t('wallet.maxParts')}</label>
+                      <input className="form-input" type="number" min="1" step="1"
+                        value={maxParts} onChange={(e) => setMaxParts(e.target.value)} required />
+                    </div>
+                  )}
+                  {splitPolicy === 'RANGE' && (
+                    <>
+                      <div className="field">
+                        <label>{t('wallet.minParts')}</label>
+                        <input className="form-input" type="number" min="1" step="1"
+                          value={minParts} onChange={(e) => setMinParts(e.target.value)} required />
+                      </div>
+                      <div className="field">
+                        <label>{t('wallet.maxParts')}</label>
+                        <input className="form-input" type="number" min="1" step="1"
+                          value={maxParts} onChange={(e) => setMaxParts(e.target.value)} required />
+                      </div>
+                    </>
+                  )}
+                  <div className="field">
+                    <label>{t('wallet.minPartAmount')}</label>
+                    <input className="form-input" type="number" min="0"
+                      value={minPartAmount} onChange={(e) => setMinPartAmount(e.target.value)}
+                      placeholder={t('wallet.optionalPlaceholder')} />
+                  </div>
+                  <div className="field">
+                    <label>{t('wallet.maxPartAmount')}</label>
+                    <input className="form-input" type="number" min="0"
+                      value={maxPartAmount} onChange={(e) => setMaxPartAmount(e.target.value)}
+                      placeholder={t('wallet.optionalPlaceholder')} />
+                  </div>
+                </>
+              )}
               {isGateway && withdrawGateways?.length > 0 && (
                 <div className="field">
                   <label>{t('wallet.paymentGateway')}</label>
