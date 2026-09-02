@@ -85,6 +85,7 @@ export class P2pCronService {
       });
 
       for (const match of stale) {
+        let depositUserId: string | undefined;
         await this.dataSource.transaction(async (manager) => {
           const fresh = await manager.findOne(P2pMatchEntity, {
             where: { id: match.id },
@@ -113,6 +114,7 @@ export class P2pCronService {
           const intent = await manager.findOne(P2pDepositIntentEntity, {
             where: { id: fresh.depositIntentId },
           });
+          depositUserId = intent?.userId;
           if (intent && !this.isTerminalIntent(intent.state)) {
             assertIntentTransition(intent.state, P2pIntentStateEnum.MATCHING);
             intent.state = P2pIntentStateEnum.MATCHING;
@@ -120,7 +122,11 @@ export class P2pCronService {
           }
         });
 
-        this.eventEmitter.emit(P2pEvents.RESERVATION_EXPIRED, { matchId: match.id });
+        this.eventEmitter.emit(P2pEvents.RESERVATION_EXPIRED, {
+          matchId: match.id,
+          depositUserId,
+          amount: Number(match.amount),
+        });
       }
       if (stale.length) this.logger.log(`Released ${stale.length} expired p2p reservation(s)`);
     });
@@ -142,12 +148,26 @@ export class P2pCronService {
       });
 
       for (const match of overdue) {
+        let depositUserId: string | undefined;
+        let withdrawUserId: string | undefined;
         await this.dataSource.transaction(async (manager) => {
           const fresh = await manager.findOne(P2pMatchEntity, {
             where: { id: match.id },
             lock: { mode: "pessimistic_write" },
           });
           if (!fresh || fresh.status !== P2pMatchStatusEnum.WAITING_CONFIRMATION) return;
+
+          if (fresh.withdrawPartId) {
+            const part = await manager.findOne(P2pWithdrawPartEntity, {
+              where: { id: fresh.withdrawPartId },
+            });
+            if (part) {
+              const request = await manager.findOne(P2pWithdrawRequestEntity, {
+                where: { id: part.withdrawRequestId },
+              });
+              withdrawUserId = request?.userId;
+            }
+          }
 
           assertMatchTransition(fresh.status, P2pMatchStatusEnum.RESPONSE_TIMEOUT);
           fresh.status = P2pMatchStatusEnum.RESPONSE_TIMEOUT;
@@ -156,6 +176,7 @@ export class P2pCronService {
           const intent = await manager.findOne(P2pDepositIntentEntity, {
             where: { id: fresh.depositIntentId },
           });
+          depositUserId = intent?.userId;
           if (intent) {
             assertIntentTransition(intent.state, P2pIntentStateEnum.WITHDRAWER_RESPONSE_TIMEOUT);
             intent.state = P2pIntentStateEnum.WITHDRAWER_RESPONSE_TIMEOUT;
@@ -163,7 +184,12 @@ export class P2pCronService {
           }
         });
 
-        this.eventEmitter.emit(P2pEvents.RESPONSE_TIMEOUT, { matchId: match.id });
+        this.eventEmitter.emit(P2pEvents.RESPONSE_TIMEOUT, {
+          matchId: match.id,
+          depositUserId,
+          withdrawUserId,
+          amount: Number(match.amount),
+        });
         await this.escalations.open(
           match.id,
           P2pEscalationReasonEnum.WITHDRAWER_NO_RESPONSE,

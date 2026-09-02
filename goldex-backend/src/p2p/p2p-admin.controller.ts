@@ -4,6 +4,7 @@ import { InjectRepository } from "@nestjs/typeorm";
 import { Repository } from "typeorm";
 import { P2pEscalationService } from "./services/p2p-escalation.service";
 import { P2pSettingService } from "./services/p2p-setting.service";
+import { P2pLiquidityService } from "./services/p2p-liquidity.service";
 import { P2pMatchEntity } from "./entity/p2p-match.entity";
 import { P2pWithdrawRequestEntity } from "./entity/p2p-withdraw-request.entity";
 import { P2pDepositIntentEntity } from "./entity/p2p-deposit-intent.entity";
@@ -32,6 +33,7 @@ export class P2pAdminController {
   constructor(
     private readonly escalations: P2pEscalationService,
     private readonly settings: P2pSettingService,
+    private readonly liquidity: P2pLiquidityService,
     @InjectRepository(P2pMatchEntity)
     private readonly matchRepo: Repository<P2pMatchEntity>,
     @InjectRepository(P2pWithdrawRequestEntity)
@@ -59,8 +61,14 @@ export class P2pAdminController {
     const startOfDay = new Date();
     startOfDay.setHours(0, 0, 0, 0);
 
-    const [pendingWithdrawals, unmatchedDeposits, waitingConfirmation, escalated, timeoutRisk] =
-      await Promise.all([
+    const [
+      pendingWithdrawals,
+      unmatchedDeposits,
+      waitingConfirmation,
+      escalated,
+      timeoutRisk,
+      liquidity,
+    ] = await Promise.all([
         this.requestRepo.count({
           where: [
             { state: P2pWithdrawStateEnum.PENDING_MATCHING },
@@ -77,6 +85,7 @@ export class P2pAdminController {
           .where("m.status = :status", { status: P2pMatchStatusEnum.WAITING_CONFIRMATION })
           .andWhere("m.response_deadline_at < :soon", { soon })
           .getCount(),
+        this.liquidity.getLiquidity(),
       ]);
 
     const today = await this.matchRepo
@@ -94,9 +103,8 @@ export class P2pAdminController {
         waitingConfirmation,
         escalated,
         timeoutRisk,
-        // Liquidity is the company wallet balance, surfaced by the wallet
-        // module rather than recomputed here.
-        adminLiquidity: 0,
+        adminLiquidity: liquidity.total,
+        adminLiquidityBySymbol: liquidity.bySymbol,
         todayCompletedCount: Number(today?.count ?? 0),
         todayCompletedAmount: Number(today?.amount ?? 0),
       },
