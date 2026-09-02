@@ -18,6 +18,9 @@ import { getDefaultDepositTypes, GATEWAY_BOUND_TYPES } from "../admin-symbol/con
 import { PaymentBusService } from "../payment-bus/payment-bus.service";
 import { DepositEvents } from "../shared/constants/events.constants";
 import { UserLevelService } from "../user-level/user-level.service";
+import { DepositTypeEnum } from "../admin-symbol/enum/deposit-type.enum";
+import { P2pDepositService } from "../p2p/services/p2p-deposit.service";
+import { P2pAuditActorEnum } from "../p2p/enum/p2p.enums";
 
 @Injectable()
 export class DepositService {
@@ -36,6 +39,7 @@ export class DepositService {
     private readonly paymentBus: PaymentBusService,
     private readonly eventEmitter: EventEmitter2,
     private readonly userLevelService: UserLevelService,
+    private readonly p2pDeposit: P2pDepositService,
   ) {}
 
   async create(userId: string, dto: CreateDepositDto): Promise<DepositEntity> {
@@ -94,6 +98,17 @@ export class DepositService {
       type: saved.type,
       symbolId: saved.symbolId,
     });
+
+    // p2p is not gateway-bound: no provider call, just an intent that the
+    // matching engine fills. The KYC and level checks above still applied.
+    if (saved.type === DepositTypeEnum.P2P) {
+      await this.p2pDeposit.createForDeposit(
+        saved,
+        dto.metadata?.constraints,
+        { actorType: P2pAuditActorEnum.USER, actorId: userId },
+      );
+      return this.findById(saved.id);
+    }
 
     if (gatewayBound) {
       this.paymentBus.requestDeposit({

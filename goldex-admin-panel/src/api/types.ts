@@ -373,9 +373,29 @@ export interface DiscountList {
 }
 
 // ---- Credit ----
-export type CreditStatus = "PENDING" | "ACTIVE" | "SUSPENDED" | "SETTLED" | "EXPIRED" | "CANCELLED";
-export type SettlementState = "GREEN" | "YELLOW" | "RED" | "ADMIN_REVIEW" | "AUTO_LIQUIDATION" | "SETTLED";
-export type RiskState = "NORMAL" | "WARNING" | "MARGIN_CALL" | "REDUCING" | "LIQUIDATING" | "LIQUIDATED" | "SETTLED" | "DEFAULT";
+export type CreditStatus =
+  | "PENDING"
+  | "ACTIVE"
+  | "SUSPENDED"
+  | "SETTLED"
+  | "EXPIRED"
+  | "CANCELLED";
+export type SettlementState =
+  | "GREEN"
+  | "YELLOW"
+  | "RED"
+  | "ADMIN_REVIEW"
+  | "AUTO_LIQUIDATION"
+  | "SETTLED";
+export type RiskState =
+  | "NORMAL"
+  | "WARNING"
+  | "MARGIN_CALL"
+  | "REDUCING"
+  | "LIQUIDATING"
+  | "LIQUIDATED"
+  | "SETTLED"
+  | "DEFAULT";
 
 export interface Credit {
   id: string;
@@ -420,7 +440,13 @@ export interface Credit {
   enforceOnDrawdown?: "ENFORCE" | "ALERT" | null;
   enforceOnExpiry?: "ENFORCE" | "ALERT" | null;
   enforceRequestDeadline?: boolean | null;
-  user?: { id: string; firstName?: string; lastName?: string; phone?: string; email?: string };
+  user?: {
+    id: string;
+    firstName?: string;
+    lastName?: string;
+    phone?: string;
+    email?: string;
+  };
   creditOrders?: any[];
   createAt: string;
   [k: string]: any;
@@ -514,11 +540,26 @@ export interface CashoutOptions {
 
 // ---- Credit settlement (delivery-based workflow, handoff §7/§13) ----
 export type SettlementWorkflowStatus =
-  | "SETTLEMENT_REQUESTED" | "PENDING_ADMIN_REVIEW" | "APPROVED" | "VALUATED" | "METHOD_SELECTED"
-  | "FUNDING_REQUIRED" | "READY" | "ASSET_RECEIVED" | "ASSET_VERIFIED" | "LIABILITY_CLEARED"
-  | "ASSET_SETTLED" | "COLLATERAL_RELEASED" | "CLOSED" | "REJECTED" | "FAILED";
+  | "SETTLEMENT_REQUESTED"
+  | "PENDING_ADMIN_REVIEW"
+  | "APPROVED"
+  | "VALUATED"
+  | "METHOD_SELECTED"
+  | "FUNDING_REQUIRED"
+  | "READY"
+  | "ASSET_RECEIVED"
+  | "ASSET_VERIFIED"
+  | "LIABILITY_CLEARED"
+  | "ASSET_SETTLED"
+  | "COLLATERAL_RELEASED"
+  | "CLOSED"
+  | "REJECTED"
+  | "FAILED";
 export type SettlementMethod = "FULL" | "NET" | "TOPUP";
-export type SettlementValuationState = "EXPOSURE_LT_COLLATERAL" | "EXPOSURE_GT_COLLATERAL" | "EXPOSURE_EQ_COLLATERAL";
+export type SettlementValuationState =
+  | "EXPOSURE_LT_COLLATERAL"
+  | "EXPOSURE_GT_COLLATERAL"
+  | "EXPOSURE_EQ_COLLATERAL";
 
 export interface CreditSettlement {
   id: string;
@@ -583,11 +624,27 @@ export interface SettlementEligibility {
 }
 
 export type FinanceAction =
-  | "CREDIT_CREATED" | "CREDIT_ACTIVATED" | "CREDIT_SETTLED" | "CREDIT_EXPIRED" | "CREDIT_CANCELLED"
-  | "WALLET_FROZEN" | "WALLET_UNFROZEN" | "BALANCE_INCREASED" | "BALANCE_FROZEN_FOR_CREDIT"
-  | "BALANCE_UNFROZEN_FOR_CREDIT" | "MATERIAL_FREEZE" | "LIQUIDATION" | "ORDER_CANCELLED_MARGIN"
-  | "EXPIRY_FREEZE_ALL" | "USER_STATUS_CHANGED" | "ALL_WALLETS_FROZEN" | "REMINDER_SENT"
-  | "CREDIT_SUSPENDED" | "CREDIT_REACTIVATED" | "CREDIT_EXTENDED" | "CREDIT_LIMIT_ADJUSTED"
+  | "CREDIT_CREATED"
+  | "CREDIT_ACTIVATED"
+  | "CREDIT_SETTLED"
+  | "CREDIT_EXPIRED"
+  | "CREDIT_CANCELLED"
+  | "WALLET_FROZEN"
+  | "WALLET_UNFROZEN"
+  | "BALANCE_INCREASED"
+  | "BALANCE_FROZEN_FOR_CREDIT"
+  | "BALANCE_UNFROZEN_FOR_CREDIT"
+  | "MATERIAL_FREEZE"
+  | "LIQUIDATION"
+  | "ORDER_CANCELLED_MARGIN"
+  | "EXPIRY_FREEZE_ALL"
+  | "USER_STATUS_CHANGED"
+  | "ALL_WALLETS_FROZEN"
+  | "REMINDER_SENT"
+  | "CREDIT_SUSPENDED"
+  | "CREDIT_REACTIVATED"
+  | "CREDIT_EXTENDED"
+  | "CREDIT_LIMIT_ADJUSTED"
   | "CREDIT_FORCE_LIQUIDATED";
 
 export interface FinanceLog {
@@ -634,7 +691,13 @@ export interface CustomerWithBalance {
 export interface DepositRequest {
   id: string;
   userId: string;
-  user?: { id: string; firstName?: string; lastName?: string; phone?: string; email?: string };
+  user?: {
+    id: string;
+    firstName?: string;
+    lastName?: string;
+    phone?: string;
+    email?: string;
+  };
   symbolId: string;
   symbol?: { id: string; name?: string; slug?: string };
   type: string;
@@ -653,7 +716,13 @@ export interface DepositRequest {
 export interface WithdrawRequest {
   id: string;
   userId: string;
-  user?: { id: string; firstName?: string; lastName?: string; phone?: string; email?: string };
+  user?: {
+    id: string;
+    firstName?: string;
+    lastName?: string;
+    phone?: string;
+    email?: string;
+  };
   symbolId: string;
   symbol?: { id: string; name?: string; slug?: string };
   type: string;
@@ -678,19 +747,19 @@ export interface TelegramMarketState {
   lastAction: string;
   priceChange: number;
   priceChangePercent: number;
-  direction: 'UP' | 'DOWN' | 'FLAT';
+  direction: "UP" | "DOWN" | "FLAT";
   volume: number;
   lastUpdate: number;
 }
 
-export type TelegramOpportunityType = 'PRICE_MOVEMENT' | 'BEST_PRICE';
+export type TelegramOpportunityType = "PRICE_MOVEMENT" | "BEST_PRICE";
 
 export interface TelegramOpportunityRecord {
   id: number;
   date: number;
   type: TelegramOpportunityType;
   deliveryType: string;
-  direction: 'UP' | 'DOWN' | 'FLAT';
+  direction: "UP" | "DOWN" | "FLAT";
   price: number;
   previousPrice: number;
   changePercent: number;
@@ -745,236 +814,149 @@ export interface AdminOrder {
   [k: string]: any;
 }
 
-// ---- Arbitrage ----
-export interface ArbitrageLeg {
-  providerKey: string;
-  itemId: number;
-  /** `buy` = we buy from this provider (their sell side); `sell` = we sell to them. */
-  action: "buy" | "sell";
-  price: number;
-  priceStr: string;
-  timestamp: string;
-}
+// ---- Company bank accounts (admin-managed) ----
+export type BankAccountStatus = "ACTIVE" | "INACTIVE" | "SUSPENDED";
 
-export interface ArbitrageSignal {
+export interface AdminBankAccount {
   id: string;
-  /** Stable identity: `<itemId>:<buyProvider>-><sellProvider>`. */
-  key: string;
-  itemId: number;
-  itemName: string;
-  groupId: number;
-  groupName: string;
-  unit: string;
-  buyLeg: ArbitrageLeg;
-  sellLeg: ArbitrageLeg;
-  legs: ArbitrageLeg[];
-  profitToman: number;
-  profitPercent: number;
-  /** Profit expressed in grams of gold, using `goldPriceRef`. */
-  profitGold: number;
-  goldPriceRef: number;
-  deadline: string;
-  detectedAt: string;
+  title: string;
+  bankName: string;
+  ownerName: string;
+  accountNumber?: string | null;
+  cardNumber?: string | null;
+  iban?: string | null;
+  symbolId: string;
+  symbol?: SymbolItem | any;
+  /** The two direction flags. Either, both, or neither may be on. */
+  useForDeposit: boolean;
+  useForWithdraw: boolean;
+  priority: number;
+  depositDailyLimit?: number | null;
+  depositPerTxLimit?: number | null;
+  withdrawDailyLimit?: number | null;
+  withdrawPerTxLimit?: number | null;
+  depositUsedToday?: number;
+  withdrawUsedToday?: number;
+  activeFromHour?: number | null;
+  activeToHour?: number | null;
+  status: BankAccountStatus;
+  verifiedAt?: string | null;
+  verificationJson?: any;
+  notes?: string | null;
+  createAt?: string;
+  updateAt?: string;
 }
 
-/** Which source answered, and how fresh it is. */
-export interface ArbitrageStatus {
-  source: "bus" | "pricing-redis" | "none";
-  scannedAt: string | null;
-  ageSeconds: number | null;
-  staleAfterSeconds: number;
-  stale: boolean;
-  trigger: string | null;
-  opportunityCount: number;
-  totalProviders: number;
-  totalItems: number;
-  bestProfitToman: number;
-  engineRedisReachable: boolean;
-  message?: string;
+// ---- P2P matching / settlement ----
+export type P2pEscalationReason =
+  | "WITHDRAWER_REJECT"
+  | "WITHDRAWER_NO_RESPONSE"
+  | "SETTLEMENT_TIMEOUT"
+  | "RECEIPT_MISMATCH"
+  | "DUPLICATE_PAYMENT"
+  | "ADMIN_ACCOUNT_UNAVAILABLE";
+
+export type P2pResolutionType =
+  | "CONFIRM_PAYMENT"
+  | "REJECT_PAYMENT"
+  | "REQUEST_MORE_EVIDENCE"
+  | "SETTLE_FROM_ADMIN"
+  | "REOPEN_MATCHING"
+  | "CANCEL_REQUEST";
+
+export interface P2pPaymentProof {
+  id: string;
+  amount: number;
+  sourceAccount?: string;
+  destinationAccount?: string;
+  trackingCode?: string;
+  paidAt?: string;
+  receiptUrl?: string;
+  ocrMismatch?: boolean;
+  ocrResultJson?: any;
+  submittedAt?: string;
 }
 
-export interface ArbitrageConfig {
-  minProfitToman: number;
-  minProfitPercent: number;
-  maxSignals: number;
-  quoteFreshnessMs: number;
-  signalTtlMs: number;
-  scanIntervalMs: number;
-  recomputeDebounceMs: number;
+export interface P2pMatch {
+  id: string;
+  depositIntentId: string;
+  withdrawPartId: string;
+  amount: number;
+  score?: number;
+  scoreBreakdownJson?: Record<string, number>;
+  source: "CUSTOMER" | "ADMIN";
+  adminAccountId?: string | null;
+  status: string;
+  reservedAt?: string;
+  reservationExpiresAt?: string;
+  responseDeadlineAt?: string;
+  settlementDeadlineAt?: string;
+  destinationSnapshotJson?: any;
+  paymentProof?: P2pPaymentProof | null;
+  depositor?: any;
+  withdrawer?: any;
+  createAt?: string;
 }
 
-export interface ArbitrageConfigResponse {
-  config: ArbitrageConfig | null;
-  running: boolean | null;
-  reportedAt: string | null;
+export interface P2pEscalation {
+  id: string;
+  matchId: string;
+  match?: P2pMatch;
+  reason: P2pEscalationReason;
+  priority: number;
+  status: "OPEN" | "ASSIGNED" | "RESOLVED" | "VOID";
+  deadlineAt?: string;
+  assignedAdminId?: string | null;
+  resolutionType?: P2pResolutionType | null;
+  resolutionNote?: string | null;
+  resolvedByAdminId?: string | null;
+  resolvedAt?: string | null;
+  checkerAdminId?: string | null;
+  checkedAt?: string | null;
+  timeline?: { at: string; actor: string; action: string; note?: string }[];
+  createAt?: string;
 }
 
-// ---- Order book status ----
-export interface OrderBookStatus {
-  pairId: string;
-  baseSlug: string | null;
-  quoteSlug: string | null;
-  pairLabel: string;
-  isValid: boolean;
-  hasBook: boolean;
-  bidLevels: number;
-  askLevels: number;
-  restingOrders: number;
-  dbPendingOrders: number;
-  inSync: boolean;
-  totalBidSize: number;
-  totalAskSize: number;
-  bestBid: number | null;
-  bestAsk: number | null;
-  spread: number | null;
-  spreadPercent: number | null;
-  crossed: boolean;
-  limitPoolStatus: "OPEN" | "CLOSED" | null;
-  limitPoolOverridden: boolean;
-}
-
-export interface OrderBookOverview {
-  pairs: OrderBookStatus[];
-  summary: {
-    totalPairs: number;
-    validPairs: number;
-    withBook: number;
-    openPools: number;
-    withRestingOrders: number;
-    totalRestingOrders: number;
-    emptyWhileOpen: number;
-    outOfSync: number;
-    crossed: number;
-    missingBook: number;
+export interface P2pSettings {
+  settlementTimeoutMinutes: number;
+  withdrawerResponseTimeoutMinutes: number;
+  reservationTtlMinutes: number;
+  sourcePriority: {
+    deposit: "CUSTOMER_FIRST" | "ADMIN_FIRST";
+    withdrawal: "CUSTOMER_FIRST" | "ADMIN_FIRST";
   };
+  matchingWeights: {
+    amountFit: number;
+    partsFit: number;
+    constraints: number;
+    age: number;
+    priority: number;
+    risk: number;
+  };
+  matchingMaxRetry: number;
+  escalation: {
+    notifyAdminOnReject: boolean;
+    notifyAdminOnNoResponse: boolean;
+    requireAdminResolution: boolean;
+  };
+  twoPersonApprovalThreshold: number;
+  allowOverUnderSplit: boolean;
+  requestExpiryHours: number;
 }
 
-// ---- Market status ----
-export type MarketPoolType = "MARKET" | "LIMIT" | "QUOTE";
-export type MarketStatusValue = "OPEN" | "CLOSED";
-export type MarketStatusReason =
-  | "price-fresh"
-  | "stale-price"
-  | "no-price"
-  | "bridge-price"
-  | "pool-default-open"
-  | "admin-override";
-
-export interface PairPoolStatusView {
-  pairId: string;
-  pairLabel: string;
-  baseSlug: string | null;
-  quoteSlug: string | null;
-  isValid: boolean;
-  lastPriceAt: string | null;
-  poolType: MarketPoolType;
-  derivedStatus: MarketStatusValue;
-  adminOverride: MarketStatusValue | null;
-  effectiveStatus: MarketStatusValue;
-  reason: MarketStatusReason;
-  /** Bridge symbol carrying the price, when the reason is `bridge-price`. */
-  bridgeSlug: string | null;
-  /** False when the row was derived on the fly and no sweep has written it yet. */
-  persisted: boolean;
-  updatedAt: string | null;
-}
-
-export interface MarketStatusSummary {
-  totalPairs: number;
-  openPairs: number;
-  fullyClosedPairs: number;
-  overriddenPools: number;
-  stalePricePairs: number;
-  bridgedPairs: number;
-  byPool: Record<MarketPoolType, { open: number; closed: number; overridden: number }>;
-}
-
-// ---- Symbol capabilities ----
-export interface GatewayOption {
-  code: string;
-  name: string;
-  /** rial | fiat | crypto | material */
-  category: string;
-  /** formal | informal */
-  kind: string;
-  /** up | down | not_configured | unknown — absent when cbp did not answer. */
-  status?: string;
-  statusMessage?: string;
-}
-
-export interface TransferTypeOption {
-  value: string;
-  /** Selecting this type requires at least one gateway for that direction. */
-  gatewayBound: boolean;
-}
-
-export interface SymbolTypeCapability {
-  symbolType: string;
-  depositTypes: TransferTypeOption[];
-  withdrawTypes: TransferTypeOption[];
-  defaultDepositTypes: string[];
-  defaultWithdrawTypes: string[];
-  eligibleGatewayCategories: string[];
-  eligibleGateways: string[];
-  defaultDepositGateways: string[];
-  defaultWithdrawGateways: string[];
-}
-
-export interface SymbolCapabilities {
-  symbolTypes: SymbolTypeCapability[];
-  gateways: GatewayOption[];
-  gatewayRegistryAvailable: boolean;
-  gatewayRegistryError?: string;
-}
-
-// ---- Price routing ----
-export type RoutingMode = "AUTO" | "DIRECT" | "BRIDGE" | "BEST";
-export type RouteKind = "DIRECT" | "BRIDGE";
-
-export interface RouteLeg {
-  pairId: string;
-  baseSlug: string;
-  quoteSlug: string;
-  /** True when the stored pair is quote/base and its price was inverted. */
-  inverted: boolean;
-  price: number;
-  provider: string | null;
-  lastUpdated: string | null;
-  stale: boolean;
-}
-
-export interface RouteCandidate {
-  kind: RouteKind;
-  side: "BUY" | "SELL";
-  bridgeSlug: string | null;
-  bridgeSymbolId: string | null;
-  legs: RouteLeg[];
-  price: number | null;
-  usable: boolean;
-  rejection: string | null;
-  note: string | null;
-  deviationPercent: number | null;
-}
-
-export interface PriceRoute {
-  pairId: string;
-  pairLabel: string;
-  side: "BUY" | "SELL";
-  routingMode: RoutingMode;
-  selected: RouteCandidate | null;
-  direct: RouteCandidate | null;
-  bridges: RouteCandidate[];
-  deviationBlocked: boolean;
-}
-
-export interface PairRoutes {
-  pairId: string;
-  pairLabel: string;
-  routingMode: RoutingMode;
-  configuredBridgeSlug: string | null;
-  bridgeMaxDeviationPercent: number | null;
-  buy: PriceRoute;
-  sell: PriceRoute;
-  usesBridge: boolean;
-  unpriceable: boolean;
+export interface P2pDashboard {
+  pendingWithdrawals: number;
+  unmatchedDeposits: number;
+  waitingConfirmation: number;
+  escalated: number;
+  timeoutRisk: number;
+  adminLiquidity: number;
+  /** Spendable company balance per rial symbol, behind the headline figure. */
+  adminLiquidityBySymbol?: {
+    symbolId: string;
+    slug?: string;
+    balance: number;
+  }[];
+  todayCompletedCount: number;
+  todayCompletedAmount: number;
 }

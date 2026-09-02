@@ -70,6 +70,12 @@ export default () => ({
     botToken: process.env.TELEGRAM_BOT_TOKEN,
     channelId: process.env.TELEGRAM_CHANNEL_ID,
   },
+  p2p: {
+    // System user that owns the company-side wallets. Admin settlement moves
+    // balance between this user's wallet and the customer's, so the internal
+    // leg of a company payout is an ordinary ledger pair.
+    adminUserId: process.env.GOLDEX_P2P_ADMIN_USER_ID,
+  },
   ocr: {
     provider: process.env.OCR_PROVIDER || 'kraken',
     serviceUrl: process.env.OCR_SERVICE_URL || 'http://ocr-worker:8000/ocr',
