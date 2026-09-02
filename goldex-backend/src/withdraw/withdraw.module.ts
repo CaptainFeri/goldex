@@ -1,4 +1,5 @@
 import { Module } from "@nestjs/common";
+import { P2pModule } from "../p2p/p2p.module";
 import { TypeOrmModule } from "@nestjs/typeorm";
 import { WithdrawEntity } from "./withdraw.entity";
 import { WithdrawService } from "./withdraw.service";
@@ -16,6 +17,7 @@ import { UserKycEntity } from "../user/entity/user.kyc.entity";
 
 @Module({
   imports: [
+    P2pModule,
     TypeOrmModule.forFeature([WithdrawEntity, SymbolEntity, WalletEntity, TransactionEntity, UserEntity, UserKycEntity]),
     MinioModule,
     OcrModule,
