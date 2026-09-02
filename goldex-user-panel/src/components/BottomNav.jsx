@@ -23,11 +23,21 @@ function CreditIcon() {
 
 const SECONDARY_NAV_KEYS = [
   { key: 'offer', path: '/offer', icon: OfferIcon },
+  { key: 'p2p', path: '/p2p', icon: P2pIcon },
   { key: 'credit', path: '/credit', icon: CreditIcon },
   { key: 'verification', path: '/kyc', icon: ShieldIcon },
   { key: 'sessions', path: '/sessions', icon: DeviceIcon },
   { key: 'settings', path: '/settings', icon: SettingsIcon },
 ]
+
+// Two arrows crossing — one user paying another, which is what p2p is.
+function P2pIcon() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="bn-icon">
+      <path d="M4 8h13l-3-3" /><path d="M20 16H7l3 3" />
+    </svg>
+  )
+}
 
 function OfferIcon() {
   return (
