@@ -1,5 +1,9 @@
 import { MigrationInterface, QueryRunner } from "typeorm";
-import { PaymentGatewayEnum } from "../admin-symbol/enum/payment.gateway.enum";
+
+// Historical value of the since-removed PaymentGatewayEnum.UP. Inlined so this
+// migration keeps describing what it originally did after the enum (and the
+// payment_gateway_type column) were dropped in a later migration.
+const LEGACY_PAYMENT_GATEWAY_UP = "up";
 
 export class initSymbolPairMig1000000000028 implements MigrationInterface {
   name = "initSymbolPairMig1000000000028";
@@ -14,7 +18,7 @@ export class initSymbolPairMig1000000000028 implements MigrationInterface {
         gainType: "number",
         symbolType: "rial",
         unitType: "number",
-        paymentGateWayType: PaymentGatewayEnum.UP,
+        paymentGateWayType: LEGACY_PAYMENT_GATEWAY_UP,
         hasPaymentGateway: true,
         isActive: true,
       },
@@ -26,7 +30,7 @@ export class initSymbolPairMig1000000000028 implements MigrationInterface {
         gainType: "number",
         symbolType: "fiat",
         unitType: "number",
-        paymentGateWayType: PaymentGatewayEnum.UP,
+        paymentGateWayType: LEGACY_PAYMENT_GATEWAY_UP,
         hasPaymentGateway: true,
         isActive: true,
       },
@@ -38,7 +42,7 @@ export class initSymbolPairMig1000000000028 implements MigrationInterface {
         gainType: "number",
         symbolType: "fiat",
         unitType: "number",
-        paymentGateWayType: PaymentGatewayEnum.UP,
+        paymentGateWayType: LEGACY_PAYMENT_GATEWAY_UP,
         hasPaymentGateway: true,
         isActive: true,
       },
@@ -50,7 +54,7 @@ export class initSymbolPairMig1000000000028 implements MigrationInterface {
         gainType: "number",
         symbolType: "fiat",
         unitType: "number",
-        paymentGateWayType: PaymentGatewayEnum.UP,
+        paymentGateWayType: LEGACY_PAYMENT_GATEWAY_UP,
         hasPaymentGateway: true,
         isActive: true,
       },
@@ -62,7 +66,7 @@ export class initSymbolPairMig1000000000028 implements MigrationInterface {
         gainType: "number",
         symbolType: "material",
         unitType: "number",
-        paymentGateWayType: PaymentGatewayEnum.UP,
+        paymentGateWayType: LEGACY_PAYMENT_GATEWAY_UP,
         hasPaymentGateway: false,
         isActive: true,
       },

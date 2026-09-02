@@ -10,6 +10,7 @@ import { WalletEntity } from "../wallet/entities/wallet.entity";
 import { WalletTypeEnum } from "../wallet/enum/wallet-type.enum";
 import { TransactionEntity } from "../wallet/entities/transaction.entity";
 import { UserLevelService } from "../user-level/user-level.service";
+import { SymbolCapabilitiesService } from "../admin-symbol/symbol-capabilities.service";
 
 @Injectable()
 export class UserWalletService {
@@ -25,7 +26,23 @@ export class UserWalletService {
     @InjectRepository(UserEntity)
     private readonly userRepo: Repository<UserEntity>,
     private readonly userLevelService: UserLevelService,
+    private readonly capabilities: SymbolCapabilitiesService,
   ) {}
+
+  /**
+   * code -> display name for every registered gateway, so the client can label
+   * its picker instead of showing a raw slug like "kaino-informal". Falls back
+   * to an empty map when goldex-cbp is unreachable; the client then shows the
+   * code, which is still usable.
+   */
+  private async gatewayLabels(): Promise<Record<string, string>> {
+    try {
+      const { gateways } = await this.capabilities.getCapabilities();
+      return Object.fromEntries(gateways.map((g) => [g.code, g.name]));
+    } catch {
+      return {};
+    }
+  }
 
   async registerGenerateWallets(user: UserEntity, marketTypes?: string[]) {
     const where: any = { isActive: true };
@@ -56,7 +73,8 @@ export class UserWalletService {
       order: { createAt: "ASC" },
     });
     const filtered = await this.filterWalletsByMarketType(userId, wallets);
-    return filtered.map((w) => this.toWalletView(w));
+    const labels = await this.gatewayLabels();
+    return filtered.map((w) => this.toWalletView(w, labels));
   }
 
   async getWalletById(userId: string, walletId: string) {
@@ -67,7 +85,7 @@ export class UserWalletService {
     if (!wallet) throw new NotFoundException("Wallet not found");
     const filtered = await this.filterWalletsByMarketType(userId, [wallet]);
     if (filtered.length === 0) throw new NotFoundException("Wallet not found");
-    return this.toWalletView(filtered[0]);
+    return this.toWalletView(filtered[0], await this.gatewayLabels());
   }
 
   // Paginated transactions across the user's wallets (optionally one wallet).
@@ -139,7 +157,7 @@ export class UserWalletService {
     return filtered;
   }
 
-  private toWalletView(w: WalletEntity) {
+  private toWalletView(w: WalletEntity, gatewayLabels: Record<string, string> = {}) {
     const free = Number(w.freeBalance);
     const locked = Number(w.lockedBalance);
     const frozenFree = Number(w.frozenFreeBalance);
@@ -158,6 +176,15 @@ export class UserWalletService {
             type: w.symbol.symbolType,
             depositTypes: w.symbol.depositTypes,
             withdrawTypes: w.symbol.withdrawTypes,
+            // The client renders a gateway picker from these; without them its
+            // select is always empty and the user can never choose between two
+            // configured gateways.
+            hasPaymentGateway: w.symbol.hasPaymentGateway,
+            depositGateways: w.symbol.depositGateways ?? [],
+            withdrawGateways: w.symbol.withdrawGateways ?? [],
+            defaultDepositGateway: w.symbol.defaultDepositGateway ?? null,
+            defaultWithdrawGateway: w.symbol.defaultWithdrawGateway ?? null,
+            gatewayLabels,
           }
         : null,
       freeBalance: free,

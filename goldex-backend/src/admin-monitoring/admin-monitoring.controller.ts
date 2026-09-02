@@ -32,9 +32,19 @@ export class AdminMonitoringController {
     };
   }
 
-  // Current snapshot prices for one provider.
+  /**
+   * A provider's live snapshot: item names, prices, staleness and the Goldex
+   * pairs each item feeds. Also backs the item picker on the history tab, so
+   * an admin never has to know a raw item id.
+   */
   @Get("current/:provider")
   async current(@Param("provider") provider: string) {
+    return { data: await this.monitoringService.getProviderSnapshot(provider) };
+  }
+
+  // The engine's raw price records, unshaped — kept for debugging.
+  @Get("current/:provider/raw")
+  async currentRaw(@Param("provider") provider: string) {
     return { data: await this.monitoringService.getCurrent(provider) };
   }
 

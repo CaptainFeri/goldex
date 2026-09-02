@@ -91,7 +91,7 @@ function OcrPreviewBox({ ocr, ocrLoading, ocrEdits, setOcrEdits, imageBase64 }) 
   )
 }
 
-function DepositModal({ symbolId, symbolSlug, depositTypes: allowedDepositTypes, depositGateways, defaultDepositGateway, onClose, onDone }) {
+function DepositModal({ symbolId, symbolSlug, depositTypes: allowedDepositTypes, depositGateways, defaultDepositGateway, gatewayLabels, onClose, onDone }) {
   const { t } = useTranslation()
   const navigate = useNavigate()
   const [type, setType] = useState(allowedDepositTypes?.[0] || 'manual')
@@ -281,7 +281,7 @@ function DepositModal({ symbolId, symbolSlug, depositTypes: allowedDepositTypes,
                   <select className="form-input" value={gatewayCode} onChange={(e) => setGatewayCode(e.target.value)} required>
                     <option value="">{t('wallet.selectGateway')}</option>
                     {depositGateways.map((g) => (
-                      <option key={g} value={g}>{g}</option>
+                      <option key={g} value={g}>{gatewayLabels?.[g] || g}</option>
                     ))}
                   </select>
                 </div>
@@ -316,7 +316,7 @@ function DepositModal({ symbolId, symbolSlug, depositTypes: allowedDepositTypes,
   )
 }
 
-function WithdrawModal({ symbolId, symbolSlug, withdrawTypes: allowedWithdrawTypes, withdrawGateways, defaultWithdrawGateway, onClose, onDone }) {
+function WithdrawModal({ symbolId, symbolSlug, withdrawTypes: allowedWithdrawTypes, withdrawGateways, defaultWithdrawGateway, gatewayLabels, onClose, onDone }) {
   const { t } = useTranslation()
   const navigate = useNavigate()
   const [type, setType] = useState(allowedWithdrawTypes?.[0] || 'manual')
@@ -500,7 +500,7 @@ function WithdrawModal({ symbolId, symbolSlug, withdrawTypes: allowedWithdrawTyp
                   <select className="form-input" value={gatewayCode} onChange={(e) => setGatewayCode(e.target.value)} required>
                     <option value="">{t('wallet.selectGateway')}</option>
                     {withdrawGateways.map((g) => (
-                      <option key={g} value={g}>{g}</option>
+                      <option key={g} value={g}>{gatewayLabels?.[g] || g}</option>
                     ))}
                   </select>
                 </div>
@@ -892,6 +892,7 @@ export default function WalletPage() {
           depositTypes={modal.wallet.symbol?.depositTypes}
           depositGateways={modal.wallet.symbol?.depositGateways}
           defaultDepositGateway={modal.wallet.symbol?.defaultDepositGateway}
+          gatewayLabels={modal.wallet.symbol?.gatewayLabels}
           onClose={() => setModal(null)}
           onDone={load}
         />
@@ -902,6 +903,7 @@ export default function WalletPage() {
           symbolSlug={modal.wallet.symbol?.slug || modal.wallet.symbol?.name}
           withdrawTypes={modal.wallet.symbol?.withdrawTypes}
           withdrawGateways={modal.wallet.symbol?.withdrawGateways}
+          gatewayLabels={modal.wallet.symbol?.gatewayLabels}
           defaultWithdrawGateway={modal.wallet.symbol?.defaultWithdrawGateway}
           onClose={() => setModal(null)}
           onDone={load}

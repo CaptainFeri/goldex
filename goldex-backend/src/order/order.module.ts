@@ -13,7 +13,6 @@ import { ProviderPairMappingModule } from "../provider-pair-mapping/provider-pai
 import { TelegramNotifierModule } from "../telegram-notifier/telegram-notifier.module";
 import { UserTelegramModule } from "../user-telegram/user-telegram.module";
 import { QuoteRequestModule } from "../quote-request/quote-request.module";
-import { OrderBookService } from "../order-book/order-book.service";
 import { UserMarketTypeEntity } from "../user/entity/user.market.type.entity";
 import { UserMarketKindEntity } from "../user/entity/user.market.kind.entity";
 import { TransactionEntity } from "../wallet/entities/transaction.entity";
@@ -46,7 +45,7 @@ import { UserKycEntity } from "../user/entity/user.kyc.entity";
     CreditModule,
   ],
   controllers: [OrderController, TelegramWebhookController],
-  providers: [OrderService, MatchService, OrderBookService],
+  providers: [OrderService, MatchService],
   exports: [OrderService, MatchService],
 })
 export class OrderModule {}

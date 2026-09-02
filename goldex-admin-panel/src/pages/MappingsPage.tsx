@@ -3,7 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, unwrap, apiError } from "../api/client";
 import { Card, Loading, ErrorState, Empty, Badge, Modal } from "../components/ui";
 import { fmtNum, pairLabel } from "../lib/format";
-import type { PairMapping, PricePair, ProviderSnapshotItem } from "../api/types";
+import type { PairMapping, PricePair, ProviderAvailableItem } from "../api/types";
 
 function toArray(x: any): any[] {
   if (Array.isArray(x)) return x;
@@ -22,7 +22,7 @@ function MappingForm({
   initial?: PairMapping;
   pairs: PricePair[];
   providers: string[];
-  availableItems: Record<string, ProviderSnapshotItem[]>;
+  availableItems: Record<string, ProviderAvailableItem[]>;
   onClose: () => void;
 }) {
   const qc = useQueryClient();
@@ -84,7 +84,7 @@ function MappingForm({
               <option value="">انتخاب از آیتم‌های موجود…</option>
               {itemsForProvider.map((it) => (
                 <option key={it.itemId} value={it.itemId}>
-                  #{it.itemId} — {it.name ?? it.slug ?? "—"} (خرید: {fmtNum(it.buyPrice, 2)} / فروش: {fmtNum(it.sellPrice, 2)})
+                  #{it.itemId} — {it.name ?? "—"} (خرید: {fmtNum(it.buyPrice, 2)} / فروش: {fmtNum(it.sellPrice, 2)})
                 </option>
               ))}
               <option value="__custom__">مقدار دلخواه…</option>
@@ -174,10 +174,10 @@ export default function MappingsPage() {
   const available = useQuery({
     queryKey: ["provider-available-items"],
     queryFn: async () => {
-      const res = unwrap<{ providerKey: string; items: ProviderSnapshotItem[] }[]>(
+      const res = unwrap<{ providerKey: string; items: ProviderAvailableItem[] }[]>(
         (await api.get("/admin/pair-mappings/available-items")).data
       );
-      const map: Record<string, ProviderSnapshotItem[]> = {};
+      const map: Record<string, ProviderAvailableItem[]> = {};
       for (const row of res) map[row.providerKey] = row.items ?? [];
       return map;
     },

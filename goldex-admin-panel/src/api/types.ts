@@ -155,14 +155,44 @@ export interface PairMapping {
 }
 
 // ---- Provider snapshot (for the available-items dropdown) ----
+/** A price pair a provider item feeds. */
+export interface MappedPairRef {
+  pairId: string;
+  pairLabel: string;
+  baseSlug: string | null;
+  quoteSlug: string | null;
+  useBuyPrice: boolean;
+  useSellPrice: boolean;
+}
+
 export interface ProviderSnapshotItem {
   itemId: number;
-  name?: string;
-  slug?: string;
-  buyPrice?: number;
-  sellPrice?: number;
-  unit?: string;
-  [k: string]: any;
+  /** The provider's own item name. */
+  name: string | null;
+  unit: string | null;
+  groupId: number | null;
+  groupName: string | null;
+  buyPrice: number | null;
+  sellPrice: number | null;
+  buyPricePerGram: number | null;
+  sellPricePerGram: number | null;
+  canBuy: boolean;
+  canSell: boolean;
+  spread: number | null;
+  spreadPercent: number | null;
+  timestamp: string | null;
+  stale: boolean;
+  /** Goldex pairs this item feeds; empty when unmapped. */
+  mappedPairs: MappedPairRef[];
+}
+
+export interface ProviderSnapshot {
+  providerKey: string;
+  items: ProviderSnapshotItem[];
+  lastUpdate: string | null;
+  totalItems: number;
+  pricedItems: number;
+  mappedItems: number;
 }
 
 // ---- Warehouse ----
@@ -289,6 +319,19 @@ export interface HistoryResponse {
 export interface CurrentSnapshot {
   [k: string]: any;
 }
+/**
+ * An item as returned by /admin/pair-mappings/available-items — a narrower
+ * shape than the monitoring snapshot, with no group or mapping info.
+ */
+export interface ProviderAvailableItem {
+  itemId: number;
+  name: string;
+  unit: string;
+  buyPrice: number;
+  sellPrice: number;
+}
+
+/** @deprecated superseded by ProviderSnapshot, which the endpoint now returns. */
 export interface CurrentProviderResponse {
   provider: string;
   items: ProviderSnapshotItem[];
@@ -829,4 +872,238 @@ export interface P2pDashboard {
   adminLiquidityBySymbol?: { symbolId: string; slug?: string; balance: number }[];
   todayCompletedCount: number;
   todayCompletedAmount: number;
+}
+
+// ---- Arbitrage ----
+export interface ArbitrageLeg {
+  providerKey: string;
+  itemId: number;
+  /** `buy` = we buy from this provider (their sell side); `sell` = we sell to them. */
+  action: "buy" | "sell";
+  price: number;
+  priceStr: string;
+  timestamp: string;
+}
+
+export interface ArbitrageSignal {
+  id: string;
+  /** Stable identity: `<itemId>:<buyProvider>-><sellProvider>`. */
+  key: string;
+  itemId: number;
+  itemName: string;
+  groupId: number;
+  groupName: string;
+  unit: string;
+  buyLeg: ArbitrageLeg;
+  sellLeg: ArbitrageLeg;
+  legs: ArbitrageLeg[];
+  profitToman: number;
+  profitPercent: number;
+  /** Profit expressed in grams of gold, using `goldPriceRef`. */
+  profitGold: number;
+  goldPriceRef: number;
+  deadline: string;
+  detectedAt: string;
+}
+
+/** Which source answered, and how fresh it is. */
+export interface ArbitrageStatus {
+  source: "bus" | "pricing-redis" | "none";
+  scannedAt: string | null;
+  ageSeconds: number | null;
+  staleAfterSeconds: number;
+  stale: boolean;
+  trigger: string | null;
+  opportunityCount: number;
+  totalProviders: number;
+  totalItems: number;
+  bestProfitToman: number;
+  engineRedisReachable: boolean;
+  message?: string;
+}
+
+export interface ArbitrageConfig {
+  minProfitToman: number;
+  minProfitPercent: number;
+  maxSignals: number;
+  quoteFreshnessMs: number;
+  signalTtlMs: number;
+  scanIntervalMs: number;
+  recomputeDebounceMs: number;
+}
+
+export interface ArbitrageConfigResponse {
+  config: ArbitrageConfig | null;
+  running: boolean | null;
+  reportedAt: string | null;
+}
+
+// ---- Order book status ----
+export interface OrderBookStatus {
+  pairId: string;
+  baseSlug: string | null;
+  quoteSlug: string | null;
+  pairLabel: string;
+  isValid: boolean;
+  hasBook: boolean;
+  bidLevels: number;
+  askLevels: number;
+  restingOrders: number;
+  dbPendingOrders: number;
+  inSync: boolean;
+  totalBidSize: number;
+  totalAskSize: number;
+  bestBid: number | null;
+  bestAsk: number | null;
+  spread: number | null;
+  spreadPercent: number | null;
+  crossed: boolean;
+  limitPoolStatus: "OPEN" | "CLOSED" | null;
+  limitPoolOverridden: boolean;
+}
+
+export interface OrderBookOverview {
+  pairs: OrderBookStatus[];
+  summary: {
+    totalPairs: number;
+    validPairs: number;
+    withBook: number;
+    openPools: number;
+    withRestingOrders: number;
+    totalRestingOrders: number;
+    emptyWhileOpen: number;
+    outOfSync: number;
+    crossed: number;
+    missingBook: number;
+  };
+}
+
+// ---- Market status ----
+export type MarketPoolType = "MARKET" | "LIMIT" | "QUOTE";
+export type MarketStatusValue = "OPEN" | "CLOSED";
+export type MarketStatusReason =
+  | "price-fresh"
+  | "stale-price"
+  | "no-price"
+  | "bridge-price"
+  | "pool-default-open"
+  | "admin-override";
+
+export interface PairPoolStatusView {
+  pairId: string;
+  pairLabel: string;
+  baseSlug: string | null;
+  quoteSlug: string | null;
+  isValid: boolean;
+  lastPriceAt: string | null;
+  poolType: MarketPoolType;
+  derivedStatus: MarketStatusValue;
+  adminOverride: MarketStatusValue | null;
+  effectiveStatus: MarketStatusValue;
+  reason: MarketStatusReason;
+  /** Bridge symbol carrying the price, when the reason is `bridge-price`. */
+  bridgeSlug: string | null;
+  /** False when the row was derived on the fly and no sweep has written it yet. */
+  persisted: boolean;
+  updatedAt: string | null;
+}
+
+export interface MarketStatusSummary {
+  totalPairs: number;
+  openPairs: number;
+  fullyClosedPairs: number;
+  overriddenPools: number;
+  stalePricePairs: number;
+  bridgedPairs: number;
+  byPool: Record<MarketPoolType, { open: number; closed: number; overridden: number }>;
+}
+
+// ---- Symbol capabilities ----
+export interface GatewayOption {
+  code: string;
+  name: string;
+  /** rial | fiat | crypto | material */
+  category: string;
+  /** formal | informal */
+  kind: string;
+  /** up | down | not_configured | unknown — absent when cbp did not answer. */
+  status?: string;
+  statusMessage?: string;
+}
+
+export interface TransferTypeOption {
+  value: string;
+  /** Selecting this type requires at least one gateway for that direction. */
+  gatewayBound: boolean;
+}
+
+export interface SymbolTypeCapability {
+  symbolType: string;
+  depositTypes: TransferTypeOption[];
+  withdrawTypes: TransferTypeOption[];
+  defaultDepositTypes: string[];
+  defaultWithdrawTypes: string[];
+  eligibleGatewayCategories: string[];
+  eligibleGateways: string[];
+  defaultDepositGateways: string[];
+  defaultWithdrawGateways: string[];
+}
+
+export interface SymbolCapabilities {
+  symbolTypes: SymbolTypeCapability[];
+  gateways: GatewayOption[];
+  gatewayRegistryAvailable: boolean;
+  gatewayRegistryError?: string;
+}
+
+// ---- Price routing ----
+export type RoutingMode = "AUTO" | "DIRECT" | "BRIDGE" | "BEST";
+export type RouteKind = "DIRECT" | "BRIDGE";
+
+export interface RouteLeg {
+  pairId: string;
+  baseSlug: string;
+  quoteSlug: string;
+  /** True when the stored pair is quote/base and its price was inverted. */
+  inverted: boolean;
+  price: number;
+  provider: string | null;
+  lastUpdated: string | null;
+  stale: boolean;
+}
+
+export interface RouteCandidate {
+  kind: RouteKind;
+  side: "BUY" | "SELL";
+  bridgeSlug: string | null;
+  bridgeSymbolId: string | null;
+  legs: RouteLeg[];
+  price: number | null;
+  usable: boolean;
+  rejection: string | null;
+  note: string | null;
+  deviationPercent: number | null;
+}
+
+export interface PriceRoute {
+  pairId: string;
+  pairLabel: string;
+  side: "BUY" | "SELL";
+  routingMode: RoutingMode;
+  selected: RouteCandidate | null;
+  direct: RouteCandidate | null;
+  bridges: RouteCandidate[];
+  deviationBlocked: boolean;
+}
+
+export interface PairRoutes {
+  pairId: string;
+  pairLabel: string;
+  routingMode: RoutingMode;
+  configuredBridgeSlug: string | null;
+  bridgeMaxDeviationPercent: number | null;
+  buy: PriceRoute;
+  sell: PriceRoute;
+  usesBridge: boolean;
+  unpriceable: boolean;
 }

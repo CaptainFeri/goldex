@@ -100,6 +100,31 @@ export class OrderEntity extends myBaseEntity {
   })
   mesghalPrice: number;
 
+  // ── Price routing record ─────────────────────────────────────────
+  // How `mesghalPrice` was arrived at. DIRECT means the pair's own quote;
+  // BRIDGE means it was composed through `bridgeSymbolId`. `mesghalPrice`
+  // itself keeps the same meaning either way — the pure price per mesghal in
+  // the pair's quote currency — so settlement needs no special case.
+  @Column({ type: "varchar", length: 10, nullable: true, name: "route_mode" })
+  routeMode: string | null;
+
+  @Column({ type: "uuid", nullable: true, name: "bridge_symbol_id" })
+  bridgeSymbolId: string | null;
+
+  /** Quote-per-bridge rate used to compose the price (e.g. IRR per USD). */
+  @Column({
+    type: "decimal",
+    precision: 24,
+    scale: 12,
+    nullable: true,
+    name: "bridge_rate",
+  })
+  bridgeRate: number | null;
+
+  /** Each leg as `{ pair, price, provider, inverted }`, for reconstruction. */
+  @Column("jsonb", { nullable: true, name: "route_legs" })
+  routeLegs: Record<string, any>[] | null;
+
   @Column({
     type: "decimal",
     precision: 20,

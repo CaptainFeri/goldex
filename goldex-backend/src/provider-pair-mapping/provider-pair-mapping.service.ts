@@ -77,7 +77,9 @@ export class ProviderPairMappingService {
   ): Promise<ProviderPairMappingEntity[]> {
     return this.mappingRepo.find({
       where: { providerKey },
-      relations: { pair: true },
+      // The pair's symbols come along so callers can label a mapping
+      // "XAU/IRR" without a second lookup per row.
+      relations: { pair: { baseSymbol: true, quoteSymbol: true } },
     });
   }
 

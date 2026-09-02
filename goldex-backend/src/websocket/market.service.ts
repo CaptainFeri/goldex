@@ -16,6 +16,8 @@ import {
   PricePairUpdateMessage,
 } from "../rabbitmq/interfaces/rabbitmq.interfaces";
 import { MESQAL_TO_GRAM } from "../common/constants";
+import { PriceRouteService } from "../pricing-route/price-route.service";
+import { RouteKind } from "../pricing-route/price-route.types";
 
 export interface PriceDataPoint {
   pair: string;
@@ -41,6 +43,10 @@ export interface PriceDataPoint {
   decimals: number;
   lastUpdated: string;
   marketType: string;
+  /** DIRECT, or BRIDGE when the price was composed through another symbol. */
+  buyPriceSource: RouteKind;
+  sellPriceSource: RouteKind;
+  bridgeSymbol: string | null;
 }
 
 @Injectable()
@@ -60,6 +66,7 @@ export class MarketService implements OnModuleInit {
     private readonly userRepo: Repository<UserEntity>,
     private readonly rmq: RabbitMQService,
     private readonly eventEmitter: EventEmitter2,
+    private readonly routeService: PriceRouteService,
   ) {}
 
   async onModuleInit() {
@@ -83,6 +90,9 @@ export class MarketService implements OnModuleInit {
 
     if (pairs.length === 0) return;
 
+    // One graph build for the whole sweep.
+    const routes = await this.routeService.resolveMany(pairs);
+
     for (const pair of pairs) {
       const pairKey = `${pair.baseSymbol.slug}-${pair.quoteSymbol.slug}`;
 
@@ -90,10 +100,21 @@ export class MarketService implements OnModuleInit {
       const sellCommission = parseFloat(pair.sellCommission as any) || 0;
       const baseGain = parseFloat(pair.baseSymbol.gain as any) || 0;
       const baseGainType = pair.baseSymbol.gainType || 'number';
-      const bestBuyPrice = parseFloat(pair.bestBuyPrice as any) || 0;
-      const bestSellPrice = parseFloat(pair.bestSellPrice as any) || 0;
-      const bestBuyGramPrice = parseFloat(pair.bestBuyGramPrice as any) || 0;
-      const bestSellGramPrice = parseFloat(pair.bestSellGramPrice as any) || 0;
+
+      // Prefer the resolved route; fall back to the pair's own bests so a pair
+      // with a healthy direct quote behaves exactly as before.
+      const pairRoutes = routes.get(pair.id);
+      const buyRoute = pairRoutes?.buy.selected ?? null;
+      const sellRoute = pairRoutes?.sell.selected ?? null;
+      const bestBuyPrice = buyRoute?.price ?? (parseFloat(pair.bestBuyPrice as any) || 0);
+      const bestSellPrice = sellRoute?.price ?? (parseFloat(pair.bestSellPrice as any) || 0);
+      // Gram prices follow the same mesghal convention as the stored columns.
+      const bestBuyGramPrice = buyRoute
+        ? bestBuyPrice / MESQAL_TO_GRAM
+        : parseFloat(pair.bestBuyGramPrice as any) || 0;
+      const bestSellGramPrice = sellRoute
+        ? bestSellPrice / MESQAL_TO_GRAM
+        : parseFloat(pair.bestSellGramPrice as any) || 0;
 
       const gainAdjBuy = baseGainType === 'percent'
         ? bestBuyPrice * baseGain / 100
@@ -129,10 +150,23 @@ export class MarketService implements OnModuleInit {
         decimals: pair.decimals || 2,
         lastUpdated: (pair.lastUpdated || new Date()).toISOString(),
         marketType: pair.baseSymbol?.marketType,
+        buyPriceSource: buyRoute?.kind ?? RouteKind.DIRECT,
+        sellPriceSource: sellRoute?.kind ?? RouteKind.DIRECT,
+        bridgeSymbol: buyRoute?.bridgeSlug ?? sellRoute?.bridgeSlug ?? null,
       };
 
       const existing = this.priceCache.get(pairKey);
-      if (!existing || existing.lastUpdated !== point.lastUpdated) {
+      // A bridged pair keeps its own (stale) lastUpdated while the legs move,
+      // so comparing timestamps alone would publish the first bridged price and
+      // then never update it. Compare what the customer actually sees.
+      const changed =
+        !existing ||
+        existing.lastUpdated !== point.lastUpdated ||
+        existing.displayBuyPrice !== point.displayBuyPrice ||
+        existing.displaySellPrice !== point.displaySellPrice ||
+        existing.buyPriceSource !== point.buyPriceSource ||
+        existing.sellPriceSource !== point.sellPriceSource;
+      if (changed) {
         this.priceCache.set(pairKey, point);
         this.notifyListeners(pairKey, point);
         this.eventEmitter.emit(CreditEvents.PRICE_UPDATE, {
@@ -174,6 +208,11 @@ export class MarketService implements OnModuleInit {
         decimals: data.decimals,
         lastUpdated: data.lastUpdated,
         marketType: data.marketType,
+        // This message carries the pair's own provider prices; a bridged
+        // quote, if any, is applied by the next cache refresh.
+        buyPriceSource: RouteKind.DIRECT,
+        sellPriceSource: RouteKind.DIRECT,
+        bridgeSymbol: null,
       };
 
       this.priceCache.set(data.pairKey, point);
