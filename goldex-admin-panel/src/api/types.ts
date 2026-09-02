@@ -701,3 +701,130 @@ export interface AdminOrder {
   cancelledAt?: string;
   [k: string]: any;
 }
+
+// ---- Company bank accounts (admin-managed) ----
+export type BankAccountStatus = "ACTIVE" | "INACTIVE" | "SUSPENDED";
+
+export interface AdminBankAccount {
+  id: string;
+  title: string;
+  bankName: string;
+  ownerName: string;
+  accountNumber?: string | null;
+  cardNumber?: string | null;
+  iban?: string | null;
+  symbolId: string;
+  symbol?: SymbolItem | any;
+  /** The two direction flags. Either, both, or neither may be on. */
+  useForDeposit: boolean;
+  useForWithdraw: boolean;
+  priority: number;
+  depositDailyLimit?: number | null;
+  depositPerTxLimit?: number | null;
+  withdrawDailyLimit?: number | null;
+  withdrawPerTxLimit?: number | null;
+  depositUsedToday?: number;
+  withdrawUsedToday?: number;
+  activeFromHour?: number | null;
+  activeToHour?: number | null;
+  status: BankAccountStatus;
+  verifiedAt?: string | null;
+  verificationJson?: any;
+  notes?: string | null;
+  createAt?: string;
+  updateAt?: string;
+}
+
+// ---- P2P matching / settlement ----
+export type P2pEscalationReason =
+  | "WITHDRAWER_REJECT"
+  | "WITHDRAWER_NO_RESPONSE"
+  | "SETTLEMENT_TIMEOUT"
+  | "RECEIPT_MISMATCH"
+  | "DUPLICATE_PAYMENT"
+  | "ADMIN_ACCOUNT_UNAVAILABLE";
+
+export type P2pResolutionType =
+  | "CONFIRM_PAYMENT"
+  | "REJECT_PAYMENT"
+  | "REQUEST_MORE_EVIDENCE"
+  | "SETTLE_FROM_ADMIN"
+  | "REOPEN_MATCHING"
+  | "CANCEL_REQUEST";
+
+export interface P2pPaymentProof {
+  id: string;
+  amount: number;
+  sourceAccount?: string;
+  destinationAccount?: string;
+  trackingCode?: string;
+  paidAt?: string;
+  receiptUrl?: string;
+  ocrMismatch?: boolean;
+  ocrResultJson?: any;
+  submittedAt?: string;
+}
+
+export interface P2pMatch {
+  id: string;
+  depositIntentId: string;
+  withdrawPartId: string;
+  amount: number;
+  score?: number;
+  scoreBreakdownJson?: Record<string, number>;
+  source: "CUSTOMER" | "ADMIN";
+  adminAccountId?: string | null;
+  status: string;
+  reservedAt?: string;
+  reservationExpiresAt?: string;
+  responseDeadlineAt?: string;
+  settlementDeadlineAt?: string;
+  destinationSnapshotJson?: any;
+  paymentProof?: P2pPaymentProof | null;
+  depositor?: any;
+  withdrawer?: any;
+  createAt?: string;
+}
+
+export interface P2pEscalation {
+  id: string;
+  matchId: string;
+  match?: P2pMatch;
+  reason: P2pEscalationReason;
+  priority: number;
+  status: "OPEN" | "ASSIGNED" | "RESOLVED" | "VOID";
+  deadlineAt?: string;
+  assignedAdminId?: string | null;
+  resolutionType?: P2pResolutionType | null;
+  resolutionNote?: string | null;
+  resolvedByAdminId?: string | null;
+  resolvedAt?: string | null;
+  checkerAdminId?: string | null;
+  checkedAt?: string | null;
+  timeline?: { at: string; actor: string; action: string; note?: string }[];
+  createAt?: string;
+}
+
+export interface P2pSettings {
+  settlementTimeoutMinutes: number;
+  withdrawerResponseTimeoutMinutes: number;
+  reservationTtlMinutes: number;
+  sourcePriority: { deposit: "CUSTOMER_FIRST" | "ADMIN_FIRST"; withdrawal: "CUSTOMER_FIRST" | "ADMIN_FIRST" };
+  matchingWeights: { amountFit: number; partsFit: number; constraints: number; age: number; priority: number; risk: number };
+  matchingMaxRetry: number;
+  escalation: { notifyAdminOnReject: boolean; notifyAdminOnNoResponse: boolean; requireAdminResolution: boolean };
+  twoPersonApprovalThreshold: number;
+  allowOverUnderSplit: boolean;
+  requestExpiryHours: number;
+}
+
+export interface P2pDashboard {
+  pendingWithdrawals: number;
+  unmatchedDeposits: number;
+  waitingConfirmation: number;
+  escalated: number;
+  timeoutRisk: number;
+  adminLiquidity: number;
+  todayCompletedCount: number;
+  todayCompletedAmount: number;
+}
