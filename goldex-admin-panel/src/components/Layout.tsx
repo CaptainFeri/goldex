@@ -50,6 +50,8 @@ const NAV: NavGroup[] = [
       { to: "/finance-logs", label: "گزارشات مالی", icon: "📄" },
       { to: "/deposits", label: "واریزها", icon: "📥" },
       { to: "/withdraws", label: "برداشت‌ها", icon: "📤" },
+      { to: "/p2p", label: "تسویه همتا به همتا", icon: "🤝" },
+      { to: "/bank-accounts", label: "حساب‌های بانکی شرکت", icon: "🏛" },
       { to: "/ocr", label: "مدیریت OCR", icon: "🔍" },
     ],
   },
@@ -82,6 +84,7 @@ const NAV: NavGroup[] = [
     children: [
       { to: "/user-levels", label: "سطوح کاربری", icon: "🎖" },
       { to: "/admins", label: "مدیران", icon: "👤" },
+      { to: "/p2p/settings", label: "تنظیمات همتا به همتا", icon: "⚙️" },
     ],
   },
 ];
@@ -111,6 +114,9 @@ const TITLES: Record<string, string> = {
   "/user-levels": "مدیریت سطوح کاربری — تعریف و اختصاص سطوح",
   "/deposits": "مدیریت درخواست‌های واریز",
   "/withdraws": "مدیریت درخواست‌های برداشت",
+  "/p2p": "تسویه همتا به همتا — صف تعیین‌تکلیف و پایش",
+  "/p2p/settings": "تنظیمات همتا به همتا — مهلت‌ها، اولویت منبع و وزن‌های تطبیق",
+  "/bank-accounts": "حساب‌های بانکی شرکت — واریز، برداشت و سقف‌ها",
   "/ocr": "مدیریت سرویس OCR — وضعیت مدل و آموزش خودکار",
   "/telegram-market": "بازار طلا — قیمت‌های لحظه‌ای از تلگرام",
   "/notifications": "مدیریت اعلان‌ها — آمار و وضعیت ارسال",
