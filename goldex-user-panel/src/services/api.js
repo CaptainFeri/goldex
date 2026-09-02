@@ -305,6 +305,56 @@ export const withdrawApi = {
     })),
 }
 
+// ─── Rial peer-to-peer settlement ────────────────────────────
+// A withdrawer's request is filled by depositors who transfer real rial to
+// their bank account; the platform then moves the internal balance. Both
+// sides of that handshake live here.
+export const p2pApi = {
+  // Withdrawer side — my request, its parts, and confirming/rejecting the
+  // payments depositors claim to have made.
+  getWithdrawParts: async (withdrawId) =>
+    unwrap(await http.get(`/p2p/withdrawals/${withdrawId}/parts`)),
+
+  listMyWithdrawals: async (params = {}) =>
+    unwrap(await http.get('/p2p/withdrawals', { params })),
+
+  confirmPart: async (partId) =>
+    unwrap(await http.post(`/p2p/withdrawal-parts/${partId}/confirm-payment`, {}, {
+      headers: { 'Idempotency-Key': `confirm-${partId}` },
+    })),
+
+  rejectPart: async (partId, reason) =>
+    unwrap(await http.post(`/p2p/withdrawal-parts/${partId}/reject-payment`, { reason }, {
+      headers: { 'Idempotency-Key': `reject-${partId}` },
+    })),
+
+  // Depositor side — my intents, the match I was given, and the receipt.
+  listMyIntents: async (params = {}) =>
+    unwrap(await http.get('/p2p/deposit-intents', { params })),
+
+  getMatch: async (intentId) =>
+    unwrap(await http.get(`/p2p/deposit-intents/${intentId}/match`)),
+
+  acceptMatch: async (matchId) =>
+    unwrap(await http.post(`/p2p/matches/${matchId}/accept`)),
+
+  cancelMatch: async (matchId) =>
+    unwrap(await http.post(`/p2p/matches/${matchId}/cancel`)),
+
+  submitPaymentProof: async (matchId, { file, amount, sourceAccount, trackingCode, paidAt }) => {
+    const form = new FormData()
+    if (file) form.append('file', file)
+    form.append('amount', String(amount))
+    if (sourceAccount) form.append('sourceAccount', sourceAccount)
+    if (trackingCode) form.append('trackingCode', trackingCode)
+    if (paidAt) form.append('paidAt', paidAt)
+    return unwrap(await http.post(`/p2p/matches/${matchId}/payment-proof`, form, {
+      // Re-submitting the same receipt must not create a second proof.
+      headers: { 'Idempotency-Key': `proof-${matchId}` },
+    }))
+  },
+}
+
 export const levelApi = {
   getMyLevel: async () =>
     unwrap(await http.get('/user-level/me')),
