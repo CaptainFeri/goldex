@@ -86,7 +86,15 @@ export default function P2pEscalationsPage() {
         <Stat label="در انتظار تأیید برداشت‌کننده" value={fmtNum(d?.waitingConfirmation)} />
         <Stat label="ارجاع‌شده به ادمین" value={fmtNum(d?.escalated)} />
         <Stat label="نزدیک به مهلت" value={fmtNum(d?.timeoutRisk)} />
-        <Stat label="نقدینگی حساب‌های مدیر" value={fmtNum(d?.adminLiquidity)} />
+        <Stat
+          label="نقدینگی حساب‌های مدیر"
+          value={fmtNum(d?.adminLiquidity)}
+          sub={
+            d?.adminLiquidityBySymbol?.length
+              ? d.adminLiquidityBySymbol.map((r) => `${r.slug ?? "—"}: ${fmtNum(r.balance)}`).join(" · ")
+              : "کیف پول مدیر تنظیم نشده است"
+          }
+        />
         <Stat
           label="تسویه امروز"
           value={fmtNum(d?.todayCompletedCount)}

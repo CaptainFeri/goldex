@@ -12,6 +12,7 @@ import { P2pDepositIntentEntity } from "../entity/p2p-deposit-intent.entity";
 import { P2pMatchEntity } from "../entity/p2p-match.entity";
 import { P2pPaymentProofEntity } from "../entity/p2p-payment-proof.entity";
 import { P2pWithdrawPartEntity } from "../entity/p2p-withdraw-part.entity";
+import { P2pWithdrawRequestEntity } from "../entity/p2p-withdraw-request.entity";
 import {
   P2pEscalationReasonEnum,
   P2pIntentStateEnum,
@@ -206,7 +207,7 @@ export class P2pDepositService {
       }
     }
 
-    const { proof, mismatch } = await this.dataSource.transaction(async (manager) => {
+    const { proof, mismatch, withdrawUserId, deadline } = await this.dataSource.transaction(async (manager) => {
       const { match, intent } = await this.loadOwnedMatch(manager, userId, matchId);
 
       const ocrAmount = Number(ocrResult?.parsed?.amount ?? NaN);
@@ -243,6 +244,9 @@ export class P2pDepositService {
       intent.state = P2pIntentStateEnum.PAYMENT_PROOF_SUBMITTED;
       await manager.save(intent);
 
+      // Resolve the withdrawer here, while the part is already loaded — the
+      // notification listener should not have to go looking.
+      let withdrawer: string | undefined;
       if (match.withdrawPartId) {
         const part = await manager.findOne(P2pWithdrawPartEntity, {
           where: { id: match.withdrawPartId },
@@ -252,6 +256,11 @@ export class P2pDepositService {
           assertPartTransition(part.status, P2pPartStatusEnum.PAID_PENDING);
           part.status = P2pPartStatusEnum.PAID_PENDING;
           await manager.save(part);
+
+          const request = await manager.findOne(P2pWithdrawRequestEntity, {
+            where: { id: part.withdrawRequestId },
+          });
+          withdrawer = request?.userId;
         }
       }
 
@@ -283,7 +292,12 @@ export class P2pDepositService {
         manager,
       );
 
-      return { proof: saved, mismatch: amountMismatch };
+      return {
+        proof: saved,
+        mismatch: amountMismatch,
+        withdrawUserId: withdrawer,
+        deadline: match.responseDeadlineAt,
+      };
     });
 
     if (mismatch) {
@@ -294,7 +308,14 @@ export class P2pDepositService {
         note: "Receipt amount does not match the reserved amount",
       });
     } else {
-      this.eventEmitter.emit(P2pEvents.PROOF_SUBMITTED, { matchId, proofId: proof.id });
+      this.eventEmitter.emit(P2pEvents.PROOF_SUBMITTED, {
+        matchId,
+        proofId: proof.id,
+        depositUserId: userId,
+        withdrawUserId,
+        amount: Number(dto.amount),
+        responseDeadlineAt: deadline,
+      });
     }
     return proof;
   }

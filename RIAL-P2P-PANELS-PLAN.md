@@ -3,12 +3,11 @@
 Companion to `RIAL-P2P-SETTLEMENT-PLAN.md`, which specifies the backend.
 This document covers the two frontends and records what has been built.
 
-> **Status: the backend does not exist yet.** These screens are written against
-> the API contract in the backend plan. Until `src/p2p/` and
-> `src/admin-bank-account/` ship in `goldex-backend`, every call here returns
-> 404 and the pages render their error or empty state — they do not crash. The
-> API surface is isolated in one module per panel (`src/api/p2p.ts`,
-> `src/services/api.js` → `p2pApi`) so a contract change is a single-file edit.
+> **Status: the backend has since shipped** in `src/p2p/` and
+> `src/admin-bank-account/`, so these screens run against a real API. The
+> surface is still isolated to one module per panel (`src/api/p2p.ts`,
+> `src/services/api.js` → `p2pApi`), so a contract change stays a single-file
+> edit. No migration has been run yet — see §5.
 
 ---
 
@@ -193,15 +192,28 @@ MinIO URL, per §8.2 of the backend plan — the panels render it directly.
 
 ## 4. Not built, and why
 
-- **Two-person approval UI.** The threshold is settable and the escalation type
-  carries `checkerAdminId` / `checkedAt`, but the maker/checker screen is not
-  built — it needs the backend to define how a pending maker decision is
-  represented before a UI can show a checker queue.
-- **Audit log viewer** (`/api/v1/admin/p2p/audit-logs`). The endpoint is in the
-  backend plan; the panel has no page for it yet. The existing
+- **Two-person approval UI.** The backend now stages a high-value decision in
+  `p2p_escalation.pending_resolution_json` and refuses to let the same admin
+  execute it, so the contract exists — but there is no checker queue screen. A
+  second admin currently approves by re-submitting the same decision on the
+  escalation, which works but is not discoverable.
+- **Audit log viewer.** `/api/v1/admin/p2p/audit-logs` is implemented and
+  filterable by entity, but no panel page consumes it. The existing
   `/finance-logs` page is the natural model to copy.
-- **Live updates.** Both panels poll (30s in admin, manual refresh in user).
-  The admin socket gateway already exists and pushing escalation events over it
-  would remove the polling, but that is a backend change first.
-- **Reject-rate / risk display.** `W_RISK` is 0 in the backend plan, so there
-  is nothing to show a user or admin about counterparty trust yet.
+- **Live updates.** The admin panel polls every 30s; the user panel refreshes on
+  demand. Escalations are now pushed to the admin socket gateway by the
+  notification listener, so the admin queue could switch from polling to that
+  feed — a panel change, no longer a backend one.
+- **Reject-rate / risk display.** `W_RISK` is 0, so there is nothing to show a
+  user or admin about counterparty trust yet.
+
+## 5. Before this runs
+
+1. **Run the two migrations**, `…090-adminBankAccountMig` before
+   `…091-p2pMatchingMig` — `p2p_match` has an FK to `admin_bank_account`.
+2. **Set `GOLDEX_P2P_ADMIN_USER_ID`** to a system user, and fund that user's
+   rial wallet. Without it, admin-funded settlement is refused and the
+   dashboard's liquidity card reads zero.
+3. **Create at least one company bank account** and verify it, then flag it for
+   deposit and/or withdraw. Until one is flagged for withdraw, the
+   `SETTLE_FROM_ADMIN` decision has nothing to pay from and says so.

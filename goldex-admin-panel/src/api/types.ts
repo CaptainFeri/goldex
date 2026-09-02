@@ -825,6 +825,8 @@ export interface P2pDashboard {
   escalated: number;
   timeoutRisk: number;
   adminLiquidity: number;
+  /** Spendable company balance per rial symbol, behind the headline figure. */
+  adminLiquidityBySymbol?: { symbolId: string; slug?: string; balance: number }[];
   todayCompletedCount: number;
   todayCompletedAmount: number;
 }

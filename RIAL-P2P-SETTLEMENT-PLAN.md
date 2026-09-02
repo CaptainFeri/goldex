@@ -194,12 +194,20 @@ daily limit for that direction. If every candidate is exhausted the engine raise
 (spec §7.1).
 
 Admin *liquidity* — as opposed to the bank account itself — reuses the existing wallet
-stack: a designated system user (`P2P_ADMIN_USER_ID` in config) owns a normal
+stack: a designated system user (`GOLDEX_P2P_ADMIN_USER_ID` in config) owns a normal
 `WalletEntity` per rial symbol. Admin settlement is a `TransactionEntity` pair between that
 wallet and the customer wallet, so `admin_wallets` / `admin_wallet_transactions` from the
 spec's ERD are **not** new tables here — they are the existing `wallet` / `transaction`.
 The bank account records where the *real* money moved; the wallet records the internal leg.
 `p2p_match.admin_account_id` ties the two together for reconciliation.
+
+Both company legs must be written, or conservation breaks: when the company pays a
+withdrawer, the withdrawer's locked balance falls **and the company wallet rises**; when a
+depositor pays a company account, the depositor's free balance rises **and the company
+wallet falls**. `P2pLiquidityService` owns both, refuses a debit beyond the company's own
+balance, and reports the spendable total (with a per-symbol breakdown) for the operations
+dashboard. With the env var unset, admin-funded settlement is simply refused and the
+dashboard reports zero rather than the service failing.
 
 ### 3.8 `p2p_setting`
 

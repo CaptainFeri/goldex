@@ -57,7 +57,8 @@ export class P2pMatchingMig1000000000091 implements MigrationInterface {
 
     // The ledger gains the four p2p movement types.
     for (const value of [
-      "P2P_WITHDRAW_LOCK", "P2P_WITHDRAW_SETTLE", "P2P_WITHDRAW_RELEASE", "P2P_DEPOSIT_SETTLE",
+      "P2P_WITHDRAW_LOCK", "P2P_WITHDRAW_SETTLE", "P2P_WITHDRAW_RELEASE",
+      "P2P_DEPOSIT_SETTLE", "P2P_ADMIN_SETTLE",
     ]) {
       await queryRunner.query(`
         DO $$
