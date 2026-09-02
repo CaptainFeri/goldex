@@ -178,7 +178,13 @@ export class P2pDepositService {
     ctx: AuditContext,
   ) {
     const key = idempotencyKey ?? `proof-${matchId}`;
-    const existing = await this.proofRepo.findOne({ where: { idempotencyKey: key } });
+
+    // Idempotent on the match itself, not just the key: a client that retries
+    // without the header, or with a fresh one, must still get the first proof
+    // back rather than an illegal-transition error.
+    const existing =
+      (await this.proofRepo.findOne({ where: { idempotencyKey: key } })) ??
+      (await this.proofRepo.findOne({ where: { matchId } }));
     if (existing) return existing;
 
     const settings = await this.settings.get();

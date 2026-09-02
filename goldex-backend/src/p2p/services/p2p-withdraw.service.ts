@@ -6,7 +6,7 @@ import {
   NotFoundException,
 } from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
-import { DataSource, EntityManager, Repository } from "typeorm";
+import { DataSource, EntityManager, In, Repository } from "typeorm";
 import { EventEmitter2 } from "@nestjs/event-emitter";
 import { P2pWithdrawRequestEntity } from "../entity/p2p-withdraw-request.entity";
 import { P2pWithdrawPartEntity } from "../entity/p2p-withdraw-part.entity";
@@ -208,19 +208,21 @@ export class P2pWithdrawService {
       order: { sequenceNo: "ASC" },
     });
 
+    if (!parts.length) return [];
+
     // Attach the live match (and its proof) so the withdrawer can see what they
-    // are being asked to confirm without a second round-trip per part.
+    // are being asked to confirm without a second round-trip per part. An empty
+    // `where` array would match every row, hence the guard above.
     const matches = await this.matchRepo.find({
-      where: parts.map((p) => ({ withdrawPartId: p.id })),
+      where: { withdrawPartId: In(parts.map((p) => p.id)) },
       relations: { paymentProof: true },
       order: { createAt: "DESC" },
     });
 
+    const dead = [P2pMatchStatusEnum.RESERVATION_EXPIRED, P2pMatchStatusEnum.CANCELLED];
     return parts.map((part) => ({
       ...part,
-      match: matches.find(
-        (m) => m.withdrawPartId === part.id && m.status !== P2pMatchStatusEnum.RESERVATION_EXPIRED,
-      ) ?? null,
+      match: matches.find((m) => m.withdrawPartId === part.id && !dead.includes(m.status)) ?? null,
     }));
   }
 
