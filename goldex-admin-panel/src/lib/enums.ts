@@ -49,65 +49,23 @@ export const WITHDRAW_TYPES = [
   { value: "borrow", label: "اعتباری" },
 ];
 
-// Map symbol type to allowed deposit types (for auto-select)
-export const SYMBOL_TYPE_DEPOSIT_MAP: Record<string, string[]> = {
-  rial: ["manual", "payment-gateway", "p2p"],
-  crypto: ["manual", "hdwallet"],
-  fiat: ["manual", "payment-gateway"],
-  material: ["warehouse", "borrow"],
-};
+const DEPOSIT_TYPE_LABELS = new Map(DEPOSIT_TYPES.map((o) => [o.value, o.label]));
+const WITHDRAW_TYPE_LABELS = new Map(WITHDRAW_TYPES.map((o) => [o.value, o.label]));
 
-// Map symbol type to allowed withdraw types (for auto-select)
-export const SYMBOL_TYPE_WITHDRAW_MAP: Record<string, string[]> = {
-  rial: ["manual", "auto", "p2p"],
-  crypto: ["manual", "auto"],
-  fiat: ["manual", "auto"],
-  material: ["warehouse", "borrow"],
-};
+export function depositTypeLabel(value: string): string {
+  return DEPOSIT_TYPE_LABELS.get(value) ?? value;
+}
 
-// ─── P2P (rial peer-to-peer settlement) ──────────────────────
-export const P2P_ESCALATION_REASONS: Record<string, string> = {
-  WITHDRAWER_REJECT: "رد توسط برداشت‌کننده",
-  WITHDRAWER_NO_RESPONSE: "عدم پاسخ برداشت‌کننده",
-  SETTLEMENT_TIMEOUT: "اتمام مهلت تسویه",
-  RECEIPT_MISMATCH: "مغایرت رسید",
-  DUPLICATE_PAYMENT: "پرداخت تکراری",
-  ADMIN_ACCOUNT_UNAVAILABLE: "نبود حساب مدیر در دسترس",
-};
+export function withdrawTypeLabel(value: string): string {
+  return WITHDRAW_TYPE_LABELS.get(value) ?? value;
+}
 
-export const P2P_RESOLUTIONS = [
-  { value: "CONFIRM_PAYMENT", label: "تأیید پرداخت و تسویه" },
-  { value: "REJECT_PAYMENT", label: "رد پرداخت" },
-  { value: "REQUEST_MORE_EVIDENCE", label: "درخواست مدرک تکمیلی" },
-  { value: "SETTLE_FROM_ADMIN", label: "تسویه از حساب مدیر" },
-  { value: "REOPEN_MATCHING", label: "بازگشت به صف تطبیق" },
-  { value: "CANCEL_REQUEST", label: "لغو درخواست" },
-];
-
-export const P2P_ESCALATION_STATUS: Record<string, string> = {
-  OPEN: "باز",
-  ASSIGNED: "ارجاع‌شده",
-  RESOLVED: "تعیین‌تکلیف شده",
-  VOID: "باطل",
-};
-
-export const P2P_MATCH_STATUS: Record<string, string> = {
-  RESERVED: "رزرو شده",
-  AWAITING_PAYMENT: "در انتظار پرداخت",
-  PROOF_SUBMITTED: "رسید ثبت شد",
-  WAITING_CONFIRMATION: "در انتظار تأیید برداشت‌کننده",
-  CONFIRMED: "تأیید شده",
-  REJECTED_BY_WITHDRAWER: "رد شده",
-  RESPONSE_TIMEOUT: "عدم پاسخ",
-  ESCALATED: "ارجاع به ادمین",
-  RESERVATION_EXPIRED: "انقضای رزرو",
-  CANCELLED: "لغو شده",
-};
-
-export const BANK_ACCOUNT_STATUS: Record<string, string> = {
-  ACTIVE: "فعال",
-  INACTIVE: "غیرفعال",
-  SUSPENDED: "معلق",
+// Gateway health as reported by goldex-cbp.
+export const GATEWAY_STATUS_LABELS: Record<string, { label: string; kind: "green" | "red" | "gold" | "gray" }> = {
+  up: { label: "در دسترس", kind: "green" },
+  down: { label: "قطع", kind: "red" },
+  not_configured: { label: "پیکربندی نشده", kind: "gold" },
+  unknown: { label: "نامشخص", kind: "gray" },
 };
 
 // ─── P2P (rial peer-to-peer settlement) ──────────────────────
