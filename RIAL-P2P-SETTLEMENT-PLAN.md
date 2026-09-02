@@ -598,11 +598,12 @@ indexes) and `1000000000091-p2pMatchingMig.ts` (p2p tables + indexes + settings 
    money, the platform has no way to return bank funds. `REJECT_PAYMENT` therefore only
    closes the internal record; the actual refund is an off-platform operations task that
    must be recorded as a note. Confirm this is acceptable.
-3. **Customer IBANs.** Resolved: both sides now name an IBAN on the request — the
-   destination on a withdrawal, the source on a deposit. Ownership is deliberately not
-   checked, so each is stored against the user under a `P2P_WALLET` tag beside the
-   KYC-verified one. Uniqueness on `user_bank_account` moved from `user_id` alone to the
-   `(user_id, iban)` pair to allow it.
+3. **Customer IBANs.** Resolved: a withdrawal names the IBAN depositors should transfer
+   into. Ownership is deliberately not checked, so it is stored against the user under a
+   `P2P_WALLET` tag beside the KYC-verified one, and uniqueness on `user_bank_account`
+   moved from `user_id` alone to the `(user_id, iban)` pair to allow it. A deposit asks
+   for no IBAN up front — the depositor gives their source account on the receipt, by
+   which point they know what they actually paid from.
 4. **Under/over split.** `allow_over_under_split` defaults to false, so a deposit amount
    must exactly match a part's remaining amount. Allowing partial fills of a part is a
    meaningfully larger matching change — flagged, not built, in v1.
