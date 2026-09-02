@@ -24,6 +24,15 @@ import { P2pEvents } from "../../shared/constants/events.constants";
 
 const CANDIDATE_LIMIT = 50;
 
+/** What a reservation needs to tell its subscribers, resolved while the
+ *  transaction still has the request and intent in hand. */
+interface ReservationResult {
+  match: P2pMatchEntity;
+  depositUserId: string;
+  withdrawUserId?: string;
+  symbolId: string;
+}
+
 interface ScoredCandidate {
   part: P2pWithdrawPartEntity;
   request: P2pWithdrawRequestEntity;
@@ -57,7 +66,7 @@ export class P2pMatchingService {
   async reserveForIntent(intentId: string): Promise<P2pMatchEntity | null> {
     const settings = await this.settings.get();
 
-    const match = await this.dataSource.transaction(async (manager) => {
+    const result = await this.dataSource.transaction<ReservationResult | null>(async (manager) => {
       const intent = await manager.findOne(P2pDepositIntentEntity, {
         where: { id: intentId },
         lock: { mode: "pessimistic_write" },
@@ -110,16 +119,20 @@ export class P2pMatchingService {
       return null;
     });
 
-    if (match) {
+    if (result) {
       this.eventEmitter.emit(P2pEvents.MATCHED, {
-        matchId: match.id,
-        depositIntentId: match.depositIntentId,
-        amount: Number(match.amount),
+        matchId: result.match.id,
+        depositIntentId: result.match.depositIntentId,
+        amount: Number(result.match.amount),
+        depositUserId: result.depositUserId,
+        withdrawUserId: result.withdrawUserId,
+        source: result.match.source,
+        expiresAt: result.match.reservationExpiresAt,
       });
     } else {
       this.eventEmitter.emit(P2pEvents.NO_MATCH, { depositIntentId: intentId });
     }
-    return match;
+    return result?.match ?? null;
   }
 
   // ─── Candidate selection ───────────────────────────────────
@@ -225,7 +238,7 @@ export class P2pMatchingService {
     intent: P2pDepositIntentEntity,
     chosen: ScoredCandidate,
     settings: Awaited<ReturnType<P2pSettingService["get"]>>,
-  ): Promise<P2pMatchEntity> {
+  ): Promise<ReservationResult> {
     const { part, request } = chosen;
     const reservationId = crypto.randomUUID();
     const now = Date.now();
@@ -262,7 +275,12 @@ export class P2pMatchingService {
     this.logger.log(
       `p2p intent ${intent.id} reserved part ${part.id} (score ${chosen.score})`,
     );
-    return match;
+    return {
+      match,
+      depositUserId: intent.userId,
+      withdrawUserId: request.userId,
+      symbolId: intent.symbolId,
+    };
   }
 
   /**
@@ -274,7 +292,7 @@ export class P2pMatchingService {
     manager: EntityManager,
     intent: P2pDepositIntentEntity,
     settings: Awaited<ReturnType<P2pSettingService["get"]>>,
-  ): Promise<P2pMatchEntity | null> {
+  ): Promise<ReservationResult | null> {
     const amount = Number(intent.requestedAmount);
     const account = await this.bankAccounts.pickAccount(
       BankAccountDirectionEnum.DEPOSIT,
@@ -305,7 +323,7 @@ export class P2pMatchingService {
     await manager.save(intent);
 
     this.logger.log(`p2p intent ${intent.id} filled from company account ${account.id}`);
-    return match;
+    return { match, depositUserId: intent.userId, symbolId: intent.symbolId };
   }
 
   private snapshotAccount(account: AdminBankAccountEntity): Record<string, any> {

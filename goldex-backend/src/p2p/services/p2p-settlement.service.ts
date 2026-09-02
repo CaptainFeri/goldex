@@ -31,6 +31,7 @@ import { WithdrawStatusEnum } from "../../withdraw/enum/withdraw-status.enum";
 import { AdminBankAccountService } from "../../admin-bank-account/admin-bank-account.service";
 import { BankAccountDirectionEnum } from "../../admin-bank-account/enum/admin-bank-account-status.enum";
 import { P2pAuditService } from "./p2p-audit.service";
+import { P2pLiquidityService } from "./p2p-liquidity.service";
 import { AuditContext } from "./p2p-audit.service";
 import { P2pEvents } from "../../shared/constants/events.constants";
 
@@ -45,6 +46,7 @@ export class P2pSettlementService {
     private readonly matchRepo: Repository<P2pMatchEntity>,
     private readonly audit: P2pAuditService,
     private readonly bankAccounts: AdminBankAccountService,
+    private readonly liquidity: P2pLiquidityService,
     private readonly eventEmitter: EventEmitter2,
   ) {}
 
@@ -78,6 +80,7 @@ export class P2pSettlementService {
 
     const amount = Number(match.amount);
     const beforeMatch = { status: match.status };
+    let withdrawUserId: string | undefined;
 
     // An admin-funded deposit has no customer part behind it; the company
     // account is the counterparty instead.
@@ -95,6 +98,7 @@ export class P2pSettlementService {
       });
       if (!request) throw new NotFoundException("Withdrawal request not found");
 
+      withdrawUserId = request.userId;
       await this.debitWithdrawerLock(manager, request, amount, match.id);
       await this.creditDepositor(manager, intent, amount, match.id);
       await this.advancePart(manager, part, request, amount);
@@ -111,6 +115,13 @@ export class P2pSettlementService {
         BankAccountDirectionEnum.DEPOSIT,
         amount,
       );
+      // The depositor's real money went into a company bank account, so the
+      // company gives up the matching internal rial. Both legs keep the
+      // platform-wide total unchanged.
+      await this.liquidity.debitAdmin(manager, intent.symbolId, amount, {
+        matchId: match.id,
+        adminAccountId: accountId,
+      });
       await this.creditDepositor(manager, intent, amount, match.id);
       match.adminAccountId = accountId;
     }
@@ -141,7 +152,9 @@ export class P2pSettlementService {
     this.eventEmitter.emit(P2pEvents.CONFIRMED, {
       matchId: match.id,
       depositUserId: intent.userId,
+      withdrawUserId,
       amount,
+      source: match.source,
     });
 
     this.logger.log(`p2p match ${match.id} settled for ${amount}`);
@@ -179,9 +192,13 @@ export class P2pSettlementService {
       amount,
     );
 
-    // The company paid the withdrawer's bank account, so the locked internal
-    // balance is released out of the platform rather than to a depositor.
+    // The company paid the withdrawer's bank account from its own funds, so it
+    // takes on the matching internal rial rather than the balance vanishing.
     await this.debitWithdrawerLock(manager, request, amount, part.id);
+    await this.liquidity.creditAdmin(manager, request.symbolId, amount, {
+      withdrawPartId: part.id,
+      adminAccountId,
+    });
     await this.advancePart(manager, part, request, amount);
 
     await this.audit.record(
