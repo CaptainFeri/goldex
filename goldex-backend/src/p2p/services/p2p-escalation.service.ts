@@ -6,6 +6,7 @@ import { P2pEscalationEntity } from "../entity/p2p-escalation.entity";
 import { P2pMatchEntity } from "../entity/p2p-match.entity";
 import { P2pDepositIntentEntity } from "../entity/p2p-deposit-intent.entity";
 import { P2pWithdrawPartEntity } from "../entity/p2p-withdraw-part.entity";
+import { P2pWithdrawRequestEntity } from "../entity/p2p-withdraw-request.entity";
 import {
   P2pEscalationReasonEnum,
   P2pEscalationStatusEnum,
@@ -113,6 +114,8 @@ export class P2pEscalationService {
         matchId,
         reason,
         amount: Number(match.amount),
+        depositUserId: intent?.userId,
+        withdrawUserId: await this.withdrawerOf(manager, match.withdrawPartId),
       });
 
       this.logger.warn(`p2p escalation ${escalation.id} opened for match ${matchId} (${reason})`);
@@ -214,6 +217,7 @@ export class P2pEscalationService {
     }
 
     const before = { status: escalation.status, resolutionType: escalation.resolutionType };
+    const participants: { depositUserId?: string; withdrawUserId?: string } = {};
 
     await this.dataSource.transaction(async (manager) => {
       const match = await manager.findOne(P2pMatchEntity, {
@@ -225,6 +229,8 @@ export class P2pEscalationService {
       const intent = await manager.findOne(P2pDepositIntentEntity, {
         where: { id: match.depositIntentId },
       });
+      participants.depositUserId = intent?.userId;
+      participants.withdrawUserId = await this.withdrawerOf(manager, match.withdrawPartId);
 
       switch (dto.resolution) {
         case P2pResolutionTypeEnum.CONFIRM_PAYMENT:
@@ -309,12 +315,26 @@ export class P2pEscalationService {
       escalationId: id,
       matchId: escalation.matchId,
       resolution: dto.resolution,
+      amount,
+      depositUserId: participants.depositUserId,
+      withdrawUserId: participants.withdrawUserId,
     });
 
     return saved;
   }
 
   // ─── Internals ─────────────────────────────────────────────
+
+  /** Who owns the withdrawal behind a match, if it has one. */
+  private async withdrawerOf(manager: any, partId?: string): Promise<string | undefined> {
+    if (!partId) return undefined;
+    const part = await manager.findOne(P2pWithdrawPartEntity, { where: { id: partId } });
+    if (!part) return undefined;
+    const request = await manager.findOne(P2pWithdrawRequestEntity, {
+      where: { id: part.withdrawRequestId },
+    });
+    return request?.userId;
+  }
 
   private async releasePart(
     manager: any,

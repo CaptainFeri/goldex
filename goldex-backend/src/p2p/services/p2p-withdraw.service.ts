@@ -262,6 +262,8 @@ export class P2pWithdrawService {
       this.eventEmitter.emit(P2pEvents.REJECTED, {
         matchId: match.id,
         depositUserId: intent.userId,
+        withdrawUserId: userId,
+        amount: Number(match.amount),
         reason,
       });
       return { matchId: match.id, partId: part.id };

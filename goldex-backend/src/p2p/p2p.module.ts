@@ -13,8 +13,10 @@ import { TransactionEntity } from "../wallet/entities/transaction.entity";
 import { DepositEntity } from "../deposit/deposit.entity";
 import { WithdrawEntity } from "../withdraw/withdraw.entity";
 import { UserBankAccountEntity } from "../user/entity/user.bank.account.entity";
+import { SymbolEntity } from "../admin-symbol/entity/symbol.entity";
 import { P2pSettingService } from "./services/p2p-setting.service";
 import { P2pAuditService } from "./services/p2p-audit.service";
+import { P2pLiquidityService } from "./services/p2p-liquidity.service";
 import { P2pSettlementService } from "./services/p2p-settlement.service";
 import { P2pMatchingService } from "./services/p2p-matching.service";
 import { P2pEscalationService } from "./services/p2p-escalation.service";
@@ -44,6 +46,7 @@ import { RedisModule } from "../redis/redis.module";
       DepositEntity,
       WithdrawEntity,
       UserBankAccountEntity,
+      SymbolEntity,
     ]),
     AdminBankAccountModule,
     MinioModule,
@@ -54,6 +57,7 @@ import { RedisModule } from "../redis/redis.module";
   providers: [
     P2pSettingService,
     P2pAuditService,
+    P2pLiquidityService,
     P2pSettlementService,
     P2pMatchingService,
     P2pEscalationService,
@@ -62,6 +66,6 @@ import { RedisModule } from "../redis/redis.module";
     P2pCronService,
   ],
   // Deposit/Withdraw import these to branch on type === "p2p".
-  exports: [P2pWithdrawService, P2pDepositService, P2pSettingService],
+  exports: [P2pWithdrawService, P2pDepositService, P2pSettingService, P2pLiquidityService],
 })
 export class P2pModule {}
