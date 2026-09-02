@@ -107,7 +107,6 @@ function DepositModal({ symbolId, symbolSlug, depositTypes: allowedDepositTypes,
   const [ocrEditsDeposit, setOcrEditsDeposit] = useState(null)
   const [warehouses, setWarehouses] = useState([])
   const [warehouseId, setWarehouseId] = useState('')
-  const [iban, setIban] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState('')
   const [gatewayMsg, setGatewayMsg] = useState('')
@@ -194,9 +193,6 @@ function DepositModal({ symbolId, symbolSlug, depositTypes: allowedDepositTypes,
         const payload = { symbolId, type, amount: Number(amount), notes: notes || undefined }
         if (isGateway) {
           payload.gatewayCode = gatewayCode || undefined
-        }
-        if (isP2p) {
-          payload.iban = iban.trim().toUpperCase()
         }
         if (type === 'manual') {
           payload.picturePath = picturePath || undefined
@@ -291,20 +287,9 @@ function DepositModal({ symbolId, symbolSlug, depositTypes: allowedDepositTypes,
                 </div>
               )}
               {isP2p && (
-                <>
-                  <div className="alert alert-warning" style={{ marginBottom: 0 }}>
-                    {t('wallet.p2pDepositHint')}
-                  </div>
-                  <div className="field">
-                    <label>{t('wallet.sourceIban')}</label>
-                    <input className="form-input" dir="ltr" required
-                      value={iban} onChange={(e) => setIban(e.target.value)}
-                      placeholder="IR000000000000000000000000" />
-                    <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
-                      {t('wallet.sourceIbanHint')}
-                    </span>
-                  </div>
-                </>
+                <div className="alert alert-warning" style={{ marginBottom: 0 }}>
+                  {t('wallet.p2pDepositHint')}
+                </div>
               )}
               {type === 'manual' && (
                 <div className="field">

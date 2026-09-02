@@ -36,13 +36,6 @@ export class P2pDepositIntentEntity extends myBaseEntity {
   @Column({ name: "constraints_json", type: "jsonb", nullable: true })
   constraintsJson?: Record<string, any>;
 
-  /** IBAN the depositor said they will transfer from. Not ownership-checked. */
-  @Column({ name: "source_iban", nullable: true })
-  sourceIban?: string;
-
-  @Column({ name: "source_bank_account_id", type: "uuid", nullable: true })
-  sourceBankAccountId?: string;
-
   @Column({
     name: "state",
     type: "enum",

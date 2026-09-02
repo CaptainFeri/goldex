@@ -1,8 +1,9 @@
 import { MigrationInterface, QueryRunner } from "typeorm";
 
 /**
- * Customers now name an IBAN on every p2p transfer — the destination on a
- * withdrawal, the source on a deposit — and it is stored against them.
+ * A p2p withdrawal names the IBAN depositors should transfer into, and it is
+ * stored against the customer. (A deposit names no IBAN up front — the
+ * depositor gives their source account on the receipt instead.)
  *
  * The account need not belong to the customer, so it is tagged P2P_WALLET
  * rather than being mistaken for the KYC-verified one. That means a user can
@@ -66,20 +67,9 @@ export class P2pUserIbanMig1000000000092 implements MigrationInterface {
         ON "user_bank_account" ("user_id", "iban")
         WHERE "iban" IS NOT NULL AND "deleted_at" IS NULL;
     `);
-
-    await queryRunner.query(`
-      ALTER TABLE "p2p_deposit_intent"
-        ADD COLUMN IF NOT EXISTS "source_iban" varchar,
-        ADD COLUMN IF NOT EXISTS "source_bank_account_id" uuid;
-    `);
   }
 
   public async down(queryRunner: QueryRunner): Promise<void> {
-    await queryRunner.query(`
-      ALTER TABLE "p2p_deposit_intent"
-        DROP COLUMN IF EXISTS "source_bank_account_id",
-        DROP COLUMN IF EXISTS "source_iban";
-    `);
     await queryRunner.query(`DROP INDEX IF EXISTS "idx_user_bank_account_user_iban"`);
     await queryRunner.query(`ALTER TABLE "user_bank_account" DROP COLUMN IF EXISTS "tag"`);
     await queryRunner.query(`DROP TYPE IF EXISTS "user_bank_account_tag_enum"`);
