@@ -39,6 +39,7 @@ const navItems = [
   { key: 'eliteTrade', path: '/elite-trade', icon: EliteTradeIcon },
   { key: 'offer', path: '/offer', icon: OfferIcon },
   { key: 'wallet', path: '/wallet', icon: WalletIcon },
+  { key: 'p2p', path: '/p2p', icon: P2pIcon },
   { key: 'credit', path: '/credit', icon: CreditIcon },
   { key: 'notifications', path: '/notifications', icon: BellIcon },
   { key: 'support', path: '/support', icon: SupportIcon },
@@ -69,6 +70,15 @@ function WalletIcon() {
   return (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="nav-icon">
       <rect x="3" y="6" width="18" height="13" rx="2" /><path d="M3 10h18" /><circle cx="17" cy="14" r="1" />
+    </svg>
+  )
+}
+
+// Two arrows crossing — one user paying another, which is what p2p is.
+function P2pIcon() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="nav-icon">
+      <path d="M4 8h13l-3-3" /><path d="M20 16H7l3 3" />
     </svg>
   )
 }
