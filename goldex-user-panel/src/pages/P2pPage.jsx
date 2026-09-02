@@ -169,66 +169,98 @@ function WithdrawalCard({ request, onChanged }) {
       {loading && !parts ? <Spinner /> : null}
 
       {parts?.length ? (
-        <div className="table-wrap">
-          <table>
-            <thead>
-              <tr>
-                <th>#</th>
-                <th>{t('p2p.amount')}</th>
-                <th>{t('p2p.status')}</th>
-                <th>{t('p2p.deadline')}</th>
-                <th>{t('p2p.receipt')}</th>
-                <th></th>
-              </tr>
-            </thead>
-            <tbody>
-              {parts.map((p) => {
-                const proof = p.match?.paymentProof
-                const awaiting = p.match?.status === 'WAITING_CONFIRMATION'
-                return (
-                  <tr key={p.id}>
-                    <td>{p.sequenceNo}</td>
-                    <td className="mono">{fmt(p.targetAmount)}</td>
-                    <td>
-                      <span className={`badge ${PART_BADGE[p.status] ?? 'badge-warning'}`}>
-                        {t(`p2p.partStatus.${p.status}`, p.status)}
-                      </span>
-                    </td>
-                    <td>
-                      {awaiting
-                        ? <Countdown until={p.match?.responseDeadlineAt} expiredLabel={t('p2p.expired')} />
-                        : fmtDateTime(p.reservedUntil)}
-                    </td>
-                    <td>
-                      {proof ? (
-                        <div style={{ fontSize: '0.75rem', lineHeight: 1.7 }}>
-                          <div className="mono">{fmt(proof.amount)}</div>
-                          {proof.trackingCode && <div className="mono" dir="ltr">{proof.trackingCode}</div>}
-                          {proof.receiptUrl && (
-                            <a href={proof.receiptUrl} target="_blank" rel="noreferrer" className="btn-link">
-                              {t('p2p.viewReceipt')}
-                            </a>
-                          )}
-                        </div>
-                      ) : '—'}
-                    </td>
-                    <td>
-                      {awaiting ? (
-                        <div style={{ display: 'flex', gap: 6 }}>
-                          <button className="btn btn-primary" disabled={busyPart === p.id} onClick={() => act(p.id, true)}>
-                            {t('p2p.confirm')}
-                          </button>
-                          <button className="btn btn-danger" disabled={busyPart === p.id} onClick={() => act(p.id, false)}>
-                            {t('p2p.reject')}
-                          </button>
-                        </div>
-                      ) : null}
-                    </td>
-                  </tr>
-                )
-              })}
-            </tbody>
-          </table>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+          {parts.map((p) => {
+            const proof = p.match?.paymentProof
+            const awaiting = p.match?.status === 'WAITING_CONFIRMATION'
+            return (
+              <div key={p.id} style={{
+                border: `1px solid ${awaiting ? 'var(--gold-400, #e0b341)' : 'var(--border)'}`,
+                borderRadius: 8,
+                padding: '0.75rem',
+              }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                  <strong>{t('p2p.partNo', { no: p.sequenceNo })} — {fmt(p.targetAmount)}</strong>
+                  <span className={`badge ${PART_BADGE[p.status] ?? 'badge-warning'}`}>
+                    {t(`p2p.partStatus.${p.status}`, p.status)}
+                  </span>
+                </div>
+
+                {awaiting && (
+                  <div style={{ marginTop: 6, fontSize: '0.8rem' }}>
+                    {t('p2p.respondWithin')}{' '}
+                    <Countdown until={p.match?.responseDeadlineAt} expiredLabel={t('p2p.expired')} />
+                  </div>
+                )}
+                {!awaiting && p.reservedUntil && p.status === 'RESERVED' && (
+                  <div style={{ marginTop: 6, fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+                    {t('p2p.reservedUntil')}: {fmtDateTime(p.reservedUntil)}
+                  </div>
+                )}
+
+                {proof ? (
+                  <div style={{ background: 'var(--bg)', padding: '0.6rem', borderRadius: 6, marginTop: '0.6rem' }}>
+                    <div style={{ fontWeight: 600, marginBottom: 4, fontSize: '0.85rem' }}>
+                      {t('p2p.incomingPayment')}
+                    </div>
+                    <div className="field-row">
+                      <span className="field-label">{t('p2p.paidAmount')}</span>
+                      <span className="field-value accent mono">{fmt(proof.amount)}</span>
+                    </div>
+                    {proof.trackingCode && (
+                      <div className="field-row">
+                        <span className="field-label">{t('p2p.trackingCode')}</span>
+                        <span className="field-value mono" dir="ltr">{proof.trackingCode}</span>
+                      </div>
+                    )}
+                    {proof.sourceAccount && (
+                      <div className="field-row">
+                        <span className="field-label">{t('p2p.sourceAccount')}</span>
+                        <span className="field-value mono" dir="ltr">{proof.sourceAccount}</span>
+                      </div>
+                    )}
+                    {proof.paidAt && (
+                      <div className="field-row">
+                        <span className="field-label">{t('p2p.paidAt')}</span>
+                        <span className="field-value">{fmtDateTime(proof.paidAt)}</span>
+                      </div>
+                    )}
+                    {proof.ocrMismatch && <Alert type="warning">{t('p2p.receiptMismatch')}</Alert>}
+                    {proof.receiptUrl && (
+                      <a href={proof.receiptUrl} target="_blank" rel="noreferrer">
+                        <img src={proof.receiptUrl} alt="receipt"
+                          style={{ maxWidth: '100%', maxHeight: 260, borderRadius: 6, marginTop: 6 }} />
+                      </a>
+                    )}
+                  </div>
+                ) : (
+                  <div style={{ marginTop: 6, fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+                    {t('p2p.noPaymentYet')}
+                  </div>
+                )}
+
+                {awaiting && (
+                  <>
+                    <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', margin: '0.6rem 0', lineHeight: 1.8 }}>
+                      {t('p2p.confirmOnlyIfReceived')}
+                    </div>
+                    <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                      <button className="btn btn-primary btn-auto" disabled={busyPart === p.id} onClick={() => act(p.id, true)}>
+                        {t('p2p.confirm')}
+                      </button>
+                      <button className="btn btn-danger btn-auto" disabled={busyPart === p.id} onClick={() => act(p.id, false)}>
+                        {t('p2p.reject')}
+                      </button>
+                    </div>
+                  </>
+                )}
+
+                {p.match?.status === 'ESCALATED' && (
+                  <Alert type="warning">{t('p2p.escalatedNotice')}</Alert>
+                )}
+              </div>
+            )
+          })}
         </div>
       ) : !loading ? (
         <div style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>{t('p2p.noParts')}</div>

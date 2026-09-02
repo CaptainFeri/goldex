@@ -1,6 +1,8 @@
 import { api, unwrap } from "./client";
 import type {
   AdminBankAccount,
+  P2pWithdrawDetail,
+  P2pWithdrawRow,
   P2pDashboard,
   P2pEscalation,
   P2pMatch,
@@ -73,6 +75,25 @@ export const p2pApi = {
 
   listMatches: async (params: { status?: string; page?: number; limit?: number } = {}) =>
     unwrap<Page<P2pMatch>>((await api.get("/admin/p2p/matches", { params })).data),
+
+  listWithdrawals: async (params: {
+    state?: string;
+    userId?: string;
+    minAmount?: number;
+    page?: number;
+    limit?: number;
+  } = {}) => unwrap<Page<P2pWithdrawRow>>((await api.get("/admin/p2p/withdrawals", { params })).data),
+
+  /** The whole case in one call: parts, live matches, receipts, escalation. */
+  getWithdrawal: async (id: string) =>
+    unwrap<P2pWithdrawDetail>((await api.get(`/admin/p2p/withdrawals/${id}`)).data),
+
+  getMatch: async (id: string) =>
+    unwrap<P2pMatch>((await api.get(`/admin/p2p/matches/${id}`)).data),
+
+  /** Pull a match into the queue so a decision can be recorded against it. */
+  escalateMatch: async (id: string, body: { reason: string; note?: string }) =>
+    unwrap<P2pEscalation>((await api.post(`/admin/p2p/matches/${id}/escalate`, body)).data),
 
   getSettings: async () => unwrap<P2pSettings>((await api.get("/admin/p2p/settings")).data),
 

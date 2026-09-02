@@ -5,6 +5,9 @@ import { Repository } from "typeorm";
 import { P2pEscalationService } from "./services/p2p-escalation.service";
 import { P2pSettingService } from "./services/p2p-setting.service";
 import { P2pLiquidityService } from "./services/p2p-liquidity.service";
+import { P2pAdminService } from "./services/p2p-admin.service";
+import { AdminWithdrawQueryDto } from "./dto/admin-withdraw-query.dto";
+import { EscalateMatchDto } from "./dto/escalate-match.dto";
 import { P2pMatchEntity } from "./entity/p2p-match.entity";
 import { P2pWithdrawRequestEntity } from "./entity/p2p-withdraw-request.entity";
 import { P2pDepositIntentEntity } from "./entity/p2p-deposit-intent.entity";
@@ -34,6 +37,7 @@ export class P2pAdminController {
     private readonly escalations: P2pEscalationService,
     private readonly settings: P2pSettingService,
     private readonly liquidity: P2pLiquidityService,
+    private readonly adminService: P2pAdminService,
     @InjectRepository(P2pMatchEntity)
     private readonly matchRepo: Repository<P2pMatchEntity>,
     @InjectRepository(P2pWithdrawRequestEntity)
@@ -143,6 +147,46 @@ export class P2pAdminController {
     return {
       data: await this.escalations.resolve(id, (req as any).admin?.id, dto, this.ctx(req)),
     };
+  }
+
+  @Get("withdrawals")
+  @AdminRoles(AdminRole.FINANCE, AdminRole.ADMIN, AdminRole.SUPER_ADMIN)
+  @ApiOperation({ summary: "Browse p2p withdrawal requests" })
+  async listWithdrawals(@Query() query: AdminWithdrawQueryDto) {
+    return { data: await this.adminService.listWithdrawals(query) };
+  }
+
+  @Get("withdrawals/:id")
+  @AdminRoles(AdminRole.FINANCE, AdminRole.ADMIN, AdminRole.SUPER_ADMIN)
+  @ApiOperation({
+    summary: "One withdrawal in full — parts, live matches, receipts and any escalation",
+  })
+  async getWithdrawal(@Param("id") id: string) {
+    return { data: await this.adminService.getWithdrawal(id) };
+  }
+
+  @Get("matches/:id")
+  @AdminRoles(AdminRole.FINANCE, AdminRole.ADMIN, AdminRole.SUPER_ADMIN)
+  @ApiOperation({ summary: "One match with its receipt and depositor" })
+  async getMatch(@Param("id") id: string) {
+    return { data: await this.adminService.getMatch(id) };
+  }
+
+  @Post("matches/:id/escalate")
+  @AdminRoles(AdminRole.FINANCE, AdminRole.ADMIN, AdminRole.SUPER_ADMIN)
+  @ApiOperation({
+    summary: "Pull a match into the queue so a decision can be recorded against it",
+  })
+  async escalateMatch(
+    @Req() req: AdminExpressRequest,
+    @Param("id") id: string,
+    @Body() dto: EscalateMatchDto,
+  ) {
+    const escalation = await this.escalations.open(id, dto.reason, {
+      priority: 1,
+      note: dto.note ?? `Opened by admin ${(req as any).admin?.id ?? ""}`.trim(),
+    });
+    return { data: escalation };
   }
 
   @Get("matches")
