@@ -196,6 +196,11 @@ MinIO URL, per §8.2 of the backend plan — the panels render it directly.
 - **Audit log viewer.** `/api/v1/admin/p2p/audit-logs` is implemented and
   filterable by entity, but no panel page consumes it. The existing
   `/finance-logs` page is the natural model to copy.
+- **Admin cannot act on a match directly.** `/p2p/withdrawals` lets an operator
+  open any case and escalate a match into the queue, but the six decisions are
+  still recorded from the escalation screen. That is deliberate — every
+  money-moving decision keeps a reason and an audit row — but it is two screens
+  for one job.
 - **Live updates.** The admin panel polls every 30s; the user panel refreshes on
   demand. Escalations are now pushed to the admin socket gateway by the
   notification listener, so the admin queue could switch from polling to that

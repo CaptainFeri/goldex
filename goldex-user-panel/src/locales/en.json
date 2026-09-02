@@ -863,6 +863,13 @@
     "yourReceipt": "Your submitted receipt",
     "submittedAt": "Submitted",
     "receiptMismatch": "The receipt amount does not match the reserved amount, so the case has gone to support for review.",
-    "proofUnderReview": "Your receipt has been submitted and is being reviewed."
+    "proofUnderReview": "Your receipt has been submitted and is being reviewed.",
+    "partNo": "Part {{no}}",
+    "respondWithin": "You must respond within:",
+    "reservedUntil": "Reserved until",
+    "incomingPayment": "Incoming payment",
+    "paidAt": "Paid at",
+    "noPaymentYet": "No payment has been submitted for this part yet.",
+    "confirmOnlyIfReceived": "Only confirm if the money has actually reached your account. Confirming deducts the same amount from your locked balance and transfers it to the depositor."
   }
 }

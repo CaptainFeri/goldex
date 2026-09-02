@@ -35,6 +35,7 @@ import { WalletTypeEnum } from "../../wallet/enum/wallet-type.enum";
 import { WithdrawEntity } from "../../withdraw/withdraw.entity";
 import { WithdrawStatusEnum } from "../../withdraw/enum/withdraw-status.enum";
 import { P2pUserBankService } from "./p2p-user-bank.service";
+import { P2pReceiptService } from "./p2p-receipt.service";
 import { P2pSettingService } from "./p2p-setting.service";
 import { P2pSettlementService } from "./p2p-settlement.service";
 import { P2pEscalationService } from "./p2p-escalation.service";
@@ -60,6 +61,7 @@ export class P2pWithdrawService {
     private readonly settlement: P2pSettlementService,
     private readonly escalations: P2pEscalationService,
     private readonly audit: P2pAuditService,
+    private readonly receipts: P2pReceiptService,
     private readonly eventEmitter: EventEmitter2,
   ) {}
 
@@ -220,10 +222,23 @@ export class P2pWithdrawService {
     });
 
     const dead = [P2pMatchStatusEnum.RESERVATION_EXPIRED, P2pMatchStatusEnum.CANCELLED];
-    return parts.map((part) => ({
-      ...part,
-      match: matches.find((m) => m.withdrawPartId === part.id && !dead.includes(m.status)) ?? null,
-    }));
+
+    // The withdrawer is being asked to confirm that money reached their
+    // account, so they get the whole receipt — amount, tracking code, source
+    // account and the image — not just a status badge.
+    return Promise.all(
+      parts.map(async (part) => {
+        const match = matches.find((m) => m.withdrawPartId === part.id && !dead.includes(m.status));
+        if (!match) return { ...part, match: null };
+        return {
+          ...part,
+          match: {
+            ...match,
+            paymentProof: await this.receipts.attachUrl(match.paymentProof),
+          },
+        };
+      }),
+    );
   }
 
   // ─── Withdrawer decisions ──────────────────────────────────

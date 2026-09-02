@@ -846,6 +846,40 @@ export interface P2pEscalation {
   createAt?: string;
 }
 
+export interface P2pWithdrawRow {
+  id: string;
+  withdrawId: string;
+  userId: string;
+  user?: any;
+  symbol?: any;
+  totalAmount: number;
+  completedAmount: number;
+  remainingAmount: number;
+  lockedAmount: number;
+  splitPolicy: string;
+  state: string;
+  expiresAt?: string;
+  partsTotal?: number;
+  partsConfirmed?: number;
+  createAt?: string;
+}
+
+export interface P2pWithdrawPart {
+  id: string;
+  sequenceNo: number;
+  targetAmount: number;
+  confirmedAmount: number;
+  status: string;
+  reservedUntil?: string | null;
+  match?: (P2pMatch & { depositor?: any; escalation?: P2pEscalation | null }) | null;
+  history?: { id: string; status: string; amount: number; createAt?: string }[];
+}
+
+export interface P2pWithdrawDetail {
+  request: P2pWithdrawRow & { destinationSnapshotJson?: any };
+  parts: P2pWithdrawPart[];
+}
+
 export interface P2pSettings {
   settlementTimeoutMinutes: number;
   withdrawerResponseTimeoutMinutes: number;
