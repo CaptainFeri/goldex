@@ -109,3 +109,48 @@ export const BANK_ACCOUNT_STATUS: Record<string, string> = {
   INACTIVE: "غیرفعال",
   SUSPENDED: "معلق",
 };
+
+// ─── P2P (rial peer-to-peer settlement) ──────────────────────
+export const P2P_ESCALATION_REASONS: Record<string, string> = {
+  WITHDRAWER_REJECT: "رد توسط برداشت‌کننده",
+  WITHDRAWER_NO_RESPONSE: "عدم پاسخ برداشت‌کننده",
+  SETTLEMENT_TIMEOUT: "اتمام مهلت تسویه",
+  RECEIPT_MISMATCH: "مغایرت رسید",
+  DUPLICATE_PAYMENT: "پرداخت تکراری",
+  ADMIN_ACCOUNT_UNAVAILABLE: "نبود حساب مدیر در دسترس",
+};
+
+export const P2P_RESOLUTIONS = [
+  { value: "CONFIRM_PAYMENT", label: "تأیید پرداخت و تسویه" },
+  { value: "REJECT_PAYMENT", label: "رد پرداخت" },
+  { value: "REQUEST_MORE_EVIDENCE", label: "درخواست مدرک تکمیلی" },
+  { value: "SETTLE_FROM_ADMIN", label: "تسویه از حساب مدیر" },
+  { value: "REOPEN_MATCHING", label: "بازگشت به صف تطبیق" },
+  { value: "CANCEL_REQUEST", label: "لغو درخواست" },
+];
+
+export const P2P_ESCALATION_STATUS: Record<string, string> = {
+  OPEN: "باز",
+  ASSIGNED: "ارجاع‌شده",
+  RESOLVED: "تعیین‌تکلیف شده",
+  VOID: "باطل",
+};
+
+export const P2P_MATCH_STATUS: Record<string, string> = {
+  RESERVED: "رزرو شده",
+  AWAITING_PAYMENT: "در انتظار پرداخت",
+  PROOF_SUBMITTED: "رسید ثبت شد",
+  WAITING_CONFIRMATION: "در انتظار تأیید برداشت‌کننده",
+  CONFIRMED: "تأیید شده",
+  REJECTED_BY_WITHDRAWER: "رد شده",
+  RESPONSE_TIMEOUT: "عدم پاسخ",
+  ESCALATED: "ارجاع به ادمین",
+  RESERVATION_EXPIRED: "انقضای رزرو",
+  CANCELLED: "لغو شده",
+};
+
+export const BANK_ACCOUNT_STATUS: Record<string, string> = {
+  ACTIVE: "فعال",
+  INACTIVE: "غیرفعال",
+  SUSPENDED: "معلق",
+};

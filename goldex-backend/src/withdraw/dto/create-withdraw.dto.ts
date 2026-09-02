@@ -1,8 +1,8 @@
 import { IsString, IsNumber, IsOptional, IsObject, ValidateNested, IsEnum } from "class-validator";
 import { Type } from "class-transformer";
 import { ApiProperty } from "@nestjs/swagger";
-import { P2pConstraintsDto, P2pSplitDto } from "../../p2p/dto/create-p2p-withdraw.dto";
 import { WithdrawTypeEnum } from "../../admin-symbol/enum/withdraw-type.enum";
+import { P2pConstraintsDto, P2pSplitDto } from "../../p2p/dto/create-p2p-withdraw.dto";
 
 export class CreateWithdrawDto {
   @IsString()

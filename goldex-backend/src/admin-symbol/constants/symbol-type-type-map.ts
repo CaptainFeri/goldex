@@ -2,18 +2,26 @@ import { SymbolTypeEnum } from "../enum/symbol.type.enum";
 import { DepositTypeEnum } from "../enum/deposit-type.enum";
 import { WithdrawTypeEnum } from "../enum/withdraw-type.enum";
 
-export const SYMBOL_TYPE_DEPOSIT_MAP: Record<SymbolTypeEnum, string[]> = {
-  [SymbolTypeEnum.RIAL]: ["manual", "payment-gateway", "p2p"],
-  [SymbolTypeEnum.CRYPTO]: ["manual", "hdwallet"],
-  [SymbolTypeEnum.FIAT]: ["manual", "payment-gateway"],
-  [SymbolTypeEnum.MATERIAL]: ["warehouse", "borrow"],
+/**
+ * Single source of truth for what a symbol of a given type can do.
+ *
+ * goldex-cbp keeps a copy of the deposit/withdraw maps because it is a
+ * separate deployable, but the admin panel no longer does — it reads
+ * `GET /admin/symbols/capabilities`, which is built from this file plus the
+ * live gateway registry.
+ */
+export const SYMBOL_TYPE_DEPOSIT_MAP: Record<SymbolTypeEnum, DepositTypeEnum[]> = {
+  [SymbolTypeEnum.RIAL]: [DepositTypeEnum.MANUAL, DepositTypeEnum.PAYMENT_GATEWAY, DepositTypeEnum.P2P],
+  [SymbolTypeEnum.CRYPTO]: [DepositTypeEnum.MANUAL, DepositTypeEnum.HDWALLET],
+  [SymbolTypeEnum.FIAT]: [DepositTypeEnum.MANUAL, DepositTypeEnum.PAYMENT_GATEWAY],
+  [SymbolTypeEnum.MATERIAL]: [DepositTypeEnum.WAREHOUSE, DepositTypeEnum.BORROW],
 };
 
-export const SYMBOL_TYPE_WITHDRAW_MAP: Record<SymbolTypeEnum, string[]> = {
-  [SymbolTypeEnum.RIAL]: ["manual", "auto", "p2p"],
-  [SymbolTypeEnum.CRYPTO]: ["manual", "auto"],
-  [SymbolTypeEnum.FIAT]: ["manual", "auto"],
-  [SymbolTypeEnum.MATERIAL]: ["warehouse", "borrow"],
+export const SYMBOL_TYPE_WITHDRAW_MAP: Record<SymbolTypeEnum, WithdrawTypeEnum[]> = {
+  [SymbolTypeEnum.RIAL]: [WithdrawTypeEnum.MANUAL, WithdrawTypeEnum.AUTO, WithdrawTypeEnum.P2P],
+  [SymbolTypeEnum.CRYPTO]: [WithdrawTypeEnum.MANUAL, WithdrawTypeEnum.AUTO],
+  [SymbolTypeEnum.FIAT]: [WithdrawTypeEnum.MANUAL, WithdrawTypeEnum.AUTO],
+  [SymbolTypeEnum.MATERIAL]: [WithdrawTypeEnum.WAREHOUSE, WithdrawTypeEnum.BORROW],
 };
 
 /**
