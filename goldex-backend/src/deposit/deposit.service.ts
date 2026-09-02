@@ -106,6 +106,7 @@ export class DepositService {
         saved,
         dto.metadata?.constraints,
         { actorType: P2pAuditActorEnum.USER, actorId: userId },
+        { iban: dto.iban, bankName: dto.bankName },
       );
       return this.findById(saved.id);
     }

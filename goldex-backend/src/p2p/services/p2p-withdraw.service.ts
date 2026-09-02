@@ -34,7 +34,7 @@ import { TransactionStatusEnum } from "../../wallet/enum/transaction.status.enum
 import { WalletTypeEnum } from "../../wallet/enum/wallet-type.enum";
 import { WithdrawEntity } from "../../withdraw/withdraw.entity";
 import { WithdrawStatusEnum } from "../../withdraw/enum/withdraw-status.enum";
-import { UserBankAccountEntity } from "../../user/entity/user.bank.account.entity";
+import { P2pUserBankService } from "./p2p-user-bank.service";
 import { P2pSettingService } from "./p2p-setting.service";
 import { P2pSettlementService } from "./p2p-settlement.service";
 import { P2pEscalationService } from "./p2p-escalation.service";
@@ -54,8 +54,7 @@ export class P2pWithdrawService {
     private readonly partRepo: Repository<P2pWithdrawPartEntity>,
     @InjectRepository(P2pMatchEntity)
     private readonly matchRepo: Repository<P2pMatchEntity>,
-    @InjectRepository(UserBankAccountEntity)
-    private readonly bankRepo: Repository<UserBankAccountEntity>,
+    private readonly userBanks: P2pUserBankService,
     private readonly dataSource: DataSource,
     private readonly settings: P2pSettingService,
     private readonly settlement: P2pSettlementService,
@@ -81,13 +80,13 @@ export class P2pWithdrawService {
     const split = dto.split ?? { policy: P2pSplitPolicyEnum.EXACT, parts: 1 };
     const partCount = this.resolvePartCount(split, total, dto);
 
-    // Depositors pay into a verified account in the withdrawer's own name.
-    const bank = await this.bankRepo.findOne({ where: { userId: withdraw.userId } });
-    if (!bank || !bank.verifiedAt) {
-      throw new BadRequestException(
-        "برای برداشت همتا به همتا ابتدا حساب بانکی خود را ثبت و تأیید کنید",
-      );
+    // The withdrawer names the IBAN depositors should pay into. It does not
+    // have to be their own account, so it is only recorded, not ownership-
+    // checked, and is kept under the P2P_WALLET tag.
+    if (!dto.iban) {
+      throw new BadRequestException("برای برداشت همتا به همتا وارد کردن شماره شبا الزامی است");
     }
+    const bank = await this.userBanks.remember(withdraw.userId, dto.iban, dto.bankName);
 
     const settings = await this.settings.get();
 
@@ -135,6 +134,8 @@ export class P2pWithdrawService {
               ? `${withdraw.user.firstName ?? ""} ${withdraw.user.lastName ?? ""}`.trim()
               : undefined,
           },
+          // Snapshotting the IBAN here means editing the stored account later
+          // cannot rewrite what a depositor was already told to pay.
           state: P2pWithdrawStateEnum.PENDING_MATCHING,
           expiresAt: new Date(Date.now() + settings.requestExpiryHours * 3600_000),
         }),

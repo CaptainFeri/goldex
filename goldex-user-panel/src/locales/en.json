@@ -328,7 +328,10 @@
     "maxParts": "Maximum parts",
     "minPartAmount": "Minimum amount per part",
     "maxPartAmount": "Maximum amount per part",
-    "optionalPlaceholder": "Optional"
+    "optionalPlaceholder": "Optional",
+    "sourceIbanHint": "The IBAN you will transfer from. It need not be in your own name, but it is used to match the payment.",
+    "destinationIbanLabel": "Destination IBAN",
+    "destinationIbanHint": "Depositors will transfer to this IBAN. It need not be in your own name."
   },
   "warehouse": {
     "title": "Warehouse",

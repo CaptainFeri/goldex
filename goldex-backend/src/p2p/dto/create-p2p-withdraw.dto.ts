@@ -61,6 +61,16 @@ export class P2pConstraintsDto {
 
 export class CreateP2pWithdrawDto {
   @IsOptional()
+  @IsString()
+  @ApiProperty({ required: false, description: "Destination IBAN depositors pay into" })
+  iban?: string;
+
+  @IsOptional()
+  @IsString()
+  @ApiProperty({ required: false })
+  bankName?: string;
+
+  @IsOptional()
   @ValidateNested()
   @Type(() => P2pSplitDto)
   @ApiProperty({ required: false, type: P2pSplitDto })

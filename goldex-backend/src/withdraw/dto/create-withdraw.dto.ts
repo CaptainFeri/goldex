@@ -58,6 +58,19 @@ export class CreateWithdrawDto {
   warehouseId?: string;
 
   @IsOptional()
+  @IsString()
+  @ApiProperty({
+    required: false,
+    description: "Destination IBAN depositors pay into (required when type=p2p)",
+  })
+  iban?: string;
+
+  @IsOptional()
+  @IsString()
+  @ApiProperty({ required: false, description: "Bank name for the IBAN above (optional)" })
+  bankName?: string;
+
+  @IsOptional()
   @ValidateNested()
   @Type(() => P2pSplitDto)
   @ApiProperty({ required: false, type: P2pSplitDto, description: "How to split the request (type=p2p)" })
