@@ -352,7 +352,9 @@ function IntentCard({ intent, onChanged }) {
   }
 
   const dest = match?.destinationSnapshotJson
-  const awaitingPayment = match && ['RESERVED', 'AWAITING_PAYMENT'].includes(match.status)
+  const proof = match?.paymentProof
+  const awaitingPayment =
+    match && !proof && ['RESERVED', 'AWAITING_PAYMENT'].includes(match.status)
 
   return (
     <div className="card" style={{ marginBottom: '1rem' }}>
@@ -410,6 +412,41 @@ function IntentCard({ intent, onChanged }) {
                 {t('p2p.cancelMatch')}
               </button>
             </>
+          )}
+
+          {proof && (
+            <div style={{ background: 'var(--bg)', padding: '0.75rem', borderRadius: 8, marginTop: '0.75rem' }}>
+              <div style={{ fontWeight: 600, marginBottom: 6 }}>{t('p2p.yourReceipt')}</div>
+              <div className="field-row">
+                <span className="field-label">{t('p2p.paidAmount')}</span>
+                <span className="field-value mono">{fmt(proof.amount)}</span>
+              </div>
+              {proof.trackingCode && (
+                <div className="field-row">
+                  <span className="field-label">{t('p2p.trackingCode')}</span>
+                  <span className="field-value mono" dir="ltr">{proof.trackingCode}</span>
+                </div>
+              )}
+              {proof.sourceAccount && (
+                <div className="field-row">
+                  <span className="field-label">{t('p2p.sourceAccount')}</span>
+                  <span className="field-value mono" dir="ltr">{proof.sourceAccount}</span>
+                </div>
+              )}
+              <div className="field-row">
+                <span className="field-label">{t('p2p.submittedAt')}</span>
+                <span className="field-value">{fmtDateTime(proof.submittedAt)}</span>
+              </div>
+              {proof.ocrMismatch && (
+                <Alert type="warning">{t('p2p.receiptMismatch')}</Alert>
+              )}
+            </div>
+          )}
+
+          {match.status === 'PROOF_SUBMITTED' && !proof?.ocrMismatch && (
+            <div style={{ marginTop: '0.75rem', fontSize: '0.85rem', color: 'var(--text-muted)' }}>
+              {t('p2p.proofUnderReview')}
+            </div>
           )}
 
           {match.status === 'WAITING_CONFIRMATION' && (

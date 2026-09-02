@@ -859,6 +859,10 @@
       "ESCALATED": "Escalated to support",
       "RESERVATION_EXPIRED": "Reservation expired",
       "CANCELLED": "Cancelled"
-    }
+    },
+    "yourReceipt": "Your submitted receipt",
+    "submittedAt": "Submitted",
+    "receiptMismatch": "The receipt amount does not match the reserved amount, so the case has gone to support for review.",
+    "proofUnderReview": "Your receipt has been submitted and is being reviewed."
   }
 }
