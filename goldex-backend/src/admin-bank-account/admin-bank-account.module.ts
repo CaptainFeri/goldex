@@ -4,10 +4,9 @@ import { AdminBankAccountEntity } from "./entity/admin-bank-account.entity";
 import { AdminBankAccountService } from "./admin-bank-account.service";
 import { AdminBankAccountController } from "./admin-bank-account.controller";
 import { SymbolEntity } from "../admin-symbol/entity/symbol.entity";
-import { KycModule } from "../kyc/kyc.module";
 
 @Module({
-  imports: [TypeOrmModule.forFeature([AdminBankAccountEntity, SymbolEntity]), KycModule],
+  imports: [TypeOrmModule.forFeature([AdminBankAccountEntity, SymbolEntity])],
   controllers: [AdminBankAccountController],
   providers: [AdminBankAccountService],
   exports: [AdminBankAccountService, TypeOrmModule],

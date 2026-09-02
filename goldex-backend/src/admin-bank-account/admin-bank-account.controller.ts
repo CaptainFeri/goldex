@@ -59,10 +59,4 @@ export class AdminBankAccountController {
     return { data: await this.service.setStatus(id, dto.status) };
   }
 
-  @Post(":id/verify")
-  @AdminRoles(AdminRole.SUPER_ADMIN)
-  @ApiOperation({ summary: "Run the owner-name inquiry against the IBAN/card" })
-  async verify(@Param("id") id: string) {
-    return { data: await this.service.verify(id) };
-  }
 }
