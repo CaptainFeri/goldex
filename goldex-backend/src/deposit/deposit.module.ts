@@ -1,4 +1,5 @@
 import { Module } from "@nestjs/common";
+import { P2pModule } from "../p2p/p2p.module";
 import { TypeOrmModule } from "@nestjs/typeorm";
 import { DepositEntity } from "./deposit.entity";
 import { DepositService } from "./deposit.service";
@@ -13,7 +14,9 @@ import { PaymentBusModule } from "../payment-bus/payment-bus.module";
 import { UserLevelModule } from "../user-level/user-level.module";
 
 @Module({
-  imports: [TypeOrmModule.forFeature([DepositEntity, SymbolEntity, WalletEntity, TransactionEntity]), MinioModule, OcrModule, PaymentBusModule, UserLevelModule],
+  imports: [
+    P2pModule,
+    TypeOrmModule.forFeature([DepositEntity, SymbolEntity, WalletEntity, TransactionEntity]), MinioModule, OcrModule, PaymentBusModule, UserLevelModule],
   providers: [DepositService],
   controllers: [DepositController, DepositAdminController],
   exports: [DepositService],

@@ -81,6 +81,7 @@
 [data-theme="light"] .txt-sell,
 [data-theme="light"] .price-sell { color: #c1352b; }
 
+[data-theme="light"] .alert-warning,
 [data-theme="light"] .badge-warning { color: #8a5a08; }
 
 [data-theme="light"] .btn-danger { color: #c1352b; }
@@ -479,6 +480,12 @@ html, body {
   background: rgba(129,199,132,0.1);
   border: 1px solid rgba(129,199,132,0.25);
   color: #a5d6a7;
+}
+
+.alert-warning {
+  background: rgba(224,179,65,0.1);
+  border: 1px solid rgba(224,179,65,0.25);
+  color: #e5c46a;
 }
 
 /* ─── Phone banner ───────────────────────────────────────── */

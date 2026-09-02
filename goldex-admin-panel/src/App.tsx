@@ -37,6 +37,9 @@ import CrmUser360Page from "./pages/crm/CrmUser360Page";
 import ProvidersPage from "./pages/ProvidersPage";
 import MarketStatusPage from "./pages/MarketStatusPage";
 import ArbitragePage from "./pages/ArbitragePage";
+import BankAccountsPage from "./pages/BankAccountsPage";
+import P2pEscalationsPage from "./pages/P2pEscalationsPage";
+import P2pSettingsPage from "./pages/P2pSettingsPage";
 
 function RequireAuth({ children }: { children: JSX.Element }) {
   const { token, checkSession } = useAuth();
@@ -87,6 +90,9 @@ export default function App() {
         <Route path="/user-levels" element={<LevelsPage />} />
         <Route path="/deposits" element={<DepositsPage />} />
         <Route path="/withdraws" element={<WithdrawsPage />} />
+        <Route path="/bank-accounts" element={<BankAccountsPage />} />
+        <Route path="/p2p" element={<P2pEscalationsPage />} />
+        <Route path="/p2p/settings" element={<P2pSettingsPage />} />
         <Route path="/ocr" element={<OcrAdminPage />} />
         <Route path="/telegram-market" element={<TelegramMarketPage />} />
         <Route path="/notifications" element={<NotificationsPage />} />
