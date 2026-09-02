@@ -59,3 +59,16 @@ export const WithdrawEvents = {
   FAILED: "withdraw.failed",
   CANCELLED: "withdraw.cancelled",
 } as const;
+
+export const P2pEvents = {
+  MATCHED: "p2p.matched",
+  PROOF_SUBMITTED: "p2p.proof_submitted",
+  CONFIRMED: "p2p.confirmed",
+  REJECTED: "p2p.rejected",
+  RESPONSE_TIMEOUT: "p2p.response_timeout",
+  RESERVATION_EXPIRED: "p2p.reservation_expired",
+  ESCALATED: "p2p.escalated",
+  ESCALATION_RESOLVED: "p2p.escalation_resolved",
+  NO_MATCH: "p2p.no_match",
+  WITHDRAW_COMPLETED: "p2p.withdraw_completed",
+} as const;

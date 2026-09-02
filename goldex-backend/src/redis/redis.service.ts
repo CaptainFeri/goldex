@@ -39,6 +39,41 @@ export class RedisService {
     return this.client;
   }
 
+  /**
+   * Best-effort distributed lock. Cron jobs fire on every replica, so a job
+   * that mutates financial state must take one of these first.
+   * Returns the token on success, null when someone else holds the lock.
+   */
+  async tryLock(key: string, ttlMs: number): Promise<string | null> {
+    const token = `${process.pid}-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    const result = await this.client.set(key, token, 'PX', ttlMs, 'NX');
+    return result === 'OK' ? token : null;
+  }
+
+  /**
+   * Releases a lock only if this caller still owns it — a compare-and-delete,
+   * so a job that overran its TTL cannot drop someone else's lock.
+   */
+  async unlock(key: string, token: string): Promise<void> {
+    await this.client.eval(
+      `if redis.call("get", KEYS[1]) == ARGV[1] then return redis.call("del", KEYS[1]) else return 0 end`,
+      1,
+      key,
+      token,
+    );
+  }
+
+  /** Runs `fn` only if the lock is free; returns null when it was already held. */
+  async withLock<T>(key: string, ttlMs: number, fn: () => Promise<T>): Promise<T | null> {
+    const token = await this.tryLock(key, ttlMs);
+    if (!token) return null;
+    try {
+      return await fn();
+    } finally {
+      await this.unlock(key, token);
+    }
+  }
+
   async setWithExpiration(key: string, value: any, expiresIn = 120): Promise<string> {
     return await this.client.set(key, JSON.stringify(value), 'EX', expiresIn);
   }
