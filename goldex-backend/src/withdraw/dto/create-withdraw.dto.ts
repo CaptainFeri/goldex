@@ -1,5 +1,7 @@
-import { IsString, IsNumber, IsOptional, IsObject } from "class-validator";
+import { IsString, IsNumber, IsOptional, IsObject, ValidateNested } from "class-validator";
+import { Type } from "class-transformer";
 import { ApiProperty } from "@nestjs/swagger";
+import { P2pConstraintsDto, P2pSplitDto } from "../../p2p/dto/create-p2p-withdraw.dto";
 
 export class CreateWithdrawDto {
   @IsString()
@@ -53,4 +55,16 @@ export class CreateWithdrawDto {
   @IsString()
   @ApiProperty({ required: false, description: "Preferred warehouse ID (optional when type=warehouse)" })
   warehouseId?: string;
+
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => P2pSplitDto)
+  @ApiProperty({ required: false, type: P2pSplitDto, description: "How to split the request (type=p2p)" })
+  split?: P2pSplitDto;
+
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => P2pConstraintsDto)
+  @ApiProperty({ required: false, type: P2pConstraintsDto, description: "Matching constraints (type=p2p)" })
+  constraints?: P2pConstraintsDto;
 }
