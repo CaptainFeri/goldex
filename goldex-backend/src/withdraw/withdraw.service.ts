@@ -128,7 +128,7 @@ export class WithdrawService {
     if (saved.type === WithdrawTypeEnum.P2P) {
       await this.p2pWithdraw.createForWithdraw(
         saved,
-        { split: dto.split, constraints: dto.constraints },
+        { iban: dto.iban, bankName: dto.bankName, split: dto.split, constraints: dto.constraints },
         { actorType: P2pAuditActorEnum.USER, actorId: userId },
       );
       return this.findById(saved.id);

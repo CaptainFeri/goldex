@@ -1,8 +1,12 @@
 import { myBaseEntity } from "../../shared/entity/base.entity";
-import { Column, Entity, JoinColumn, ManyToOne, OneToMany } from "typeorm";
+import { Column, Entity, Index, JoinColumn, ManyToOne } from "typeorm";
 import { UserEntity } from "./user.entity";
+import { UserBankAccountTagEnum } from "../enum/user-bank-account-tag.enum";
 
 @Entity("user_bank_account")
+// A user may hold several accounts now — the KYC one plus any IBAN they have
+// used for a p2p transfer — so uniqueness moves from the user to the pair.
+@Index(["userId", "iban"], { unique: true })
 export class UserBankAccountEntity extends myBaseEntity {
   @Column({
     nullable: true,
@@ -26,11 +30,16 @@ export class UserBankAccountEntity extends myBaseEntity {
   @JoinColumn({ name: "user_id" })
   user: UserEntity;
 
-  @Column({
-    name: "user_id",
-    unique: true,
-  })
+  @Column({ name: "user_id" })
   userId: string;
+
+  @Column({
+    name: "tag",
+    type: "enum",
+    enum: UserBankAccountTagEnum,
+    default: UserBankAccountTagEnum.KYC,
+  })
+  tag: UserBankAccountTagEnum;
 
   @Column({
     nullable: true,

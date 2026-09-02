@@ -16,6 +16,7 @@ import { UserBankAccountEntity } from "../user/entity/user.bank.account.entity";
 import { SymbolEntity } from "../admin-symbol/entity/symbol.entity";
 import { P2pSettingService } from "./services/p2p-setting.service";
 import { P2pAuditService } from "./services/p2p-audit.service";
+import { P2pUserBankService } from "./services/p2p-user-bank.service";
 import { P2pLiquidityService } from "./services/p2p-liquidity.service";
 import { P2pSettlementService } from "./services/p2p-settlement.service";
 import { P2pMatchingService } from "./services/p2p-matching.service";
@@ -57,6 +58,7 @@ import { RedisModule } from "../redis/redis.module";
   providers: [
     P2pSettingService,
     P2pAuditService,
+    P2pUserBankService,
     P2pLiquidityService,
     P2pSettlementService,
     P2pMatchingService,

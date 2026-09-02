@@ -28,6 +28,7 @@ import { P2pMatchingService } from "./p2p-matching.service";
 import { P2pSettingService } from "./p2p-setting.service";
 import { P2pEscalationService } from "./p2p-escalation.service";
 import { P2pAuditService, AuditContext } from "./p2p-audit.service";
+import { P2pUserBankService } from "./p2p-user-bank.service";
 import { SubmitPaymentProofDto } from "../dto/submit-payment-proof.dto";
 import { DepositEntity } from "../../deposit/deposit.entity";
 import { DepositStatusEnum } from "../../deposit/enum/deposit-status.enum";
@@ -54,6 +55,7 @@ export class P2pDepositService {
     private readonly settings: P2pSettingService,
     private readonly escalations: P2pEscalationService,
     private readonly audit: P2pAuditService,
+    private readonly userBanks: P2pUserBankService,
     private readonly minio: MinioService,
     private readonly ocr: OcrService,
     private readonly eventEmitter: EventEmitter2,
@@ -64,7 +66,17 @@ export class P2pDepositService {
     deposit: DepositEntity,
     constraints: Record<string, any> | undefined,
     ctx: AuditContext,
+    source?: { iban?: string; bankName?: string },
   ): Promise<P2pDepositIntentEntity> {
+    // The depositor declares which account they will pay from. It need not be
+    // their own, so it is recorded under the P2P_WALLET tag, not verified —
+    // its job is to let the withdrawer and an admin match the incoming
+    // transfer against the receipt.
+    if (!source?.iban) {
+      throw new BadRequestException("برای واریز همتا به همتا وارد کردن شماره شبا الزامی است");
+    }
+    const bank = await this.userBanks.remember(deposit.userId, source.iban, source.bankName);
+
     const settings = await this.settings.get();
 
     const intent = await this.intentRepo.save(
@@ -74,6 +86,8 @@ export class P2pDepositService {
         symbolId: deposit.symbolId,
         requestedAmount: Number(deposit.amount),
         constraintsJson: constraints ?? null,
+        sourceIban: bank.iban,
+        sourceBankAccountId: bank.id,
         state: P2pIntentStateEnum.CREATED,
         expiresAt: new Date(Date.now() + settings.requestExpiryHours * 3600_000),
       }),
@@ -223,7 +237,7 @@ export class P2pDepositService {
         manager.create(P2pPaymentProofEntity, {
           matchId: match.id,
           amount: claimed,
-          sourceAccount: dto.sourceAccount ?? null,
+          sourceAccount: dto.sourceAccount ?? intent.sourceIban ?? null,
           destinationAccount:
             dto.destinationAccount ?? match.destinationSnapshotJson?.iban ?? null,
           trackingCode: dto.trackingCode ?? null,
