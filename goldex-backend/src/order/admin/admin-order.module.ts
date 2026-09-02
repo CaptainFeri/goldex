@@ -9,10 +9,10 @@ import { PricePairEntity } from "../../admin-pair/entity/price.pair.entity";
 import { SymbolEntity } from "../../admin-symbol/entity/symbol.entity";
 import { AdminWalletLogEntity } from "../../admin-wallet/entity/admin-wallet-log.entity";
 import { AdminOrderController } from "./admin-ordeer.controller";
-import { OrderBookService } from "../../order-book/order-book.service";
 import { QuoteRequestEntity } from "../../quote-request/quote-request.entity";
 import { WalletCoreModule } from "../../wallet/wallet-core.module";
 import { CreditOrderEntity } from "../../credit/entity/credit-order.entity";
+import { PairPoolStatusEntity } from "../../market-status/entity/pair-pool-status.entity";
 
 @Module({
   imports: [
@@ -25,11 +25,12 @@ import { CreditOrderEntity } from "../../credit/entity/credit-order.entity";
       SymbolEntity,
       QuoteRequestEntity,
       CreditOrderEntity,
+      PairPoolStatusEntity,
     ]),
     WalletCoreModule,
   ],
   controllers: [AdminOrderController],
-  providers: [AdminOrderService, OrderBookService],
+  providers: [AdminOrderService],
   exports: [AdminOrderService],
 })
 export class AdminOrderModule {}

@@ -38,6 +38,15 @@ export class AdminOrderController {
     return { data: await this.adminOrderService.adminUpdateOrder(id, adminId, dto) };
   }
 
+  @Get("book/overview")
+  @ApiOperation({
+    summary: "Shared Limit Market book status for every price pair",
+  })
+  @ApiResponse({ status: HttpStatus.OK, description: "Per-pair book status and pool state" })
+  async getOrderBookOverview() {
+    return { data: await this.adminOrderService.getOrderBookOverview() };
+  }
+
   @Get("book/:pairId")
   @ApiOperation({ summary: "Get Limit Market order book depth for a pair" })
   @ApiParam({ name: "pairId", description: "Price pair ID" })

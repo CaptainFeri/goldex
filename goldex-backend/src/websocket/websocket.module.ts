@@ -8,7 +8,6 @@ import { MarketGateway } from "./market.gateway";
 import { MarketService } from "./market.service";
 import { PricePairEntity } from "../admin-pair/entity/price.pair.entity";
 import { AdminPairModule } from "../admin-pair/admin-pair.module";
-import { AdminPairService } from "../admin-pair/admin-pair.service";
 import { SymbolEntity } from "../admin-symbol/entity/symbol.entity";
 import { UserMarketTypeEntity } from "../user/entity/user.market.type.entity";
 import { UserEntity } from "../user/entity/user.entity";
@@ -29,7 +28,9 @@ import { RedisModule } from "../redis/redis.module";
       inject: [ConfigService],
     }),
   ],
-  providers: [MarketGateway, MarketService, AdminPairService],
+  // AdminPairService comes from AdminPairModule, imported above; declaring it
+  // here too would build a second instance from this module's imports.
+  providers: [MarketGateway, MarketService],
   exports: [MarketService],
 })
 export class WebSocketModule {}

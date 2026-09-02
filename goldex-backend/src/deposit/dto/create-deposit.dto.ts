@@ -1,14 +1,15 @@
-import { IsString, IsNumber, IsOptional, IsObject } from "class-validator";
+import { IsString, IsNumber, IsOptional, IsObject, IsEnum } from "class-validator";
 import { ApiProperty } from "@nestjs/swagger";
+import { DepositTypeEnum } from "../../admin-symbol/enum/deposit-type.enum";
 
 export class CreateDepositDto {
   @IsString()
   @ApiProperty()
   symbolId: string;
 
-  @IsString()
-  @ApiProperty()
-  type: string;
+  @IsEnum(DepositTypeEnum)
+  @ApiProperty({ enum: DepositTypeEnum })
+  type: DepositTypeEnum;
 
   @IsNumber()
   @ApiProperty()

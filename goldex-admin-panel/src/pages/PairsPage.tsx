@@ -3,7 +3,8 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, unwrap, apiError } from "../api/client";
 import { Card, Loading, ErrorState, Empty, Badge, Modal } from "../components/ui";
 import { fmtNum, pairLabel } from "../lib/format";
-import type { PricePair } from "../api/types";
+import RoutingModal from "../components/RoutingModal";
+import type { PricePair, PairRoutes } from "../api/types";
 
 function toArray(x: any): any[] {
   return Array.isArray(x) ? x : x?.data ?? x?.items ?? [];
@@ -312,12 +313,43 @@ function PriceOverrideModal({ pair, onClose }: { pair: any; onClose: () => void 
   );
 }
 
+const ROUTING_MODE_LABEL: Record<string, string> = {
+  AUTO: "خودکار",
+  DIRECT: "فقط مستقیم",
+  BRIDGE: "فقط غیرمستقیم",
+  BEST: "بهترین قیمت",
+};
+
+/** How this pair is priced right now, at a glance. */
+function RouteCell({ route }: { route?: PairRoutes }) {
+  if (!route) return <span className="muted">—</span>;
+  if (route.unpriceable) {
+    return (
+      <>
+        <Badge kind="red">بدون قیمت</Badge>
+        <div className="muted" style={{ fontSize: 11 }}>{ROUTING_MODE_LABEL[route.routingMode]}</div>
+      </>
+    );
+  }
+  return (
+    <>
+      {route.usesBridge ? (
+        <Badge kind="gold">واسط {route.buy.selected?.bridgeSlug ?? route.sell.selected?.bridgeSlug}</Badge>
+      ) : (
+        <Badge kind="green">مستقیم</Badge>
+      )}
+      <div className="muted" style={{ fontSize: 11 }}>{ROUTING_MODE_LABEL[route.routingMode]}</div>
+    </>
+  );
+}
+
 export default function PairsPage() {
   const qc = useQueryClient();
   const [form, setForm] = useState<{ open: boolean; initial?: any }>({ open: false });
   const [detailId, setDetailId] = useState<string | null>(null);
   const [priceOverride, setPriceOverride] = useState<any | null>(null);
   const [overviewPair, setOverviewPair] = useState<any | null>(null);
+  const [routingPair, setRoutingPair] = useState<any | null>(null);
   const [filterBase, setFilterBase] = useState("");
   const [filterQuote, setFilterQuote] = useState("");
 
@@ -329,6 +361,12 @@ export default function PairsPage() {
     queryKey: ["symbols-active"],
     queryFn: async () => toArray(unwrap<any>((await api.get("/admin/symbols/active")).data)),
   });
+  // One resolved line per pair, so the table can show how each is priced.
+  const routes = useQuery({
+    queryKey: ["pair-routes"],
+    queryFn: async () => unwrap<PairRoutes[]>((await api.get("/admin/pair/routes")).data),
+    refetchInterval: 15_000,
+  });
 
   const toggle = useMutation({
     mutationFn: (id: string) => api.patch(`/admin/pair/${id}/validity`, {}),
@@ -338,6 +376,10 @@ export default function PairsPage() {
     mutationFn: (id: string) => api.delete(`/admin/pair/${id}`),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["pairs"] }),
   });
+
+  const routeByPair = new Map(
+    (Array.isArray(routes.data) ? routes.data : []).map((r) => [r.pairId, r]),
+  );
 
   let pairs = list.data ?? [];
   if (filterBase) pairs = pairs.filter((p) => baseSlug(p) === filterBase);
@@ -378,6 +420,7 @@ export default function PairsPage() {
                 <th>مظنه</th>
                 <th>قیمت خرید</th>
                 <th>قیمت فروش</th>
+                <th>مسیر قیمت</th>
                 <th>اعتبار</th>
                 <th>عملیات</th>
               </tr>
@@ -389,12 +432,14 @@ export default function PairsPage() {
                   <td>{quoteSlug(p)}</td>
                   <td className="mono">{fmtNum(p.bestBuyPrice ?? p.price, 2)}</td>
                   <td className="mono">{fmtNum(p.bestSellPrice ?? p.price, 2)}</td>
+                  <td><RouteCell route={routeByPair.get(p.id)} /></td>
                   <td>{p.isValid ? <Badge kind="green">معتبر</Badge> : <Badge kind="gray">نامعتبر</Badge>}</td>
                   <td>
                     <div className="row">
                       <button className="btn sm" onClick={() => setDetailId(p.id)}>جزئیات</button>
                       <button className="btn sm" onClick={() => setForm({ open: true, initial: p })}>ویرایش</button>
                       <button className="btn sm" onClick={() => setPriceOverride(p)}>قیمت</button>
+                      <button className="btn sm" onClick={() => setRoutingPair(p)}>مسیر</button>
                       <button className="btn sm" onClick={() => setOverviewPair(p)}>درخواست‌ها</button>
                       <button className="btn sm" disabled={toggle.isPending} onClick={() => toggle.mutate(p.id)}>
                         {p.isValid ? "غیرفعال" : "فعال"}
@@ -414,6 +459,7 @@ export default function PairsPage() {
       {detailId && <DetailsModal id={detailId} onClose={() => setDetailId(null)} />}
       {priceOverride && <PriceOverrideModal pair={priceOverride} onClose={() => setPriceOverride(null)} />}
       {overviewPair && <RequestsOverviewModal pair={overviewPair} onClose={() => setOverviewPair(null)} />}
+      {routingPair && <RoutingModal pair={routingPair} onClose={() => setRoutingPair(null)} />}
       {form.open && <PairForm initial={form.initial} symbols={symbols.data ?? []} onClose={() => setForm({ open: false })} />}
     </Card>
   );
