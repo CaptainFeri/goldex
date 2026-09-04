@@ -4,21 +4,23 @@
 **Date:** 2026-09-04
 **Branch (both repos):** `claude/ui-goldex-admin-plan-40u9fs`
 
-| Repo | Plan document |
-|---|---|
-| `CaptainFeri/ui-parszargar` | `PARSZARGAR-GOLDEX-PLAN.md` |
-| `CaptainFeri/goldex` | `PARSZARGAR-BACKEND-PLAN.md` (this repo) |
+| Document | Repo | Covers |
+|---|---|---|
+| `PARSZARGAR-ROADMAP.md` | both (mirrored; `ROADMAP.md` in the UI repo) | sequencing, milestones, dependency graph, risk register |
+| `PARSZARGAR-BACKEND-PLAN.md` | `goldex` (this repo) | backend scope |
+| `PARSZARGAR-GOLDEX-PLAN.md` | `ui-parszargar` | frontend scope |
 
-Read both. They are one plan split along the repo boundary and cross-reference
-each other by section number.
+The two plans are one plan split along the repo boundary and cross-reference
+each other by section number. The roadmap sequences them. Start with the
+roadmap; drop into a plan when you pick up a phase.
 
 ---
 
 ## 1. What was done
 
-A read-only audit of three codebases and a two-part implementation plan. **No
-source files were changed** — the only additions are the two plan documents and
-this handoff.
+A read-only audit of three codebases, a two-part implementation plan, and a delivery roadmap. **No
+source files were changed** — the only additions are the plan documents, the
+roadmap, and this handoff.
 
 Audited:
 - `ui-parszargar` — 41 pages, 24 components, 16,868 LOC of pages, 5,914-line CSS
