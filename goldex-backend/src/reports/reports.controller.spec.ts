@@ -26,6 +26,16 @@ describe("ReportsController routing", () => {
     download: jest.fn().mockResolvedValue({ url: "/api/v1/files/signed/tok.sig", fileName: "x.xlsx" }),
   };
 
+  /** A finance operator as the permissions guard now sees one: the linked role
+   *  row, not the legacy enum, is what grants access. Swapped per-test. */
+  const financeAdmin = {
+    id: "admin-1",
+    role: AdminRole.FINANCE,
+    isSuspended: false,
+    roleRef: { id: "r-finance", slug: "finance", permissions: ["reports"] },
+  };
+  let caller: unknown = financeAdmin;
+
   beforeAll(async () => {
     const moduleRef = await Test.createTestingModule({
       controllers: [ReportsController],
@@ -34,7 +44,9 @@ describe("ReportsController routing", () => {
       .overrideGuard(AdminAuthGuard)
       .useValue({
         canActivate: (ctx: any) => {
-          ctx.switchToHttp().getRequest().admin = { id: "admin-1", role: AdminRole.FINANCE };
+          // A finance operator as the permissions guard now sees one: the
+          // linked role row, not the legacy enum, is what grants access.
+          ctx.switchToHttp().getRequest().admin = caller;
           return true;
         },
       })
@@ -78,5 +90,23 @@ describe("ReportsController routing", () => {
       { adminId: "admin-1", role: AdminRole.FINANCE },
       expect.anything(),
     );
+  });
+
+  describe("permission enforcement", () => {
+    afterEach(() => {
+      caller = financeAdmin;
+    });
+
+    it("refuses an operator whose role lacks `reports`", async () => {
+      // Proves the guard is wired here through DI from another module, not just
+      // inside the role module's own tests.
+      caller = { ...financeAdmin, roleRef: { id: "r-x", slug: "x", permissions: ["dashboard"] } };
+      await request(app.getHttpServer()).get("/api/v1/admin/reports/stats").expect(403);
+    });
+
+    it("refuses a suspended operator who otherwise holds `reports`", async () => {
+      caller = { ...financeAdmin, isSuspended: true };
+      await request(app.getHttpServer()).get("/api/v1/admin/reports/stats").expect(403);
+    });
   });
 });

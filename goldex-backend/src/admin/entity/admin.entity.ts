@@ -1,7 +1,8 @@
 // admin.entity.ts
-import { Column, Entity, OneToMany } from "typeorm";
+import { Column, Entity, JoinColumn, ManyToOne, OneToMany } from "typeorm";
 import { myBaseEntity } from "../../shared/entity/base.entity";
 import { AdminRole } from "../role/admin.roles.enum";
+import { AdminRoleEntity } from "../../admin-role/entity/admin-role.entity";
 
 @Entity("admin")
 export class AdminEntity extends myBaseEntity {
@@ -19,12 +20,24 @@ export class AdminEntity extends myBaseEntity {
   })
   hashPassword: string;
 
+  /**
+   * Legacy identity, kept because several code paths still read it.
+   * Authorization reads `roleRef.permissions`, not this.
+   */
   @Column({
     type: "enum",
     enum: AdminRole,
     default: AdminRole.ADMIN,
   })
   role: AdminRole;
+
+  @Column({ name: "role_id", type: "uuid", nullable: true })
+  roleId?: string | null;
+
+  /** The data-driven role this admin's permissions come from. */
+  @ManyToOne(() => AdminRoleEntity, { nullable: true, onDelete: "SET NULL" })
+  @JoinColumn({ name: "role_id" })
+  roleRef?: AdminRoleEntity | null;
 
   @Column({
     name: "is_suspended",

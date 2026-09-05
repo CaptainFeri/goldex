@@ -13,8 +13,8 @@ import {
 import { ApiBearerAuth, ApiOperation, ApiProduces, ApiResponse, ApiTags } from "@nestjs/swagger";
 import { Response } from "express";
 import { AdminAuthGuard } from "../admin/auth/Guard/admin.guard";
-import { AdminRole } from "../admin/role/admin.roles.enum";
-import { AdminRoles } from "../admin/role/admin.role.decorator";
+import { AdminPermissionsGuard } from "../admin-role/guard/admin-permissions.guard";
+import { RequirePermissions } from "../admin-role/guard/require-permissions.decorator";
 import { AdminExpressRequest } from "../admin/auth/types/adminExpressRequest";
 import {
   ApiAdminErrorResponses,
@@ -39,9 +39,9 @@ import {
 @ApiTags("Admin-Accounting")
 @ApiBearerAuth()
 @ApiAdminErrorResponses()
-@UseGuards(AdminAuthGuard)
+@UseGuards(AdminAuthGuard, AdminPermissionsGuard)
 // Accounting is finance's screen; admins and the root role see it too.
-@AdminRoles(AdminRole.ADMIN, AdminRole.SUPER_ADMIN, AdminRole.FINANCE)
+@RequirePermissions("accounting")
 @Controller("admin/accounting")
 export class AdminAccountingController {
   constructor(
