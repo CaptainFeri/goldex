@@ -9,6 +9,8 @@ import { AdminUserController } from "../../admin-user/admin-user.controller";
 import { AdminKycController } from "../../admin-kyc/admin-kyc.controller";
 import { AdminWalletController } from "../../admin-wallet/admin-wallet.controller";
 import { AdminSymbolController } from "../../admin-symbol/admin-symbol.controller";
+import { AdminPairController } from "../../admin-pair/admin-pair.controller";
+import { ProviderController } from "../../provider/provider.controller";
 
 const stub = {} as any;
 
@@ -28,6 +30,8 @@ describe("backfilled response schemas", () => {
         AdminKycController,
         AdminWalletController,
         AdminSymbolController,
+        AdminPairController,
+        ProviderController,
       ],
     })
       .useMocker(() => stub)
@@ -39,8 +43,10 @@ describe("backfilled response schemas", () => {
 
   afterAll(async () => await app?.close());
 
-  const ok = (path: string, method = "get") =>
-    doc.paths[path][method].responses["200"].content["application/json"].schema;
+  // Nest answers POST with 201 unless @HttpCode says otherwise, so the declared
+  // status has to match the framework's, not what reads nicely.
+  const ok = (path: string, method = "get", status = "200") =>
+    doc.paths[path][method].responses[status].content["application/json"].schema;
 
   it("types the withdrawal list as a paginated envelope of WithdrawDto", () => {
     const data = ok("/admin/withdraw").allOf[1].properties.data;
@@ -99,7 +105,7 @@ describe("backfilled response schemas", () => {
       "/admin/wallets/freeze",
       "/admin/wallets/update-status",
     ]) {
-      expect(ok(path, "post").allOf[1].properties.data.$ref).toBe(
+      expect(ok(path, "post", "201").allOf[1].properties.data.$ref).toBe(
         "#/components/schemas/AdminWalletMutationDto"
       );
     }
@@ -109,6 +115,27 @@ describe("backfilled response schemas", () => {
     expect(ok("/admin/symbols/capabilities").allOf[1].properties.data.$ref).toBe(
       "#/components/schemas/SymbolCapabilitiesDto"
     );
+  });
+
+  it("types the pair list and its resolved routes", () => {
+    const list = ok("/admin/pair").allOf[1].properties.data;
+    expect(list.items.$ref).toBe("#/components/schemas/PricePairDto");
+    expect(ok("/admin/pair/{id}/route").allOf[1].properties.data.$ref).toBe(
+      "#/components/schemas/PairRoutesDto"
+    );
+  });
+
+  it("types provider commands as an acknowledgement, not as the finished work", () => {
+    // These queue a message to the pricing engine and return immediately.
+    expect(ok("/admin/providers/reconcile", "post", "201").allOf[1].properties.data.$ref).toBe(
+      "#/components/schemas/ProviderCommandAckDto"
+    );
+  });
+
+  it("keeps provider credentials out of the provider schema", () => {
+    const props = doc.components.schemas.ProviderDto.properties;
+    expect(props.auth).toBeUndefined();
+    expect(props.config).toBeUndefined();
   });
 
   it("never leaves a documented route's data untyped", () => {

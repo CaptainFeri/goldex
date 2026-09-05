@@ -31,7 +31,7 @@ export class AdminWalletController {
   @Post("update-balance")
   @AdminRoles(AdminRole.SUPER_ADMIN)
   @ApiOperation({ summary: "Update wallet balance (credit/debit)" })
-  @ApiEnvelopeResponse(AdminWalletMutationDto, { description: "Balance updated; includes the wallet and the transaction written" })
+  @ApiEnvelopeResponse(AdminWalletMutationDto, { status: 201, description: "Balance updated; includes the wallet and the transaction written" })
   async updateBalance(@Req() req: AdminExpressRequest, @Body() updateBalanceDto: UpdateBalanceDto) {
     return { data: await this.adminWalletService.updateBalance(req.admin.id, updateBalanceDto) };
   }
@@ -47,7 +47,7 @@ export class AdminWalletController {
   @Post("adjust-balance")
   @AdminRoles(AdminRole.SUPER_ADMIN)
   @ApiOperation({ summary: "Adjust wallet balance (increase/decrease free/locked)" })
-  @ApiEnvelopeResponse(AdminWalletMutationDto)
+  @ApiEnvelopeResponse(AdminWalletMutationDto, { status: 201 })
   async adjustBalance(@Req() req: AdminExpressRequest, @Body() adjustBalanceDto: AdjustBalanceDto) {
     return { data: await this.adminWalletService.adjustBalance(req.admin.id, adjustBalanceDto) };
   }
@@ -55,7 +55,7 @@ export class AdminWalletController {
   @Post("freeze")
   @AdminRoles(AdminRole.SUPER_ADMIN)
   @ApiOperation({ summary: "Freeze/unfreeze wallet balances" })
-  @ApiEnvelopeResponse(AdminWalletMutationDto, { description: "Freeze applied; `details` carries the frozen balances" })
+  @ApiEnvelopeResponse(AdminWalletMutationDto, { status: 201, description: "Freeze applied; `details` carries the frozen balances" })
   async freezeWallet(@Req() req: AdminExpressRequest, @Body() freezeWalletDto: FreezeWalletDto) {
     return { data: await this.adminWalletService.freezeWallet(req.admin.id, freezeWalletDto) };
   }
@@ -63,7 +63,7 @@ export class AdminWalletController {
   @Post("update-status")
   @AdminRoles(AdminRole.SUPER_ADMIN)
   @ApiOperation({ summary: "Update wallet status" })
-  @ApiEnvelopeResponse(AdminWalletMutationDto, { description: "Status changed; no transaction is written" })
+  @ApiEnvelopeResponse(AdminWalletMutationDto, { status: 201, description: "Status changed; no transaction is written" })
   async updateWalletStatus(@Req() req: AdminExpressRequest, @Body() walletActionDto: WalletActionDto) {
     return { data: await this.adminWalletService.updateWalletStatus(req.admin.id, walletActionDto) };
   }

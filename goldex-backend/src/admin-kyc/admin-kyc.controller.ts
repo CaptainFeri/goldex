@@ -81,7 +81,7 @@ export class AdminKycController {
   @ApiBearerAuth()
   @AdminRoles(AdminRole.ADMIN, AdminRole.SUPER_ADMIN)
   @ApiOperation({ summary: "Approve one or more documents" })
-  @ApiEnvelopeResponse(KycDocumentDto, { isArray: true, description: "The approved documents, in the order requested" })
+  @ApiEnvelopeResponse(KycDocumentDto, { status: 201, isArray: true, description: "The approved documents, in the order requested" })
   async approveDocuments(@Req() req, @Body() dto: AdminApproveDocumentsDto) {
     return { data: await this.adminKycService.approveDocuments(req.admin.id, dto.documentIds, dto.notes) };
   }
@@ -91,7 +91,7 @@ export class AdminKycController {
   @ApiBearerAuth()
   @AdminRoles(AdminRole.ADMIN, AdminRole.SUPER_ADMIN)
   @ApiOperation({ summary: "Reject a single document" })
-  @ApiEnvelopeResponse(KycDocumentDto)
+  @ApiEnvelopeResponse(KycDocumentDto, { status: 201 })
   async rejectDocument(@Req() req, @Body() dto: AdminRejectDocumentDto) {
     return { data: await this.adminKycService.rejectDocument(req.admin.id, dto.documentId, dto.reason, dto.notes) };
   }

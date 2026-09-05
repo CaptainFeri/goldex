@@ -52,7 +52,7 @@ export class WithdrawAdminController {
   @Post("upload-and-ocr")
   @AdminRoles(AdminRole.ADMIN, AdminRole.SUPER_ADMIN, AdminRole.FINANCE)
   @ApiOperation({ summary: "Upload withdrawal receipt image and run OCR (admin)" })
-  @ApiEnvelopeResponse(WithdrawReceiptOcrDto)
+  @ApiEnvelopeResponse(WithdrawReceiptOcrDto, { status: 201 })
   @ApiConsumes("multipart/form-data")
   @UseInterceptors(FileInterceptor("file", { storage: memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } }))
   async uploadAndOcr(@Req() req: AdminExpressRequest, @UploadedFile() file: Express.Multer.File) {
@@ -94,7 +94,7 @@ export class WithdrawAdminController {
   @Post(":id/approve")
   @AdminRoles(AdminRole.ADMIN, AdminRole.SUPER_ADMIN, AdminRole.FINANCE)
   @ApiOperation({ summary: "Approve a gateway-bound withdrawal (executed by goldex-cbp)" })
-  @ApiEnvelopeResponse(WithdrawDto)
+  @ApiEnvelopeResponse(WithdrawDto, { status: 201 })
   async approve(@Req() req: AdminExpressRequest, @Param("id") id: string) {
     const adminId = req.admin?.id || "system";
     const result = await this.withdrawService.approveGatewayWithdraw(adminId, id);

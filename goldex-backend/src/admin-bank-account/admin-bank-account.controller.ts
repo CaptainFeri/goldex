@@ -43,7 +43,7 @@ export class AdminBankAccountController {
   @Post()
   @AdminRoles(AdminRole.SUPER_ADMIN)
   @ApiOperation({ summary: "Create a company bank account" })
-  @ApiEnvelopeResponse(AdminBankAccountDto)
+  @ApiEnvelopeResponse(AdminBankAccountDto, { status: 201 })
   async create(@Body() dto: CreateAdminBankAccountDto) {
     return { data: await this.service.create(dto) };
   }

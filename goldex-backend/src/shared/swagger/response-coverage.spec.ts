@@ -37,7 +37,6 @@ const UNDOCUMENTED = [
   "admin-arbitrage/admin-arbitrage.controller.ts",
   "admin-discount/discount-admin.controller.ts",
   "admin-monitoring/admin-monitoring.controller.ts",
-  "admin-pair/admin-pair.controller.ts",
   "admin-pair/market.controller.ts",
   "admin-schedule/admin-schedule.controller.ts",
   "admin-telegram-monitoring/admin-telegram-monitoring.controller.ts",
@@ -65,7 +64,6 @@ const UNDOCUMENTED = [
   "p2p/p2p-admin.controller.ts",
   "p2p/p2p-user.controller.ts",
   "payment-callback/payment-callback.controller.ts",
-  "provider/provider.controller.ts",
   "provider-finance/provider-finance.controller.ts",
   "provider-pair-mapping/provider-pair-mapping.controller.ts",
   "quote-request/quote-request.controller.ts",
@@ -137,6 +135,44 @@ describe("OpenAPI response coverage", () => {
       if (UNDOCUMENTED.includes(path)) continue;
       const missing = undocumentedRoutes(readFileSync(file, "utf8"));
       if (missing.length) offenders.push(`${path}\n    ${missing.join("\n    ")}`);
+    }
+    expect(offenders.join("\n  ")).toBe("");
+  });
+
+  /**
+   * Nest answers POST with 201 unless `@HttpCode` says otherwise. Documenting
+   * one as 200 is not a cosmetic slip: a generated client keys its result type
+   * off the status, so it would treat every successful call as unhandled.
+   */
+  it("documents POST routes with the status the framework actually returns", () => {
+    const offenders: string[] = [];
+    for (const file of files) {
+      const source = readFileSync(file, "utf8");
+      const lines = source.split("\n");
+      let block: string[] = [];
+      let depth = 0;
+      for (const line of lines) {
+        if (DECORATOR.test(line) || depth > 0) {
+          block.push(line);
+          depth += (line.match(/\(/g)?.length ?? 0) - (line.match(/\)/g)?.length ?? 0);
+          if (depth < 0) depth = 0;
+          continue;
+        }
+        if (block.length) {
+          const text = block.join("\n");
+          const route = block.find((l) => ROUTE.test(l));
+          const isPost = route?.includes("@Post(");
+          if (
+            isPost &&
+            ENVELOPE_RESPONSE.test(text) &&
+            !text.includes("status: 201") &&
+            !text.includes("@HttpCode")
+          ) {
+            offenders.push(`${rel(file)} ${route!.trim()}`);
+          }
+          block = [];
+        }
+      }
     }
     expect(offenders.join("\n  ")).toBe("");
   });

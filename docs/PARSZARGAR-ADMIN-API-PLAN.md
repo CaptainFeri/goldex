@@ -398,13 +398,13 @@ added to one does not leak into every response that joins it.
 
 **Backfilled so far** — `admin/bank-accounts`, `admin/withdraw`,
 `admin/deposit`, `admin/accounts`, `admin/users`, `admin/kyc`, `admin/wallets`,
-`admin/symbols`. The pattern for each: extend
+`admin/symbols`, `admin/pair`, `admin/providers`. The pattern for each: extend
 `PaginationQueryDto`, keep the old param as a `deprecated: true` alias for one
 release, return `paginate(...)`, add a response DTO, decorate the controller.
 
 **A CI guard holds the line.** `response-coverage.spec.ts` scans every
 controller and fails when a route ships without a response decorator. Its
-`UNDOCUMENTED` list is the remaining debt — **49 controllers, ~381 routes** — and
+`UNDOCUMENTED` list is the remaining debt — **47 controllers, ~351 routes** — and
 only shrinks: the test also fails when a listed controller is renamed, deleted,
 or has become fully documented, so finishing one cannot go unrecorded. A
 regression probe confirmed it names the offending route rather than merely
@@ -419,6 +419,12 @@ contract and generates no schema. Six controllers were passing on that basis,
 The one legitimate use of a bare response is a binary stream, and
 `admin/kyc/document/:objectName` now declares
 `schema: { type: "string", format: "binary" }` rather than being exempted.
+
+**The documented status has to match the framework's.** Nest answers `POST`
+with 201 unless `@HttpCode` says otherwise, and thirteen routes were documented
+as 200 — a generated client keys its result type off the status, so it would
+treat every successful call as unhandled. A second guard now fails any `POST`
+whose response decorator neither declares 201 nor carries `@HttpCode`.
 
 Still required, in order:
 

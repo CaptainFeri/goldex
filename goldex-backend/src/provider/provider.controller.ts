@@ -9,7 +9,19 @@ import {
   Query,
   UseGuards,
 } from '@nestjs/common';
-import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
+import { ApiBearerAuth, ApiOperation, ApiParam, ApiTags } from '@nestjs/swagger';
+import {
+  ApiAdminErrorResponses,
+  ApiEnvelopeResponse,
+} from '../shared/swagger';
+import {
+  ProviderBalanceSnapshotDto,
+  ProviderCommandAckDto,
+  ProviderDealSnapshotDto,
+  ProviderDto,
+  ProviderPriceItemDto,
+  ProviderStatusDto,
+} from './dto/provider-response.dto';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { ProviderService } from './provider.service';
@@ -25,6 +37,7 @@ import { ProviderBalanceSnapshotEntity } from '../financial/entity/provider-bala
 
 @ApiTags('Admin-Provider')
 @ApiBearerAuth()
+@ApiAdminErrorResponses()
 @Controller('admin/providers')
 @UseGuards(AdminAuthGuard, AdminRolesGuard)
 @AdminRoles(AdminRole.SUPER_ADMIN, AdminRole.ADMIN)
@@ -39,56 +52,87 @@ export class ProviderController {
   ) {}
 
   @Post()
+  @ApiOperation({ summary: 'Register a pricing provider' })
+  @ApiEnvelopeResponse(ProviderDto, { status: 201 })
   async create(@Body() dto: CreateProviderDto) {
     return { data: await this.providerService.create(dto) };
   }
 
   @Get()
+  @ApiOperation({ summary: 'All pricing providers' })
+  @ApiEnvelopeResponse(ProviderDto, { isArray: true })
   async findAll() {
     return { data: await this.providerService.findAll() };
   }
 
   @Get(':id')
+  @ApiOperation({ summary: 'Get one provider' })
+  @ApiEnvelopeResponse(ProviderDto)
   async findOne(@Param('id', ParseUUIDPipe) id: string) {
     return { data: await this.providerService.findOne(id) };
   }
 
   @Patch(':id')
+  @ApiOperation({ summary: 'Edit a provider' })
+  @ApiEnvelopeResponse(ProviderDto)
   async update(@Param('id', ParseUUIDPipe) id: string, @Body() dto: UpdateProviderDto) {
     return { data: await this.providerService.update(id, dto) };
   }
 
   @Post(':id/toggle-active')
+  @ApiOperation({ summary: 'Turn a provider on or off' })
+  @ApiEnvelopeResponse(ProviderDto, { status: 201 })
   async toggleActive(@Param('id', ParseUUIDPipe) id: string) {
     return { data: await this.providerService.toggleActive(id) };
   }
 
   @Post(':id/send-otp')
+  @ApiOperation({ summary: 'Send the provider activation OTP' })
+  @ApiEnvelopeResponse(ProviderCommandAckDto, { status: 201 })
   async sendOtp(@Param('id', ParseUUIDPipe) id: string, @Body('phone') phone: string) {
     return { data: await this.providerService.sendOtp(id, phone) };
   }
 
   @Post(':id/verify-otp')
+  @ApiOperation({ summary: 'Verify the provider activation OTP' })
+  @ApiEnvelopeResponse(ProviderCommandAckDto, { status: 201 })
   async verifyOtp(@Param('id', ParseUUIDPipe) id: string, @Body('otp') otp: string) {
     return { data: await this.providerService.verifyOtp(id, otp) };
   }
 
   @Post('reconcile')
+  @ApiOperation({
+    summary: 'Ask the pricing engine to reconcile every provider',
+    description: 'Queues the command and returns immediately — poll provider status for the outcome',
+  })
+  @ApiEnvelopeResponse(ProviderCommandAckDto, { status: 201 })
   async reconcile() {
     return { data: await this.providerService.reconcile() };
   }
 
   @Post(':providerKey/refresh')
+  @ApiOperation({ summary: "Refresh one provider's metadata" })
+  @ApiParam({ name: 'providerKey', example: 'talaab' })
+  @ApiEnvelopeResponse(ProviderCommandAckDto, { status: 201 })
   async refresh(@Param('providerKey') providerKey: string) {
     return { data: await this.providerService.refresh(providerKey) };
   }
 
   @Get(':providerKey/items')
+  @ApiOperation({
+    summary: "A provider's live prices",
+    description: "Read from the pricing engine's Redis, so these are the latest ticks rather than a stored snapshot",
+  })
+  @ApiParam({ name: 'providerKey', example: 'talaab' })
+  @ApiEnvelopeResponse(ProviderPriceItemDto, { isArray: true })
   async items(@Param('providerKey') providerKey: string) {
     return { data: await this.pricingRedis.getProviderItems(providerKey) };
   }
 
   @Get(':providerKey/orders')
+  @ApiOperation({ summary: 'Aggregated trading activity with this provider, per instrument' })
+  @ApiParam({ name: 'providerKey', example: 'talaab' })
+  @ApiEnvelopeResponse(ProviderDealSnapshotDto, { isArray: true })
   async orders(@Param('providerKey') providerKey: string) {
     const rows = await this.dealRepo.find({
       where: { providerKey },
@@ -98,11 +142,17 @@ export class ProviderController {
   }
 
   @Post(':providerKey/fetch-orders')
+  @ApiOperation({ summary: "Ask the engine to pull this provider's orders" })
+  @ApiParam({ name: 'providerKey', example: 'talaab' })
+  @ApiEnvelopeResponse(ProviderCommandAckDto, { status: 201 })
   async fetchOrders(@Param('providerKey') providerKey: string) {
     return { data: await this.providerService.fetchOrders(providerKey) };
   }
 
   @Get(':providerKey/balance')
+  @ApiOperation({ summary: "A provider's last reported balances" })
+  @ApiParam({ name: 'providerKey', example: 'talaab' })
+  @ApiEnvelopeResponse(ProviderBalanceSnapshotDto, { description: 'Null when no balance has been reported yet' })
   async balance(@Param('providerKey') providerKey: string) {
     const row = await this.balanceRepo.findOne({
       where: { providerKey },
@@ -111,11 +161,17 @@ export class ProviderController {
   }
 
   @Post(':providerKey/fetch-balance')
+  @ApiOperation({ summary: "Ask the engine to pull this provider's balance" })
+  @ApiParam({ name: 'providerKey', example: 'talaab' })
+  @ApiEnvelopeResponse(ProviderCommandAckDto, { status: 201 })
   async fetchBalance(@Param('providerKey') providerKey: string) {
     return { data: await this.providerService.fetchBalance(providerKey) };
   }
 
   @Get(':providerKey/status')
+  @ApiOperation({ summary: "A provider's connection state" })
+  @ApiParam({ name: 'providerKey', example: 'talaab' })
+  @ApiEnvelopeResponse(ProviderStatusDto)
   async status(@Param('providerKey') providerKey: string) {
     const provider = await this.providerService.findByKey(providerKey);
     return {

@@ -56,7 +56,7 @@ export class AdminManagementController {
   @AdminRoles(AdminRole.SUPER_ADMIN)
   @ApiBearerAuth()
   @ApiOperation({ summary: "Create an admin account" })
-  @ApiEnvelopeResponse(AdminAccountDto)
+  @ApiEnvelopeResponse(AdminAccountDto, { status: 201 })
   async create(@Body() createAdminDto: CreateAdminDto, @Req() req: any) {
     const admin = await this.adminService.create(createAdminDto, req.admin?.id);
     const { hashPassword, ...result } = admin;
