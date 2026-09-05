@@ -38,7 +38,7 @@ one design system and one generated client.
 | Errors | HTTP status + `message` already localised; send `Accept-Language: fa` and toast `message` verbatim |
 | Auth | `Authorization: Bearer <accessToken>`; 401 → refresh once → retry → else logout |
 | Digits | API is **ASCII-only**. Convert with `toFa`/`toEn` from `utils/helpers.js` at the render boundary |
-| Money | decimal **strings** + `{ currency, unit, decimals }`. Never `parseFloat` before formatting. **The unit is IRT (تومان) everywhere** — the backend replaced its `IRR` symbol, so no client-side ÷10 anywhere |
+| Money | decimal **strings** + `{ currency, unit }`. **The API speaks rial (IRR); the screen speaks toman.** Convert at the render boundary and back on submit — see the money module below. Never `parseFloat` before formatting |
 | Dates | ISO-8601 UTC plus a `*Jalali` twin for display; date pickers may send `YYYY/MM/DD` Jalali directly |
 | Paging | `?page=&pageSize=` → `{ items, total, page, pageSize, totalPages }` |
 | Search | `?q=&searchBy=` — `searchBy` values equal the `<option value>` strings already in the JSX |
@@ -284,15 +284,38 @@ degrades rather than breaks.
 
 | Decision | Client consequence |
 |---|---|
-| Unit is **IRT** end to end | no ÷10 anywhere; `fmt()` output is already تومان |
+| **Backend is rial, display is toman** | the panel owns the only conversion — see below |
 | Ticker keys are **symbols** with a `tickerKey` | delete `constants/prices.js` and `data/priceInstruments.js` |
 | EM is the **P2P desk** | status is an open enum — render unknown values, don't crash |
 | Fixed roles are **editable except identity** | drive buttons off `capabilities`, not `isFixed` |
 | Reports: **super admin sees all** | no client-side ownership filter |
 | Monitoring comes from the **`monitor` app** | responses may carry `stale: true` + a timestamp; show the staleness rather than hiding it |
 
-One thing to watch: after the IRT migration `usdRial` and `usdToman` in the
-ticker are the same number ×10. If the desk does not actually read rial, drop
-`usdRial` from the marquee.
+### The money module
+
+The backend stores and serves rial; the operator reads and types toman. All
+conversion lives in one file — `goldex-admin-panel/src/lib/money.ts`, ported
+here — and the rule is **never store a toman value**: convert on render,
+convert back on submit, keep everything in between in rial.
+
+```js
+fmtToman(rialFromApi)              // "125,000,000 تومان"
+fmtBySymbol(value, symbolSlug)     // rial → toman; anything else in its own unit
+tomanToRial(whatTheUserTyped)      // before it goes in a request body
+```
+
+`fmtBySymbol` matters because the conversion is symbol-scoped: a rial balance is
+divided by ten, a gold balance is grams and dividing it would be nonsense.
+
+Two failure modes to watch for in review:
+
+- **An amount input that posts what was typed** sends a tenth of the intended
+  value. Every money field goes through `tomanToRial` on submit; a raw
+  `Number(input.value)` in a payload is a bug.
+- **Backend logs and Swagger examples will not match the screen** — they are
+  rial, the screen is toman. That is by design, not a discrepancy to fix.
+
+`usdRial` and `usdToman` in the ticker are the same rate under two labels; with
+this rule either can be rendered from one symbol.
 
 Residual questions are in §9 of the backend plan; none block frontend work.

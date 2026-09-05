@@ -217,8 +217,7 @@ panel is the first consumer, so it is where each change gets proven:
 
 | Change | Admin panel work |
 |---|---|
-| **IRT end to end** (§3.1) | Audit every amount render. The panel currently shows raw balances; after the ÷10 migration a stale format helper is a silent factor-of-10 display bug. Centralise in `@goldex/ui/format` and unit-test it. |
-| **Rial at the bank edge** (§3.2) | CBP and Bank Accounts pages show bank-side values — label the unit explicitly on those screens, they are the one place IRR legitimately appears. |
+| **Rial stored, toman displayed** (§3.1) | **Landed** as `src/lib/money.ts` with tests. Every amount render must route through `fmtToman`/`fmtBySymbol`, and every money input through `tomanToRial` on submit — the panel shows raw rial today, so each unconverted call site is a factor-of-ten shown to an operator. Move the module into `@goldex/ui` when that package is extracted, so both panels share one conversion. |
 | **Ticker symbols** (§4.5) | Symbols page gains `tickerKey`, `isTicker`, `displayOrder`, `category`; it becomes the admin surface for the ticker itself. |
 | **Dynamic roles** (§5.7) | Admins page moves from the 4-value enum to role assignment; add the permission matrix; drive buttons off `capabilities`. |
 | **Operation OTP** (§4.3) | One shared `<OtpGate>` component wrapping the five money-moving flows — build it once here, and `ui-parszargar` imports it from `@goldex/ui`. |

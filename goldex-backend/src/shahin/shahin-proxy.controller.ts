@@ -15,7 +15,7 @@ import { Repository } from 'typeorm';
 import { ShahinAccount } from './entities/shahin-account.entity';
 import { ShahinEntry } from './entities/shahin-entry.entity';
 import { CreateShahinAccountDto } from './dto/create-shahin-account.dto';
-import { BANK_SYMBOL_SLUG } from "../shared/constants/currency.constants";
+import { RIAL_SYMBOL_SLUG } from "../shared/constants/currency.constants";
 
 /**
  * Proxy controller to forward shahin requests to the shahin microservice
@@ -379,7 +379,7 @@ export class ShahinProxyController {
                         responseData?.data?.respObject?.effectiveBalance ||
                         responseData?.data?.respObject?.balance ||
                         requestBody?.amount,
-                currency: BANK_SYMBOL_SLUG, // bank-side: rails settle in rial (plan §3.2)
+                currency: RIAL_SYMBOL_SLUG,
               });
             } else {
               // Save entry without account reference
@@ -428,7 +428,7 @@ export class ShahinProxyController {
                   // Fallbacks from response
                   responseData?.respObject?.totalAmount ||
                   responseData?.amount,
-                currency: BANK_SYMBOL_SLUG, // bank-side: rails settle in rial (plan §3.2)
+                currency: RIAL_SYMBOL_SLUG,
               });
           } catch (persistError: any) {
             // Log but don't fail the request if persistence fails

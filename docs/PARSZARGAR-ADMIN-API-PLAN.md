@@ -101,9 +101,9 @@ Enums that already line up with the UI vocabulary — **reuse, do not re-invent*
    existing rial P2P settlement desk, so the multi-receipt requests, expiry and
    printable receipts all project off `p2p_*` (§5.17). What is missing is the
    admin-side read model, not the mechanism.
-5. **The rial unit itself.** Everything below the bank adapters is denominated
-   in a symbol whose slug is `IRR`; the panel is IRT throughout. This is the
-   one gap that has to close before any other work lands (§3.1).
+5. **Unit presentation.** The backend is rial throughout; the panels show
+   toman. That is a formatting layer, not a schema change — one module per
+   panel (§3.1).
 6. **Service-provider registry.** `ProvidersPage` tracks 13 *infrastructure*
    categories (servers, SMS, OCR, Bale/Eitaa/Telegram, disks, logs, versions) —
    the existing `admin/providers` only knows gold price providers.
@@ -172,109 +172,59 @@ strings already in the JSX so no mapping table is needed on the client.
   ounce/BTC values).
 - Every amount field is accompanied by its unit metadata so the UI can label it:
   ```jsonc
-  { "amount": "125000000.00000000", "currency": "IRT", "unit": "تومان", "decimals": 0 }
+  { "amount": "1250000000.00000000", "currency": "IRR", "unit": "ریال", "decimals": 0 }
   ```
-- **The unit is IRT (تومان), end to end — decided.** Not "store rial, divide at
-  the edge": the `IRR` symbol row is replaced by `IRT` and every stored balance
-  is converted once, by migration. See §3.1. The only place rial survives is the
-  bank-rail adapter boundary (§3.2), because SATNA/PAYA/Shahin/CBP settle in
-  rial and that is not ours to change.
+- **The backend works in rial (IRR), end to end — decided.** Balances, orders,
+  credits, bank rails and the wire format are all rial. **Toman is a display
+  convention owned by the panels**: they divide by 10 on render and multiply on
+  input. See §3.1.
 
-### 3.1 The IRR → IRT migration
+### 3.1 Rial on the wire, toman on screen
 
-This is a **data migration, not a serialisation choice**, and it is the riskiest
-single item in the plan. `IRR` today is a seeded `symbol` row
-(`initSymbolPairMig1000000000028`, `symbolType: "rial"`,
-`hasPaymentGateway: true`) that wallets, pairs, transactions, credits and user
-levels all point at by FK, plus a hardcoded `"IRR"` string in at least
-`credit.service.ts`, `financial.service.ts`, `user-level.service.ts` and
-`provider-deal.consumer.ts`.
+The platform stores and serves rial. Nothing in the backend converts, and there
+is **no balance migration** — the earlier plan to replace the `IRR` symbol and
+divide every stored amount by ten is withdrawn. That removes the riskiest item
+in this document: no maintenance window, no verification gate, no partially
+converted balance table, and no factor-of-ten hazard in the data.
 
-**Step 1 landed** — `1000000000093-rialToTomanSymbolMig.ts`. It renames the
-symbol in place (id preserved, so no FK moves), rewrites the free-text slug
-references in `provider_deal_snapshots.base_symbol` / `.quote_symbol` and
-`provider_settlements.symbol`, and adds the ticker/instrument columns
-(`ticker_key`, `is_ticker`, `display_order`, `category`). Verified against a
-real Postgres: up → down → up round-trips, the symbol id survives, and all 93
-migrations run clean from an empty database.
+What remains is a presentation rule, and it lives in exactly one file per panel:
 
-It deliberately does **not** touch balances, and that has a consequence worth
-stating plainly: **between step 1 and step 2 the database is self-inconsistent.**
-The seeded pair becomes `XAU/IRT` while its price is still the rial figure
-(74,626,865.67 rather than 7,462,686.567). The two migrations must ship in the
-same release, behind maintenance mode. Never deploy step 1 alone.
-
-**Step 2, the ÷10 conversion, is blocked on four denomination decisions.** The
-column inventory below was taken from the live schema, not inferred from
-entities. Most columns are unambiguous; these are not, and a wrong guess on any
-of them is a factor-of-ten error in production money:
-
-| Column | Question |
+| Layer | Unit |
 |---|---|
-| `transaction.price` | `amount` is in the wallet's symbol, but `price` looks quote-denominated — for a gold wallet the amount is grams while the price is rial per gram. Scoping the conversion by wallet symbol would therefore be wrong for `price`. Which is it? |
-| `order.bridge_rate` | A rate between two symbols. Whether it needs ÷10 depends on which leg is the rial one. |
-| `symbol.gain` | Paired with `gain_type`: when `number`, is it an absolute amount in the quote symbol (convert) or something else? When `percent`, no conversion either way. |
-| `discount_coupon.discount_amount` | Carries no symbol linkage at all in the schema. What is it denominated in? |
+| Database, services, bank rails (Shahin, CBP) | rial |
+| API request and response bodies | rial, `currency: "IRR"` |
+| What the operator reads and types | toman |
 
-Resolved while taking the inventory, for the record:
+`goldex-admin-panel/src/lib/money.ts` is the whole conversion surface:
+`rialToToman`, `tomanToRial`, `fmtToman`, `fmtBySymbol`. `ui-parszargar` gets
+the same module. The rule that keeps it correct: **never store a toman value** —
+convert on render, convert back on submit, keep everything in between in rial.
 
-- **Do not convert** `price_pairs.min_buy` / `max_buy` / `min_sell` / `max_sell` —
-  seeded as `0.001` and `10` on the XAU pairs, so they are base quantities, not
-  quote money.
-- **Do not convert** `buy_commission`, `sell_commission`, `order.commission` —
-  `decimal(10,2)` percentages.
-- **Do not convert** `shahin_accounts.balance`, `shahin_entries.amount`, or
-  `shahin_entries.currency` — bank-side, and rial there is correct (§3.2).
-- **Do not convert** `packet.*`, `warehouse.capacity_*`, `warehouse_request.weight` —
-  weights and capacities, not currency.
-- Columns denominated in a *collateral or asset* symbol rather than the credit
-  base (`credit.collateral_amount`, `collateral_lock.amount`,
-  `credit_cashout.asset_amount`) convert only when that symbol is the rial one —
-  they need their own scoping clause, not the credit base's.
+`fmtBySymbol` exists because the conversion is symbol-scoped, not global: a
+rial balance is divided by ten, a gold balance is grams and dividing it would be
+nonsense. Anywhere the symbol is known at render time, format through it.
 
-The remaining steps, once those four are answered:
+Two consequences worth stating:
 
-1. ~~**Symbol row**~~ — done in step 1: updated in place, id kept so no FK moves:
-   `slug: IRR → IRT`, `name: "ریال ایران" → "تومان ایران"`,
-   `pic_path: /icons/irr.png → /icons/irt.png`. Updating beats
-   delete-and-insert; a new id would orphan every wallet.
-2. **Divide by 10**, everywhere that column is denominated in the rial symbol:
-   `wallet.free_balance / locked_balance / available_balance / credit_balance /
-   frozen_free_balance`, `transaction.amount` (+ fee columns),
-   `price_pairs.price` where `quote_id = IRT` (the seeded `XAU/IRR`
-   74,626,865.67 becomes `XAU/IRT` 7,462,686.567 — note the precision, the
-   column is `decimal(20,8)` and survives it), credit principal/limit/collateral
-   valuations, `user_level.credit_max_amount`, provider-deal snapshots,
-   warehouse valuations, finance-log amounts.
-3. **Pair slugs** — `XAU/IRR → XAU/IRT` and every routing rule, mapping and
-   `user_level` pair reference that spells the quote symbol.
-4. **Code constants** — replace the literal `"IRR"` with a single exported
-   `RIAL_SYMBOL_SLUG = "IRT"`; ban the bare string in lint.
-5. **Verification gate** — snapshot `SUM(balance)` per symbol before and after;
-   the IRT total must be exactly one tenth of the IRR total, and every other
-   symbol's total must be **unchanged**. Do not proceed if it is not.
-6. **Rollback** — the inverse migration multiplies by 10. Keep it working; do
-   not squash this migration later.
+- **Amount inputs must convert back.** A form that posts what the operator typed
+  sends a tenth of the intended value. Every money input goes through
+  `tomanToRial` on submit; treat a raw `Number(input.value)` in a payload as a
+  review failure.
+- **Backend and panel disagree by design.** A rial figure in a log or a Swagger
+  example will not match what the screen shows. That is expected — say so in the
+  API docs so nobody "fixes" it.
 
-Run it with the platform in maintenance mode. There is no safe online version of
-this — a partially converted balance table is a factor-of-ten error in
-production money.
+The four denomination questions that previously blocked the conversion
+(`transaction.price`, `order.bridge_rate`, `symbol.gain`,
+`discount_coupon.discount_amount`) are moot: nothing is converted, so nothing
+needs classifying.
 
-### 3.2 Rial at the bank boundary
+### 3.2 The bank boundary
 
-Iranian bank rails settle in **rial**. Every adapter that talks to one converts
-at its own edge and nowhere else:
-
-| Boundary | Direction | Conversion |
-|---|---|---|
-| Shahin (`src/shahin`) | outbound transfer, inbound statement | ×10 out, ÷10 in |
-| CBP / Kaino gateways (`src/payment-bus`, `payment-callback`) | both | same |
-| `shahin_entry.currency` | stored | keep `IRR` — it mirrors the bank's own record |
-| OCR'd receipts | inbound | amounts read from bank slips are rial |
-
-Everything above the adapter — wallets, orders, credits, vouchers, the whole
-admin API — is IRT. Adapters carry a unit test asserting the factor in both
-directions; that test is the guard rail for the entire money model.
+Iranian rails — SATNA, PAYA, Shahin, the CBP gateways — settle in rial, and so
+does the platform, so the adapters convert nothing. `shahin_entry.currency`
+stays `IRR` and now agrees with the rest of the system rather than being an
+exception.
 
 ### Dates
 - API returns **ISO-8601 UTC** and, for anything the UI prints in a table, a
@@ -381,7 +331,7 @@ Socket.IO `/admin` namespace, JWT-authenticated, room-per-topic:
 | `arbitrage` | robot position/profit | Arbitrage |
 
 The 16 ticker instruments are **symbols**, not a separate mapping table
-(decided). Today only five symbol rows exist — `IRT`, `USD`, `EUR`, `AED`,
+(decided). Today only five symbol rows exist — `IRR`, `USD`, `EUR`, `AED`,
 `XAU` — so the work is a seed migration, not a modelling exercise:
 
 - add `ticker_key varchar unique null`, `is_ticker boolean default false`,
@@ -394,10 +344,10 @@ The 16 ticker instruments are **symbols**, not a separate mapping table
   `category` (طلا/سکه/نقره/ارز/کریپتو/کالا) and `display_color`.
 
 `ticker_key` exists so `constants/prices.js` and `data/priceInstruments.js` can
-both be deleted rather than kept in sync by hand. Note the redundancy the IRT
-migration creates: `usdRial` and `usdToman` are now the same number ×10 — keep
-`usdRial` in the ticker only if the trading desk actually reads it in rial, and
-drop it otherwise. Polling fallback: `GET /v1/admin/market/ticker` every 3s.
+both be deleted rather than kept in sync by hand. `usdRial` and `usdToman` are
+the same rate under two labels — the panel can render either from one symbol
+using §3.1's display rule, so keep both ticker entries only if the desk wants
+both on screen. Polling fallback: `GET /v1/admin/market/ticker` every 3s.
 
 ### 4.6 Files
 
@@ -934,7 +884,7 @@ Create body:
 { "movement": "withdraw" | "deposit",
   "customerId": "...", "customerType": "formal",
   "category": "کارمزد", "wallet": "کیف پول ریالی", "walletSubset": "نقد",
-  "amount": "245000000", "currency": "IRT",
+  "amount": "2450000000", "currency": "IRR",
   "description": "...", "date": "1405/05/12",
   "challengeId": "...", "otp": "123456" }
 ```
@@ -1060,12 +1010,14 @@ Existing entities to extend: `AdminEntity` (`roleId` FK, `firstName`,
 
 Migrations, in order, all in Phase 0:
 
-1. `symbol`: `IRR → IRT` rename + the ticker/instrument columns (§3.1, §4.5).
-2. The ÷10 balance conversion (§3.1) — separate migration, separate
-   verification gate, separately reversible.
-3. Seed the ~60 price instruments and the 16 ticker keys.
-4. `admin_role` + permission tables, seeded from the legacy `AdminRole` enum
+1. ~~`symbol` ticker/instrument columns~~ — **landed**
+   (`1000000000093-symbolTickerMetadataMig.ts`): `ticker_key`, `is_ticker`,
+   `display_order`, `category`, with a partial unique index on the key.
+2. Seed the ~60 price instruments and the 16 ticker keys.
+3. `admin_role` + permission tables, seeded from the legacy `AdminRole` enum
    with the four roles marked `isFixed`.
+
+There is no unit migration: the backend keeps rial (§3.1).
 
 Every change ships as a TypeORM migration under `src/migrations` — the project
 does not use `synchronize`.
@@ -1079,7 +1031,7 @@ engineers plus one frontend engineer doing the mock→API swap in parallel.
 
 | Phase | Scope | Unblocks | Est. |
 |---|---|---|---|
-| **0 — Foundation** | **the IRR→IRT migration (§3.1) and the bank-boundary adapters (§3.2)**, symbol/ticker seed (§4.5), conventions, versioning of existing admin routes, pagination DTO, `admin-role` + permission guard, operation-OTP module, audit interceptor, refresh tokens, Jalali validator/serializer, Swagger + Prism mock | everything | 2–3 wks |
+| **0 — Foundation** | symbol/ticker columns + seed (§4.5), the panel-side money module (§3.1), conventions, versioning of existing admin routes, pagination DTO, `admin-role` + permission guard, operation-OTP module, audit interceptor, refresh tokens, Jalali validator/serializer, Swagger + Prism mock | everything | 2 wks |
 | **1 — Auth & shell** | §5.1, §5.2, notifications inbox, presence, ticker + WS `prices` | operator can log in and stay logged in | 1 wk |
 | **2 — Identity** | Users (§5.5), KYC (§5.6), Roles (§5.7) | the 3 highest-traffic pages | 2 wks |
 | **3 — Money core** | Wallets ×3 (§5.9–5.11), Credit (§5.12) | wallet operations, the first OTP-gated writes | 2 wks |
@@ -1090,14 +1042,10 @@ engineers plus one frontend engineer doing the mock→API swap in parallel.
 | **8 — Platform** | Dashboard (§5.3), Monitoring (§5.4), Providers registry, Partners, API keys (§5.24), Settings (§5.26) | | 2 wks |
 | **9 — Deferred pages** | Defaults, Support, Marketing, Customer overview (§5.27) | | 1 wk |
 
-~180 endpoints, of which roughly 70 already exist in some form. The seven
-answered questions moved about a week net: EM shed ~2 weeks by becoming a
-projection, Phase 0 gained ~1 week for the IRT migration.
-
-**Phase 0 is now a hard gate.** Nothing else can start against a database whose
-rial balances are mid-conversion, and no endpoint should be written against the
-`IRR` symbol only to be rewritten. If the IRT migration slips, the whole plan
-slips — that is the correct dependency, not a scheduling accident.
+~180 endpoints, of which roughly 70 already exist in some form. The answered
+questions took roughly two weeks out: EM became a projection over `p2p_*`, and
+keeping rial in the backend removed the balance migration and the maintenance
+window it needed.
 
 ### Parallel frontend workstream
 
@@ -1142,7 +1090,7 @@ each one is load-bearing somewhere in §3–§7.
 
 | # | Question | Decision | Consequence |
 |---|---|---|---|
-| 1 | IRR or IRT on the wire | **IRT**, and the `IRR` symbol row is replaced rather than converted at the edge | §3.1 migration; §3.2 rial only at bank adapters; Phase 0 grows ~1 wk and becomes a hard gate |
+| 1 | IRR or IRT on the wire | **Rial in the backend; toman is display-only, in the panels** | §3.1; no balance migration, no maintenance window, and Phase 0 loses its hard gate |
 | 2 | Is EM the P2P rial desk | **Same desk** | §5.17 becomes a projection over `p2p_*`; Phase 4 drops ~2 wks; no new money path |
 | 3 | Ticker keys | **Symbols**, no mapping table | §4.5 seed migration adds `ticker_key`/`is_ticker`; only 5 symbol rows exist today |
 | 4 | Packages vs `PacketEntity` | **Same concept** | §5.20 reuses the existing packet endpoints |
@@ -1156,11 +1104,10 @@ Small, and none of them block Phase 0:
 
 1. **`hasLef` (دارای لف)** — no counterpart in the P2P model. Specced as an
    operator-set boolean (§5.17); confirm with whoever specified the column.
-2. **`usdRial` in the ticker** — after the IRT migration it is `usdToman` × 10.
-   Keep only if the desk genuinely reads rial (§4.5).
-3. **Shahin `IRR` in stored entries** — §3.2 keeps `shahin_entry.currency` as
-   `IRR` because it mirrors the bank's record. Confirm that finance wants the
-   bank's unit preserved there rather than normalised.
-4. **`monitor` history retention** — Redis with a TTL, or Prometheus exposition
+2. **`usdRial` and `usdToman` in the ticker** — the same underlying rate, one
+   labelled in each unit. With the display rule in §3.1 the panel can render
+   either from one symbol; keep both entries only if the desk wants both on
+   screen at once (§4.5).
+3. **`monitor` history retention** — Redis with a TTL, or Prometheus exposition
    plus a scraper. The second costs less past ~3 months; pick before §5.4 is
    built, not during.

@@ -26,9 +26,9 @@ together in this repository. Three documents, in reading order:
 
 Recorded in full in `PARSZARGAR-ADMIN-API-PLAN.md` §9; the load-bearing ones:
 
-- **IRT end to end.** The `IRR` symbol row is replaced, not converted at the
-  edge. Rial survives only at the bank adapters (Shahin, CBP), which settle in
-  rial. §3.1–3.2.
+- **The backend works in rial; toman is display-only.** No balance migration
+  and no unit conversion anywhere in the backend — the panels convert at the
+  render boundary and back on submit. §3.1–3.2.
 - **EM is the existing rial P2P settlement desk**, so its screens are a
   projection over `p2p_*` rather than a second money path. §5.17.
 - **Ticker instruments are symbols**, not a mapping table. §4.5.
