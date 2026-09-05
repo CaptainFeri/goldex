@@ -1,15 +1,32 @@
 import { NavLink, Outlet, useLocation } from "react-router-dom";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useAuth } from "../auth/auth";
 import MobileNav from "./MobileNav";
 import { adminNotificationSocket } from "../api/admin-socket";
 import { getToken } from "../api/client";
 import MarketTicker from "./MarketTicker";
+import { usePermissions } from "../lib/permissions";
+
+type NavItem = {
+  to: string;
+  label: string;
+  icon: string;
+  end?: boolean;
+  /**
+   * Permission key required to see this entry.
+   *
+   * Only set where the mapping is unambiguous. An entry without one is always
+   * shown: the server enforces a permission on only a few modules so far, so
+   * guessing a key here would hide a page the operator can still reach and use.
+   * Hiding is a display choice — the server is what actually refuses.
+   */
+  perm?: string;
+};
 
 type NavGroup = {
   label: string;
   icon: string;
-  children: { to: string; label: string; icon: string; end?: boolean }[];
+  children: NavItem[];
 };
 
 const NAV: NavGroup[] = [
@@ -17,11 +34,11 @@ const NAV: NavGroup[] = [
     label: "نمای کلی",
     icon: "▦",
     children: [
-      { to: "/", label: "داشبورد", icon: "▦", end: true },
+      { to: "/", label: "داشبورد", icon: "▦", end: true, perm: "dashboard" },
       { to: "/compare", label: "مقایسه تأمین‌کنندگان", icon: "📈" },
-      { to: "/providers", label: "تأمین‌کنندگان", icon: "🏭" },
+      { to: "/providers", label: "تأمین‌کنندگان", icon: "🏭", perm: "providers" },
       { to: "/market-status", label: "وضعیت بازار استخرها", icon: "🛒" },
-      { to: "/arbitrage", label: "فرصت‌های آربیتراژ", icon: "⚡" },
+      { to: "/arbitrage", label: "فرصت‌های آربیتراژ", icon: "⚡", perm: "arbitrage" },
     ],
   },
   {
@@ -40,20 +57,20 @@ const NAV: NavGroup[] = [
     label: "مدیریت",
     icon: "👤",
     children: [
-      { to: "/users", label: "کاربران", icon: "👤" },
-      { to: "/kyc", label: "احراز هویت", icon: "🪪" },
-      { to: "/wallets", label: "کیف‌پول‌ها", icon: "👛" },
-      { to: "/warehouse", label: "انبار", icon: "🏭" },
+      { to: "/users", label: "کاربران", icon: "👤", perm: "users_view" },
+      { to: "/kyc", label: "احراز هویت", icon: "🪪", perm: "kyc_view" },
+      { to: "/wallets", label: "کیف‌پول‌ها", icon: "👛", perm: "wallets_view" },
+      { to: "/warehouse", label: "انبار", icon: "🏭", perm: "warehouse" },
       { to: "/finance", label: "مالی", icon: "💰" },
       { to: "/provider-finance", label: "مالی تأمین‌کنندگان", icon: "🏦" },
       { to: "/cbp", label: "درگاه‌های پرداخت (CBP)", icon: "💳" },
       { to: "/credits", label: "اعتبارات", icon: "💳" },
       { to: "/finance-logs", label: "گزارشات مالی", icon: "📄" },
-      { to: "/reports", label: "گزارش‌ها", icon: "📊" },
-      { to: "/accounting", label: "حسابداری", icon: "🧮" },
-      { to: "/accounting/vouchers", label: "اسناد حسابداری", icon: "🧾" },
+      { to: "/reports", label: "گزارش‌ها", icon: "📊", perm: "reports" },
+      { to: "/accounting", label: "حسابداری", icon: "🧮", perm: "accounting" },
+      { to: "/accounting/vouchers", label: "اسناد حسابداری", icon: "🧾", perm: "accounting" },
       { to: "/deposits", label: "واریزها", icon: "📥" },
-      { to: "/withdraws", label: "برداشت‌ها", icon: "📤" },
+      { to: "/withdraws", label: "برداشت‌ها", icon: "📤", perm: "withdrawals_view" },
       { to: "/p2p", label: "تسویه همتا به همتا", icon: "🤝" },
       { to: "/bank-accounts", label: "حساب‌های بانکی شرکت", icon: "🏛" },
       { to: "/ocr", label: "مدیریت OCR", icon: "🔍" },
@@ -88,6 +105,7 @@ const NAV: NavGroup[] = [
     children: [
       { to: "/user-levels", label: "سطوح کاربری", icon: "🎖" },
       { to: "/admins", label: "مدیران", icon: "👤" },
+      { to: "/roles", label: "نقش‌ها و دسترسی‌ها", icon: "🔑", perm: "roles_view" },
       { to: "/p2p/settings", label: "تنظیمات همتا به همتا", icon: "⚙️" },
     ],
   },
@@ -110,6 +128,7 @@ const TITLES: Record<string, string> = {
   "/pairs": "مدیریت جفت‌ارزها",
   "/mappings": "نگاشت تأمین‌کننده به جفت‌ارز",
   "/admins": "مدیریت مدیران",
+  "/roles": "نقش‌ها و دسترسی‌ها — تعریف نقش و تخصیص دسترسی",
   "/orders": "مدیریت سفارش‌ها — جستجو، فیلتر و لغو",
   "/order-book": "دفتر سفارش — عمق بازار و آربیتراژ",
   "/discounts": "مدیریت کوپن‌های تخفیف",
@@ -136,20 +155,37 @@ const TITLES: Record<string, string> = {
 
 export default function Layout() {
   const { admin, logout } = useAuth();
+  const { permissions, can } = usePermissions();
   const loc = useLocation();
   const title = TITLES[loc.pathname] ?? "Goldex";
 
-  const activeGroup = NAV.findIndex((g) =>
-    g.children.some((c) =>
-      c.end ? loc.pathname === c.to : loc.pathname.startsWith(c.to)
-    )
+  // While permissions are still loading, show the unrestricted entries only —
+  // rendering the full menu and then removing items reads as a glitch.
+  const nav = useMemo(
+    () =>
+      NAV.map((g) => ({ ...g, children: g.children.filter((c) => !c.perm || can(c.perm)) })).filter(
+        (g) => g.children.length > 0,
+      ),
+    [permissions],
   );
-  const [open, setOpen] = useState<number[]>([activeGroup].filter((i) => i >= 0));
 
-  const toggle = (i: number) =>
-    setOpen((prev) =>
-      prev.includes(i) ? prev.filter((x) => x !== i) : [...prev, i]
-    );
+  const activeGroup =
+    nav.find((g) =>
+      g.children.some((c) => (c.end ? loc.pathname === c.to : loc.pathname.startsWith(c.to))),
+    )?.label ?? null;
+
+  // Keyed by label, not index: the list is filtered by permission, so an index
+  // refers to a different group before and after those permissions arrive.
+  const [open, setOpen] = useState<string[]>(activeGroup ? [activeGroup] : []);
+
+  // The active group is only known once permissions have loaded, which is after
+  // the first render — without this the menu comes back with everything closed.
+  useEffect(() => {
+    if (activeGroup) setOpen((prev) => (prev.includes(activeGroup) ? prev : [...prev, activeGroup]));
+  }, [activeGroup]);
+
+  const toggle = (label: string) =>
+    setOpen((prev) => (prev.includes(label) ? prev.filter((x) => x !== label) : [...prev, label]));
 
   // Real-time pending-item badge on the deposits/withdraws nav links.
   const [pendingCount, setPendingCount] = useState(0);
@@ -160,7 +196,7 @@ export default function Layout() {
     });
     return cleanup;
   }, []);
-  const navSub = (item: { to: string; label: string; icon: string; end?: boolean }) => (
+  const navSub = (item: NavItem) => (
     <NavLink
       key={item.to}
       to={item.to}
@@ -187,12 +223,12 @@ export default function Layout() {
           </div>
         </div>
 
-        {NAV.map((group, i) => {
-          const expanded = open.includes(i);
-          const isActive = i === activeGroup;
+        {nav.map((group) => {
+          const expanded = open.includes(group.label);
+          const isActive = group.label === activeGroup;
           return (
             <div key={group.label} className={"nav-group" + (expanded ? " open" : "") + (isActive ? " active" : "")}>
-              <button className="nav-group-btn" onClick={() => toggle(i)}>
+              <button className="nav-group-btn" onClick={() => toggle(group.label)}>
                 <span className="ico">{group.icon}</span>
                 <span className="nav-group-label">{group.label}</span>
                 <span className="nav-group-arrow">{expanded ? "▲" : "▼"}</span>

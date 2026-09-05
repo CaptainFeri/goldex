@@ -1436,3 +1436,55 @@ export interface VoucherCatalogs {
   customerTypes: CatalogOption[];
   movements: CatalogOption[];
 }
+
+export interface Permission {
+  key: string;
+  label: string;
+}
+
+/** What the server would actually allow the caller to do to this role. */
+export interface RoleCapabilities {
+  canDelete: boolean;
+  canRename: boolean;
+  canEditPermissions: boolean;
+  canEditConfig: boolean;
+}
+
+export interface RoleWalletConfig {
+  buyFee?: string;
+  sellFee?: string;
+  hasCredit?: "yes" | "no";
+  creditAmount?: string;
+  dailyWithdrawal?: string;
+  roleType?: string;
+}
+
+export interface AdminRoleItem {
+  id: string;
+  slug: string;
+  roleName: string;
+  isFixed: boolean;
+  wallets: string[];
+  pairs: string[];
+  configs: Record<string, RoleWalletConfig>;
+  maxCredit: string | null;
+  permissions: string[];
+  memberCount: number;
+  capabilities: RoleCapabilities;
+  createAt: string;
+}
+
+export interface RoleStats {
+  total: number;
+  totalMembers: number;
+  fixed: number;
+  empty: number;
+}
+
+export interface RoleMember {
+  id: string;
+  phone: string | null;
+  email: string | null;
+  isSuspended: boolean;
+  lastLoginAt: string | null;
+}
