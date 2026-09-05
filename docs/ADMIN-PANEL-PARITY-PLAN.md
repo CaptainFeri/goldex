@@ -243,6 +243,13 @@ this is where it stands.
 | P2P escalations | admin liquidity, per-symbol breakdown, today's settled total, match amount |
 | P2P settings | the two-person approval threshold input |
 | Dashboard | the IRR customer-balance and system-profit tiles |
+| Wallets | balances by the wallet's symbol; the adjust, freeze and quick-prompt forms convert on submit and name their unit |
+| Orders | quantity in the pair's base, price and total value in its quote; the admin edit form's price field converts both ways |
+| Finance | order, transaction, ledger, provider-balance and customer-balance rows, each by the symbol on the row |
+| Credit | `creditLimit`, `usedCredit` and the `*Value` fields by `creditBaseSymbol`; collateral by `collateralSymbol`; the adjust-limit modal converts display and input together |
+| Order book | ladder price by the pair's quote and size by its base, plus the depth, best bid/ask and spread columns |
+| Pairs | best buy/sell price by the quote; min/max buy/sell by the base |
+| Provider finance | outstanding, traded and settled balances by their symbol, and the settlement amount field |
 
 **Deliberately not converted:**
 
@@ -254,11 +261,40 @@ this is where it stands.
 - **Non-rial amounts** — gold grams, USDT balances, and prices quoted in other
   symbols. `fmtBySymbol` leaves them in their own unit, which is why it takes
   the symbol rather than assuming.
+- **Arbitrage.** That subsystem works in toman end to end: the signals come from
+  an external scan engine whose fields are named `profitToman` and
+  `bestProfitToman`, and its config threshold is `minProfitToman`. It is not on
+  the platform's rial ledger, so converting it would *introduce* the ten-fold
+  error rather than remove one.
+- **`commission` on an order** and **`buyCommission`/`sellCommission` on a
+  pair.** Both are `decimal(10,2)`, too narrow to hold a rial order total and
+  shaped like a rate; neither entity records a unit. Guessing wrong here costs
+  exactly what this audit is removing, so they stay as they are until the unit
+  is established. The order screen carries a comment saying so.
+- **`bridgeRate`, `spreadPercent`, `leverage`, drawdown percentages.** Rates and
+  ratios, not amounts.
 
-**Still to audit:** the remaining pages — Wallets, Orders, Finance, Credit
-(20 files), Provider finance, CBP, Order book, Telegram market, Compare, Pairs,
-Symbols, Discounts, Levels, Users, Warehouse, Arbitrage. Each needs the same
-per-site judgement rather than a find-and-replace.
+**Still to audit:** Warehouse (the largest remaining, 42 sites), CBP, Telegram
+market, Compare, Discounts, Symbols, Levels, Users. Each needs the same per-site
+judgement rather than a find-and-replace.
+
+**Two API gaps the audit surfaced,** both of which had left the client no way to
+be correct and are now fixed:
+
+- `CreditEntity` carried only `credit_base_symbol_id` and `collateral_symbol_id`
+  as raw columns with no relation, so the `creditBaseSymbol` / `collateralSymbol`
+  that `CreditDto` documents were never populated. Both are now `ManyToOne` on
+  the existing columns and loaded on the admin list, the per-user list and the
+  active-credit lookup; `getCreditOverview` names them explicitly since it
+  hand-builds its projection.
+- `SettlementEligibility` reported `netEquity`, `deficit`, `shortfall` and
+  `collateralValue` "in the credit currency" without naming that currency. It
+  now carries `creditBaseSymbolSlug`, matching the per-row `baseSymbolSlug` the
+  same response already had.
+
+The general lesson: **a money field that does not travel with its symbol is a
+bug in the API, not in the panel.** Where the audit found the panel guessing, the
+fix belonged on the wire.
 
 **Two rules that make the audit safe to continue:**
 
@@ -266,6 +302,11 @@ per-site judgement rather than a find-and-replace.
    without its form is worse than converting neither: the operator reads toman,
    types toman, and the form posts it as rial — a tenth of what they intended.
    The bank-accounts form is the worked example.
+
+   `lib/money` now carries the form side of this so a screen cannot drift:
+   `unitLabel(slug)` for the label, `toFormAmount` to seed the field,
+   `toApiAmount` to submit. If a form displays a converted amount, all three
+   belong on it.
 2. **Format through the symbol wherever it is in scope.** `fmtBySymbol` divides
    a rial balance and leaves a gold balance in grams. A bare `fmtToman` on a
    column that can hold either is a bug waiting for the first non-rial row.
