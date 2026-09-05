@@ -83,7 +83,18 @@ Two app-level changes are needed regardless of endpoint work:
 ### App shell — `components/layout/*`
 | Element | Endpoint |
 |---|---|
-| Market ticker (16 instruments) | `GET /admin/market/ticker` + WS room `prices` |
+| Market ticker | `GET /admin/market/ticker` (**live**) + WS room `prices` |
+
+**Reading the ticker.** Each item gives `buyPrice`/`sellPrice` in the unit
+`quoteSlug` names — rial today, so divide by ten and label it toman like every
+other amount. Render `sellPrice` to match the reference component. Direction
+arrows are yours to derive by diffing successive polls; the API deliberately
+sends no `change` field rather than inventing history it does not keep. An
+instrument with no live quote comes back with null prices and `stale: true`
+instead of being dropped, so a half-configured ticker is visible as such —
+show it greyed rather than hiding it. `tickerKey` is the camelCase key your
+`constants/prices.js` used, where one exists; key off `slug` when it is null.
+Poll every 3s, or hold the `prices` socket room and use this as the fallback.
 | Market open/closed | `GET /admin/market-status` + WS `market-status` |
 | Online badge | `GET /admin/users/online` + WS `presence` |
 | Bell dropdown / count | `GET /admin/notifications/inbox?unreadOnly=true&limit=6` · `/unread-count` |

@@ -330,24 +330,49 @@ Socket.IO `/admin` namespace, JWT-authenticated, room-per-topic:
 | `monitoring` | node/alert state change | Monitoring |
 | `arbitrage` | robot position/profit | Arbitrage |
 
-The 16 ticker instruments are **symbols**, not a separate mapping table
-(decided). Today only five symbol rows exist — `IRR`, `USD`, `EUR`, `AED`,
-`XAU` — so the work is a seed migration, not a modelling exercise:
+**`GET /v1/admin/market/ticker` — implemented.** Poll it every 3s as the
+companion to the websocket `prices` room.
 
-- add `ticker_key varchar unique null`, `is_ticker boolean default false`,
-  `display_order int` to `symbol`;
-- seed the remaining rows and set `ticker_key` to the client's camelCase key
-  (`gold18`, `usdRial`, `emamiCoin`, `gold24`, `usdToman`, `rubToman`,
-  `halfEmamiCoin`, `quarterEmamiCoin`, `eurToman`, `gbpToman`, `jpyToman`,
-  `cadToman`, `audToman`, `sekToman`, `nokToman`, `dkkToman`);
-- the same migration seeds the ~60 `PRICE_INSTRUMENTS` rows §5.13 needs, with
-  `category` (طلا/سکه/نقره/ارز/کریپتو/کالا) and `display_color`.
+Ticker instruments are **symbols** (decided), carrying `ticker_key`,
+`is_ticker`, `display_order` and `category`. A *price*, though, belongs to a
+**pair** — so each instrument is quoted through its `<slug>-IRR` pair, read
+from the cache `MarketService` already keeps live for the socket feed. Reusing
+that cache rather than reading prices again is deliberate: a second price path
+would eventually disagree with the first, and the ticker and the stream would
+show different numbers for the same instrument.
 
-`ticker_key` exists so `constants/prices.js` and `data/priceInstruments.js` can
-both be deleted rather than kept in sync by hand. `usdRial` and `usdToman` are
-the same rate under two labels — the panel can render either from one symbol
-using §3.1's display rule, so keep both ticker entries only if the desk wants
-both on screen. Polling fallback: `GET /v1/admin/market/ticker` every 3s.
+The response gives `buyPrice`/`sellPrice` (the *display* prices, carrying the
+pair's commission and the symbol's gain — what a customer is actually quoted),
+gram prices where the instrument is weighed, `quoteSlug` so the client formats
+by the unit rather than assuming, and `stale`. Staleness matters because a
+frozen ticker looks identical to a live one. No `change` field is invented: the
+client derives direction by diffing successive polls, which is what the
+reference component already does.
+
+> **Do not seed the sixteen instruments as symbol rows.** An earlier draft of
+> this section called for exactly that. `admin-user.service.ts` generates "a
+> zero-balance wallet per active symbol" for every user it creates, and
+> `credit.service.ts` enumerates active material symbols when opening a
+> facility — so sixteen display-only instruments would mean sixteen junk
+> wallets per user, forever, and would leak into the credit machinery. They
+> would also show a permanent blank, having no pair and no provider mapping to
+> price them.
+>
+> Migration `…094` therefore flags only the symbols that genuinely exist and
+> are quoted — `XAU`, `USD`, `EUR`, `AED` — and sets `ticker_key` only where
+> the mapping to the panels' key is unambiguous (`usdToman`, `eurToman`). `XAU`
+> is global gold, not the local ۱۸/۲۴ عیار instruments, and `AED` is not in the
+> panels' list at all; both are left null rather than guessed, since the key is
+> what a client matches on. `IRR` is excluded — it is the quote currency.
+>
+> Adding a further instrument needs a real pair and a provider mapping first.
+> If one is ever added as a display-only symbol it must be `is_active = false`,
+> for the wallet reason above.
+
+The four fields are on `CreateSymbolDto`/`UpdateSymbolDto`, so the desk manages
+ticker membership and ordering through the symbol screen rather than by SQL.
+`usdRial` and `usdToman` remain the same rate under two labels — one symbol,
+rendered either way using §3.1's display rule.
 
 ### 4.6 Files — **implemented**
 

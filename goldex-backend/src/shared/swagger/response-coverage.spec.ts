@@ -18,6 +18,15 @@ import { join } from "path";
 const ROUTE = /^\s*@(Get|Post|Put|Patch|Delete)\s*\(/;
 const DECORATOR = /^\s*@/;
 
+/**
+ * A comment sitting between two decorators.
+ *
+ * Without this the run is cut in two and the half holding `@Get` looks
+ * undocumented — so explaining *why* a route carries the roles it does would
+ * fail the guard, which is the opposite of what it should encourage.
+ */
+const COMMENT_OR_BLANK = /^\s*(\/\/|\/\*|\*|$)/;
+
 /** Our decorators always carry a payload type, so their presence is enough. */
 const ENVELOPE_RESPONSE =
   /@(ApiEnvelopeResponse|ApiPaginatedResponse|ApiEnvelopePrimitiveResponse|ApiEnvelopeNoDataResponse)\s*\(/;
@@ -105,7 +114,10 @@ function undocumentedRoutes(source: string): string[] {
   let depth = 0;
 
   for (const line of lines) {
-    const inDecorator = DECORATOR.test(line) || depth > 0;
+    // A comment continues an open run, but never starts one — a comment above
+    // an ordinary method must not be mistaken for a decorator block.
+    const continuesBlock = block.length > 0 && COMMENT_OR_BLANK.test(line);
+    const inDecorator = DECORATOR.test(line) || depth > 0 || continuesBlock;
     if (inDecorator) {
       block.push(line);
       // A decorator's arguments can span lines; only leave the block when its

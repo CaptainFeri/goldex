@@ -22776,6 +22776,85 @@
           "Admin-Arbitrage"
         ]
       }
+    },
+    "/api/v1/admin/market/ticker": {
+      "get": {
+        "description": "Polling companion to the websocket `prices` room, for clients that do not hold a socket open. Prices are in the quote symbol's units (rial) — format by `quoteSlug`; the API never converts. Direction arrows are the client's to derive by diffing successive polls, which is why no `change` field is invented here.",
+        "operationId": "AdminMarketController_ticker_v1",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/ResponseEnvelopeDto"
+                    },
+                    {
+                      "properties": {
+                        "data": {
+                          "$ref": "#/components/schemas/MarketTickerDto"
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation failed — see `errors` for per-field messages",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or expired admin token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Authenticated, but lacking the required permission",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Market ticker instruments with their live prices",
+        "tags": [
+          "Admin-Market"
+        ]
+      }
     }
   },
   "info": {
@@ -23770,6 +23849,28 @@
           },
           "defaultWithdrawGateway": {
             "type": "string"
+          },
+          "tickerKey": {
+            "type": "string",
+            "nullable": true,
+            "example": "usdToman",
+            "description": "The camelCase key a panel keys its ticker off. Unique across symbols where set."
+          },
+          "isTicker": {
+            "type": "boolean",
+            "example": false,
+            "description": "Show this symbol in the market ticker"
+          },
+          "displayOrder": {
+            "type": "number",
+            "example": 20,
+            "description": "Ascending order within the ticker"
+          },
+          "category": {
+            "type": "string",
+            "nullable": true,
+            "example": "ارز",
+            "description": "Grouping for the price screen: طلا / سکه / نقره / ارز / کریپتو / کالا"
           }
         },
         "required": [
@@ -30706,6 +30807,115 @@
             "description": "Coalescing window for price-tick recomputes (ms)"
           }
         }
+      },
+      "MarketTickerItemDto": {
+        "type": "object",
+        "properties": {
+          "symbolId": {
+            "type": "string",
+            "format": "uuid",
+            "description": "The symbol this instrument is"
+          },
+          "slug": {
+            "type": "string",
+            "example": "USD",
+            "description": "Symbol slug — the stable identifier"
+          },
+          "tickerKey": {
+            "type": "string",
+            "nullable": true,
+            "example": "usdToman",
+            "description": "The camelCase key the panels' own constants file used, where one exists. Lets a panel key its ticker off the API instead of a hardcoded list."
+          },
+          "label": {
+            "type": "string",
+            "example": "دلار آمریکا",
+            "description": "Display name, from the symbol"
+          },
+          "category": {
+            "type": "string",
+            "nullable": true,
+            "example": "ارز",
+            "description": "Grouping for the price screen: طلا / سکه / نقره / ارز / کریپتو / کالا"
+          },
+          "displayOrder": {
+            "type": "number",
+            "example": 0,
+            "description": "Ascending; ties fall back to slug"
+          },
+          "buyPrice": {
+            "type": "number",
+            "nullable": true,
+            "example": 8925000,
+            "description": "What the desk buys at, in the quote symbol's units. Null when no live quote."
+          },
+          "sellPrice": {
+            "type": "number",
+            "nullable": true,
+            "example": 8935000,
+            "description": "What the desk sells at. The reference ticker renders this one."
+          },
+          "buyGramPrice": {
+            "type": "number",
+            "nullable": true,
+            "description": "Per-gram prices, for instruments quoted by weight. Null for currencies."
+          },
+          "sellGramPrice": {
+            "type": "number",
+            "nullable": true
+          },
+          "quoteSlug": {
+            "type": "string",
+            "nullable": true,
+            "example": "IRR",
+            "description": "The symbol the prices are denominated in. Null when the pair is not configured."
+          },
+          "lastUpdated": {
+            "type": "string",
+            "nullable": true,
+            "example": "2026-09-05T09:12:00.000Z",
+            "description": "When this quote was last refreshed. Null when there is no quote at all."
+          },
+          "stale": {
+            "type": "boolean",
+            "example": false,
+            "description": "The quote is older than the freshness window, or missing entirely. A ticker that silently freezes looks identical to a live one, so this says which it is."
+          }
+        },
+        "required": [
+          "symbolId",
+          "slug",
+          "label",
+          "displayOrder",
+          "stale"
+        ]
+      },
+      "MarketTickerDto": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "description": "In display order",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/MarketTickerItemDto"
+            }
+          },
+          "generatedAt": {
+            "type": "string",
+            "example": "2026-09-05T09:12:03.000Z",
+            "description": "When this response was built"
+          },
+          "freshnessWindowSeconds": {
+            "type": "number",
+            "example": 15,
+            "description": "Seconds after which a quote counts as stale, so a client can show its own warning"
+          }
+        },
+        "required": [
+          "items",
+          "generatedAt",
+          "freshnessWindowSeconds"
+        ]
       }
     }
   }
