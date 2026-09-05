@@ -398,14 +398,15 @@ added to one does not leak into every response that joins it.
 
 **Backfilled so far** — `admin/bank-accounts`, `admin/withdraw`,
 `admin/deposit`, `admin/accounts`, `admin/users`, `admin/kyc`, `admin/wallets`,
-`admin/symbols`, `admin/pair`, `admin/providers`. The pattern for each: extend
+`admin/symbols`, `admin/pair`, `admin/providers`, `admin/credits`,
+`admin/crm`. The pattern for each: extend
 `PaginationQueryDto`, keep the old param as a `deprecated: true` alias for one
 release, return `paginate(...)`, add a response DTO, decorate the controller.
 
 **A CI guard holds the line.** `response-coverage.spec.ts` scans every
 controller and fails when a route ships without a response decorator. Its
-`UNDOCUMENTED` list is the remaining debt — **47 controllers, ~351 routes** — and
-only shrinks: the test also fails when a listed controller is renamed, deleted,
+`UNDOCUMENTED` list is the remaining debt — **45 controllers, 279 routes**,
+down from 397 — and only shrinks: the test also fails when a listed controller is renamed, deleted,
 or has become fully documented, so finishing one cannot go unrecorded. A
 regression probe confirmed it names the offending route rather than merely
 failing.
@@ -440,6 +441,8 @@ changes the screen that reads it, so it belongs with that page's work:
 | `admin/kyc/admin/pending`, `.../all` | `limit` where `PaginatedDto` says `pageSize` |
 | `admin/kyc/admin/users` | `items` + `total`, no page echo |
 | `admin/wallets/all-wallets` | rows under `data`, so `data.data` on the wire, plus `limit` |
+| `admin/credits` | `{ items, total, page, limit }` |
+| `admin/crm/tickets`, `.../communications`, `.../segments/:id/members` | `{ data, total }`, no page echo |
 2. An `@ApiEnvelope(Dto)` decorator (`ApiExtraModels` + `getSchemaPath`) that
    documents the real wire shape `{ status, message, data: Dto }` —
    `ResponseInterceptor` wraps every handler, so an inner-shape-only schema is

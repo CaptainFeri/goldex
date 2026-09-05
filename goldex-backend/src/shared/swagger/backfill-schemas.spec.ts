@@ -11,6 +11,8 @@ import { AdminWalletController } from "../../admin-wallet/admin-wallet.controlle
 import { AdminSymbolController } from "../../admin-symbol/admin-symbol.controller";
 import { AdminPairController } from "../../admin-pair/admin-pair.controller";
 import { ProviderController } from "../../provider/provider.controller";
+import { CreditAdminController } from "../../credit/admin/credit-admin.controller";
+import { AdminCrmController } from "../../crm/controllers/admin-crm.controller";
 
 const stub = {} as any;
 
@@ -32,6 +34,8 @@ describe("backfilled response schemas", () => {
         AdminSymbolController,
         AdminPairController,
         ProviderController,
+        CreditAdminController,
+        AdminCrmController,
       ],
     })
       .useMocker(() => stub)
@@ -136,6 +140,33 @@ describe("backfilled response schemas", () => {
     const props = doc.components.schemas.ProviderDto.properties;
     expect(props.auth).toBeUndefined();
     expect(props.config).toBeUndefined();
+  });
+
+  it("types every stage of the credit settlement workflow as the same record", () => {
+    // Each action advances one stage and returns the settlement at its new one.
+    for (const stage of ["approve", "valuate", "fund", "verify", "close", "fail"]) {
+      expect(
+        ok(`/admin/credits/settlements/{settlementId}/${stage}`, "post", "201").allOf[1].properties
+          .data.$ref
+      ).toBe("#/components/schemas/CreditSettlementDto");
+    }
+  });
+
+  it("documents the credit CSV export as a file, not as the envelope", () => {
+    const res = doc.paths["/admin/credits/export"].get.responses["200"];
+    expect(res.content["text/csv"].schema.format).toBe("binary");
+  });
+
+  it("types the customer 360 view", () => {
+    expect(ok("/admin/crm/users/{userId}/360").allOf[1].properties.data.$ref).toBe(
+      "#/components/schemas/Customer360Dto"
+    );
+  });
+
+  it("types segment evaluation as a list of ids rather than a mutation", () => {
+    const data = ok("/admin/crm/segments/{id}/evaluate", "post", "201").allOf[1].properties.data;
+    expect(data.type).toBe("array");
+    expect(data.items.type).toBe("string");
   });
 
   it("never leaves a documented route's data untyped", () => {
