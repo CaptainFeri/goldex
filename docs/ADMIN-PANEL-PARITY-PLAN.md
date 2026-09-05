@@ -585,3 +585,40 @@ shows `۱۴۰۵/۰۶/۱۵`, and the request that follows carries
 `from=2026-09-06T00:00:00.000Z` — the correct Gregorian instant, no off-by-one.
 The datetime variant renders the time plugin with hour and minute segments and
 shows `۱۴۰۵/۰۶/۱۰ ۱۹:۱۸`.
+
+
+## 10. Dashboard — implemented
+
+`DashboardPage` rebuilt around the metric filter of §5.3: four KPI cards that
+reshape a series chart, a distribution doughnut, an activity feed, a health
+strip and a table, all from `/admin/dashboard/*`.
+
+**Nothing was dropped in the rewrite.** The previous page's per-asset balances
+and provider balances have no equivalent among the metric views, so they are
+kept below the new section. What *was* removed is only what the new endpoints
+supersede — the old KPI row, the profit chart and two recent lists — along with
+their six queries, which would otherwise have fired on every load for data
+nothing renders.
+
+**The recent table is rendered by position.** `columns` and each row's `cells`
+arrive in the same order, so one table serves all four metrics. Rendering the
+first version showed why that is not sufficient on its own: the money column
+came out as `1250000000.00` in Latin digits, the one unconverted amount on a
+page that shows toman everywhere else. The API now sends `columnKinds`, so the
+panel knows which cell is money, which is a quantity in its own symbol's units,
+and which is an instant to show in the Jalali calendar.
+
+The same render caught the withdrawals card baking a rial figure into its
+sub-line as prose — a number the panel could not convert because it was inside
+a sentence. The card now carries `subValue`/`subUnit` and the panel composes
+the line, so every amount on the dashboard goes through the same rule.
+
+One smaller fix from the same pass: the chart title rendered the Jalali year as
+`۱٬۴۰۵`, correct for a quantity and wrong for a year.
+
+Verified by rendering the built page headlessly against a stub API: four KPI
+cards with deltas (and a dash where the previous period was empty), twelve
+Jalali months on the axis, a four-slice doughnut, the feed with severity dots,
+the health strip labelled as a thirty-day composition rather than live service
+state, and the table showing `۲٫۵` grams beside `۱۲۵٬۰۰۰٬۰۰۰ تومان` — 
+1,250,000,000 rial converted once, on display.

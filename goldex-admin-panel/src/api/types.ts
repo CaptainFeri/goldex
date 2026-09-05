@@ -1248,3 +1248,97 @@ export interface ReportSchedule {
   nextRunAt: string | null;
   createAt: string;
 }
+
+
+// ── Dashboard ──────────────────────────────────────────────────────────────
+
+/** The four cards, which act as one global filter over every panel. */
+export type DashboardMetric = "users" | "volume" | "profit" | "withdrawals";
+export type DashboardSeverity = "good" | "warn" | "bad" | "info";
+
+export interface DashboardKpi {
+  metric: DashboardMetric;
+  label: string;
+  /** Decimal string in `unit`'s own terms — format with `fmtBySymbol`. */
+  value: string;
+  unit: string | null;
+  /** Null when the previous period was empty; a rise from nothing has no percentage. */
+  deltaPercent: number | null;
+  sub: string;
+  /** A figure for the sub-line, kept out of `sub` so it can be formatted. */
+  subValue: string | null;
+  subUnit: string | null;
+}
+
+export interface DashboardKpis {
+  cards: DashboardKpi[];
+  generatedAt: string;
+}
+
+export interface DashboardSeriesPoint {
+  /** Jalali month, 1–12. */
+  month: number;
+  label: string;
+  primary: string;
+  secondary: string;
+}
+
+export interface DashboardSeries {
+  year: number;
+  primaryLabel: string;
+  secondaryLabel: string;
+  unit: string | null;
+  /** Always twelve, in Jalali order; empty months are zero, not absent. */
+  points: DashboardSeriesPoint[];
+}
+
+export interface DashboardSlice {
+  label: string;
+  value: string;
+  percent: number;
+}
+
+export interface DashboardDistribution {
+  title: string;
+  slices: DashboardSlice[];
+}
+
+export interface DashboardActivityItem {
+  id: string;
+  title: string;
+  description: string;
+  severity: DashboardSeverity;
+  at: string;
+}
+
+export interface DashboardHealthRow {
+  label: string;
+  percent: number;
+  variant: DashboardSeverity;
+  count: number;
+}
+
+export interface DashboardHealth {
+  title: string;
+  windowDays: number;
+  rows: DashboardHealthRow[];
+}
+
+export interface DashboardRecentRow {
+  id: string;
+  /** In the same order as `columns`. */
+  cells: string[];
+  status: string | null;
+}
+
+/** What a column holds, so each cell is formatted correctly. */
+export type DashboardColumnKind = "text" | "money" | "quantity" | "date";
+
+export interface DashboardRecent {
+  title: string;
+  columns: string[];
+  /** One per column, in the same order. */
+  columnKinds: DashboardColumnKind[];
+  rows: DashboardRecentRow[];
+  unit: string | null;
+}

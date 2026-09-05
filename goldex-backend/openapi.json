@@ -32761,8 +32761,20 @@
           },
           "sub": {
             "type": "string",
-            "example": "۸ مورد در انتظار",
+            "example": "30 روز گذشته",
             "description": "The card's sub-line"
+          },
+          "subValue": {
+            "type": "string",
+            "nullable": true,
+            "example": "21000000000.00",
+            "description": "A figure belonging to the sub-line, kept separate from `sub` so the client formats it. The API must not bake an amount into prose: a rial number inside a sentence cannot be converted to toman by the panel, and would be the one unformatted amount on the page."
+          },
+          "subUnit": {
+            "type": "string",
+            "nullable": true,
+            "example": "IRR",
+            "description": "Unit of `subValue`"
           }
         },
         "required": [
@@ -33056,6 +33068,27 @@
               "type": "string"
             }
           },
+          "columnKinds": {
+            "type": "array",
+            "description": "One per column, in the same order",
+            "example": [
+              "text",
+              "text",
+              "text",
+              "text",
+              "quantity",
+              "money"
+            ],
+            "items": {
+              "type": "string",
+              "enum": [
+                "text",
+                "money",
+                "quantity",
+                "date"
+              ]
+            }
+          },
           "rows": {
             "type": "array",
             "items": {
@@ -33072,6 +33105,7 @@
         "required": [
           "title",
           "columns",
+          "columnKinds",
           "rows"
         ]
       }
