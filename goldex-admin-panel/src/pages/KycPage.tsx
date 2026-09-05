@@ -47,30 +47,25 @@ interface KycDocument {
   kind?: string;
   status?: any;
   documentStatus?: any;
-  imageUrl?: string;
+  /** Object name in storage. Stable identifier, not fetchable on its own. */
   fileUrl?: string;
-  picture?: string;
+  /**
+   * Short-lived URL serving the document. Bearer-free, so it works in an <a>
+   * or <img>, and it expires a few minutes after the response was issued --
+   * render it, never store it.
+   */
+  documentUrl?: string | null;
   createAt?: string;
   createdAt?: string;
   [k: string]: any;
 }
 
-function docObjectName(fileUrl: string | undefined): string {
-  if (!fileUrl) return "";
-  if (fileUrl.startsWith("http")) {
-    try { return decodeURIComponent(fileUrl.split("/").pop()!); }
-    catch { return fileUrl.split("/").pop()!; }
-  }
-  return fileUrl;
-}
-
 function DocPreview({ doc }: { doc: KycDocument }) {
-  const raw = doc.imageUrl ?? doc.fileUrl ?? doc.picture;
-  const objectName = docObjectName(raw);
-  if (!objectName) return <span className="muted">—</span>;
-  const proxyUrl = `/api/v1/admin/kyc/document/${encodeURIComponent(objectName)}`;
+  // The API mints this per response and it expires in minutes, so follow it as
+  // given -- there is no object name to build a URL from any more.
+  if (!doc.documentUrl) return <span className="muted">—</span>;
   return (
-    <a href={proxyUrl} target="_blank" rel="noreferrer" className="btn sm ghost">
+    <a href={doc.documentUrl} target="_blank" rel="noreferrer" className="btn sm ghost">
       مشاهده تصویر
     </a>
   );

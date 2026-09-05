@@ -9,6 +9,8 @@ import { UserAuthGuard } from "../user/auth/Guard/user.guard";
 import { UserExpressRequest } from "../user/auth/types/user-express-request";
 import { MinioService } from "../minio/minio.service";
 import { OcrService } from "../ocr/ocr.service";
+import { SignedFileUrlService } from "../shared/files/signed-file-url.service";
+import { withPictureUrl, withPictureUrlPage } from "../shared/files/picture-url.mapper";
 
 @ApiTags("Withdraw")
 @ApiBearerAuth()
@@ -19,20 +21,22 @@ export class WithdrawController {
     private readonly withdrawService: WithdrawService,
     private readonly minioService: MinioService,
     private readonly ocrService: OcrService,
+    private readonly signedFileUrlService: SignedFileUrlService,
   ) {}
 
   @Post()
   @ApiOperation({ summary: "Create a withdrawal request" })
   async create(@Req() req: UserExpressRequest, @Body() dto: CreateWithdrawDto) {
     const userId = req.user["id"];
-    return { data: await this.withdrawService.create(userId, dto) };
+    return { data: withPictureUrl(this.signedFileUrlService, await this.withdrawService.create(userId, dto)) };
   }
 
   @Get()
   @ApiOperation({ summary: "List user withdrawals" })
   async findAll(@Req() req: UserExpressRequest, @Query() query: WithdrawQueryDto) {
     const userId = req.user["id"];
-    return { data: await this.withdrawService.findByUser(userId, query) };
+    const page = await this.withdrawService.findByUser(userId, query);
+    return { data: withPictureUrlPage(this.signedFileUrlService, page) };
   }
 
   @Post("upload-picture")
@@ -126,13 +130,13 @@ export class WithdrawController {
   @ApiOperation({ summary: "Get withdrawal details" })
   async findOne(@Req() req: UserExpressRequest, @Param("id") id: string) {
     const userId = req.user["id"];
-    return { data: await this.withdrawService.findUserWithdrawById(userId, id) };
+    return { data: withPictureUrl(this.signedFileUrlService, await this.withdrawService.findUserWithdrawById(userId, id)) };
   }
 
   @Post(":id/cancel")
   @ApiOperation({ summary: "Cancel a pending withdrawal" })
   async cancel(@Req() req: UserExpressRequest, @Param("id") id: string) {
     const userId = req.user["id"];
-    return { data: await this.withdrawService.cancel(userId, id) };
+    return { data: withPictureUrl(this.signedFileUrlService, await this.withdrawService.cancel(userId, id)) };
   }
 }

@@ -18,6 +18,8 @@ import { AdminRoles } from "../admin/role/admin.role.decorator";
 import { AdminExpressRequest } from "../admin/auth/types/adminExpressRequest";
 import { MinioService } from "../minio/minio.service";
 import { OcrService } from "../ocr/ocr.service";
+import { SignedFileUrlService } from "../shared/files/signed-file-url.service";
+import { withPictureUrl, withPictureUrlPage } from "../shared/files/picture-url.mapper";
 
 @ApiTags("Admin-Withdraw")
 @ApiBearerAuth()
@@ -31,6 +33,7 @@ export class WithdrawAdminController {
     private readonly withdrawService: WithdrawService,
     private readonly minioService: MinioService,
     private readonly ocrService: OcrService,
+    private readonly signedFileUrlService: SignedFileUrlService,
   ) {}
 
   @Get()
@@ -38,7 +41,8 @@ export class WithdrawAdminController {
   @ApiOperation({ summary: "List all withdrawals (admin)" })
   @ApiPaginatedResponse(WithdrawDto)
   async findAll(@Query() query: WithdrawQueryDto) {
-    return { data: await this.withdrawService.findAll(query) };
+    const page = await this.withdrawService.findAll(query);
+    return { data: withPictureUrlPage(this.signedFileUrlService, page) };
   }
 
   @Get(":id")
@@ -46,7 +50,7 @@ export class WithdrawAdminController {
   @ApiOperation({ summary: "Get withdrawal details (admin)" })
   @ApiEnvelopeResponse(WithdrawDto)
   async findOne(@Param("id") id: string) {
-    return { data: await this.withdrawService.findById(id) };
+    return { data: withPictureUrl(this.signedFileUrlService, await this.withdrawService.findById(id)) };
   }
 
   @Post("upload-and-ocr")
@@ -98,7 +102,7 @@ export class WithdrawAdminController {
   async approve(@Req() req: AdminExpressRequest, @Param("id") id: string) {
     const adminId = req.admin?.id || "system";
     const result = await this.withdrawService.approveGatewayWithdraw(adminId, id);
-    return { data: result };
+    return { data: withPictureUrl(this.signedFileUrlService, result) };
   }
 
   @Patch(":id/process")
@@ -129,7 +133,7 @@ export class WithdrawAdminController {
       }
     }
 
-    return { data: result };
+    return { data: withPictureUrl(this.signedFileUrlService, result) };
   }
 
   private async sendOcrFeedback(

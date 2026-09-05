@@ -43,8 +43,24 @@ export class DepositDto {
   @ApiPropertyOptional({ nullable: true })
   notes?: string | null;
 
-  @ApiPropertyOptional({ nullable: true, description: "Object name of the receipt in object storage" })
+  @ApiPropertyOptional({
+    nullable: true,
+    description:
+      "Object name of the receipt in object storage. Stable identifier; not fetchable on its own. " +
+      "Render `pictureUrl` instead.",
+  })
   picturePath?: string | null;
+
+  @ApiPropertyOptional({
+    nullable: true,
+    example: "/api/v1/files/signed/eyJvIjoiZGVwb3NpdC1hYmMtMjAyNi0wOS0wNS5qcGcifQ.KT6JbmTEN",
+    description:
+      "Short-lived URL serving the receipt, or null when there is none. Expires ~15 minutes " +
+      "after the response was issued, carries its own authorization and needs no bearer token, " +
+      "so it can go straight into an <img> tag. Re-fetch the record to get a fresh one; never " +
+      "persist it.",
+  })
+  pictureUrl?: string | null;
 
   @ApiPropertyOptional({
     nullable: true,

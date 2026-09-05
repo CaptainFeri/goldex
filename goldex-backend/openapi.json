@@ -1,98 +1,6 @@
 {
   "openapi": "3.0.0",
   "paths": {
-    "/api/v1/deposit/picture/{objectName}": {
-      "get": {
-        "operationId": "PublicFileController_getDepositPicture_v1",
-        "parameters": [
-          {
-            "name": "objectName",
-            "required": true,
-            "in": "path",
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": ""
-          }
-        },
-        "tags": [
-          "PublicFile"
-        ]
-      }
-    },
-    "/api/v1/admin/deposit/picture/{objectName}": {
-      "get": {
-        "operationId": "PublicFileController_getAdminDepositPicture_v1",
-        "parameters": [
-          {
-            "name": "objectName",
-            "required": true,
-            "in": "path",
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": ""
-          }
-        },
-        "tags": [
-          "PublicFile"
-        ]
-      }
-    },
-    "/api/v1/withdraw/picture/{objectName}": {
-      "get": {
-        "operationId": "PublicFileController_getWithdrawPicture_v1",
-        "parameters": [
-          {
-            "name": "objectName",
-            "required": true,
-            "in": "path",
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": ""
-          }
-        },
-        "tags": [
-          "PublicFile"
-        ]
-      }
-    },
-    "/api/v1/admin/withdraw/picture/{objectName}": {
-      "get": {
-        "operationId": "PublicFileController_getAdminWithdrawPicture_v1",
-        "parameters": [
-          {
-            "name": "objectName",
-            "required": true,
-            "in": "path",
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": ""
-          }
-        },
-        "tags": [
-          "PublicFile"
-        ]
-      }
-    },
     "/api/v1/admin/auth/send-otp": {
       "post": {
         "operationId": "AdminAuthController_sendOtp_v1",
@@ -796,30 +704,6 @@
         ]
       }
     },
-    "/api/v1/profile/avatar/{objectName}": {
-      "get": {
-        "operationId": "UserProfileController_getAvatar_v1",
-        "parameters": [
-          {
-            "name": "objectName",
-            "required": true,
-            "in": "path",
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": ""
-          }
-        },
-        "summary": "Get avatar image",
-        "tags": [
-          "Profile"
-        ]
-      }
-    },
     "/api/v1/profile/profile": {
       "patch": {
         "operationId": "UserProfileController_updateProfile_v1",
@@ -1081,30 +965,6 @@
           }
         ],
         "summary": "Delete a KYC document (only pending or rejected)",
-        "tags": [
-          "User-Kyc"
-        ]
-      }
-    },
-    "/api/v1/kyc/document/{objectName}": {
-      "get": {
-        "operationId": "UserKycController_getDocument_v1",
-        "parameters": [
-          {
-            "name": "objectName",
-            "required": true,
-            "in": "path",
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": ""
-          }
-        },
-        "summary": "Get KYC document content",
         "tags": [
           "User-Kyc"
         ]
@@ -4757,79 +4617,6 @@
           }
         ],
         "summary": "Reject a single document",
-        "tags": [
-          "Admin-Kyc"
-        ]
-      }
-    },
-    "/api/v1/admin/kyc/document/{objectName}": {
-      "get": {
-        "description": "Returns the raw file, not the response envelope — pipe it, do not JSON-parse it",
-        "operationId": "AdminKycController_getDocument_v1",
-        "parameters": [
-          {
-            "name": "objectName",
-            "required": true,
-            "in": "path",
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "The file, with its own content type and length",
-            "content": {
-              "application/octet-stream": {
-                "schema": {
-                  "type": "string",
-                  "format": "binary"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "Validation failed — see `errors` for per-field messages",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "Missing or expired admin token",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "Authenticated, but lacking the required permission",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "Not found",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
-                }
-              }
-            }
-          }
-        },
-        "summary": "Stream a KYC document's bytes (Admin)",
         "tags": [
           "Admin-Kyc"
         ]
@@ -24799,8 +24586,14 @@
           },
           "fileUrl": {
             "type": "string",
-            "example": "kyc/5f7c.../national-id-front.jpg",
-            "description": "Object name in storage. Fetch through GET admin/kyc/document/{objectName} — it is not a public URL"
+            "example": "licence-3f9a1c4d-2026-09-05.jpg",
+            "description": "Object name in storage. Stable identifier; not fetchable on its own. Render `documentUrl` instead."
+          },
+          "documentUrl": {
+            "type": "string",
+            "nullable": true,
+            "example": "/api/v1/files/signed/eyJvIjoibGljZW5jZS0zZjlhMWM0ZC0yMDI2LTA5LTA1LmpwZyJ9.KT6JbmTEN",
+            "description": "Short-lived URL serving the document. Expires ~15 minutes after the response was issued, carries its own authorization and needs no bearer token, so it can go straight into an <img> tag. Re-fetch the document to get a fresh one; never persist it."
           },
           "fileSize": {
             "type": "number",
@@ -25137,7 +24930,7 @@
           },
           "profile": {
             "type": "object",
-            "description": "Only the avatar is joined from the profile"
+            "description": "Only the avatar is joined from the profile. `avatarImgPath` is the object name and is not fetchable on its own; render `avatarUrl`, which expires a few minutes after this response."
           }
         },
         "required": [
@@ -25406,6 +25199,12 @@
           "avatarImgPath": {
             "type": "string",
             "nullable": true
+          },
+          "avatarUrl": {
+            "type": "string",
+            "nullable": true,
+            "example": "/api/v1/files/signed/eyJvIjoiYXZhdGFyLTNmOWExYzRkLTIwMjYtMDktMDUuanBnIn0.KT6JbmTEN",
+            "description": "Short-lived URL serving the avatar, or null when there is none. Null also for a legacy on-disk avatar, where `avatarImgPath` starts with `edited-` and is served from /uploads."
           },
           "twoFactorActivatedAt": {
             "format": "date-time",
@@ -29130,7 +28929,13 @@
           "picturePath": {
             "type": "string",
             "nullable": true,
-            "description": "Object name of the receipt in object storage"
+            "description": "Object name of the receipt in object storage. Stable identifier; not fetchable on its own. Render `pictureUrl` instead."
+          },
+          "pictureUrl": {
+            "type": "string",
+            "nullable": true,
+            "example": "/api/v1/files/signed/eyJvIjoiZGVwb3NpdC1hYmMtMjAyNi0wOS0wNS5qcGcifQ.KT6JbmTEN",
+            "description": "Short-lived URL serving the receipt, or null when there is none. Expires ~15 minutes after the response was issued, carries its own authorization and needs no bearer token, so it can go straight into an <img> tag. Re-fetch the record to get a fresh one; never persist it."
           },
           "metadata": {
             "type": "object",
@@ -29408,7 +29213,13 @@
           "picturePath": {
             "type": "string",
             "nullable": true,
-            "description": "Object name of the receipt in object storage"
+            "description": "Object name of the receipt in object storage. Stable identifier; not fetchable on its own. Render `pictureUrl` instead."
+          },
+          "pictureUrl": {
+            "type": "string",
+            "nullable": true,
+            "example": "/api/v1/files/signed/eyJvIjoid2l0aGRyYXctYWJjLTIwMjYtMDktMDUuanBnIn0.KT6JbmTEN",
+            "description": "Short-lived URL serving the receipt, or null when there is none. Expires ~15 minutes after the response was issued, carries its own authorization and needs no bearer token, so it can go straight into an <img> tag. Re-fetch the record to get a fresh one; never persist it."
           },
           "metadata": {
             "type": "object",

@@ -40,8 +40,12 @@ export class AdminUserListItemDto {
   @ApiProperty()
   createAt: Date;
 
-  @ApiPropertyOptional({ description: "Only the avatar is joined from the profile" })
-  profile?: { avatarImgPath?: string };
+  @ApiPropertyOptional({
+    description:
+      "Only the avatar is joined from the profile. `avatarImgPath` is the object name and is not " +
+      "fetchable on its own; render `avatarUrl`, which expires a few minutes after this response.",
+  })
+  profile?: { avatarImgPath?: string; avatarUrl?: string | null };
 }
 
 /** What `PATCH users/:id/role` returns after a role change. */

@@ -16,8 +16,16 @@ describe("OpenAPI document", () => {
   let app: INestApplication;
   let doc: any;
 
-  /** Ratchet: admin operations carrying a 2xx schema. Raise it, never lower it. */
-  const MIN_TYPED_ADMIN_OPERATIONS = 157;
+  /**
+   * Ratchet: admin operations carrying a 2xx schema. Raise it, never lower it.
+   *
+   * It went 157 -> 156 when `GET admin/kyc/document/{objectName}` was deleted:
+   * that route streamed any object in the bucket to anyone who named it, and
+   * documents are now reached through the signed URL on the document itself.
+   * Removing a documented route is the one thing that may lower this number,
+   * and only alongside the deletion that caused it.
+   */
+  const MIN_TYPED_ADMIN_OPERATIONS = 156;
 
   beforeAll(async () => {
     app = await NestFactory.create(AppModule, { preview: true, logger: false });

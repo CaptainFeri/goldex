@@ -31,6 +31,15 @@ const ENVELOPE_RESPONSE =
  */
 const TYPED_RESPONSE = /@(ApiOkResponse|ApiCreatedResponse|ApiResponse)\s*\([^)]*?(type:|schema:)/s;
 
+/**
+ * A controller kept out of the document has no responses to document.
+ *
+ * The only one today is the signed-file route, where the URL is minted by the
+ * API and simply followed -- there is nothing for a client to construct, and
+ * publishing the shape would only invite someone to try building a token.
+ */
+const EXCLUDED_FROM_DOCUMENT = /@ApiExcludeController\s*\(/;
+
 /** Controllers still to backfill. Remove a line when its module is done. */
 const UNDOCUMENTED = [
   "admin/controller/admin.auth.controller.ts",
@@ -66,7 +75,6 @@ const UNDOCUMENTED = [
   "provider-pair-mapping/provider-pair-mapping.controller.ts",
   "quote-request/quote-request.controller.ts",
   "shahin/shahin-proxy.controller.ts",
-  "shared/controller/public-file.controller.ts",
   "telegram-notifier/telegram-webhook.controller.ts",
   "user/controller/profile.user.controller.ts",
   "user/controller/user.auth.controller.ts",
@@ -131,7 +139,9 @@ describe("OpenAPI response coverage", () => {
     for (const file of files) {
       const path = rel(file);
       if (UNDOCUMENTED.includes(path)) continue;
-      const missing = undocumentedRoutes(readFileSync(file, "utf8"));
+      const source = readFileSync(file, "utf8");
+      if (EXCLUDED_FROM_DOCUMENT.test(source)) continue;
+      const missing = undocumentedRoutes(source);
       if (missing.length) offenders.push(`${path}\n    ${missing.join("\n    ")}`);
     }
     expect(offenders.join("\n  ")).toBe("");

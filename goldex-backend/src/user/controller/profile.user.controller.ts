@@ -14,12 +14,10 @@ import {
   Post,
   Query,
   Req,
-  Res,
   UploadedFile,
   UseGuards,
   UseInterceptors,
 } from '@nestjs/common';
-import { Response } from 'express';
 import { UserService } from '../service/user.service';
 import { VerifyTokenDTO } from '../dto/verify.token.dto';
 import { UserAuthGuard } from '../auth/Guard/user.guard';
@@ -30,13 +28,16 @@ import { Update2faSettingDto } from '../dto/update.2fa.setting.dto';
 import { UpdateUserSettingsDto } from '../dto/update.user.setting.dto';
 import { UserExpressRequest } from '../auth/types/user-express-request';
 import { MinioService } from '../../minio/minio.service';
+import { SignedFileUrlService } from '../../shared/files/signed-file-url.service';
+import { withAvatarUrl } from '../../shared/files/picture-url.mapper';
 
 @ApiTags('Profile')
 @Controller({ path: 'profile', version: '1' })
 export class UserProfileController {
   constructor(
     private readonly userService: UserService,
-    private readonly minioService: MinioService
+    private readonly minioService: MinioService,
+    private readonly signedFileUrlService: SignedFileUrlService
   ) {}
 
   @Patch('2fa-settings')
@@ -121,16 +122,6 @@ export class UserProfileController {
     };
   }
 
-  @Get('avatar/:objectName')
-  @ApiOperation({ summary: 'Get avatar image' })
-  async getAvatar(@Param('objectName') objectName: string, @Res() res: Response) {
-    const bucket = process.env.MINIO_BUCKET || 'default';
-    const stat = await this.minioService.getFileStat(bucket, objectName);
-    res.set({ 'Content-Type': stat.contentType, 'Content-Length': stat.size.toString() });
-    const stream = await this.minioService.getFileStream(bucket, objectName);
-    stream.pipe(res);
-  }
-
   @Patch('avatar')
   @ApiBearerAuth()
   @ApiConsumes('multipart/form-data')
@@ -155,7 +146,7 @@ export class UserProfileController {
       'avatar'
     );
     const res = await this.userService.updateAvatar(req.user.id, uploadedFile.name);
-    return { data: { avatarImgPath: res } };
+    return { data: withAvatarUrl(this.signedFileUrlService, { avatarImgPath: res }) };
   }
 
   @Patch('profile')
@@ -163,7 +154,7 @@ export class UserProfileController {
   @UseGuards(UserAuthGuard)
   async updateProfile(@Body() data: UpdateProfileDto, @Req() request: UserExpressRequest) {
     const res = await this.userService.updateProfile(request.user.id, data);
-    return { data: res };
+    return { data: withAvatarUrl(this.signedFileUrlService, res) };
   }
 
   @Get('profile')
@@ -171,9 +162,7 @@ export class UserProfileController {
   @UseGuards(UserAuthGuard)
   async getProfile(@Req() req: UserExpressRequest) {
     const userProfile = await this.userService.getProfile(req.user.id);
-    return {
-      data: userProfile,
-    };
+    return { data: withAvatarUrl(this.signedFileUrlService, userProfile) };
   }
 
   @Patch('password')

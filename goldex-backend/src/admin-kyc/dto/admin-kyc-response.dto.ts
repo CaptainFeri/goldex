@@ -24,10 +24,21 @@ export class KycDocumentDto {
   fileName: string;
 
   @ApiProperty({
-    example: "kyc/5f7c.../national-id-front.jpg",
-    description: "Object name in storage. Fetch through GET admin/kyc/document/{objectName} — it is not a public URL",
+    example: "licence-3f9a1c4d-2026-09-05.jpg",
+    description:
+      "Object name in storage. Stable identifier; not fetchable on its own. Render `documentUrl` instead.",
   })
   fileUrl: string;
+
+  @ApiPropertyOptional({
+    nullable: true,
+    example: "/api/v1/files/signed/eyJvIjoibGljZW5jZS0zZjlhMWM0ZC0yMDI2LTA5LTA1LmpwZyJ9.KT6JbmTEN",
+    description:
+      "Short-lived URL serving the document. Expires ~15 minutes after the response was issued, " +
+      "carries its own authorization and needs no bearer token, so it can go straight into an <img> " +
+      "tag. Re-fetch the document to get a fresh one; never persist it.",
+  })
+  documentUrl?: string | null;
 
   @ApiProperty({ example: 248_512, description: "Bytes" })
   fileSize: number;

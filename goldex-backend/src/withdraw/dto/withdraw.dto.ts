@@ -44,8 +44,24 @@ export class WithdrawDto {
   @ApiPropertyOptional({ nullable: true, description: "Operator note, shown on the review screen" })
   notes?: string | null;
 
-  @ApiPropertyOptional({ nullable: true, description: "Object name of the receipt in object storage" })
+  @ApiPropertyOptional({
+    nullable: true,
+    description:
+      "Object name of the receipt in object storage. Stable identifier; not fetchable on its own. " +
+      "Render `pictureUrl` instead.",
+  })
   picturePath?: string | null;
+
+  @ApiPropertyOptional({
+    nullable: true,
+    example: "/api/v1/files/signed/eyJvIjoid2l0aGRyYXctYWJjLTIwMjYtMDktMDUuanBnIn0.KT6JbmTEN",
+    description:
+      "Short-lived URL serving the receipt, or null when there is none. Expires ~15 minutes " +
+      "after the response was issued, carries its own authorization and needs no bearer token, " +
+      "so it can go straight into an <img> tag. Re-fetch the record to get a fresh one; never " +
+      "persist it.",
+  })
+  pictureUrl?: string | null;
 
   @ApiPropertyOptional({
     nullable: true,

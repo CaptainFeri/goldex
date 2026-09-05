@@ -297,11 +297,11 @@ export default function UsersPage() {
                     <td style={{ padding: "2px 6px", textAlign: "center" }}>
                       {(() => {
                         const path = u.profile?.avatarImgPath;
-                        const src = path
-                          ? path.startsWith("edited-")
-                            ? `/uploads/${path}`
-                            : `/api/v1/profile/avatar/${path}`
-                          : null;
+                        // The API mints avatarUrl per response and it expires in
+                        // minutes. It is null for legacy on-disk avatars, which
+                        // are still served from /uploads by name.
+                        const src = u.profile?.avatarUrl
+                          ?? (path?.startsWith("edited-") ? `/uploads/${path}` : null);
                         return src
                           ? <img src={src} alt="" style={{ width: 32, height: 32, borderRadius: "50%", objectFit: "cover" }} />
                           : <span className="muted" style={{ fontSize: 11 }}>—</span>;

@@ -29,7 +29,6 @@ const gatewayLabel = (code?: string) => code ?? "—";
 const fmtDate = (d: string | null) =>
   d ? new Date(d).toLocaleDateString("fa-IR", { year: "numeric", month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }) : "—";
 const typeLabel = (t: string) => WITHDRAW_TYPES.find((x) => x.value === t)?.label ?? t;
-const picUrl = (p: string | null | undefined) => p ? `/api/v1/admin/withdraw/picture/${encodeURIComponent(p)}` : "";
 
 export default function WithdrawsPage() {
   const [statusFilter, setStatusFilter] = useState("");
@@ -214,10 +213,10 @@ function ProcessWithdrawModal({
         {withdraw.notes && <div><strong>توضیحات کاربر:</strong> {withdraw.notes}</div>}
         {withdraw.adminNotes && <div><strong>توضیحات ادمین:</strong> {withdraw.adminNotes}</div>}
 
-        {readOnly && withdraw.picturePath && (
+        {readOnly && withdraw.pictureUrl && (
           <div style={{ marginTop: 8 }}>
             <strong>تصویر رسید:</strong>
-            <div><img src={picUrl(withdraw.picturePath)} alt="receipt" style={{ maxWidth: "100%", maxHeight: 300, borderRadius: 6, marginTop: 4, cursor: "pointer" }} onClick={() => window.open(picUrl(withdraw.picturePath), "_blank")} /></div>
+            <div><img src={withdraw.pictureUrl} alt="receipt" style={{ maxWidth: "100%", maxHeight: 300, borderRadius: 6, marginTop: 4, cursor: "pointer" }} onClick={() => window.open(withdraw.pictureUrl!, "_blank")} /></div>
           </div>
         )}
 

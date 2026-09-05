@@ -29,12 +29,17 @@ import { CreatePartnerDto } from "./dto/create-partner.dto";
 import { AssignMarketTypesDto } from "./dto/assign-market-types.dto";
 import { AssignMarketKindsDto } from "./dto/assign-market-kinds.dto";
 import { ChangeUserRoleDto } from "./dto/change-user-role.dto";
+import { SignedFileUrlService } from "../shared/files/signed-file-url.service";
+import { withAvatarUrl, withProfileAvatarUrl } from "../shared/files/picture-url.mapper";
 
 @Controller("admin/users")
 @ApiTags("Admin-User")
 @ApiAdminErrorResponses()
 export class AdminUserController {
-  constructor(private readonly adminUserService: AdminUserService) {}
+  constructor(
+    private readonly adminUserService: AdminUserService,
+    private readonly signedFileUrlService: SignedFileUrlService,
+  ) {}
 
   @Post("partners")
   @UseGuards(AdminAuthGuard)
@@ -80,8 +85,9 @@ export class AdminUserController {
   @ApiOperation({ summary: "Paginated user list, searchable by name or email" })
   @ApiPaginatedResponse(AdminUserListItemDto)
   async getUserList(@Query() query: AdminUserListQueryDto) {
+    const page = await this.adminUserService.getUserAdminList(query);
     return {
-      data: await this.adminUserService.getUserAdminList(query),
+      data: { ...page, items: page.items.map((u) => withProfileAvatarUrl(this.signedFileUrlService, u)) },
     };
   }
 
@@ -91,9 +97,7 @@ export class AdminUserController {
   @ApiOperation({ summary: "Full profile for one user" })
   @ApiEnvelopeResponse(AdminUserprofileDto)
   async getUserProfile(@Param("id") id: string) {
-    return {
-      data: await this.adminUserService.getUserProfile(id),
-    };
+    return { data: withAvatarUrl(this.signedFileUrlService, await this.adminUserService.getUserProfile(id)) };
   }
 
   @ApiBearerAuth()

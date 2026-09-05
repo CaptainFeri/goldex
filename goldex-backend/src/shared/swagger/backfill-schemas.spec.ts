@@ -96,12 +96,6 @@ describe("backfilled response schemas", () => {
     );
   });
 
-  it("documents the KYC document stream as binary, not as the envelope", () => {
-    const res = doc.paths["/admin/kyc/document/{objectName}"].get.responses["200"];
-    // A client that JSON-parsed this would fail confusingly, so the schema says bytes.
-    expect(res.content["application/octet-stream"].schema.format).toBe("binary");
-  });
-
   it("types the wallet mutations, which prose-only @ApiResponse left blank", () => {
     for (const path of [
       "/admin/wallets/update-balance",

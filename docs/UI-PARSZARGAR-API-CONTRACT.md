@@ -110,6 +110,24 @@ KPI cards are a global filter `metric ∈ users|volume|profit|withdrawals`:
 `POST /admin/kyc/:id/approve|reject` ·
 `GET|POST /admin/kyc/:id/documents` · `DELETE .../documents/:docId`
 
+**Rendering a stored file (receipts, KYC scans, avatars).** Never build a file
+URL. Each record carries one, already signed:
+
+| Record | Field to render |
+|---|---|
+| Deposit, withdrawal | `pictureUrl` |
+| KYC document | `documentUrl` |
+| User profile, admin user | `avatarUrl` |
+
+Drop it straight into `<img src>` or an `<a href>` — it needs no
+`Authorization` header. It expires about 15 minutes after the response that
+carried it, so render it on arrival and re-fetch the record for a fresh one;
+do not cache it in state you keep, put it in a URL you share, or persist it.
+The sibling object name (`picturePath`, `fileUrl`, `avatarImgPath`) is a stable
+identifier for support and logs — it is not fetchable on its own. `avatarUrl`
+is null for a legacy avatar whose `avatarImgPath` starts `edited-`; those are
+served from `/uploads/<avatarImgPath>`.
+
 ### Roles
 `GET /admin/roles` · `/stats` · `/:id` · `POST` · `PATCH /:id` · `DELETE /:id` ·
 `GET /admin/permissions` · `GET|PUT /admin/roles/:id/permissions`

@@ -15,6 +15,8 @@ import { AdminRoles } from "../admin/role/admin.role.decorator";
 import { AdminExpressRequest } from "../admin/auth/types/adminExpressRequest";
 import { MinioService } from "../minio/minio.service";
 import { OcrService } from "../ocr/ocr.service";
+import { SignedFileUrlService } from "../shared/files/signed-file-url.service";
+import { withPictureUrl, withPictureUrlPage } from "../shared/files/picture-url.mapper";
 
 @ApiTags("Admin-Deposit")
 @ApiBearerAuth()
@@ -28,6 +30,7 @@ export class DepositAdminController {
     private readonly depositService: DepositService,
     private readonly minioService: MinioService,
     private readonly ocrService: OcrService,
+    private readonly signedFileUrlService: SignedFileUrlService,
   ) {}
 
   @Get()
@@ -35,7 +38,8 @@ export class DepositAdminController {
   @ApiOperation({ summary: "List all deposits (admin)" })
   @ApiPaginatedResponse(DepositDto)
   async findAll(@Query() query: DepositQueryDto) {
-    return { data: await this.depositService.findAll(query) };
+    const page = await this.depositService.findAll(query);
+    return { data: withPictureUrlPage(this.signedFileUrlService, page) };
   }
 
   @Get(":id")
@@ -43,7 +47,7 @@ export class DepositAdminController {
   @ApiOperation({ summary: "Get deposit details (admin)" })
   @ApiEnvelopeResponse(DepositDto)
   async findOne(@Param("id") id: string) {
-    return { data: await this.depositService.findById(id) };
+    return { data: withPictureUrl(this.signedFileUrlService, await this.depositService.findById(id)) };
   }
 
   @Patch(":id/process")
@@ -74,7 +78,7 @@ export class DepositAdminController {
       }
     }
 
-    return { data: result };
+    return { data: withPictureUrl(this.signedFileUrlService, result) };
   }
 
   private async sendOcrFeedback(

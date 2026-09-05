@@ -349,16 +349,48 @@ the same rate under two labels — the panel can render either from one symbol
 using §3.1's display rule, so keep both ticker entries only if the desk wants
 both on screen. Polling fallback: `GET /v1/admin/market/ticker` every 3s.
 
-### 4.6 Files
+### 4.6 Files — **implemented**
 
-MinIO is already wired (`src/minio`, `src/file`). Standardise on:
-```
-POST   /v1/admin/files                multipart → { fileId, url, mime, size }
-GET    /v1/admin/files/:fileId        presigned redirect (short TTL)
-DELETE /v1/admin/files/:fileId
-```
-Consumers: KYC documents, EM receipts, warehouse document attachments, withdraw
-receipts (which already flow through OCR).
+Stored objects are reached through a short-lived signed URL that the API mints
+onto the record that owns the file. There is no endpoint a client calls with an
+object name.
+
+| Record | Object name (stable) | URL to render (expires) |
+|---|---|---|
+| Deposit, withdrawal | `picturePath` | `pictureUrl` |
+| KYC document | `fileUrl` | `documentUrl` |
+| User profile, admin user list/detail | `avatarImgPath` | `avatarUrl` |
+
+A URL looks like `/api/v1/files/signed/<payload>.<hmac>`, is valid for about 15
+minutes, carries its own authorization and needs no bearer token — which is what
+lets it go straight into `<img src>`. Clients follow it as given and re-fetch
+the record for a fresh one; they never build it, cache it, or persist it.
+`avatarUrl` is null for a legacy on-disk avatar (`avatarImgPath` starting
+`edited-`), which is still served from `/uploads/<avatarImgPath>` by name.
+
+**Why the backend signs rather than MinIO.** A MinIO presigned URL is signed for
+the host the browser connects to, and `docker-compose.yml` binds MinIO to
+`127.0.0.1:9000` with no reverse proxy in front of it — such a URL would be
+unreachable, and publishing MinIO to fix that widens the attack surface to close
+a narrower hole. So the API keeps streaming the bytes and signs the grant
+instead; the properties that matter (unguessable, self-expiring, bearer-free)
+are the same. Key: `GOLDEX_FILE_URL_SECRET`, derived from
+`GOLDEX_AUTH_ADMIN_JWT_SECRET` when unset. Rotating it revokes every URL in
+flight.
+
+**What this replaced.** Seven handlers streamed any object in the bucket to any
+caller, with no guard: four for deposit/withdraw receipts, two for KYC documents
+(`admin/kyc/document/:objectName`, `kyc/document/:objectName` — the only methods
+on their controllers without `@UseGuards`), and one for avatars. All uploads
+share one bucket, so a KYC national-ID scan was readable through the deposit
+receipt route. The object name was the only protection and it was weak: eight
+draws of `Math.round(Math.random() * 16)` around a guessable prefix and date,
+from a PRNG whose state is recoverable from outputs any user can harvest by
+uploading their own files. Names now come from `randomBytes(16)`.
+
+Still to do: `POST /v1/admin/files` and `DELETE /v1/admin/files/:fileId` as a
+uniform upload surface. Consumers: KYC documents, EM receipts, warehouse
+document attachments, withdraw receipts (which already flow through OCR).
 
 ### 4.7 Exports
 
@@ -589,7 +621,7 @@ cross-wallet sum in the display currency — compute in SQL, not per-row.
 | E | `GET /v1/admin/kyc/:id/documents` | `[{ id, title, url, fileName, mime }]` |
 | N | `POST /v1/admin/kyc/:id/documents` | multipart `{ title, file }` — the "افزودن تصویر" modal |
 | N | `DELETE /v1/admin/kyc/:id/documents/:docId` | |
-| E | `GET /v1/admin/kyc/documents/:docId/download` | presigned |
+| — | ~~`GET /v1/admin/kyc/documents/:docId/download`~~ | Not needed: every document carries `documentUrl`, a short-lived signed URL (§4.6) |
 
 `provider` is a **fourth KYC status** (پروایدر احراز هویت) the backend enum does
 not have yet — add it, don't fake it with a flag.

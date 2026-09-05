@@ -26,7 +26,6 @@ const STATUS_KINDS: Record<string, string> = {
 const fmtDate = (d: string | null) =>
   d ? new Date(d).toLocaleDateString("fa-IR", { year: "numeric", month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }) : "—";
 const typeLabel = (t: string) => DEPOSIT_TYPES.find((x) => x.value === t)?.label ?? t;
-const picUrl = (p: string | null | undefined) => p ? `/api/v1/admin/deposit/picture/${encodeURIComponent(p)}` : "";
 
 export default function DepositsPage() {
   const [statusFilter, setStatusFilter] = useState("");
@@ -83,8 +82,8 @@ export default function DepositsPage() {
               {(list.data.items as DepositRequest[]).map((d) => (
                 <tr key={d.id}>
                   <td>
-                    {d.picturePath
-                      ? <img src={picUrl(d.picturePath)} alt="pic" style={{ width: 48, height: 48, objectFit: "cover", borderRadius: 4, cursor: "pointer" }} onClick={() => window.open(picUrl(d.picturePath), "_blank")} />
+                    {d.pictureUrl
+                      ? <img src={d.pictureUrl} alt="pic" style={{ width: 48, height: 48, objectFit: "cover", borderRadius: 4, cursor: "pointer" }} onClick={() => window.open(d.pictureUrl!, "_blank")} />
                       : "—"}
                   </td>
                   <td>
@@ -162,7 +161,7 @@ function ProcessDepositModal({
         <div><strong>نوع:</strong> {typeLabel(deposit.type)}</div>
         <div><strong>مبلغ:</strong> {fmtBySymbol(deposit.amount, deposit.symbol?.slug)}</div>
         <div><strong>وضعیت:</strong> {STATUS_LABELS[deposit.status] ?? deposit.status}</div>
-        {deposit.picturePath && <div><strong>تصویر:</strong> <img src={picUrl(deposit.picturePath)} alt="deposit-pic" style={{ maxWidth: "100%", maxHeight: 300, borderRadius: 6, marginTop: 4, cursor: "pointer" }} onClick={() => window.open(picUrl(deposit.picturePath), "_blank")} /></div>}
+        {deposit.pictureUrl && <div><strong>تصویر:</strong> <img src={deposit.pictureUrl} alt="deposit-pic" style={{ maxWidth: "100%", maxHeight: 300, borderRadius: 6, marginTop: 4, cursor: "pointer" }} onClick={() => window.open(deposit.pictureUrl!, "_blank")} /></div>}
         {deposit.notes && <div><strong>توضیحات کاربر:</strong> {deposit.notes}</div>}
         {deposit.adminNotes && <div><strong>توضیحات ادمین:</strong> {deposit.adminNotes}</div>}
         {deposit.metadata?.payment && (

@@ -1,6 +1,6 @@
 import { Module } from "@nestjs/common";
 import { EventEmitterModule } from "@nestjs/event-emitter";
-import { PublicFileController } from "./shared/controller/public-file.controller";
+import { FilesModule } from "./shared/files/files.module";
 import { AcceptLanguageResolver, I18nModule } from "nestjs-i18n";
 import { join } from "path";
 import * as path from "path";
@@ -181,9 +181,9 @@ import { ScheduleModule } from "@nestjs/schedule";
     ProviderModule,
     MarketStatusModule,
     AdminArbitrageModule,
+    FilesModule,
   ],
   providers: [WinstonLoggerService],
-  controllers: [PublicFileController],
   exports: [WinstonLoggerService],
 })
 export class AppModule {}

@@ -52,6 +52,15 @@ export class AdminUserprofileDto {
   @ApiPropertyOptional({ nullable: true })
   avatarImgPath: string;
 
+  @ApiPropertyOptional({
+    nullable: true,
+    example: "/api/v1/files/signed/eyJvIjoiYXZhdGFyLTNmOWExYzRkLTIwMjYtMDktMDUuanBnIn0.KT6JbmTEN",
+    description:
+      "Short-lived URL serving the avatar, or null when there is none. Null also for a legacy " +
+      "on-disk avatar, where `avatarImgPath` starts with `edited-` and is served from /uploads.",
+  })
+  avatarUrl?: string | null;
+
   @ApiPropertyOptional({ nullable: true, description: "Non-null means two-factor is active" })
   twoFactorActivatedAt: Date;
 

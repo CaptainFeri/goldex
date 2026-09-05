@@ -1,8 +1,7 @@
-import { Body, Controller, Get, Param, ParseUUIDPipe, Post, Query, Req, Res, UseGuards } from "@nestjs/common";
-import { Response } from "express";
+import { Body, Controller, Get, Param, ParseUUIDPipe, Post, Query, Req, UseGuards } from "@nestjs/common";
 import { AdminKycService } from "./admin-kyc.service";
 import { AdminAuthGuard } from "../admin/auth/Guard/admin.guard";
-import { ApiBearerAuth, ApiOperation, ApiProduces, ApiQuery, ApiResponse, ApiTags } from "@nestjs/swagger";
+import { ApiBearerAuth, ApiOperation, ApiQuery, ApiTags } from "@nestjs/swagger";
 import {
   ApiAdminErrorResponses,
   ApiEnvelopeResponse,
@@ -16,7 +15,12 @@ import {
 import { AdminApproveDocumentsDto, AdminRejectDocumentDto, GetKycDocumentsQueryDto } from "./dto/admin-kyc.dto";
 import { AdminRoles } from "../admin/role/admin.role.decorator";
 import { AdminRole } from "../admin/role/admin.roles.enum";
-import { MinioService } from "../minio/minio.service";
+import { SignedFileUrlService } from "../shared/files/signed-file-url.service";
+import {
+  withDocumentUrl,
+  withDocumentUrls,
+  withDocumentUrlPage,
+} from "../shared/files/picture-url.mapper";
 
 @Controller("admin/kyc")
 @ApiTags("Admin-Kyc")
@@ -24,7 +28,7 @@ import { MinioService } from "../minio/minio.service";
 export class AdminKycController {
   constructor(
     private readonly adminKycService: AdminKycService,
-    private readonly minioService: MinioService
+    private readonly signedFileUrlService: SignedFileUrlService
   ) {}
 
   @Get("admin/pending")
@@ -34,7 +38,8 @@ export class AdminKycController {
   @ApiOperation({ summary: "Get pending documents for review" })
   @ApiEnvelopeResponse(KycDocumentPageDto)
   async getPendingDocuments(@Query() query: GetKycDocumentsQueryDto) {
-    return { data: await this.adminKycService.getPendingDocuments(query) };
+    const page = await this.adminKycService.getPendingDocuments(query);
+    return { data: withDocumentUrlPage(this.signedFileUrlService, page) };
   }
 
   @Get("admin/all")
@@ -44,7 +49,8 @@ export class AdminKycController {
   @ApiOperation({ summary: "Get all documents (Admin only)" })
   @ApiEnvelopeResponse(KycDocumentPageDto)
   async getAllDocuments(@Query() query: GetKycDocumentsQueryDto) {
-    return { data: await this.adminKycService.getAllDocumentsForAdmin(query) };
+    const page = await this.adminKycService.getAllDocumentsForAdmin(query);
+    return { data: withDocumentUrlPage(this.signedFileUrlService, page) };
   }
 
   @Get("admin/stats")
@@ -83,7 +89,8 @@ export class AdminKycController {
   @ApiOperation({ summary: "Approve one or more documents" })
   @ApiEnvelopeResponse(KycDocumentDto, { status: 201, isArray: true, description: "The approved documents, in the order requested" })
   async approveDocuments(@Req() req, @Body() dto: AdminApproveDocumentsDto) {
-    return { data: await this.adminKycService.approveDocuments(req.admin.id, dto.documentIds, dto.notes) };
+    const documents = await this.adminKycService.approveDocuments(req.admin.id, dto.documentIds, dto.notes);
+    return { data: withDocumentUrls(this.signedFileUrlService, documents) };
   }
 
   @Post("admin/reject")
@@ -93,7 +100,8 @@ export class AdminKycController {
   @ApiOperation({ summary: "Reject a single document" })
   @ApiEnvelopeResponse(KycDocumentDto, { status: 201 })
   async rejectDocument(@Req() req, @Body() dto: AdminRejectDocumentDto) {
-    return { data: await this.adminKycService.rejectDocument(req.admin.id, dto.documentId, dto.reason, dto.notes) };
+    const document = await this.adminKycService.rejectDocument(req.admin.id, dto.documentId, dto.reason, dto.notes);
+    return { data: withDocumentUrl(this.signedFileUrlService, document) };
   }
 
   //   @Post("admin/reject-multiple")
@@ -104,25 +112,6 @@ export class AdminKycController {
   //     return await this.adminKycService.rejectMultipleDocuments(req.user.id, dto.documentIds, dto.reason, dto.notes);
   //   }
 
-  @Get("document/:objectName")
-  @ApiOperation({
-    summary: "Stream a KYC document's bytes (Admin)",
-    description: "Returns the raw file, not the response envelope — pipe it, do not JSON-parse it",
-  })
-  @ApiProduces("application/octet-stream")
-  @ApiResponse({
-    status: 200,
-    description: "The file, with its own content type and length",
-    schema: { type: "string", format: "binary" },
-  })
-  async getDocument(@Param("objectName") objectName: string, @Res() res: Response) {
-    const bucket = process.env.MINIO_BUCKET || "default";
-    const stat = await this.minioService.getFileStat(bucket, objectName);
-    res.set({ "Content-Type": stat.contentType, "Content-Length": stat.size.toString() });
-    const stream = await this.minioService.getFileStream(bucket, objectName);
-    stream.pipe(res);
-  }
-
   @Get("users/:userId/documents")
   @UseGuards(AdminAuthGuard)
   @ApiBearerAuth()
@@ -130,6 +119,6 @@ export class AdminKycController {
   @ApiOperation({ summary: "Get documents for a specific user (Admin)" })
   @ApiEnvelopeResponse(KycDocumentDto, { isArray: true })
   async getUserDocumentsById(@Param("userId", ParseUUIDPipe) userId: string) {
-    return { data: await this.adminKycService.getUserDocuments(userId) };
+    return { data: withDocumentUrls(this.signedFileUrlService, await this.adminKycService.getUserDocuments(userId)) };
   }
 }

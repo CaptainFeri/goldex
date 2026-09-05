@@ -643,6 +643,12 @@ export interface DepositRequest {
   adminId: string | null;
   notes: string | null;
   picturePath: string | null;
+  /**
+   * Short-lived URL serving the receipt. Bearer-free, so it can go straight
+   * into an <img> tag, and it expires a few minutes after the response was
+   * issued -- render it, never store it. `picturePath` alone is not fetchable.
+   */
+  pictureUrl: string | null;
   gatewayCode?: string | null;
   metadata: any;
   completedAt: string | null;
@@ -662,6 +668,12 @@ export interface WithdrawRequest {
   adminId: string | null;
   notes: string | null;
   picturePath: string | null;
+  /**
+   * Short-lived URL serving the receipt. Bearer-free, so it can go straight
+   * into an <img> tag, and it expires a few minutes after the response was
+   * issued -- render it, never store it. `picturePath` alone is not fetchable.
+   */
+  pictureUrl: string | null;
   metadata: any;
   completedAt: string | null;
   createAt: string;
