@@ -405,7 +405,7 @@ Required, in order:
 Then publish `openapi.json` as a build artefact, generate a Prism mock from it
 so the frontend can migrate off `data/*Mock.js` in parallel with backend work,
 and generate the typed client described in
-`docs/ADMIN-PANEL-PARITY-PLAN.md` §7.
+`ADMIN-PANEL-PARITY-PLAN.md` §7.
 
 ---
 
