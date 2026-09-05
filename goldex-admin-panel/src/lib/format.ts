@@ -86,3 +86,16 @@ export function baseSlug(pair: any): string | null {
 export function quoteSlug(pair: any): string | null {
   return pair?.quoteSymbol?.slug ?? pair?.quoteSymbol?.name ?? pair?.quoteCode ?? null;
 }
+
+
+/**
+ * A Jalali year, ungrouped.
+ *
+ * `fmtNum` renders 1405 as ۱٬۴۰۵ — correct for a quantity, wrong for a year.
+ * Shared because two screens got it wrong independently.
+ */
+export function fmtYear(year: number | string | null | undefined): string {
+  const n = typeof year === "string" ? Number(year) : year;
+  if (n === null || n === undefined || !Number.isFinite(n)) return "—";
+  return n.toLocaleString(DISPLAY_LOCALE, { useGrouping: false });
+}

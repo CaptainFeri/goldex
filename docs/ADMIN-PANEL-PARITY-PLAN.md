@@ -622,3 +622,52 @@ Jalali months on the axis, a four-slice doughnut, the feed with severity dots,
 the health strip labelled as a thirty-day composition rather than live service
 state, and the table showing `۲٫۵` grams beside `۱۲۵٬۰۰۰٬۰۰۰ تومان` — 
 1,250,000,000 rial converted once, on display.
+
+
+## 11. Accounting screens — implemented
+
+`AccountingPage` at `/accounting` and `AccountingVouchersPage` at
+`/accounting/vouchers`, both under مدیریت.
+
+**Accounting.** Four cards report the whole ledger and select what the chart
+plots. Margin is the one card without a currency — it is a percentage, and the
+API sends no `unit` for it either. The chart drills year → month → day by
+clicking a bar, and **the ledger follows it**: drilling into مرداد leaves the
+table showing that month's rows, because the API takes the same Jalali
+year/month/day for both. Two panels showing one period beats two that can
+disagree. The bar's index maps straight to the month or day number, which is
+why the RTL rendering does not matter — the mapping is by data index, not by
+visual position.
+
+Ledger amounts keep their sign and are coloured by it. A ledger that hid which
+way money moved would be unreadable, so the negative rows show `−` rather than
+a magnitude.
+
+**Vouchers.** Filters, the table with its four statuses, create, submit,
+finalize and reject. The action column offers only the step that is actually
+available — submit on a draft, finalize/reject on a pending one, nothing on a
+booked or refused one — but the API enforces all of it, including that the
+author cannot book their own entry; the buttons only avoid offering a call that
+would fail.
+
+The create form has **no side field**, and says so: the debit/credit side is
+derived from the movement server-side. It also states that the voucher is
+created as a draft and booked by someone else, so the workflow is visible
+before an operator commits to it. The amount is typed in the symbol's display
+unit and converted once on submit, like every other amount field.
+
+Exports go through a shared `downloadExport` helper: these endpoints stream
+behind a bearer token, so a plain link would arrive unauthenticated. The object
+URL is revoked immediately after the click — a leaked one keeps the whole blob
+in memory for the life of the document.
+
+**One bug caught twice, then shared.** The Jalali year rendered as `۱٬۴۰۵` on
+the dashboard chart title and again on the ledger card — correct for a
+quantity, wrong for a year. `fmtYear` now lives in `lib/format` with its own
+tests, and both screens use it.
+
+Verified by driving the built pages headlessly: the cards convert rial to toman
+and show margin as a percentage; the ledger renders a positive row green and a
+negative one as `−۴۲۰٬۰۰۰ تومان`; clicking a bar moves the server to
+`granularity=day, month=6` **and** the ledger to `year=1405, month=6`; and the
+voucher table renders all four statuses with the right actions on each.

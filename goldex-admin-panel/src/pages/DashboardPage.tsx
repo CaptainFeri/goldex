@@ -3,7 +3,7 @@ import { useMemo, useState } from "react";
 import { Line, Doughnut } from "react-chartjs-2";
 import { api, unwrap, apiError } from "../api/client";
 import { Card, Stat, Loading, ErrorState, Empty, Badge } from "../components/ui";
-import { fmtNum } from "../lib/format";
+import { fmtNum, fmtYear } from "../lib/format";
 import { gridColor } from "../lib/chart";
 import { fmtBySymbol } from "../lib/money";
 import type {
@@ -41,14 +41,6 @@ const SEVERITY_KIND: Record<DashboardSeverity, "green" | "red" | "gold" | "gray"
 
 /** Slice colours, in the order the API returns them (largest first). */
 const SLICE_COLORS = ["#d4af37", "#4c8dff", "#2ea861", "#e5544b", "#6b7585"];
-
-/**
- * A Jalali year in Persian digits, ungrouped.
- *
- * `fmtNum` would render 1405 as ۱٬۴۰۵ — correct for a quantity, wrong for a
- * year.
- */
-const faYear = (y: number) => y.toLocaleString("fa-IR", { useGrouping: false });
 
 /**
  * Render one table cell according to what the column holds.
@@ -211,7 +203,7 @@ function MetricPanels({ metric }: { metric: DashboardMetric }) {
   return (
     <>
       <div className="grid grid-2">
-        <Card title={s ? `${s.primaryLabel} و ${s.secondaryLabel} — ${faYear(s.year)}` : "روند"}>
+        <Card title={s ? `${s.primaryLabel} و ${s.secondaryLabel} — ${fmtYear(s.year)}` : "روند"}>
           {series.isLoading ? (
             <Loading />
           ) : series.isError ? (
