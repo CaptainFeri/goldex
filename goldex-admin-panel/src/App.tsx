@@ -22,6 +22,8 @@ import DiscountsPage from "./pages/DiscountsPage";
 import CreditsPage from "./pages/CreditsPage";
 import FinanceLogsPage from "./pages/FinanceLogsPage";
 import ReportsPage from "./pages/ReportsPage";
+import AccountingPage from "./pages/AccountingPage";
+import AccountingVouchersPage from "./pages/AccountingVouchersPage";
 import LevelsPage from "./pages/LevelsPage";
 import DepositsPage from "./pages/DepositsPage";
 import WithdrawsPage from "./pages/WithdrawsPage";
@@ -89,6 +91,8 @@ export default function App() {
         <Route path="/credits" element={<CreditsPage />} />
         <Route path="/finance-logs" element={<FinanceLogsPage />} />
         <Route path="/reports" element={<ReportsPage />} />
+        <Route path="/accounting" element={<AccountingPage />} />
+        <Route path="/accounting/vouchers" element={<AccountingVouchersPage />} />
         <Route path="/user-levels" element={<LevelsPage />} />
         <Route path="/deposits" element={<DepositsPage />} />
         <Route path="/withdraws" element={<WithdrawsPage />} />

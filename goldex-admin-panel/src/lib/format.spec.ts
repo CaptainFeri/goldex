@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { fmtNum } from "./format";
+import { fmtNum, fmtYear } from "./format";
 
 /**
  * ui-parszargar's own formatter, copied from its `utils/helpers.js`. The panel
@@ -40,5 +40,22 @@ describe("fmtNum", () => {
 
   it("shows an em dash for a value that is not a number", () => {
     expect(fmtNum("not-a-number")).toBe("—");
+  });
+});
+
+describe("fmtYear", () => {
+  it("renders a Jalali year without a thousands separator", () => {
+    // fmtNum would give ۱٬۴۰۵ — right for a quantity, wrong for a year. Two
+    // screens made this mistake independently before it moved here.
+    expect(fmtYear(1405)).toBe("۱۴۰۵");
+    expect(fmtYear(1405)).not.toContain("٬");
+  });
+
+  it("accepts the string form the API sends", () => {
+    expect(fmtYear("1404")).toBe("۱۴۰۴");
+  });
+
+  it("shows an em dash rather than a stray zero for a missing year", () => {
+    for (const empty of [null, undefined, "nope"]) expect(fmtYear(empty as any)).toBe("—");
   });
 });

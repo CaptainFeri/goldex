@@ -1342,3 +1342,97 @@ export interface DashboardRecent {
   rows: DashboardRecentRow[];
   unit: string | null;
 }
+
+
+// ── Accounting (§5.21) ─────────────────────────────────────────────────────
+
+export type AccountingMetric = "income" | "expense" | "profit" | "margin";
+export type AccountingGranularity = "month" | "day" | "hour";
+
+export interface AccountingStats {
+  income: string;
+  expense: string;
+  netProfit: string;
+  /** Null when there was no income — a margin on nothing is not a ratio. */
+  marginPercent: number | null;
+  unit: string;
+}
+
+export interface AccountingSeriesPoint {
+  key: string;
+  label: string;
+  value: string;
+}
+
+export interface AccountingSeries {
+  metric: AccountingMetric;
+  granularity: AccountingGranularity;
+  /** Null for the margin metric, which is a percentage rather than money. */
+  unit: string | null;
+  points: AccountingSeriesPoint[];
+}
+
+export interface AccountingLedgerRow {
+  id: string;
+  type: string;
+  description: string;
+  /** Signed: negative is money out. */
+  amount: string;
+  unit: string | null;
+  providerKey: string | null;
+  date: string;
+}
+
+// ── Vouchers (§5.22) ───────────────────────────────────────────────────────
+
+export type VoucherMovement = "deposit" | "withdraw";
+export type VoucherSide = "debtor" | "creditor";
+export type VoucherStatus = "draft" | "pending" | "finalized" | "rejected";
+export type CustomerType = "formal" | "informal";
+export type WalletSubset = "cash" | "credit" | "frozen";
+
+export interface Voucher {
+  id: string;
+  voucherCode: string;
+  customerId: string | null;
+  customerName: string;
+  customerType: CustomerType;
+  category: string;
+  categoryLabel: string;
+  movement: VoucherMovement;
+  /** Derived server-side from `movement`; never sent by the client. */
+  side: VoucherSide;
+  sideLabel: string;
+  symbolId: string;
+  unit: string | null;
+  /** Always positive; direction is `side`. */
+  amount: string;
+  walletType: string;
+  walletSubset: WalletSubset;
+  walletSubsetLabel: string;
+  description: string;
+  extraDescription: string | null;
+  documentDate: string;
+  status: VoucherStatus;
+  statusLabel: string;
+  createdBy: string;
+  createdByName: string | null;
+  reviewedBy: string | null;
+  reviewedAt: string | null;
+  reviewNote: string | null;
+  createAt: string;
+}
+
+export interface CatalogOption {
+  value: string;
+  label: string;
+}
+
+export interface VoucherCatalogs {
+  categories: CatalogOption[];
+  walletTypes: CatalogOption[];
+  walletSubsets: CatalogOption[];
+  symbols: CatalogOption[];
+  customerTypes: CatalogOption[];
+  movements: CatalogOption[];
+}
