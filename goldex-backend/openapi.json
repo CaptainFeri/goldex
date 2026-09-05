@@ -23737,6 +23737,592 @@
           "Admin-Reports"
         ]
       }
+    },
+    "/api/v1/admin/dashboard/kpis": {
+      "get": {
+        "description": "Returned together because the panel shows them together and any one of them can be the active filter. Amounts are in `unit`'s own terms — the API never converts.",
+        "operationId": "AdminDashboardController_kpis_v1",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/ResponseEnvelopeDto"
+                    },
+                    {
+                      "properties": {
+                        "data": {
+                          "$ref": "#/components/schemas/DashboardKpisDto"
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation failed — see `errors` for per-field messages",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or expired admin token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Authenticated, but lacking the required permission",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "All four KPI cards",
+        "tags": [
+          "Admin-Dashboard"
+        ]
+      }
+    },
+    "/api/v1/admin/dashboard/series": {
+      "get": {
+        "description": "Bucketed by Jalali month, not Gregorian — the two do not line up, so a `date_trunc` grouping labelled in Persian would put ten days of every month in the wrong bar. Empty months are present with zeroes so the axis does not shift.",
+        "operationId": "AdminDashboardController_series_v1",
+        "parameters": [
+          {
+            "name": "metric",
+            "required": true,
+            "in": "query",
+            "schema": {
+              "example": "volume",
+              "type": "string",
+              "enum": [
+                "users",
+                "volume",
+                "profit",
+                "withdrawals"
+              ]
+            }
+          },
+          {
+            "name": "year",
+            "required": false,
+            "in": "query",
+            "description": "Jalali year. Defaults to the current one.",
+            "schema": {
+              "example": 1405,
+              "type": "number"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/ResponseEnvelopeDto"
+                    },
+                    {
+                      "properties": {
+                        "data": {
+                          "$ref": "#/components/schemas/DashboardSeriesDto"
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation failed — see `errors` for per-field messages",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or expired admin token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Authenticated, but lacking the required permission",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Twelve Jalali months of the selected metric",
+        "tags": [
+          "Admin-Dashboard"
+        ]
+      }
+    },
+    "/api/v1/admin/dashboard/distribution": {
+      "get": {
+        "description": "Largest four, with the tail folded into «سایر» so the client never has to drop what it was sent.",
+        "operationId": "AdminDashboardController_distribution_v1",
+        "parameters": [
+          {
+            "name": "metric",
+            "required": true,
+            "in": "query",
+            "schema": {
+              "example": "volume",
+              "type": "string",
+              "enum": [
+                "users",
+                "volume",
+                "profit",
+                "withdrawals"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/ResponseEnvelopeDto"
+                    },
+                    {
+                      "properties": {
+                        "data": {
+                          "$ref": "#/components/schemas/DashboardDistributionDto"
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation failed — see `errors` for per-field messages",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or expired admin token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Authenticated, but lacking the required permission",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Pie slices for the selected metric",
+        "tags": [
+          "Admin-Dashboard"
+        ]
+      }
+    },
+    "/api/v1/admin/dashboard/activity": {
+      "get": {
+        "operationId": "AdminDashboardController_activity_v1",
+        "parameters": [
+          {
+            "name": "metric",
+            "required": true,
+            "in": "query",
+            "schema": {
+              "example": "volume",
+              "type": "string",
+              "enum": [
+                "users",
+                "volume",
+                "profit",
+                "withdrawals"
+              ]
+            }
+          },
+          {
+            "name": "limit",
+            "required": false,
+            "in": "query",
+            "description": "Rows to return, 1–50",
+            "schema": {
+              "example": 5,
+              "type": "number"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/ResponseEnvelopeDto"
+                    },
+                    {
+                      "properties": {
+                        "data": {
+                          "type": "array",
+                          "items": {
+                            "$ref": "#/components/schemas/DashboardActivityItemDto"
+                          }
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation failed — see `errors` for per-field messages",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or expired admin token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Authenticated, but lacking the required permission",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Recent activity for the selected metric",
+        "tags": [
+          "Admin-Dashboard"
+        ]
+      }
+    },
+    "/api/v1/admin/dashboard/health": {
+      "get": {
+        "description": "Composition, not an uptime probe: the platform records no such signal, and a number an operator could act on wrongly is worse than none. What this can say truthfully is how the recent rows split — completed against failed, waiting against paid.",
+        "operationId": "AdminDashboardController_health_v1",
+        "parameters": [
+          {
+            "name": "metric",
+            "required": true,
+            "in": "query",
+            "schema": {
+              "example": "volume",
+              "type": "string",
+              "enum": [
+                "users",
+                "volume",
+                "profit",
+                "withdrawals"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/ResponseEnvelopeDto"
+                    },
+                    {
+                      "properties": {
+                        "data": {
+                          "$ref": "#/components/schemas/DashboardHealthDto"
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation failed — see `errors` for per-field messages",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or expired admin token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Authenticated, but lacking the required permission",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "How the last thirty days divide, as percentages",
+        "tags": [
+          "Admin-Dashboard"
+        ]
+      }
+    },
+    "/api/v1/admin/dashboard/recent": {
+      "get": {
+        "description": "`columns` names the headers in order and each row's `cells` follow the same order, so one component renders all four metrics without switching on which is selected.",
+        "operationId": "AdminDashboardController_recent_v1",
+        "parameters": [
+          {
+            "name": "metric",
+            "required": true,
+            "in": "query",
+            "schema": {
+              "example": "volume",
+              "type": "string",
+              "enum": [
+                "users",
+                "volume",
+                "profit",
+                "withdrawals"
+              ]
+            }
+          },
+          {
+            "name": "limit",
+            "required": false,
+            "in": "query",
+            "description": "Rows to return, 1–50",
+            "schema": {
+              "example": 5,
+              "type": "number"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/ResponseEnvelopeDto"
+                    },
+                    {
+                      "properties": {
+                        "data": {
+                          "$ref": "#/components/schemas/DashboardRecentDto"
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation failed — see `errors` for per-field messages",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or expired admin token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Authenticated, but lacking the required permission",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "The metric-shaped table",
+        "tags": [
+          "Admin-Dashboard"
+        ]
+      }
     }
   },
   "info": {
@@ -32138,6 +32724,355 @@
         "required": [
           "url",
           "fileName"
+        ]
+      },
+      "DashboardKpiDto": {
+        "type": "object",
+        "properties": {
+          "metric": {
+            "type": "string",
+            "enum": [
+              "users",
+              "volume",
+              "profit",
+              "withdrawals"
+            ]
+          },
+          "label": {
+            "type": "string",
+            "example": "حجم معاملات"
+          },
+          "value": {
+            "type": "string",
+            "example": "2480.5",
+            "description": "Decimal string. In `unit`'s own terms — never converted by the API."
+          },
+          "unit": {
+            "type": "string",
+            "nullable": true,
+            "example": "XAU",
+            "description": "The symbol `value` is denominated in, where it is money or a weight. Null for a count. Format by it; a rial value is shown as toman by the panel, not by the API."
+          },
+          "deltaPercent": {
+            "type": "number",
+            "nullable": true,
+            "example": 12.4,
+            "description": "Percent change against the previous period of equal length. Null when the previous period was empty — a rise from nothing is not a percentage."
+          },
+          "sub": {
+            "type": "string",
+            "example": "۸ مورد در انتظار",
+            "description": "The card's sub-line"
+          }
+        },
+        "required": [
+          "metric",
+          "label",
+          "value",
+          "sub"
+        ]
+      },
+      "DashboardKpisDto": {
+        "type": "object",
+        "properties": {
+          "cards": {
+            "description": "All four cards, in display order",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/DashboardKpiDto"
+            }
+          },
+          "generatedAt": {
+            "type": "string",
+            "example": "2026-09-05T09:12:00.000Z"
+          }
+        },
+        "required": [
+          "cards",
+          "generatedAt"
+        ]
+      },
+      "DashboardSeriesPointDto": {
+        "type": "object",
+        "properties": {
+          "month": {
+            "type": "number",
+            "example": 1,
+            "description": "Jalali month, 1–12"
+          },
+          "label": {
+            "type": "string",
+            "example": "فرو",
+            "description": "Short Jalali month name"
+          },
+          "primary": {
+            "type": "string",
+            "example": "1204.50",
+            "description": "Decimal string"
+          },
+          "secondary": {
+            "type": "string",
+            "example": "980.25",
+            "description": "Decimal string"
+          }
+        },
+        "required": [
+          "month",
+          "label",
+          "primary",
+          "secondary"
+        ]
+      },
+      "DashboardSeriesDto": {
+        "type": "object",
+        "properties": {
+          "year": {
+            "type": "number",
+            "example": 1405,
+            "description": "The Jalali year covered"
+          },
+          "primaryLabel": {
+            "type": "string",
+            "example": "خرید",
+            "description": "What `primary` counts"
+          },
+          "secondaryLabel": {
+            "type": "string",
+            "example": "فروش",
+            "description": "What `secondary` counts"
+          },
+          "unit": {
+            "type": "string",
+            "nullable": true,
+            "example": "XAU",
+            "description": "Unit of both series"
+          },
+          "points": {
+            "description": "Always twelve, in Jalali month order. Months with no data are zero, not absent.",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/DashboardSeriesPointDto"
+            }
+          }
+        },
+        "required": [
+          "year",
+          "primaryLabel",
+          "secondaryLabel",
+          "points"
+        ]
+      },
+      "DashboardSliceDto": {
+        "type": "object",
+        "properties": {
+          "label": {
+            "type": "string",
+            "example": "خرید"
+          },
+          "value": {
+            "type": "string",
+            "example": "1204.50",
+            "description": "Raw magnitude, decimal string"
+          },
+          "percent": {
+            "type": "number",
+            "example": 54.2,
+            "description": "Share of the whole, 0–100"
+          }
+        },
+        "required": [
+          "label",
+          "value",
+          "percent"
+        ]
+      },
+      "DashboardDistributionDto": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string",
+            "example": "سهم پروایدرها"
+          },
+          "slices": {
+            "description": "Largest first",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/DashboardSliceDto"
+            }
+          }
+        },
+        "required": [
+          "title",
+          "slices"
+        ]
+      },
+      "DashboardActivityItemDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "title": {
+            "type": "string",
+            "example": "سفارش خرید ثبت شد"
+          },
+          "description": {
+            "type": "string",
+            "example": "علی رضایی — ۲٫۵ گرم XAU"
+          },
+          "severity": {
+            "type": "string",
+            "enum": [
+              "good",
+              "warn",
+              "bad",
+              "info"
+            ]
+          },
+          "at": {
+            "format": "date-time",
+            "type": "string",
+            "example": "2026-09-05T09:12:00.000Z"
+          }
+        },
+        "required": [
+          "id",
+          "title",
+          "description",
+          "severity",
+          "at"
+        ]
+      },
+      "DashboardHealthRowDto": {
+        "type": "object",
+        "properties": {
+          "label": {
+            "type": "string",
+            "example": "تکمیل‌شده"
+          },
+          "percent": {
+            "type": "number",
+            "example": 92.4,
+            "description": "0–100"
+          },
+          "variant": {
+            "type": "string",
+            "enum": [
+              "good",
+              "warn",
+              "bad",
+              "info"
+            ]
+          },
+          "count": {
+            "type": "number",
+            "example": 231,
+            "description": "Rows behind the percentage"
+          }
+        },
+        "required": [
+          "label",
+          "percent",
+          "variant",
+          "count"
+        ]
+      },
+      "DashboardHealthDto": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string",
+            "example": "سلامت موتور معاملات"
+          },
+          "windowDays": {
+            "type": "number",
+            "example": 30,
+            "description": "Days the composition is measured over, so the client can say so"
+          },
+          "rows": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/DashboardHealthRowDto"
+            }
+          }
+        },
+        "required": [
+          "title",
+          "windowDays",
+          "rows"
+        ]
+      },
+      "DashboardRecentRowDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "example": "9f1c…",
+            "description": "Row identity, for keying and linking"
+          },
+          "cells": {
+            "example": [
+              "9f1c",
+              "علی رضایی",
+              "خرید",
+              "XAU/IRR",
+              "1250000000.00"
+            ],
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "status": {
+            "type": "string",
+            "nullable": true,
+            "example": "COMPLETED",
+            "description": "Raw status where the row has one, so the client can badge it"
+          }
+        },
+        "required": [
+          "id",
+          "cells"
+        ]
+      },
+      "DashboardRecentDto": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string",
+            "example": "آخرین تراکنش‌ها"
+          },
+          "columns": {
+            "example": [
+              "شناسه",
+              "کاربر",
+              "نوع",
+              "جفت‌ارز",
+              "ارزش"
+            ],
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "rows": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/DashboardRecentRowDto"
+            }
+          },
+          "unit": {
+            "type": "string",
+            "nullable": true,
+            "example": "IRR",
+            "description": "Symbol for the money column, where the table has one"
+          }
+        },
+        "required": [
+          "title",
+          "columns",
+          "rows"
         ]
       }
     }
