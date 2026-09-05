@@ -97,15 +97,20 @@ Enums that already line up with the UI vocabulary — **reuse, do not re-invent*
 3. **Accounting vouchers.** `AccountingDocumentPage` is a double-entry voucher
    register (بدهکار/بستانکار, draft→pending→final). `finance-log` is a log, not a
    voucher book.
-4. **EM withdrawals.** Multi-receipt requests with requester/performer, لف flag,
-   expiry countdown and printable receipts. Nearest existing thing is the P2P
-   withdraw-part flow; needs its own module.
-5. **Service-provider registry.** `ProvidersPage` tracks 13 *infrastructure*
+4. **EM withdrawals — a *view* gap, not a capability gap.** Confirmed as the
+   existing rial P2P settlement desk, so the multi-receipt requests, expiry and
+   printable receipts all project off `p2p_*` (§5.17). What is missing is the
+   admin-side read model, not the mechanism.
+5. **The rial unit itself.** Everything below the bank adapters is denominated
+   in a symbol whose slug is `IRR`; the panel is IRT throughout. This is the
+   one gap that has to close before any other work lands (§3.1).
+6. **Service-provider registry.** `ProvidersPage` tracks 13 *infrastructure*
    categories (servers, SMS, OCR, Bale/Eitaa/Telegram, disks, logs, versions) —
    the existing `admin/providers` only knows gold price providers.
-6. **API keys, reports, defaults, platform settings, infra monitoring
-   (nodes/incidents/resources)** — none exist.
-7. **Dashboard aggregation.** No single endpoint feeds the 4-way KPI-filtered
+7. **API keys, reports, defaults, platform settings** — none exist. Infra
+   monitoring exists but lives in the standalone `monitor` app and is neither
+   authenticated nor persisted (§5.4).
+8. **Dashboard aggregation.** No single endpoint feeds the 4-way KPI-filtered
    dashboard.
 
 ---
@@ -169,11 +174,65 @@ strings already in the JSX so no mapping table is needed on the client.
   ```jsonc
   { "amount": "125000000.00000000", "currency": "IRT", "unit": "تومان", "decimals": 0 }
   ```
-- **Decide once, in Phase 0: IRR or IRT.** The UI prints `ت` (تومان) everywhere.
-  Recommendation: store IRR (rial) in the DB, expose `currency: "IRT"` with the
-  value already divided by 10 on admin endpoints, and document it in Swagger. A
-  silent factor-of-10 mismatch here is the single most expensive bug available
-  in this project.
+- **The unit is IRT (تومان), end to end — decided.** Not "store rial, divide at
+  the edge": the `IRR` symbol row is replaced by `IRT` and every stored balance
+  is converted once, by migration. See §3.1. The only place rial survives is the
+  bank-rail adapter boundary (§3.2), because SATNA/PAYA/Shahin/CBP settle in
+  rial and that is not ours to change.
+
+### 3.1 The IRR → IRT migration
+
+This is a **data migration, not a serialisation choice**, and it is the riskiest
+single item in the plan. `IRR` today is a seeded `symbol` row
+(`initSymbolPairMig1000000000028`, `symbolType: "rial"`,
+`hasPaymentGateway: true`) that wallets, pairs, transactions, credits and user
+levels all point at by FK, plus a hardcoded `"IRR"` string in at least
+`credit.service.ts`, `financial.service.ts`, `user-level.service.ts` and
+`provider-deal.consumer.ts`.
+
+One migration, one transaction, in Phase 0 before any new endpoint ships:
+
+1. **Symbol row** — update in place, keep the id so no FK moves:
+   `slug: IRR → IRT`, `name: "ریال ایران" → "تومان ایران"`,
+   `pic_path: /icons/irr.png → /icons/irt.png`. Updating beats
+   delete-and-insert; a new id would orphan every wallet.
+2. **Divide by 10**, everywhere that column is denominated in the rial symbol:
+   `wallet.free_balance / locked_balance / available_balance / credit_balance /
+   frozen_free_balance`, `transaction.amount` (+ fee columns),
+   `price_pairs.price` where `quote_id = IRT` (the seeded `XAU/IRR`
+   74,626,865.67 becomes `XAU/IRT` 7,462,686.567 — note the precision, the
+   column is `decimal(20,8)` and survives it), credit principal/limit/collateral
+   valuations, `user_level.credit_max_amount`, provider-deal snapshots,
+   warehouse valuations, finance-log amounts.
+3. **Pair slugs** — `XAU/IRR → XAU/IRT` and every routing rule, mapping and
+   `user_level` pair reference that spells the quote symbol.
+4. **Code constants** — replace the literal `"IRR"` with a single exported
+   `RIAL_SYMBOL_SLUG = "IRT"`; ban the bare string in lint.
+5. **Verification gate** — snapshot `SUM(balance)` per symbol before and after;
+   the IRT total must be exactly one tenth of the IRR total, and every other
+   symbol's total must be **unchanged**. Do not proceed if it is not.
+6. **Rollback** — the inverse migration multiplies by 10. Keep it working; do
+   not squash this migration later.
+
+Run it with the platform in maintenance mode. There is no safe online version of
+this — a partially converted balance table is a factor-of-ten error in
+production money.
+
+### 3.2 Rial at the bank boundary
+
+Iranian bank rails settle in **rial**. Every adapter that talks to one converts
+at its own edge and nowhere else:
+
+| Boundary | Direction | Conversion |
+|---|---|---|
+| Shahin (`src/shahin`) | outbound transfer, inbound statement | ×10 out, ÷10 in |
+| CBP / Kaino gateways (`src/payment-bus`, `payment-callback`) | both | same |
+| `shahin_entry.currency` | stored | keep `IRR` — it mirrors the bank's own record |
+| OCR'd receipts | inbound | amounts read from bank slips are rial |
+
+Everything above the adapter — wallets, orders, credits, vouchers, the whole
+admin API — is IRT. Adapters carry a unit test asserting the factor in both
+directions; that test is the guard rail for the entire money model.
 
 ### Dates
 - API returns **ISO-8601 UTC** and, for anything the UI prints in a table, a
@@ -279,11 +338,24 @@ Socket.IO `/admin` namespace, JWT-authenticated, room-per-topic:
 | `monitoring` | node/alert state change | Monitoring |
 | `arbitrage` | robot position/profit | Arbitrage |
 
-The ticker instruments are pinned in `constants/prices.js` (gold18, usdRial,
-emamiCoin, gold24, usdToman, rubToman, halfEmamiCoin, quarterEmamiCoin,
-eurToman, gbpToman, jpyToman, cadToman, audToman, sekToman, nokToman,
-dkkToman). Backend must publish these keys, or the mapping must be configured in
-`admin-symbol`. Polling fallback: `GET /v1/admin/market/ticker` every 3s.
+The 16 ticker instruments are **symbols**, not a separate mapping table
+(decided). Today only five symbol rows exist — `IRT`, `USD`, `EUR`, `AED`,
+`XAU` — so the work is a seed migration, not a modelling exercise:
+
+- add `ticker_key varchar unique null`, `is_ticker boolean default false`,
+  `display_order int` to `symbol`;
+- seed the remaining rows and set `ticker_key` to the client's camelCase key
+  (`gold18`, `usdRial`, `emamiCoin`, `gold24`, `usdToman`, `rubToman`,
+  `halfEmamiCoin`, `quarterEmamiCoin`, `eurToman`, `gbpToman`, `jpyToman`,
+  `cadToman`, `audToman`, `sekToman`, `nokToman`, `dkkToman`);
+- the same migration seeds the ~60 `PRICE_INSTRUMENTS` rows §5.13 needs, with
+  `category` (طلا/سکه/نقره/ارز/کریپتو/کالا) and `display_color`.
+
+`ticker_key` exists so `constants/prices.js` and `data/priceInstruments.js` can
+both be deleted rather than kept in sync by hand. Note the redundancy the IRT
+migration creates: `usdRial` and `usdToman` are now the same number ×10 — keep
+`usdRial` in the ticker only if the trading desk actually reads it in rial, and
+drop it otherwise. Polling fallback: `GET /v1/admin/market/ticker` every 3s.
 
 ### 4.6 Files
 
@@ -372,8 +444,47 @@ Same 4-way KPI filter (`providers | latency | rejection | alerts`).
 | N | `POST /v1/admin/monitoring/incidents/:id/activate` · `/deactivate` |
 | E | `GET /admin/monitoring/providers`, `/best-prices`, `/history` — already backs the "providers" filter |
 
-Source infra numbers from Prometheus/node-exporter or the existing `monitor`
-service rather than synthesising them in Nest.
+**Source of truth: the standalone `monitor` app** (decided). It already serves
+most of this page and must not be duplicated inside Nest:
+
+| Monitor endpoint | Feeds |
+|---|---|
+| `GET /api/services` | the nodes table — per-service `alive`, container stats, internal/external endpoints |
+| `GET /api/system` | the resources panel — CPU load, memory %, disk %, network |
+| `GET /api/system/history` | the 20-point chart (60 in-memory points today) |
+| `GET /api/containers/stats` · `/api/logs/:container` | drill-down |
+
+Split of responsibilities:
+
+- **`monitor` collects.** Backend never probes hosts or shells out to Docker.
+- **Backend serves and remembers.** `AdminMonitoringController` gets an upstream
+  HTTP client with a Redis cache (5–10s TTL) and a circuit breaker: if `monitor`
+  is down the admin page shows the last known snapshot with `"stale": true` and
+  a timestamp — a monitoring outage must never 500 the panel that exists to
+  report outages.
+- **Infra vs application metrics are different sources.** `monitor` cannot see
+  an application-level reject; the "میزان رد شده" figures (KYC 0.24%, Auth
+  0.05%) come from the backend's own per-endpoint metrics (§8), not from
+  `monitor`. Same for provider latency, which `admin-monitoring` already has.
+- **Incidents live in backend Postgres**, not in `monitor`. They carry admin
+  actions (activate/deactivate), need audit rows and must survive a `monitor`
+  restart. `monitor` publishes state transitions; the backend opens, dedupes and
+  closes incident records from them.
+
+Four changes to `monitor` itself, all small and all best practice:
+
+1. **Authenticate.** It currently serves container stats and log tails to
+   anything that can reach port 8080. Shared-secret header between backend and
+   monitor, and it never faces the internet.
+2. **Persist history.** In-memory `sysHistory` (60 points, `MAX_HISTORY`) is
+   lost on restart and wrong the moment there are two replicas. Write to Redis
+   with a TTL, or expose `/metrics` in Prometheus exposition format and let a
+   scraper own retention — the second option costs less later.
+3. **Version the contract.** Freeze the response shapes under `/api/v1/*` before
+   the backend depends on them.
+4. **Add `location`.** The UI shows تهران / فرانکفورت / آمستردام per node;
+   nothing in `services[]` carries it today. A static field per service entry is
+   enough.
 
 ### 5.5 Users
 
@@ -436,6 +547,37 @@ Create/edit body (from `RoleCreatePage.handleConfirmSubmit`):
 Validation: fee ≤ 3 decimals; `credit_amount` ≤ 10,000,000 (`MAX_CREDIT_AMOUNT`)
 and required when `hasCredit == "yes"`; pair ids are the sorted
 `"<walletA>-<walletB>"` form and must be a subset of the selected wallets.
+
+**Fixed roles** (`isFixed`, the ones migrated from the `AdminRole` enum) —
+the rule is *identity is frozen, configuration is not*:
+
+| | Fixed role | Custom role |
+|---|---|---|
+| Delete | ✗ | ✓ (blocked while `memberCount > 0`) |
+| Rename / change `roleType` | ✗ — code paths key off the slug | ✓ |
+| Wallet config: fees, daily withdrawal, credit, pairs | ✓ | ✓ |
+| Permission set | ✓, except the root role | ✓ |
+
+The root role (`superAdmin`) permanently holds all 22 permissions and cannot be
+edited at all — that is the lock-out guard, and it is also what makes the
+"super admin sees everything" rule in §5.23 expressible.
+
+Three invariants the service enforces on **every** role write, fixed or not:
+
+1. You cannot remove `roles_manage` from your own role.
+2. You cannot grant a permission your own role lacks (no escalation by proxy).
+3. At least one active, unsuspended admin must retain `roles_manage`.
+
+Each role in the list and detail responses carries what the server will actually
+allow, so the client greys out the right buttons instead of reimplementing these
+rules:
+
+```jsonc
+"capabilities": { "canDelete": false, "canRename": false,
+                  "canEditPermissions": true, "canEditConfig": true }
+```
+`RolesPage` already renders a "ثابت" badge and hides delete for `isFixed` — it
+should switch to driving both off `capabilities`.
 
 ### 5.8 Trades
 
@@ -565,27 +707,68 @@ that server-side. Row must carry `accountOwner` and an `ownerKind` of
 | N | `GET /v1/admin/shahin/statement/export?accountIds=&from=&to=` | the date-range download |
 | N | `GET /v1/admin/shahin/open-banking` · `POST /:id/sync` — connection status, access scope, consent expiry, last sync |
 
-### 5.17 Withdrawal EM — new `src/em-withdraw`
+### 5.17 Withdrawal EM — a read model over `src/p2p`, not a new module
 
-The most complex net-new module. A request fans out into **N receipts (فیش)**,
-each with its own upload timestamp, bank, source/destination account and amount.
+**Confirmed: EM is the existing rial P2P settlement desk.** §5.17 therefore
+collapses from a new module (~3 weeks) to an adapter + projection (~1 week). No
+new lifecycle, no second source of truth for money — `P2pSettlementService`
+stays the only place balance moves.
+
+The mapping is close to exact:
+
+| EM screen concept | `src/p2p` |
+|---|---|
+| Request row | `p2p_withdraw_request` (1:1 with `withdraw`) |
+| نوع درخواست = برداشت | a `p2p_withdraw_request` |
+| نوع درخواست = واریز | a `p2p_deposit_intent` |
+| نوع درخواست = تسویه | a match with `source = ADMIN` (company settlement) |
+| نوع درخواست = انتقال | an `admin_bank_account` transfer leg |
+| فیش (N per request) | `p2p_payment_proof`, one per `p2p_match`; a request fans out to N parts → N matches → N proofs, which is exactly the stacked date/time/upload cells in the EM table |
+| کاربر درخواست‌کننده | the withdrawer on the request |
+| کاربر انجام‌دهنده | the depositor on the match; the acting admin when `source = ADMIN` |
+| حساب مقصد | the withdrawer's IBAN on the request |
+| «حساب داده شده» | the `admin_bank_account` assigned for admin settlement |
+| زمان مانده تا انقضا | `p2p_withdraw_part.reserved_until` (or request expiry) |
+| تأیید / رد | the existing escalation resolutions `CONFIRM_PAYMENT` / `REJECT_PAYMENT` / `SETTLE_FROM_ADMIN` |
+
+The four EM statuses are a **projection** of the existing state machines, not new
+columns:
+
+| EM status | Derived from |
+|---|---|
+| در انتظار دریافت حساب | `PENDING_MATCHING`, or `ADMIN_SETTLEMENT` before an account is assigned |
+| در انتظار دریافت فیش | part `RESERVED` / match `AWAITING_PAYMENT` |
+| فیش پرداخت‌شده | match `PROOF_SUBMITTED` / `CONFIRMED` |
+| رد شده | `REJECTED_BY_WITHDRAWER`, or an escalation resolved as reject |
+
+Put the projection in one place — a `P2pEmViewService` — so the mapping table
+above exists as code, not as a `CASE` expression copy-pasted across handlers.
 
 | | Endpoint |
 |---|---|
-| N | `GET /v1/admin/em/requests?status=&searchBy=requester\|performer\|account&q=&page=&pageSize=10` |
-| N | `GET /v1/admin/em/stats` — awaiting-account, awaiting-receipt, paid receipts, accounts given, all |
-| N | `GET /v1/admin/em/requests/:id` |
-| N | `POST /v1/admin/em/requests/:id/account` `{ destAccount }` — "حساب داده شده" |
-| N | `POST /v1/admin/em/requests/:id/receipts` — multipart, one فیش |
+| N | `GET /v1/admin/em/requests?status=&searchBy=requester\|performer\|account&q=&page=&pageSize=10` — union view over withdraw requests + deposit intents |
+| N | `GET /v1/admin/em/stats` — the 5 KPIs, counted off the projection |
+| N | `GET /v1/admin/em/requests/:id` — request + parts + matches + proofs |
+| X | `POST /v1/admin/em/requests/:id/account` → assigns an `admin_bank_account` (existing `AdminBankAccountService`) |
+| X | `POST /v1/admin/em/requests/:id/receipts` → wraps `p2p_payment_proof` upload |
 | N | `GET /v1/admin/em/receipts/:id` — printable payload for `ReceiptModal` |
-| N | `POST /v1/admin/em/requests/:id/approve` · `/reject` (OTP-gated) |
-| N | `GET /v1/admin/em/providers?walletType=&q=&page=` — `{ name, walletType, balanceType: بدهکار\|بستانکار, amount }` |
+| X | `POST /v1/admin/em/requests/:id/approve` · `/reject` → `P2pEscalationService` resolutions, OTP-gated per §4.3 |
+| E | `GET /v1/admin/em/providers` → `admin/provider-finance/overview`, which already returns the بدهکار/بستانکار position per counterparty |
 
-Request row: `{ id, requestType(برداشت/واریز/تسویه/انتقال), amount, requester,
-destAccount, performer, status(pending/queue/paid/rejected), hasLef,
-expiresAt, description, receipts[] }`. `expiresAt` is served as a timestamp —
-the countdown ("۳ ساعت") is rendered client-side; never send a pre-rendered
-duration string that goes stale in the browser.
+Two residual items the P2P model does not answer:
+
+- **`hasLef` (دارای لف).** Nothing in `src/p2p` corresponds. Modelled as an
+  explicit `has_enclosure boolean` on the request, set by the operator — the UI
+  only ever displays بله/خیر. Worth 30 seconds of confirmation from whoever
+  specified the column.
+- **Expiry rendering.** Serve `expiresAt` as a timestamp. The EM mock ships
+  pre-rendered strings ("۳ ساعت"); those go stale in an open browser tab, and
+  the countdown belongs on the client.
+
+Because this is a projection, the admin actions must go through the P2P services
+rather than writing `p2p_*` tables directly — that is what keeps the escalation
+audit log, the two-person control in `RIAL-P2P-SETTLEMENT-PLAN.md` §8.3, and the
+settlement invariants intact.
 
 ### 5.18 Provider settlement document
 
@@ -615,7 +798,7 @@ Same identifier space as trades (§5.8) and warehouse crypto documents
 | N | `GET /v1/admin/warehouse/stats?type=material\|crypto\|rial\|fiat` — 6 KPIs, each `{ weight, count }` with `weightUnit`/`countUnit` |
 | N | `GET /v1/admin/warehouse/inventory?type=&kpi=` |
 | N | `GET /v1/admin/warehouse/capacity?type=` — `{ name, usedPercent }` |
-| E | `GET /admin/warehouse/packets?status=` — processing packages table |
+| E | `GET /admin/warehouse/packets?status=` — the "بسته‌های در حال پردازش" table. **Confirmed: the UI's بسته is the backend's `PacketEntity`** — reuse it, do not model a second package concept. `POST /admin/warehouse/packets`, `/packets/:id/split` and `/packets/:id/picture` already exist and are richer than the current screen; the split and picture actions are worth surfacing in the UI later |
 | E | `POST /admin/warehouse/create` — `{ kind, name, address, nominal_capacity }` (snake_case per `WarehouseCreatePage`) |
 
 **Documents** (`WarehouseDocumentPage`)
@@ -692,6 +875,25 @@ createdBy, date }`. `side` is derived from `movement`, never client-supplied.
 Generation runs on the existing `@nestjs/schedule` + RabbitMQ workers; the HTTP
 call must not block.
 
+**Visibility (decided): super admin sees everything, everyone else sees only
+their own.** `report_job.created_by` and `report_schedule.owner_id` are the
+filter; the root role bypasses it. Enforced identically on list, detail and
+download — a report id must not be a way to read another desk's export by
+guessing a UUID, so `/:id/download` re-checks ownership and returns 404 (not
+403) to a non-owner, which avoids confirming that the id exists.
+
+This deliberately does **not** add a 23rd permission key: the UI's matrix is
+fixed at the 22 keys in `rolesMock.js`, so "may see all reports" is a capability
+of the root role rather than a catalog entry. If a future finance-lead role
+needs it without full super-admin rights, that is the moment to add
+`reports_view_all` to the catalog — not before.
+
+Retention: generated artefacts expire after **90 days**, purged from MinIO by a
+nightly job; the `report_job` row survives as an audit record with
+`artifactExpired: true`. Downloads are short-TTL presigned URLs and every one
+writes an audit row (§4.4) — exports are the easiest bulk-exfiltration path in
+the panel.
+
 ### 5.24 API management — new
 
 | | Endpoint |
@@ -758,7 +960,7 @@ the contract now, build the UI later:
 | `operation_otp_challenge` | Redis primary + Postgres archive for audit |
 | `accounting_voucher` | §5.22, double-entry with `side` |
 | `accounting_voucher_line` | ledger lines |
-| `em_withdraw_request` / `em_withdraw_receipt` | §5.17 |
+| *(none for EM)* | §5.17 is a projection over the existing `p2p_*` tables; the only new column is `p2p_withdraw_request.has_enclosure` |
 | `service_provider` | infra provider registry, 13 categories (§5.28 / `ProvidersPage`) |
 | `api_key` | hashed secret, status, usage counters |
 | `report_job` / `report_schedule` | §5.23 |
@@ -767,10 +969,22 @@ the contract now, build the UI later:
 | `warehouse_document` / `warehouse_document_attachment` | §5.20 |
 | `arbitrage_robot` / `arbitrage_position` | §5.14 |
 
+| `report_job` retention | `created_by`, `artifact_expires_at`, `artifact_expired` (§5.23) |
+
 Existing entities to extend: `AdminEntity` (`roleId` FK, `firstName`,
 `lastName`, `username`, `avatarUrl`), `UserKycEntity` (`provider` status),
 `ProviderEntity` (`category`, `kind`, `reliability`, `supply`, `basePrice`),
-`SymbolEntity` (`marketOpen`, `displayColor`, `tickerKey`).
+`SymbolEntity` (`marketOpen`, `displayColor`, `tickerKey`, `isTicker`,
+`displayOrder`, `category`), `P2pWithdrawRequestEntity` (`hasEnclosure`).
+
+Migrations, in order, all in Phase 0:
+
+1. `symbol`: `IRR → IRT` rename + the ticker/instrument columns (§3.1, §4.5).
+2. The ÷10 balance conversion (§3.1) — separate migration, separate
+   verification gate, separately reversible.
+3. Seed the ~60 price instruments and the 16 ticker keys.
+4. `admin_role` + permission tables, seeded from the legacy `AdminRole` enum
+   with the four roles marked `isFixed`.
 
 Every change ships as a TypeORM migration under `src/migrations` — the project
 does not use `synchronize`.
@@ -784,18 +998,25 @@ engineers plus one frontend engineer doing the mock→API swap in parallel.
 
 | Phase | Scope | Unblocks | Est. |
 |---|---|---|---|
-| **0 — Foundation** | conventions, versioning of existing admin routes, pagination DTO, `admin-role` + permission guard, operation-OTP module, audit interceptor, refresh tokens, Jalali validator/serializer, Swagger + Prism mock, currency-unit decision | everything | 2 wks |
+| **0 — Foundation** | **the IRR→IRT migration (§3.1) and the bank-boundary adapters (§3.2)**, symbol/ticker seed (§4.5), conventions, versioning of existing admin routes, pagination DTO, `admin-role` + permission guard, operation-OTP module, audit interceptor, refresh tokens, Jalali validator/serializer, Swagger + Prism mock | everything | 2–3 wks |
 | **1 — Auth & shell** | §5.1, §5.2, notifications inbox, presence, ticker + WS `prices` | operator can log in and stay logged in | 1 wk |
 | **2 — Identity** | Users (§5.5), KYC (§5.6), Roles (§5.7) | the 3 highest-traffic pages | 2 wks |
 | **3 — Money core** | Wallets ×3 (§5.9–5.11), Credit (§5.12) | wallet operations, the first OTP-gated writes | 2 wks |
-| **4 — Withdrawals** | Withdrawals (§5.15), Shahin (§5.16), EM (§5.17), provider settlement (§5.18) | the whole payout desk | 3 wks |
+| **4 — Withdrawals** | Withdrawals (§5.15), Shahin (§5.16), EM projection over `p2p` (§5.17), provider settlement (§5.18) | the whole payout desk | 2 wks |
 | **5 — Market** | Trades (§5.8), Price engine (§5.13), Arbitrage (§5.14) | trading ops | 2 wks |
 | **6 — Warehouse** | §5.20 ×3 | physical inventory | 2 wks |
 | **7 — Finance docs** | Accounting (§5.21), vouchers (§5.22), textId (§5.19), Reports (§5.23) | month-end close | 2 wks |
 | **8 — Platform** | Dashboard (§5.3), Monitoring (§5.4), Providers registry, Partners, API keys (§5.24), Settings (§5.26) | | 2 wks |
 | **9 — Deferred pages** | Defaults, Support, Marketing, Customer overview (§5.27) | | 1 wk |
 
-~180 endpoints, of which roughly 70 already exist in some form.
+~180 endpoints, of which roughly 70 already exist in some form. The seven
+answered questions moved about a week net: EM shed ~2 weeks by becoming a
+projection, Phase 0 gained ~1 week for the IRT migration.
+
+**Phase 0 is now a hard gate.** Nothing else can start against a database whose
+rial balances are mid-conversion, and no endpoint should be written against the
+`IRR` symbol only to be rewritten. If the IRT migration slips, the whole plan
+slips — that is the correct dependency, not a scheduling accident.
 
 ### Parallel frontend workstream
 
@@ -833,20 +1054,32 @@ engineers plus one frontend engineer doing the mock→API swap in parallel.
 
 ---
 
-## 9. Open questions
+## 9. Decision log
 
-1. **IRR vs IRT** on the wire (§3). Blocks Phase 0.
-2. **Does "EM" map onto the existing P2P rial settlement flow**, or is it a
-   separate desk? `RIAL-P2P-SETTLEMENT-PLAN.md` describes something structurally
-   very close (parts, proofs, expiry). If they are the same thing, §5.17 becomes
-   an adapter over `src/p2p` instead of a new module — a ~2-week difference.
-3. **Ticker instrument keys.** `constants/prices.js` pins 16 keys
-   (`gold18`, `usdRial`, `emamiCoin`, …). Are these already modelled as symbols,
-   or does a mapping table need seeding?
-4. **Warehouse "packages" vs "packets".** The UI's بسته and the backend's
-   `PacketEntity` look like the same concept — confirm before modelling twice.
-5. **Fixed roles.** `isFixed` roles cannot be deleted in the UI. Can they be
-   edited, and can their permission set change?
-6. **Monitoring source of truth.** Prometheus, the `monitor` service, or
-   something new? §5.4 is unbuildable until this is answered.
-7. **Report retention** and who may download another operator's generated report.
+All seven questions from the first draft are answered. Recorded here because
+each one is load-bearing somewhere in §3–§7.
+
+| # | Question | Decision | Consequence |
+|---|---|---|---|
+| 1 | IRR or IRT on the wire | **IRT**, and the `IRR` symbol row is replaced rather than converted at the edge | §3.1 migration; §3.2 rial only at bank adapters; Phase 0 grows ~1 wk and becomes a hard gate |
+| 2 | Is EM the P2P rial desk | **Same desk** | §5.17 becomes a projection over `p2p_*`; Phase 4 drops ~2 wks; no new money path |
+| 3 | Ticker keys | **Symbols**, no mapping table | §4.5 seed migration adds `ticker_key`/`is_ticker`; only 5 symbol rows exist today |
+| 4 | Packages vs `PacketEntity` | **Same concept** | §5.20 reuses the existing packet endpoints |
+| 5 | Fixed roles — editable? | *Our call:* identity frozen, configuration editable, permissions editable except the root role | §5.7 table + 3 escalation invariants + `capabilities` on the payload |
+| 6 | Monitoring source of truth | **The standalone `monitor` app** | §5.4 backend caches and projects; 4 hardening items on `monitor`; app-level metrics stay in backend |
+| 7 | Report visibility | **Super admin sees all, others see their own** | §5.23 ownership filter, 404 not 403, 90-day retention, no 23rd permission key |
+
+### Still open
+
+Small, and none of them block Phase 0:
+
+1. **`hasLef` (دارای لف)** — no counterpart in the P2P model. Specced as an
+   operator-set boolean (§5.17); confirm with whoever specified the column.
+2. **`usdRial` in the ticker** — after the IRT migration it is `usdToman` × 10.
+   Keep only if the desk genuinely reads rial (§4.5).
+3. **Shahin `IRR` in stored entries** — §3.2 keeps `shahin_entry.currency` as
+   `IRR` because it mirrors the bank's record. Confirm that finance wants the
+   bank's unit preserved there rather than normalised.
+4. **`monitor` history retention** — Redis with a TTL, or Prometheus exposition
+   plus a scraper. The second costs less past ~3 months; pick before §5.4 is
+   built, not during.
