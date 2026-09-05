@@ -13,6 +13,7 @@ import type {
   ReportStatus,
   ReportType,
 } from "../api/types";
+import DateField from "../components/DateField";
 
 /** The panel's four cards, each a view of the same list. */
 type Kpi = "generated" | "schedules" | "downloads" | "duration";
@@ -391,11 +392,11 @@ export default function ReportsPage() {
           </div>
           <div className="field" style={{ margin: 0, minWidth: 150 }}>
             <label>از تاریخ</label>
-            <input type="date" className="input" value={from} onChange={(e) => setFrom(e.target.value)} />
+            <DateField value={from} onChange={setFrom} placeholder="از تاریخ" />
           </div>
           <div className="field" style={{ margin: 0, minWidth: 150 }}>
             <label>تا تاریخ</label>
-            <input type="date" className="input" value={to} onChange={(e) => setTo(e.target.value)} />
+            <DateField value={to} onChange={setTo} placeholder="تا تاریخ" />
           </div>
           <div className="field" style={{ margin: 0, minWidth: 140 }}>
             <label>فرمت خروجی</label>
