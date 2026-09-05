@@ -1,8 +1,6 @@
 import { Controller, Get, UseGuards } from "@nestjs/common";
 import { ApiBearerAuth, ApiOperation, ApiTags } from "@nestjs/swagger";
 import { AdminAuthGuard } from "../admin/auth/Guard/admin.guard";
-import { AdminRole } from "../admin/role/admin.roles.enum";
-import { AdminRoles } from "../admin/role/admin.role.decorator";
 import { ApiAdminErrorResponses, ApiEnvelopeResponse } from "../shared/swagger";
 import { AdminMarketService } from "./admin-market.service";
 import { MarketTickerDto } from "./dto/market-ticker.dto";
@@ -11,6 +9,9 @@ import { MarketTickerDto } from "./dto/market-ticker.dto";
 @ApiBearerAuth()
 @ApiAdminErrorResponses()
 @UseGuards(AdminAuthGuard)
+// Deliberately carries no @RequirePermissions: the ticker renders in the panel
+// chrome on every page, so gating it would blank the banner for any role that
+// happens to lack the key. Authentication is the bar here; the data is prices.
 @Controller("admin/market")
 export class AdminMarketController {
   constructor(private readonly adminMarketService: AdminMarketService) {}
@@ -18,7 +19,6 @@ export class AdminMarketController {
   @Get("ticker")
   // Every operator role sees the ticker: it is the ambient price context the
   // rest of the panel is read against, not a privileged view.
-  @AdminRoles(AdminRole.ADMIN, AdminRole.SUPER_ADMIN, AdminRole.FINANCE, AdminRole.WAREHOUSE)
   @ApiOperation({
     summary: "Market ticker instruments with their live prices",
     description:

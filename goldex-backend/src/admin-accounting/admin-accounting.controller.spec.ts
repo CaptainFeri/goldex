@@ -48,7 +48,14 @@ describe("AdminAccountingController routing", () => {
       .overrideGuard(AdminAuthGuard)
       .useValue({
         canActivate: (ctx: any) => {
-          ctx.switchToHttp().getRequest().admin = { id: "admin-1", role: AdminRole.FINANCE };
+          // A finance operator as the permissions guard now sees one: the
+          // linked role row, not the legacy enum, is what grants access.
+          ctx.switchToHttp().getRequest().admin = {
+            id: "admin-1",
+            role: AdminRole.FINANCE,
+            isSuspended: false,
+            roleRef: { id: "r-finance", slug: "finance", permissions: ["accounting"] },
+          };
           return true;
         },
       })

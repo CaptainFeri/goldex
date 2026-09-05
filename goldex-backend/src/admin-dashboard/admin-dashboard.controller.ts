@@ -1,8 +1,8 @@
 import { Controller, Get, Query, UseGuards } from "@nestjs/common";
 import { ApiBearerAuth, ApiOperation, ApiTags } from "@nestjs/swagger";
 import { AdminAuthGuard } from "../admin/auth/Guard/admin.guard";
-import { AdminRole } from "../admin/role/admin.roles.enum";
-import { AdminRoles } from "../admin/role/admin.role.decorator";
+import { AdminPermissionsGuard } from "../admin-role/guard/admin-permissions.guard";
+import { RequirePermissions } from "../admin-role/guard/require-permissions.decorator";
 import { ApiAdminErrorResponses, ApiEnvelopeResponse } from "../shared/swagger";
 import { AdminDashboardService } from "./admin-dashboard.service";
 import {
@@ -20,10 +20,10 @@ import {
 @ApiTags("Admin-Dashboard")
 @ApiBearerAuth()
 @ApiAdminErrorResponses()
-@UseGuards(AdminAuthGuard)
+@UseGuards(AdminAuthGuard, AdminPermissionsGuard)
 // The landing page: every operator role sees it, and each panel is already
 // scoped to what the metric itself exposes.
-@AdminRoles(AdminRole.ADMIN, AdminRole.SUPER_ADMIN, AdminRole.FINANCE, AdminRole.WAREHOUSE)
+@RequirePermissions("dashboard")
 @Controller("admin/dashboard")
 export class AdminDashboardController {
   constructor(private readonly dashboard: AdminDashboardService) {}

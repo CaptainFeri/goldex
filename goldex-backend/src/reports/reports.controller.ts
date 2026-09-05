@@ -14,8 +14,8 @@ import {
 } from "@nestjs/common";
 import { ApiBearerAuth, ApiOperation, ApiTags } from "@nestjs/swagger";
 import { AdminAuthGuard } from "../admin/auth/Guard/admin.guard";
-import { AdminRole } from "../admin/role/admin.roles.enum";
-import { AdminRoles } from "../admin/role/admin.role.decorator";
+import { AdminPermissionsGuard } from "../admin-role/guard/admin-permissions.guard";
+import { RequirePermissions } from "../admin-role/guard/require-permissions.decorator";
 import { AdminExpressRequest } from "../admin/auth/types/adminExpressRequest";
 import {
   ApiAdminErrorResponses,
@@ -38,8 +38,8 @@ import { ReportCaller, ReportsService } from "./reports.service";
 @ApiTags("Admin-Reports")
 @ApiBearerAuth()
 @ApiAdminErrorResponses()
-@UseGuards(AdminAuthGuard)
-@AdminRoles(AdminRole.ADMIN, AdminRole.SUPER_ADMIN, AdminRole.FINANCE)
+@UseGuards(AdminAuthGuard, AdminPermissionsGuard)
+@RequirePermissions("reports")
 @Controller("admin/reports")
 export class ReportsController {
   constructor(private readonly reports: ReportsService) {}
