@@ -387,7 +387,24 @@ frontend developer's primary documentation, closing that is Phase 0 work, not a
 polish item. It also blocks client generation: every operation would return
 `any`.
 
-Required, in order:
+**Landed** (`src/shared/`), with the schema asserted in
+`api-envelope.decorator.spec.ts` rather than assumed:
+
+| Building block | Use |
+|---|---|
+| `ResponseEnvelopeDto` / `ErrorEnvelopeDto` | the real wire shapes |
+| `@ApiEnvelopeResponse(Dto, { isArray? })` | single-object and array payloads |
+| `@ApiPaginatedResponse(Dto)` | list endpoints |
+| `@ApiEnvelopePrimitiveResponse(type)` | the escape hatch for primitives |
+| `@ApiAdminErrorResponses()` | 400/401/403/404, applied once per controller |
+| `PaginationQueryDto` (`page`, `pageSize`, `sort`, `order`, `skip`/`take`/`pageNumber`) | list query params |
+| `PaginatedDto<T>` + `paginate(items, total, query)` | list responses |
+
+`admin/bank-accounts` is the migrated reference: extend `PaginationQueryDto`,
+keep the old param as a `deprecated: true` alias for one release, return
+`paginate(...)`, decorate the controller.
+
+Still required, in order:
 
 1. A response DTO per endpoint, starting with the ~70 the panels already call.
 2. An `@ApiEnvelope(Dto)` decorator (`ApiExtraModels` + `getSchemaPath`) that
