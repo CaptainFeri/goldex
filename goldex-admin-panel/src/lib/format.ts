@@ -1,8 +1,23 @@
+import { DISPLAY_LOCALE } from "./money";
+
+/**
+ * A number for display.
+ *
+ * Persian digits and the `٬` group separator, matching ui-parszargar — which
+ * renders every number through `toFa`, counts included — and matching the
+ * dates this module already formats as `fa-IR` and the amounts `lib/money`
+ * formats. `toLocaleString("fa-IR")` produces exactly the same string as
+ * ui-parszargar's own `fmt`.
+ *
+ * Display only. Never feed the result back into an `<input>` or `Number()`:
+ * Persian digits do not survive that round trip. Use `toFormAmount` from
+ * `lib/money` to seed a field.
+ */
 export function fmtNum(v: number | string | null | undefined, digits = 0): string {
   if (v === null || v === undefined || v === "") return "—";
   const n = typeof v === "string" ? Number(v) : v;
   if (Number.isNaN(n)) return "—";
-  return n.toLocaleString("en-US", { maximumFractionDigits: digits });
+  return n.toLocaleString(DISPLAY_LOCALE, { maximumFractionDigits: digits });
 }
 
 export function fmtDate(v: string | null | undefined): string {

@@ -273,10 +273,36 @@ this is where it stands.
   is established. The order screen carries a comment saying so.
 - **`bridgeRate`, `spreadPercent`, `leverage`, drawdown percentages.** Rates and
   ratios, not amounts.
+- **Warehouse, entirely.** All 42 sites are gram weights. The module's four
+  entities carry no money column at all — only `pure_weight`,
+  `apparent_weight`, `capacity_total/used/remaining` and a request `weight` —
+  and the settlement-material balance that looks like a ledger is a query
+  filtered to `symbol = "XAU"`, so `totalReceived` / `totalPaid` / `netBalance`
+  are grams too. The page was already correct; the audit's answer here is to
+  change nothing.
 
-**Still to audit:** Warehouse (the largest remaining, 42 sites), CBP, Telegram
-market, Compare, Discounts, Symbols, Levels, Users. Each needs the same per-site
-judgement rather than a find-and-replace.
+**Still to audit:** CBP, Telegram market, Compare, Discounts, Symbols, Levels,
+Users. Each needs the same per-site judgement rather than a find-and-replace.
+
+### 6.2 Digit rendering
+
+Auditing Warehouse turned up the inconsistency underneath the money work rather
+than another conversion. `fmtNum` rendered `en-US`, so a Latin-digit count sat
+next to a Persian-digit amount on the same row, while `fmtDate` had always been
+`fa-IR` and `credit/labels.ts` had its own `fa-IR` copy of `fmtNum`.
+
+ui-parszargar settles it: `utils/helpers.js` puts **every** number through
+`toFa`, counts and percentages included, and its `fmt` produces exactly the
+string `toLocaleString("fa-IR")` does — verified digit-for-digit, and now
+asserted by `format.spec.ts`, which formats through ui-parszargar's own function
+and compares. So `fmtNum` is `fa-IR`, which aligns roughly 300 sites in one
+place.
+
+Safe because `fmtNum` is display-only: no `<input>`, `Number()`, `key` or
+`href` consumes it, and the CSV export builds its rows from the raw data rather
+than the formatter, so downloads stay Latin-digit and Excel-readable. That
+constraint is now written on the function — Persian digits do not survive a
+round trip through a form field, which is what `toFormAmount` is for.
 
 **Two API gaps the audit surfaced,** both of which had left the client no way to
 be correct and are now fixed:
