@@ -1139,3 +1139,27 @@ export interface PairRoutes {
   usesBridge: boolean;
   unpriceable: boolean;
 }
+
+/**
+ * The standard paginated payload, as returned inside the response envelope by
+ * every endpoint migrated to the contract in
+ * `goldex/docs/PARSZARGAR-ADMIN-API-PLAN.md` §3.
+ *
+ * Endpoints still on the legacy `{ items, total, page, limit }` shape use the
+ * local `Page<T>` in `api/p2p.ts`; that alias disappears as they migrate.
+ */
+export interface Paginated<T> {
+  items: T[];
+  total: number;
+  page: number;
+  pageSize: number;
+  totalPages: number;
+}
+
+/** Query params every migrated list endpoint accepts. */
+export interface PaginationParams {
+  page?: number;
+  pageSize?: number;
+  sort?: string;
+  order?: "asc" | "desc";
+}

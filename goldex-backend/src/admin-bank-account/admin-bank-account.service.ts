@@ -17,6 +17,7 @@ import { BankAccountQueryDto } from "./dto/bank-account-query.dto";
 import { SetDirectionsDto } from "./dto/set-directions.dto";
 import { SymbolEntity } from "../admin-symbol/entity/symbol.entity";
 import { SymbolTypeEnum } from "../admin-symbol/enum/symbol.type.enum";
+import { PaginatedDto, paginate } from "../shared/dto/paginated.dto";
 
 @Injectable()
 export class AdminBankAccountService {
@@ -31,15 +32,15 @@ export class AdminBankAccountService {
 
   // ─── Reads ─────────────────────────────────────────────────
 
-  async findAll(query: BankAccountQueryDto) {
-    const { direction, symbolId, status, page = 1, limit = 20 } = query;
+  async findAll(query: BankAccountQueryDto): Promise<PaginatedDto<AdminBankAccountEntity>> {
+    const { direction, symbolId, status } = query;
     const qb = this.repo
       .createQueryBuilder("a")
       .leftJoinAndSelect("a.symbol", "symbol")
       .orderBy("a.priority", "ASC")
       .addOrderBy("a.created_at", "DESC")
-      .skip((page - 1) * limit)
-      .take(limit);
+      .skip(query.skip)
+      .take(query.take);
 
     if (direction === BankAccountDirectionEnum.DEPOSIT) {
       qb.andWhere("a.use_for_deposit = true");
@@ -51,7 +52,7 @@ export class AdminBankAccountService {
     if (status) qb.andWhere("a.status = :status", { status });
 
     const [items, total] = await qb.getManyAndCount();
-    return { items: items.map((a) => this.withTodayUsage(a)), total, page, limit };
+    return paginate(items.map((a) => this.withTodayUsage(a)), total, query);
   }
 
   async findById(id: string): Promise<AdminBankAccountEntity> {
