@@ -1,0 +1,15 @@
+{
+  "moduleFileExtensions": ["js", "json", "ts"],
+  "rootDir": ".",
+  "testEnvironment": "node",
+  "testRegex": ".e2e-spec.ts$",
+  "transform": {
+    "^.+\\.(t|j)s$": "ts-jest"
+  },
+  "setupFiles": ["<rootDir>/setup-e2e.env.ts"],
+  "globalSetup": "<rootDir>/global-setup.ts",
+  "testTimeout": 120000,
+  "maxWorkers": 1,
+  "forceExit": true,
+  "silent": true
+}

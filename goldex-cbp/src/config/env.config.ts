@@ -1,0 +1,62 @@
+import { registerAs } from "@nestjs/config";
+
+export default registerAs("app", () => ({
+  port: parseInt(process.env.PORT ?? "4100", 10),
+  postgres: {
+    host: process.env.PAYMENT_DB_HOST ?? "localhost",
+    port: parseInt(process.env.PAYMENT_DB_PORT ?? "5434", 10),
+    username: process.env.PAYMENT_DB_USERNAME ?? "postgres",
+    password: process.env.PAYMENT_DB_PASSWORD ?? "postgres",
+    database: process.env.PAYMENT_DB_NAME ?? "payment-db",
+    synchronize: (process.env.PAYMENT_DB_SYNC ?? "true") === "true",
+  },
+  callbackBaseUrl:
+    process.env.PAYMENT_CALLBACK_BASE_URL ?? "http://localhost:4100",
+  rabbitmq: {
+    host: process.env.CBP_RABBITMQ_HOST ?? "localhost",
+    port: parseInt(process.env.CBP_RABBITMQ_PORT ?? "5672", 10),
+    user: process.env.CBP_RABBITMQ_USER ?? "guest",
+    pass: process.env.CBP_RABBITMQ_PASS ?? "guest",
+    exchange: process.env.CBP_RABBITMQ_EXCHANGE ?? "signalr.providers",
+    queue: process.env.CBP_RABBITMQ_QUEUE ?? "goldex.cbp.queue",
+  },
+  kaino: {
+    baseUrl: process.env.KAINO_BASE_URL ?? "https://inopay.done.ir",
+    loginBaseUrl:
+      process.env.KAINO_LOGIN_BASE_URL ?? "https://inopay.done.ir",
+    loginPath:
+      process.env.KAINO_LOGIN_PATH ?? "/rest/accountChannel/wallet/v1/login",
+    username: process.env.KAINO_USERNAME ?? "",
+    password: process.env.KAINO_PASSWORD ?? "",
+    tenant: process.env.KAINO_TENANT ?? "",
+    secret: process.env.KAINO_SECRET ?? "",
+    payerMobile: process.env.KAINO_PAYER_MOBILE ?? "",
+    walletPathPrefix:
+      process.env.KAINO_WALLET_PATH_PREFIX ?? "/rest/accountChannel/wallet/v1",
+    ipgPayPath:
+      process.env.KAINO_IPG_PAY_PATH ??
+      "/rest/accountChannel/wallet/v1/chargeWallet/pay",
+  },
+  shahin: {
+    baseUrl: process.env.SHAHIN_SERVICE_URL ?? "",
+    apiKey: process.env.SHAHIN_SERVICE_API_KEY ?? "",
+    bankCode: process.env.SHAHIN_BANK_CODE ?? "BKV",
+    companyNationalCode: process.env.SHAHIN_COMPANY_NATIONAL_CODE ?? "",
+    sourceAccount: process.env.SHAHIN_SOURCE_ACCOUNT ?? "",
+    timeoutMs: process.env.SHAHIN_REQUEST_TIMEOUT ?? "60000",
+    proxy: {
+      host: process.env.SHAHIN_PROXY_HOST ?? "",
+      port: parseInt(process.env.SHAHIN_PROXY_PORT ?? "29180", 10),
+      username: process.env.SHAHIN_PROXY_USERNAME ?? "",
+      password: process.env.SHAHIN_PROXY_PASSWORD ?? "",
+    },
+  },
+  // Outbound HTTP(S) proxy used to reach Iranian payment gateways (kaino,
+  // shahin) from an egress outside Iran. Empty host disables the proxy.
+  proxy: {
+    host: process.env.CBP_PROXY_HOST ?? "",
+    port: parseInt(process.env.CBP_PROXY_PORT ?? "29180", 10),
+    username: process.env.CBP_PROXY_USERNAME ?? "",
+    password: process.env.CBP_PROXY_PASSWORD ?? "",
+  },
+}));

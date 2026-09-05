@@ -1,0 +1,9 @@
+import { NestFactory } from '@nestjs/core';
+import { AppModule } from './app.module';
+
+async function bootstrap() {
+  const app = await NestFactory.create(AppModule);
+  await app.listen(9999);
+  console.log('🚀 Agent Reach API running on http://localhost:9999');
+}
+bootstrap();

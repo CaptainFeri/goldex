@@ -1,0 +1,761 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Goldex Monitor</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+<style>
+*,*::before,*::after{margin:0;padding:0;box-sizing:border-box}
+:root{
+  --bg:#0b1120;
+  --surface:#131d32;
+  --surface2:#1a2744;
+  --border:#1e3456;
+  --text:#e2e8f0;
+  --text2:#8899b4;
+  --text3:#5a6e8a;
+  --green:#22c55e;
+  --red:#ef4444;
+  --blue:#3b82f6;
+  --cyan:#06b6d4;
+  --purple:#8b5cf6;
+  --pink:#d946ef;
+  --amber:#f59e0b;
+  --orange:#f97316;
+}
+body{
+  font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
+  background:var(--bg);color:var(--text);padding:32px 24px;min-height:100vh;
+}
+::-webkit-scrollbar{width:6px}
+::-webkit-scrollbar-track{background:transparent}
+::-webkit-scrollbar-thumb{background:var(--border);border-radius:3px}
+
+/* Header */
+header{
+  display:flex;align-items:center;justify-content:space-between;
+  margin-bottom:28px;flex-wrap:wrap;gap:12px;
+}
+.header-left{display:flex;align-items:center;gap:14px}
+.logo{
+  width:36px;height:36px;border-radius:10px;
+  background:linear-gradient(135deg,var(--blue),var(--purple));
+  display:flex;align-items:center;justify-content:center;
+  font-size:16px;font-weight:800;color:#fff;
+}
+h1{font-size:20px;font-weight:700;letter-spacing:-.02em}
+h1 small{font-size:12px;color:var(--text2);font-weight:400;letter-spacing:0;display:block;margin-top:1px}
+.status-pill{
+  display:flex;align-items:center;gap:8px;
+  background:var(--surface);border:1px solid var(--border);
+  padding:8px 16px;border-radius:20px;font-size:12px;
+}
+.status-dot{
+  width:8px;height:8px;border-radius:50%;background:var(--green);
+  box-shadow:0 0 8px var(--green);
+}
+.status-dot.error{background:var(--red);box-shadow:0 0 8px var(--red)}
+.status-dot.loading{background:var(--amber);animation:pulse 1s ease-in-out infinite}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.3}}
+#statusText{color:var(--text2)}
+#statusTime{color:var(--text3);font-size:11px}
+
+/* Section titles */
+.section-title{
+  font-size:13px;font-weight:600;color:var(--text2);
+  text-transform:uppercase;letter-spacing:.08em;margin-bottom:14px;
+  display:flex;align-items:center;gap:10px;
+}
+.section-title::after{content:'';flex:1;height:1px;background:linear-gradient(90deg,var(--border),transparent)}
+.section{margin-bottom:32px}
+
+/* System Grid */
+.sys-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px}
+.sys-card{
+  background:var(--surface);border:1px solid var(--border);
+  border-radius:12px;padding:18px;position:relative;overflow:hidden;
+}
+.sys-card .label{
+  font-size:10px;color:var(--text3);text-transform:uppercase;
+  letter-spacing:.06em;margin-bottom:6px;
+}
+.sys-card .value{font-size:22px;font-weight:700;line-height:1.2}
+.sys-card .sub{font-size:11px;color:var(--text2);margin-top:4px}
+.bar-wrap{
+  background:var(--surface2);border-radius:4px;height:6px;
+  margin-top:10px;overflow:hidden;
+}
+.bar-fill{height:100%;border-radius:4px;transition:width .6s ease}
+.bar-blue{background:linear-gradient(90deg,var(--blue),var(--cyan))}
+.bar-purple{background:linear-gradient(90deg,var(--purple),var(--pink))}
+.bar-amber{background:linear-gradient(90deg,var(--amber),var(--orange))}
+
+/* Per-core CPU bars */
+.cores-wrap{display:flex;gap:3px;margin-top:8px;align-items:flex-end;height:28px}
+.core-bar{
+  flex:1;border-radius:3px 3px 0 0;min-height:4px;
+  transition:height .5s ease;position:relative;
+}
+.core-bar:hover{opacity:.8}
+.core-bar::after{
+  content:attr(data-load);position:absolute;top:-14px;left:50%;
+  transform:translateX(-50%);font-size:8px;color:var(--text3);white-space:nowrap;
+}
+
+/* Network & process rows */
+.info-rows{display:flex;flex-direction:column;gap:4px;margin-top:6px}
+.info-row{font-size:11px;color:var(--text2);display:flex;justify-content:space-between}
+.info-row .tag{color:var(--text3);font-size:10px}
+
+/* Chart Grid */
+.chart-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:12px;margin-bottom:20px}
+.chart-card{
+  background:var(--surface);border:1px solid var(--border);
+  border-radius:12px;padding:16px;position:relative;
+}
+.chart-card .chart-title{
+  font-size:11px;font-weight:600;color:var(--text2);
+  text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px;
+}
+.chart-card canvas{width:100% !important;height:160px !important}
+
+/* OCR Section */
+.ocr-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:12px;margin-bottom:20px}
+.ocr-card{
+  background:var(--surface);border:1px solid var(--border);
+  border-radius:12px;padding:16px;
+}
+.ocr-card .ocr-label{
+  font-size:10px;color:var(--text3);text-transform:uppercase;
+  letter-spacing:.06em;margin-bottom:4px;
+}
+.ocr-card .ocr-value{font-size:18px;font-weight:700;line-height:1.3}
+.ocr-card .ocr-sub{font-size:11px;color:var(--text2);margin-top:2px}
+.ocr-status-dot{
+  display:inline-block;width:10px;height:10px;border-radius:50%;margin-left:6px;
+}
+.ocr-status-dot.online{background:var(--green);box-shadow:0 0 8px var(--green)}
+.ocr-status-dot.offline{background:var(--red);box-shadow:0 0 8px var(--red)}
+.ocr-status-dot.training{background:var(--amber);animation:pulse 1s ease-in-out infinite}
+
+/* Service Grid */
+.svc-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:10px}
+.svc-card{
+  background:var(--surface);border:1px solid var(--border);
+  border-radius:12px;padding:16px;
+  transition:border-color .25s,box-shadow .25s;
+  position:relative;overflow:hidden;
+}
+.svc-card::before{
+  content:'';position:absolute;left:0;top:0;bottom:0;width:3px;
+  transition:background .3s;
+}
+.svc-card.up::before{background:var(--green);box-shadow:0 0 12px rgba(34,197,94,.3)}
+.svc-card.down::before{background:var(--red);box-shadow:0 0 12px rgba(239,68,68,.3)}
+.svc-card.up{border-color:rgba(34,197,94,.15)}
+.svc-card.down{border-color:rgba(239,68,68,.15)}
+.svc-card .top{
+  display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:8px;
+}
+.svc-card .name{font-weight:600;font-size:13px}
+.svc-card .name small{font-weight:400;color:var(--text3);font-size:11px;display:block;margin-top:1px}
+.badge{
+  display:inline-flex;align-items:center;gap:5px;
+  font-size:10px;font-weight:700;padding:3px 10px;border-radius:10px;
+  text-transform:uppercase;letter-spacing:.04em;
+}
+.badge.up{background:rgba(34,197,94,.12);color:var(--green)}
+.badge.down{background:rgba(239,68,68,.12);color:var(--red)}
+.badge-dot{
+  width:6px;height:6px;border-radius:50%;display:inline-block;
+}
+.badge.up .badge-dot{background:var(--green);animation:pulse 1.5s ease-in-out infinite}
+.badge.down .badge-dot{background:var(--red)}
+.endpoints{display:flex;flex-direction:column;gap:3px;margin-bottom:6px}
+.ep-row{
+  font-size:11px;color:var(--text2);display:flex;align-items:center;gap:6px;
+}
+.ep-row .ep-label{color:var(--text3);font-size:9px;text-transform:uppercase;letter-spacing:.04em;min-width:32px}
+.ep-row code{
+  background:var(--surface2);padding:1px 6px;border-radius:4px;
+  font-family:"SF Mono","Fira Code","Cascadia Code",monospace;font-size:11px;color:var(--cyan);
+}
+.ep-row a{
+  color:var(--blue);text-decoration:none;font-size:11px;
+}
+.ep-row a:hover{text-decoration:underline;color:var(--cyan)}
+.svc-actions{margin-top:8px;display:flex;gap:6px}
+.btn-logs{
+  background:var(--surface2);border:1px solid var(--border);
+  color:var(--text2);padding:4px 10px;border-radius:6px;
+  cursor:pointer;font-size:10px;transition:all .2s;
+}
+.btn-logs:hover{background:var(--border);color:var(--text)}
+.res-rows{display:flex;flex-direction:column;gap:5px;margin-top:8px}
+.res-row{display:flex;align-items:center;gap:8px;font-size:10px}
+.res-label{color:var(--text3);text-transform:uppercase;font-size:9px;letter-spacing:.04em;min-width:26px}
+.res-bar-wrap{flex:1;background:var(--surface2);border-radius:4px;height:5px;overflow:hidden}
+.res-bar-fill{height:100%;border-radius:4px;transition:width .6s ease}
+.res-value{color:var(--text2);font-size:10px;min-width:70px;text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+
+/* Log modal */
+.modal-overlay{
+  display:none;position:fixed;inset:0;z-index:1000;
+  background:rgba(0,0,0,.7);backdrop-filter:blur(4px);
+  align-items:center;justify-content:center;
+}
+.modal-overlay.open{display:flex}
+.modal{
+  background:var(--surface);border:1px solid var(--border);
+  border-radius:12px;width:90vw;max-width:900px;
+  max-height:80vh;display:flex;flex-direction:column;
+}
+.modal-header{
+  display:flex;justify-content:space-between;align-items:center;
+  padding:14px 18px;border-bottom:1px solid var(--border);
+}
+.modal-header h3{font-size:14px;font-weight:600}
+.modal-close{
+  background:none;border:none;color:var(--text3);font-size:18px;
+  cursor:pointer;padding:4px 8px;border-radius:4px;
+}
+.modal-close:hover{background:var(--surface2);color:var(--text)}
+.modal-body{
+  padding:14px 18px;overflow-y:auto;flex:1;
+  font-family:"SF Mono","Fira Code","Cascadia Code",monospace;
+  font-size:11px;line-height:1.5;color:var(--text2);
+  white-space:pre-wrap;word-break:break-all;
+}
+.modal-body .log-line{display:block}
+.modal-body .log-line::before{content:attr(data-n);color:var(--text3);margin-right:10px;min-width:32px;display:inline-block;text-align:right}
+.modal-loading{text-align:center;padding:40px;color:var(--text3);font-size:12px}
+
+/* Footer */
+.footer{
+  margin-top:32px;display:flex;align-items:center;
+  justify-content:center;gap:16px;font-size:12px;color:var(--text3);
+}
+.footer button{
+  background:var(--surface);border:1px solid var(--border);
+  color:var(--text2);padding:7px 18px;border-radius:8px;
+  cursor:pointer;font-size:12px;transition:all .2s;
+}
+.footer button:hover{background:var(--surface2);border-color:var(--text3);color:var(--text)}
+.footer .countdown{
+  background:var(--surface);border:1px solid var(--border);
+  padding:4px 10px;border-radius:6px;font-size:11px;color:var(--text3);
+}
+.section button{
+  background:var(--surface);border:1px solid var(--border);
+  color:var(--text2);padding:8px 20px;border-radius:8px;
+  cursor:pointer;font-size:12px;font-weight:600;transition:all .2s;
+}
+.section button:hover:not(:disabled){background:var(--surface2);border-color:var(--blue);color:var(--text)}
+.section button:disabled{opacity:.5;cursor:not-allowed}
+
+/* Responsive */
+@media(max-width:600px){
+  body{padding:16px}
+  header{flex-direction:column;align-items:flex-start}
+  .sys-grid{grid-template-columns:1fr}
+  .svc-grid{grid-template-columns:1fr}
+}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="header-left">
+    <div class="logo">G</div>
+    <div>
+      <h1>Goldex Monitor</h1>
+    </div>
+  </div>
+  <div class="status-pill">
+    <span class="status-dot loading" id="statusDot"></span>
+    <span id="statusText">Loading...</span>
+    <span id="statusTime"></span>
+  </div>
+</header>
+
+<section class="section">
+  <div class="section-title">System Resources</div>
+  <div class="sys-grid" id="sysGrid"></div>
+</section>
+
+<section class="section">
+  <div class="section-title">System Resource History</div>
+  <div class="chart-grid">
+    <div class="chart-card"><div class="chart-title">CPU Usage</div><canvas id="cpuChart"></canvas></div>
+    <div class="chart-card"><div class="chart-title">Memory Usage</div><canvas id="memChart"></canvas></div>
+    <div class="chart-card"><div class="chart-title">Disk Usage</div><canvas id="diskChart"></canvas></div>
+  </div>
+</section>
+
+<section class="section">
+  <div class="section-title">OCR Service</div>
+  <div class="ocr-grid" id="ocrGrid"></div>
+</section>
+
+<section class="section">
+  <div class="section-title">Test Runner</div>
+  <div style="display:flex;gap:10px;align-items:center;margin-bottom:12px">
+    <button id="testRunBtn" onclick="startTestRun()">▶ Run Unit Tests</button>
+    <span id="testRunStatus" style="font-size:12px;color:var(--text2)"></span>
+  </div>
+  <div id="testResults" style="display:grid;gap:12px"></div>
+</section>
+
+<div id="svcSections"></div>
+
+<div class="modal-overlay" id="logModal">
+  <div class="modal">
+    <div class="modal-header">
+      <h3 id="logTitle">Logs</h3>
+      <button class="modal-close" onclick="closeLogs()">✕</button>
+    </div>
+    <div class="modal-body" id="logBody">
+      <div class="modal-loading">Loading logs...</div>
+    </div>
+  </div>
+</div>
+
+<div class="footer">
+  <button onclick="load()">⟳ Refresh</button>
+  <span class="countdown" id="countdown">Auto-refresh in 10s</span>
+</div>
+
+<script>
+let cpuChart, memChart, diskChart;
+
+function initCharts() {
+  const opts = {
+    type: 'line',
+    data: { labels: [], datasets: [] },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      animation: { duration: 300 },
+      scales: {
+        x: { display: false },
+        y: { beginAtZero: true, max: 100, grid: { color: 'rgba(255,255,255,.05)' }, ticks: { color: '#5a6e8a', font: { size: 9 } } }
+      },
+      plugins: { legend: { display: false } },
+      elements: { point: { radius: 0 }, line: { borderWidth: 2, tension: .3 } }
+    }
+  };
+
+  cpuChart = new Chart(document.getElementById('cpuChart'), {
+    ...opts,
+    data: { labels: [], datasets: [{ data: [], borderColor: '#3b82f6', backgroundColor: 'rgba(59,130,246,.1)', fill: true }] }
+  });
+  memChart = new Chart(document.getElementById('memChart'), {
+    ...opts,
+    data: { labels: [], datasets: [{ data: [], borderColor: '#8b5cf6', backgroundColor: 'rgba(139,92,246,.1)', fill: true }] }
+  });
+  diskChart = new Chart(document.getElementById('diskChart'), {
+    ...opts,
+    data: { labels: [], datasets: [{ data: [], borderColor: '#f59e0b', backgroundColor: 'rgba(245,158,11,.1)', fill: true }] }
+  });
+}
+
+function updateChart(chart, data) {
+  chart.data.labels = data.map(() => '');
+  chart.data.datasets[0].data = data.map(d => d.value);
+  chart.update('none');
+}
+
+async function load() {
+  try {
+    const [sys, svcs, history, ocrHealth, ocrTrain, ocrUsage] = await Promise.all([
+      fetch("/api/system").then(r => r.json()),
+      fetch("/api/services").then(r => r.json()),
+      fetch("/api/system/history").then(r => r.json()),
+      fetch("/api/ocr/health").then(r => r.json()),
+      fetch("/api/ocr/train-status").then(r => r.json()),
+      fetch("/api/ocr/usage").then(r => r.json()),
+    ]);
+    renderSys(sys);
+    updateChart(cpuChart, history.cpu);
+    updateChart(memChart, history.mem);
+    updateChart(diskChart, history.disk);
+    renderOcr(ocrHealth, ocrTrain, ocrUsage);
+    renderSvcs(svcs);
+    const up = svcs.filter(s => s.alive).length;
+    const total = svcs.length;
+    const dot = document.getElementById("statusDot");
+    dot.className = "status-dot loading";
+    if (up === total) dot.classList.remove("loading");
+    document.getElementById("statusText").textContent = `${up}/${total} online`;
+    document.getElementById("statusTime").textContent = new Date().toLocaleTimeString();
+    lastLoad = Date.now();
+  } catch {
+    document.getElementById("statusDot").className = "status-dot error";
+    document.getElementById("statusText").textContent = "Error loading data";
+  }
+}
+
+function renderOcr(health, train, usage) {
+  const loaded = health?.model_loaded;
+  const state = train?.state || 'unknown';
+  const statusDot = loaded ? 'online' : 'offline';
+  const stateDot = state === 'training' ? 'training' : state === 'completed' ? 'online' : state === 'failed' ? 'offline' : 'offline';
+  const stateLabel = state === 'idle' ? 'Idle' : state === 'training' ? 'Training' : state === 'completed' ? 'Completed' : state === 'failed' ? 'Failed' : state || 'Unreachable';
+  const reachable = usage?.reachable !== false;
+  const avgLat = usage?.avgLatencyMs ?? 0;
+
+  document.getElementById('ocrGrid').innerHTML = `
+    <div class="ocr-card">
+      <div class="ocr-label">Model Status</div>
+      <div class="ocr-value">
+        <span class="ocr-status-dot ${statusDot}"></span>
+        ${loaded ? 'Online' : 'Offline'}
+      </div>
+      <div class="ocr-sub">${health?.model_name || '—'} · ${health?.model_language || '—'}</div>
+    </div>
+    <div class="ocr-card">
+      <div class="ocr-label">Training State</div>
+      <div class="ocr-value">
+        <span class="ocr-status-dot ${stateDot}"></span>
+        ${stateLabel}
+      </div>
+      <div class="ocr-sub">${train?.sample_count ?? 0} samples · ${train?.available_samples ?? 0} available</div>
+    </div>
+    <div class="ocr-card">
+      <div class="ocr-label">Last Training</div>
+      <div class="ocr-value" style="font-size:15px">${train?.last_train_at ? new Date(train.last_train_at * 1000).toLocaleString() : 'Never'}</div>
+      <div class="ocr-sub">${train?.error ? 'Error: ' + train.error : ''}</div>
+    </div>
+    <div class="ocr-card">
+      <div class="ocr-label">Inferences</div>
+      <div class="ocr-value">${reachable ? (usage?.total ?? 0) : '—'}</div>
+      <div class="ocr-sub">${reachable ? (usage?.success ?? 0) + ' success · ' + (usage?.failure ?? 0) + ' failure' : 'Unreachable'}</div>
+    </div>
+    <div class="ocr-card">
+      <div class="ocr-label">Avg Latency</div>
+      <div class="ocr-value" style="font-size:15px">${reachable ? avgLat.toFixed(1) + ' ms' : '—'}</div>
+      <div class="ocr-sub">across ${usage?.inferenceCount ?? 0} inferences</div>
+    </div>
+    <div class="ocr-card">
+      <div class="ocr-label">Feedback Samples</div>
+      <div class="ocr-value">${reachable ? (usage?.feedback ?? 0) : '—'}</div>
+      <div class="ocr-sub">training sample count: ${usage?.trainingSamples ?? 0}</div>
+    </div>
+  `;
+}
+
+let lastLoad = Date.now();
+let countdown = 10;
+
+function tick() {
+  const elapsed = Math.floor((Date.now() - lastLoad) / 1000);
+  const remaining = Math.max(0, 10 - elapsed);
+  document.getElementById("countdown").textContent = `Auto-refresh in ${remaining}s`;
+  if (remaining <= 0) { load(); countdown = 10; }
+}
+document.addEventListener("keydown", e => { if (e.key === "Escape") closeLogs(); });
+setInterval(tick, 500);
+initCharts();
+load();
+
+function renderSys(sys) {
+  const cpuBar = Math.min(sys.cpuAvgLoad, 100);
+  const memBar = Math.min(sys.memUsedPercent, 100);
+
+  const cpuCoresHtml = sys.cpuCores ? sys.cpuCores.map(c => {
+    const h = Math.max(4, (c.load / 100) * 28);
+    const color = c.load > 80 ? 'var(--red)' : c.load > 50 ? 'var(--amber)' : 'var(--blue)';
+    return `<div class="core-bar" style="height:${h}px;background:${color}" data-load="${c.load}%"></div>`;
+  }).join('') : '';
+
+  const procHtml = sys.processMemory ? `
+    <div class="info-rows">
+      <div class="info-row"><span>RSS</span><span>${fmtBytes(sys.processMemory.rss)}</span></div>
+      <div class="info-row"><span>Heap Used</span><span>${fmtBytes(sys.processMemory.heapUsed)} / ${fmtBytes(sys.processMemory.heapTotal)}</span></div>
+    </div>
+  ` : '';
+
+  const netHtml = sys.network && sys.network.length ? `
+    <div class="info-rows">
+      ${sys.network.map(n => `
+        <div class="info-row"><span class="tag">${n.name}</span><span>${n.address}</span></div>
+      `).join('')}
+    </div>
+  ` : '<div class="sub">No external interfaces</div>';
+
+  const diskHtml = sys.disk ? `
+    <div class="bar-wrap"><div class="bar-fill bar-amber" style="width:${sys.disk.usedPercent}%"></div></div>
+    <div class="sub">${fmtBytes(sys.disk.usedBytes)} used · ${fmtBytes(sys.disk.freeBytes)} free</div>
+  ` : '<div class="sub">Not available</div>';
+
+  document.getElementById("sysGrid").innerHTML = `
+    <div class="sys-card">
+      <div class="label"><span style="color:var(--blue)">◆</span> CPU</div>
+      <div class="value">${sys.cpuAvgLoad}%</div>
+      <div class="sub">${sys.cpus} cores · load ${sys.loadavg?.[0]?.toFixed(2) ?? '—'}</div>
+      <div class="bar-wrap"><div class="bar-fill bar-blue" style="width:${cpuBar}%"></div></div>
+      ${sys.cpuCores ? `<div class="cores-wrap">${cpuCoresHtml}</div>` : ''}
+    </div>
+    <div class="sys-card">
+      <div class="label"><span style="color:var(--purple)">◆</span> Memory</div>
+      <div class="value">${fmtBytes(sys.totalMem)}</div>
+      <div class="sub">${fmtBytes(sys.freeMem)} free · ${memBar}% used</div>
+      <div class="bar-wrap"><div class="bar-fill bar-purple" style="width:${memBar}%"></div></div>
+      ${procHtml}
+    </div>
+    <div class="sys-card">
+      <div class="label"><span style="color:var(--cyan)">◆</span> Network</div>
+      ${netHtml}
+    </div>
+    <div class="sys-card">
+      <div class="label"><span style="color:var(--amber)">◆</span> Disk</div>
+      ${diskHtml}
+    </div>
+    <div class="sys-card">
+      <div class="label"><span style="color:var(--text2)">◆</span> Host</div>
+      <div class="value" style="font-size:17px">${sys.hostname}</div>
+      <div class="sub">${sys.platform} ${sys.arch} · ${sys.release || ''}</div>
+    </div>
+    <div class="sys-card">
+      <div class="label"><span style="color:var(--text2)">◆</span> Uptime</div>
+      <div class="value" style="font-size:17px">${fmtUptime(sys.uptime)}</div>
+      <div class="sub">since last restart</div>
+    </div>
+  `;
+}
+
+function resBar(pct, label, valueText) {
+  if (pct == null) return `
+    <div class="res-row">
+      <span class="res-label">${label}</span>
+      <div class="res-bar-wrap"></div>
+      <span class="res-value">—</span>
+    </div>`;
+  const color = pct > 80 ? 'var(--red)' : pct > 50 ? 'var(--amber)' : 'var(--green)';
+  const width = Math.min(pct, 100);
+  return `
+    <div class="res-row">
+      <span class="res-label">${label}</span>
+      <div class="res-bar-wrap"><div class="res-bar-fill" style="width:${width}%;background:${color}"></div></div>
+      <span class="res-value">${valueText}</span>
+    </div>`;
+}
+
+function renderSvcs(svcs) {
+  const groups = {};
+  for (const s of svcs) {
+    if (!groups[s.category]) groups[s.category] = [];
+    groups[s.category].push(s);
+  }
+  const order = ["Infrastructure", "Management UI", "Backend", "Frontend"];
+  const container = document.getElementById("svcSections");
+  container.innerHTML = order.map(cat => {
+    if (!groups[cat]) return "";
+    const items = groups[cat].map(s => {
+      const cls = s.alive ? "up" : "down";
+      const ext = s.externalUrl;
+      const resHtml = `
+        <div class="res-rows">
+          ${resBar(s.cpuPercent, 'CPU', `${s.cpuPercent != null ? s.cpuPercent.toFixed(1) : 0}%`)}
+          ${resBar(s.memPercent, 'MEM', s.memPercent != null ? `${fmtBytes(s.memUsageBytes)} / ${fmtBytes(s.memLimitBytes)}` : '—')}
+        </div>
+      `;
+      return `
+        <div class="svc-card ${cls}">
+          <div class="top">
+            <div class="name">
+              ${s.name}
+              <small>${s.internalEndpoint}</small>
+            </div>
+            <div class="badge ${cls}">
+              <span class="badge-dot"></span> ${s.alive ? "UP" : "DOWN"}
+            </div>
+          </div>
+          <div class="endpoints">
+            <div class="ep-row">
+              <span class="ep-label">INT</span>
+              <code>${s.internalEndpoint}</code>
+            </div>
+            <div class="ep-row">
+              <span class="ep-label">EXT</span>
+              <code>${ext ? new URL(ext).host : '—'}</code>
+              ${ext ? `<a href="${ext}" target="_blank" rel="noopener">open ↗</a>` : ''}
+            </div>
+          </div>
+          ${resHtml}
+          <div class="svc-actions">
+            <button class="btn-logs" onclick="viewLogs('${s.containerName}','${s.name}')">📋 Logs</button>
+          </div>
+        </div>
+      `;
+    }).join("");
+    return `
+      <section class="section">
+        <div class="section-title">${cat}</div>
+        <div class="svc-grid">${items}</div>
+      </section>
+    `;
+  }).join("");
+}
+
+async function viewLogs(container, name) {
+  const modal = document.getElementById("logModal");
+  const title = document.getElementById("logTitle");
+  const body = document.getElementById("logBody");
+  modal.classList.add("open");
+  title.textContent = `Logs — ${name} (${container})`;
+  body.innerHTML = '<div class="modal-loading">Loading logs...</div>';
+  try {
+    const res = await fetch(`/api/logs/${container}?lines=80`);
+    const data = await res.json();
+    const lines = data.log.split("\n").filter(Boolean);
+    body.innerHTML = lines.map((l, i) =>
+      `<span class="log-line" data-n="${i + 1}">${escHtml(l)}</span>`
+    ).join("");
+    body.scrollTop = body.scrollHeight;
+  } catch {
+    body.innerHTML = '<div class="modal-loading" style="color:var(--red)">Failed to load logs</div>';
+  }
+}
+
+function closeLogs() {
+  document.getElementById("logModal").classList.remove("open");
+}
+
+function escHtml(s) {
+  const d = document.createElement("div");
+  d.textContent = s;
+  return d.innerHTML;
+}
+
+function fmtUptime(s) {
+  const d = Math.floor(s / 86400); s -= d * 86400;
+  const h = Math.floor(s / 3600); s -= h * 3600;
+  const m = Math.floor(s / 60);
+  if (d) return `${d}d ${h}h ${m}m`;
+  if (h) return `${h}h ${m}m`;
+  return `${m}m`;
+}
+
+function fmtBytes(b) {
+  if (!b) return '0 B';
+  const units = ['B','KB','MB','GB','TB'];
+  let i = 0;
+  let v = b;
+  while (v >= 1024 && i < units.length - 1) { v /= 1024; i++; }
+  return `${v.toFixed(i > 0 ? 1 : 0)} ${units[i]}`;
+}
+
+let testPollTimer = null;
+
+async function startTestRun() {
+  const btn = document.getElementById("testRunBtn");
+  btn.disabled = true;
+  btn.textContent = "▶ Running...";
+  const status = document.getElementById("testRunStatus");
+  status.textContent = "Starting test compose + unit tests...";
+  document.getElementById("testResults").innerHTML = '<div style="color:var(--text2);font-size:12px">Run started. Results appear when finished (jest can take a while).</div>';
+
+  try {
+    const res = await fetch("/api/tests/run", { method: "POST" });
+    if (!res.ok) {
+      const err = await res.json();
+      status.textContent = err.error || "Could not start run";
+      btn.disabled = false; btn.textContent = "▶ Run Unit Tests";
+      return;
+    }
+    pollTestRun();
+  } catch {
+    status.textContent = "Failed to start test run";
+    btn.disabled = false; btn.textContent = "▶ Run Unit Tests";
+  }
+}
+
+function pollTestRun() {
+  clearInterval(testPollTimer);
+  testPollTimer = setInterval(async () => {
+    try {
+      const state = await fetch("/api/tests/state").then(r => r.json());
+      const status = document.getElementById("testRunStatus");
+      if (state.running) {
+        const done = state.projects.filter(p => p.state === 'done').length;
+        status.textContent = `Running... ${done}/${state.projects.length} projects done`;
+        return;
+      }
+      clearInterval(testPollTimer);
+      const btn = document.getElementById("testRunBtn");
+      btn.disabled = false;
+      btn.textContent = "▶ Run Unit Tests";
+      status.textContent = state.finishedAt ? `Finished ${new Date(state.finishedAt).toLocaleTimeString()}` : "";
+      renderTestResults(state);
+    } catch {
+      clearInterval(testPollTimer);
+      const btn = document.getElementById("testRunBtn");
+      btn.disabled = false;
+      btn.textContent = "▶ Run Unit Tests";
+    }
+  }, 2000);
+}
+
+function renderTestResults(state) {
+  const wrap = document.getElementById("testResults");
+  wrap.innerHTML = state.projects.map(p => {
+    const r = p.result;
+    const cov = r?.coverage;
+    const badge = p.state === 'done' ? (r?.success ? '✓ PASS' : '✕ FAIL') : 'running';
+    const badgeColor = r?.success ? 'var(--green)' : 'var(--red)';
+    const covHtml = cov ? `
+      <div style="display:flex;gap:16px;margin-top:6px;font-size:11px;color:var(--text2)">
+        <span>Lines <b>${cov.lines.toFixed(1)}%</b></span>
+        <span>Statements <b>${cov.statements.toFixed(1)}%</b></span>
+        <span>Functions <b>${cov.functions.toFixed(1)}%</b></span>
+        <span>Branches <b>${cov.branches.toFixed(1)}%</b></span>
+      </div>` : '<div style="color:var(--text2);font-size:11px;margin-top:6px">Coverage not available</div>';
+
+    const suites = r?.states?.bySuite?.map(s =>
+      `<div style="display:flex;justify-content:space-between;font-size:11px;padding:3px 0;border-bottom:1px solid var(--border)">
+        <span style="color:var(--text1);word-break:break-all">${escHtml(s.name)}</span>
+        <span style="white-space:nowrap">
+          <span style="color:var(--green)">${s.passed}✓</span>
+          <span style="color:var(--red)">${s.failed}✕</span>
+          <span style="color:var(--text2)">${s.skipped}−</span>
+        </span>
+      </div>`).join('') || '<div style="color:var(--text2);font-size:11px">No suites reported</div>';
+
+    return `
+      <div class="ocr-card" style="padding:14px">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+          <span style="font-weight:700">${escHtml(p.name)}</span>
+          <span style="font-size:11px;font-weight:700;color:${badgeColor}">${badge}</span>
+        </div>
+        ${r ? `
+          <div style="font-size:12px;color:var(--text2)">
+            ${r.numPassed ?? 0} passed · ${r.numFailed ?? 0} failed · ${r.states?.skipped ?? 0} skipped
+          </div>
+          ${covHtml}
+          <details style="margin-top:8px">
+            <summary style="cursor:pointer;font-size:11px;color:var(--blue)">Test suites (${r.states?.bySuite?.length ?? 0})</summary>
+            <div style="margin-top:6px;max-height:220px;overflow:auto">${suites}</div>
+          </details>
+        ` : '<div style="color:var(--red);font-size:12px">' + escHtml(r?.error || 'No result') + '</div>'}
+      </div>`;
+  }).join('');
+
+  const comp = state.compose?.[0];
+  if (comp && comp.output) {
+    const err = document.createElement("details");
+    err.innerHTML = `<summary style="cursor:pointer;font-size:11px;color:var(--amber);margin-top:8px">Test infra (docker compose) output</summary>
+      <pre style="white-space:pre-wrap;font-size:10px;color:var(--text2);max-height:160px;overflow:auto;margin-top:6px">${escHtml(comp.output)}</pre>`;
+    wrap.appendChild(err);
+  }
+}
+
+window.addEventListener('load', async () => {
+  try {
+    const state = await fetch("/api/tests/state").then(r => r.json());
+    if (!state.running) renderTestResults(state);
+  } catch {}
+});
+</script>
+</body>
+</html>

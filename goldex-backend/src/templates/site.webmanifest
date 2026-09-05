@@ -1,0 +1,20 @@
+{
+  "name": "GoldEx API Docs",
+  "short_name": "GoldEx",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0b182a",
+  "theme_color": "#0b182a",
+  "icons": [
+    {
+      "src": "./pwa/android/android-launchericon-192-192.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "./pwa/android/android-launchericon-512-512.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}
