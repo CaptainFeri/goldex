@@ -21,6 +21,7 @@ import { UserLevelService } from "../user-level/user-level.service";
 import { DepositTypeEnum } from "../admin-symbol/enum/deposit-type.enum";
 import { P2pDepositService } from "../p2p/services/p2p-deposit.service";
 import { P2pAuditActorEnum } from "../p2p/enum/p2p.enums";
+import { PaginatedDto, paginate } from "../shared/dto/paginated.dto";
 
 @Injectable()
 export class DepositService {
@@ -179,8 +180,8 @@ export class DepositService {
     return saved;
   }
 
-  async findAll(query: DepositQueryDto) {
-    const { status, page = 1, limit = 20 } = query;
+  async findAll(query: DepositQueryDto): Promise<PaginatedDto<DepositEntity>> {
+    const { status } = query;
     const where: any = {};
     if (status) where.status = status;
 
@@ -188,11 +189,11 @@ export class DepositService {
       where,
       relations: { symbol: true, user: true },
       order: { createAt: "DESC" },
-      skip: (page - 1) * limit,
-      take: limit,
+      skip: query.skip,
+      take: query.take,
     });
 
-    return { items, total, page, limit };
+    return paginate(items, total, query);
   }
 
   async process(adminId: string, id: string, dto: ProcessDepositDto): Promise<DepositEntity> {

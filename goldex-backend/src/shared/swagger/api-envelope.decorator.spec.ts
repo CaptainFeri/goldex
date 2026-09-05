@@ -2,6 +2,7 @@ import { Controller, Get, INestApplication } from "@nestjs/common";
 import { Test } from "@nestjs/testing";
 import { ApiProperty, DocumentBuilder, SwaggerModule } from "@nestjs/swagger";
 import {
+  ApiEnvelopeNoDataResponse,
   ApiEnvelopePrimitiveResponse,
   ApiEnvelopeResponse,
   ApiPaginatedResponse,
@@ -38,6 +39,12 @@ class WidgetsController {
   @ApiEnvelopePrimitiveResponse("number")
   count() {
     return { data: 0 };
+  }
+
+  @Get("removed")
+  @ApiEnvelopeNoDataResponse()
+  removed() {
+    return { data: null };
   }
 }
 
@@ -122,10 +129,18 @@ describe("API envelope decorators", () => {
     expect(data.type).toBe("number");
   });
 
+  it("documents an action that returns no payload", () => {
+    const schema = schemaFor("/widgets/removed");
+    expect(schema.allOf[0].$ref).toBe(ENVELOPE);
+    expect(schema.allOf[1].properties.data.nullable).toBe(true);
+  });
+
   it("never leaves `data` untyped", () => {
     for (const path of ["/widgets/one", "/widgets/many", "/widgets/paged", "/widgets/count"]) {
       const data = schemaFor(path).allOf[1].properties.data;
       expect(data.$ref ?? data.type ?? data.allOf).toBeDefined();
     }
+    // The no-data case is typed too — explicitly nullable, not merely absent.
+    expect(schemaFor("/widgets/removed").allOf[1].properties.data.nullable).toBe(true);
   });
 });

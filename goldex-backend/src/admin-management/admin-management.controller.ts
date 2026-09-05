@@ -11,7 +11,13 @@ import {
   Req,
   UseGuards,
 } from "@nestjs/common";
-import { ApiBearerAuth, ApiTags } from "@nestjs/swagger";
+import { ApiBearerAuth, ApiOperation, ApiQuery, ApiTags } from "@nestjs/swagger";
+import {
+  ApiAdminErrorResponses,
+  ApiEnvelopeNoDataResponse,
+  ApiEnvelopeResponse,
+} from "../shared/swagger";
+import { AdminAccountDto } from "../admin-management/dto/admin-account.dto";
 import { AdminManagementService } from "../admin-management/admin-management.service";
 import { CreateAdminDto } from "../admin-management/dto/create-admin.dto";
 import { SuspendAdminDto } from "../admin-management/dto/suspend-admin.dto";
@@ -23,6 +29,7 @@ import { AdminRole } from "../admin/role/admin.roles.enum";
 
 @Controller("admin/accounts")
 @ApiTags("Admin-Management")
+@ApiAdminErrorResponses()
 export class AdminManagementController {
   constructor(private readonly adminService: AdminManagementService) {}
 
@@ -30,6 +37,10 @@ export class AdminManagementController {
   @UseGuards(AdminAuthGuard, AdminRolesGuard)
   @AdminRoles(AdminRole.SUPER_ADMIN)
   @ApiBearerAuth()
+  @ApiOperation({ summary: "List admin accounts" })
+  @ApiQuery({ name: "role", enum: AdminRole, required: false })
+  @ApiQuery({ name: "suspended", required: false, description: '"true" or "false"' })
+  @ApiEnvelopeResponse(AdminAccountDto, { isArray: true })
   async findAll(@Query("role") role?: AdminRole, @Query("suspended") suspended?: string) {
     const filters = {
       role,
@@ -44,6 +55,8 @@ export class AdminManagementController {
   @UseGuards(AdminAuthGuard, AdminRolesGuard)
   @AdminRoles(AdminRole.SUPER_ADMIN)
   @ApiBearerAuth()
+  @ApiOperation({ summary: "Create an admin account" })
+  @ApiEnvelopeResponse(AdminAccountDto)
   async create(@Body() createAdminDto: CreateAdminDto, @Req() req: any) {
     const admin = await this.adminService.create(createAdminDto, req.admin?.id);
     const { hashPassword, ...result } = admin;
@@ -54,6 +67,8 @@ export class AdminManagementController {
   @UseGuards(AdminAuthGuard, AdminRolesGuard)
   @AdminRoles(AdminRole.SUPER_ADMIN)
   @ApiBearerAuth()
+  @ApiOperation({ summary: "Get one admin account" })
+  @ApiEnvelopeResponse(AdminAccountDto)
   async findOne(@Param("id", ParseUUIDPipe) id: string) {
     const { hashPassword, ...admin } = await this.adminService.findOne(id);
     return { data: admin };
@@ -63,6 +78,8 @@ export class AdminManagementController {
   @UseGuards(AdminAuthGuard, AdminRolesGuard)
   @AdminRoles(AdminRole.SUPER_ADMIN)
   @ApiBearerAuth()
+  @ApiOperation({ summary: "Edit an admin account" })
+  @ApiEnvelopeResponse(AdminAccountDto)
   async update(@Param("id", ParseUUIDPipe) id: string, @Body() updateAdminDto: UpdateAdminDto, @Req() req: any) {
     const { hashPassword, ...admin } = await this.adminService.update(id, updateAdminDto, req.admin);
     return { data: admin };
@@ -72,6 +89,8 @@ export class AdminManagementController {
   @AdminRoles(AdminRole.SUPER_ADMIN)
   @UseGuards(AdminAuthGuard, AdminRolesGuard)
   @ApiBearerAuth()
+  @ApiOperation({ summary: "Soft-delete an admin account" })
+  @ApiEnvelopeNoDataResponse({ description: "Deleted; the envelope's data is null" })
   async remove(@Param("id", ParseUUIDPipe) id: string, @Req() req: any) {
     return { data: await this.adminService.remove(id, req.admin) };
   }
@@ -80,6 +99,8 @@ export class AdminManagementController {
   @AdminRoles(AdminRole.SUPER_ADMIN)
   @UseGuards(AdminAuthGuard, AdminRolesGuard)
   @ApiBearerAuth()
+  @ApiOperation({ summary: "Suspend or reinstate an admin account" })
+  @ApiEnvelopeResponse(AdminAccountDto)
   async suspend(@Param("id", ParseUUIDPipe) id: string, @Body() suspendAdminDto: SuspendAdminDto, @Req() req: any) {
     const { hashPassword, ...admin } = await this.adminService.suspendAdmin(id, suspendAdminDto, req.admin);
     return { data: admin };

@@ -392,13 +392,27 @@ polish item. It also blocks client generation: every operation would return
 | `PaginationQueryDto` (`page`, `pageSize`, `sort`, `order`, `skip`/`take`/`pageNumber`) | list query params |
 | `PaginatedDto<T>` + `paginate(items, total, query)` | list responses |
 
-`admin/bank-accounts` is the migrated reference: extend `PaginationQueryDto`,
-keep the old param as a `deprecated: true` alias for one release, return
-`paginate(...)`, decorate the controller.
+Shared payload refs live in `src/shared/dto`: `SymbolRefDto` and `UserRefDto`
+are the embedded forms joined into most resources, defined once so a field
+added to one does not leak into every response that joins it.
+
+**Backfilled so far** — `admin/bank-accounts`, `admin/withdraw`,
+`admin/deposit`, `admin/accounts`. The pattern for each: extend
+`PaginationQueryDto`, keep the old param as a `deprecated: true` alias for one
+release, return `paginate(...)`, add a response DTO, decorate the controller.
+
+**A CI guard holds the line.** `response-coverage.spec.ts` scans every
+controller and fails when a route ships without a response decorator. Its
+`UNDOCUMENTED` list is the remaining debt — **50 controllers, 362 routes** — and
+only shrinks: the test also fails when a listed controller is renamed, deleted,
+or has become fully documented, so finishing one cannot go unrecorded. A
+regression probe confirmed it names the offending route rather than merely
+failing.
 
 Still required, in order:
 
-1. A response DTO per endpoint, starting with the ~70 the panels already call.
+1. A response DTO per endpoint, working down the `UNDOCUMENTED` list — the
+   admin controllers the panels already call come first.
 2. An `@ApiEnvelope(Dto)` decorator (`ApiExtraModels` + `getSchemaPath`) that
    documents the real wire shape `{ status, message, data: Dto }` —
    `ResponseInterceptor` wraps every handler, so an inner-shape-only schema is

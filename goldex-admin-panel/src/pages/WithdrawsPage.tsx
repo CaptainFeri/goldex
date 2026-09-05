@@ -5,6 +5,7 @@ import { Card, Badge, Loading, ErrorState, Empty, Modal } from "../components/ui
 import { WITHDRAW_TYPES } from "../lib/enums";
 import type { WithdrawRequest } from "../api/types";
 import { fmtBySymbol } from "../lib/money";
+import type { Paginated } from "../api/types";
 
 const STATUS_LABELS: Record<string, string> = {
   PENDING: "در انتظار",
@@ -41,7 +42,7 @@ export default function WithdrawsPage() {
     queryFn: async () => {
       const params: any = {};
       if (statusFilter) params.status = statusFilter;
-      return unwrap<{ items: WithdrawRequest[]; total: number; page: number; limit: number }>((await api.get("/admin/withdraw", { params })).data);
+      return unwrap<Paginated<WithdrawRequest>>((await api.get("/admin/withdraw", { params })).data);
     },
   });
 

@@ -1,5 +1,12 @@
 import { Controller, Get, Patch, Post, Body, Param, Query, UseGuards, Req, Logger, UseInterceptors, UploadedFile, BadRequestException } from "@nestjs/common";
 import { ApiTags, ApiOperation, ApiBearerAuth, ApiConsumes } from "@nestjs/swagger";
+import {
+  ApiAdminErrorResponses,
+  ApiEnvelopeResponse,
+  ApiPaginatedResponse,
+} from "../shared/swagger";
+import { WithdrawDto } from "./dto/withdraw.dto";
+import { WithdrawReceiptOcrDto } from "./dto/withdraw-receipt-ocr.dto";
 import { FileInterceptor } from "@nestjs/platform-express";
 import { memoryStorage } from "multer";
 import { WithdrawService } from "./withdraw.service";
@@ -14,6 +21,7 @@ import { OcrService } from "../ocr/ocr.service";
 
 @ApiTags("Admin-Withdraw")
 @ApiBearerAuth()
+@ApiAdminErrorResponses()
 @UseGuards(AdminAuthGuard)
 @Controller("admin/withdraw")
 export class WithdrawAdminController {
@@ -28,6 +36,7 @@ export class WithdrawAdminController {
   @Get()
   @AdminRoles(AdminRole.ADMIN, AdminRole.SUPER_ADMIN, AdminRole.FINANCE)
   @ApiOperation({ summary: "List all withdrawals (admin)" })
+  @ApiPaginatedResponse(WithdrawDto)
   async findAll(@Query() query: WithdrawQueryDto) {
     return { data: await this.withdrawService.findAll(query) };
   }
@@ -35,6 +44,7 @@ export class WithdrawAdminController {
   @Get(":id")
   @AdminRoles(AdminRole.ADMIN, AdminRole.SUPER_ADMIN, AdminRole.FINANCE)
   @ApiOperation({ summary: "Get withdrawal details (admin)" })
+  @ApiEnvelopeResponse(WithdrawDto)
   async findOne(@Param("id") id: string) {
     return { data: await this.withdrawService.findById(id) };
   }
@@ -42,6 +52,7 @@ export class WithdrawAdminController {
   @Post("upload-and-ocr")
   @AdminRoles(AdminRole.ADMIN, AdminRole.SUPER_ADMIN, AdminRole.FINANCE)
   @ApiOperation({ summary: "Upload withdrawal receipt image and run OCR (admin)" })
+  @ApiEnvelopeResponse(WithdrawReceiptOcrDto)
   @ApiConsumes("multipart/form-data")
   @UseInterceptors(FileInterceptor("file", { storage: memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } }))
   async uploadAndOcr(@Req() req: AdminExpressRequest, @UploadedFile() file: Express.Multer.File) {
@@ -83,6 +94,7 @@ export class WithdrawAdminController {
   @Post(":id/approve")
   @AdminRoles(AdminRole.ADMIN, AdminRole.SUPER_ADMIN, AdminRole.FINANCE)
   @ApiOperation({ summary: "Approve a gateway-bound withdrawal (executed by goldex-cbp)" })
+  @ApiEnvelopeResponse(WithdrawDto)
   async approve(@Req() req: AdminExpressRequest, @Param("id") id: string) {
     const adminId = req.admin?.id || "system";
     const result = await this.withdrawService.approveGatewayWithdraw(adminId, id);
@@ -92,6 +104,7 @@ export class WithdrawAdminController {
   @Patch(":id/process")
   @AdminRoles(AdminRole.ADMIN, AdminRole.SUPER_ADMIN, AdminRole.FINANCE)
   @ApiOperation({ summary: "Approve or reject a withdrawal" })
+  @ApiEnvelopeResponse(WithdrawDto)
   async process(@Req() req: AdminExpressRequest, @Param("id") id: string, @Body() dto: ProcessWithdrawDto) {
     const adminId = req.admin?.id || "system";
 

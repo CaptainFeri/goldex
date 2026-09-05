@@ -1,5 +1,11 @@
 import { Controller, Get, Patch, Body, Param, Query, UseGuards, Req, Logger } from "@nestjs/common";
 import { ApiTags, ApiOperation, ApiBearerAuth } from "@nestjs/swagger";
+import {
+  ApiAdminErrorResponses,
+  ApiEnvelopeResponse,
+  ApiPaginatedResponse,
+} from "../shared/swagger";
+import { DepositDto } from "./dto/deposit.dto";
 import { DepositService } from "./deposit.service";
 import { DepositQueryDto } from "./dto/deposit-query.dto";
 import { ProcessDepositDto } from "./dto/process-deposit.dto";
@@ -12,6 +18,7 @@ import { OcrService } from "../ocr/ocr.service";
 
 @ApiTags("Admin-Deposit")
 @ApiBearerAuth()
+@ApiAdminErrorResponses()
 @UseGuards(AdminAuthGuard)
 @Controller("admin/deposit")
 export class DepositAdminController {
@@ -26,6 +33,7 @@ export class DepositAdminController {
   @Get()
   @AdminRoles(AdminRole.ADMIN, AdminRole.SUPER_ADMIN, AdminRole.FINANCE)
   @ApiOperation({ summary: "List all deposits (admin)" })
+  @ApiPaginatedResponse(DepositDto)
   async findAll(@Query() query: DepositQueryDto) {
     return { data: await this.depositService.findAll(query) };
   }
@@ -33,6 +41,7 @@ export class DepositAdminController {
   @Get(":id")
   @AdminRoles(AdminRole.ADMIN, AdminRole.SUPER_ADMIN, AdminRole.FINANCE)
   @ApiOperation({ summary: "Get deposit details (admin)" })
+  @ApiEnvelopeResponse(DepositDto)
   async findOne(@Param("id") id: string) {
     return { data: await this.depositService.findById(id) };
   }
@@ -40,6 +49,7 @@ export class DepositAdminController {
   @Patch(":id/process")
   @AdminRoles(AdminRole.ADMIN, AdminRole.SUPER_ADMIN, AdminRole.FINANCE)
   @ApiOperation({ summary: "Approve or reject a deposit" })
+  @ApiEnvelopeResponse(DepositDto)
   async process(@Req() req: AdminExpressRequest, @Param("id") id: string, @Body() dto: ProcessDepositDto) {
     const adminId = req.admin?.id || "system";
 

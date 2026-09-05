@@ -23,6 +23,7 @@ import { KycStatusEnum } from "../baseinfo/enum/kycStatus.enum";
 import { WithdrawTypeEnum } from "../admin-symbol/enum/withdraw-type.enum";
 import { P2pWithdrawService } from "../p2p/services/p2p-withdraw.service";
 import { P2pAuditActorEnum } from "../p2p/enum/p2p.enums";
+import { PaginatedDto, paginate } from "../shared/dto/paginated.dto";
 
 @Injectable()
 export class WithdrawService {
@@ -227,8 +228,8 @@ export class WithdrawService {
     return saved;
   }
 
-  async findAll(query: WithdrawQueryDto) {
-    const { status, page = 1, limit = 20 } = query;
+  async findAll(query: WithdrawQueryDto): Promise<PaginatedDto<WithdrawEntity>> {
+    const { status } = query;
     const where: any = {};
     if (status) where.status = status;
 
@@ -236,11 +237,11 @@ export class WithdrawService {
       where,
       relations: { symbol: true, user: true },
       order: { createAt: "DESC" },
-      skip: (page - 1) * limit,
-      take: limit,
+      skip: query.skip,
+      take: query.take,
     });
 
-    return { items, total, page, limit };
+    return paginate(items, total, query);
   }
 
   async process(adminId: string, id: string, dto: ProcessWithdrawDto): Promise<WithdrawEntity> {

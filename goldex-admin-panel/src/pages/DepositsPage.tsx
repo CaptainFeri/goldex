@@ -5,6 +5,7 @@ import { Card, Badge, Loading, ErrorState, Empty, Modal } from "../components/ui
 import { DEPOSIT_TYPES } from "../lib/enums";
 import type { DepositRequest } from "../api/types";
 import { fmtBySymbol } from "../lib/money";
+import type { Paginated } from "../api/types";
 
 const STATUS_LABELS: Record<string, string> = {
   PENDING: "در انتظار",
@@ -38,7 +39,7 @@ export default function DepositsPage() {
     queryFn: async () => {
       const params: any = {};
       if (statusFilter) params.status = statusFilter;
-      return unwrap<{ items: DepositRequest[]; total: number; page: number; limit: number }>((await api.get("/admin/deposit", { params })).data);
+      return unwrap<Paginated<DepositRequest>>((await api.get("/admin/deposit", { params })).data);
     },
   });
 

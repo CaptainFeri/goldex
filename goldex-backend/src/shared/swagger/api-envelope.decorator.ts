@@ -99,6 +99,21 @@ export const ApiEnvelopePrimitiveResponse = (
   );
 
 /**
+ * For endpoints that perform an action and return nothing — deletes, mostly.
+ * The envelope is still sent, with `data: null`, so clients unwrap uniformly
+ * rather than special-casing the empty case.
+ */
+export const ApiEnvelopeNoDataResponse = (options: EnvelopeOptions = {}) =>
+  applyDecorators(
+    ApiExtraModels(ResponseEnvelopeDto),
+    ApiResponse({
+      status: options.status ?? 200,
+      description: options.description ?? "Succeeded; the envelope's data is null",
+      schema: envelopeSchema({ nullable: true, example: null }),
+    })
+  );
+
+/**
  * The error responses every authenticated admin endpoint can return.
  * Apply once per controller rather than per route.
  */
