@@ -4,6 +4,7 @@ import { api, unwrap, apiError } from "../api/client";
 import { Card, Badge, Loading, ErrorState, Empty, Modal } from "../components/ui";
 import { DEPOSIT_TYPES } from "../lib/enums";
 import type { DepositRequest } from "../api/types";
+import { fmtBySymbol } from "../lib/money";
 
 const STATUS_LABELS: Record<string, string> = {
   PENDING: "در انتظار",
@@ -20,7 +21,7 @@ const STATUS_KINDS: Record<string, string> = {
   CANCELLED: "gray",
 };
 
-const fmtNum = (n: any) => (n ?? 0).toLocaleString("fa-IR");
+
 const fmtDate = (d: string | null) =>
   d ? new Date(d).toLocaleDateString("fa-IR", { year: "numeric", month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }) : "—";
 const typeLabel = (t: string) => DEPOSIT_TYPES.find((x) => x.value === t)?.label ?? t;
@@ -91,7 +92,7 @@ export default function DepositsPage() {
                   <td>{d.symbol?.slug || d.symbol?.name || d.symbolId}</td>
                   <td>{typeLabel(d.type)}</td>
                   <td>{d.gatewayCode || (d.metadata?.payment?.gatewayCode ? <Badge kind="gold">{d.metadata.payment.gatewayCode}</Badge> : "—")}</td>
-                  <td className="mono">{fmtNum(d.amount)}</td>
+                  <td className="mono">{fmtBySymbol(d.amount, d.symbol?.slug)}</td>
                   <td><Badge kind={(STATUS_KINDS[d.status] as "green" | "red" | "gold" | "gray")}>{STATUS_LABELS[d.status]}</Badge></td>
                   <td>{fmtDate(d.createAt)}</td>
                   <td>
@@ -158,7 +159,7 @@ function ProcessDepositModal({
         <div><strong>کاربر:</strong> {deposit.user ? `${deposit.user.firstName ?? ""} ${deposit.user.lastName ?? ""}`.trim() || deposit.user.phone || deposit.user.email : deposit.userId}</div>
         <div><strong>نماد:</strong> {deposit.symbol?.slug || deposit.symbol?.name}</div>
         <div><strong>نوع:</strong> {typeLabel(deposit.type)}</div>
-        <div><strong>مبلغ:</strong> {fmtNum(deposit.amount)}</div>
+        <div><strong>مبلغ:</strong> {fmtBySymbol(deposit.amount, deposit.symbol?.slug)}</div>
         <div><strong>وضعیت:</strong> {STATUS_LABELS[deposit.status] ?? deposit.status}</div>
         {deposit.picturePath && <div><strong>تصویر:</strong> <img src={picUrl(deposit.picturePath)} alt="deposit-pic" style={{ maxWidth: "100%", maxHeight: 300, borderRadius: 6, marginTop: 4, cursor: "pointer" }} onClick={() => window.open(picUrl(deposit.picturePath), "_blank")} /></div>}
         {deposit.notes && <div><strong>توضیحات کاربر:</strong> {deposit.notes}</div>}

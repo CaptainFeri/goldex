@@ -6,6 +6,7 @@ import type { BankAccountDirection } from "../api/p2p";
 import { Card, Badge, Loading, ErrorState, Empty, Modal } from "../components/ui";
 import { BANK_ACCOUNT_STATUS } from "../lib/enums";
 import type { AdminBankAccount, SymbolItem } from "../api/types";
+import { fmtBySymbol, rialToToman, tomanToRial } from "../lib/money";
 
 const fmtNum = (n: any) => (n === null || n === undefined ? "—" : Number(n).toLocaleString("fa-IR"));
 const fmtDate = (d?: string | null) =>
@@ -40,15 +41,26 @@ function DirectionBadges({ account }: { account: AdminBankAccount }) {
 
 /** Remaining daily headroom per direction — the number that decides whether
  *  this account is still selectable today. */
-function LimitCell({ used, limit }: { used?: number; limit?: number | null }) {
+function LimitCell({
+  used,
+  limit,
+  symbol,
+}: {
+  used?: number;
+  limit?: number | null;
+  /** The account's symbol — limits are denominated in it, so a rial account
+   *  shows toman while a fiat one shows its own units. */
+  symbol?: string;
+}) {
   if (!limit) return <span style={{ color: "var(--text-muted)" }}>نامحدود</span>;
   const u = Number(used ?? 0);
+  // Percentage is unit-free, so compute it before formatting.
   const pct = Math.min(100, Math.round((u / Number(limit)) * 100));
   const over = pct >= 100;
   return (
     <div style={{ minWidth: 110 }}>
       <div className="mono" style={{ fontSize: 12, color: over ? "var(--red, #f0857d)" : undefined }}>
-        {fmtNum(u)} / {fmtNum(limit)}
+        {fmtBySymbol(u, symbol, { digits: 0 })} / {fmtBySymbol(limit, symbol, { digits: 0 })}
       </div>
       <div style={{ height: 4, background: "var(--bg)", borderRadius: 2, marginTop: 3 }}>
         <div
@@ -175,8 +187,8 @@ export default function BankAccountsPage() {
                   <td>{(a.symbol as any)?.slug ?? (a.symbol as any)?.name ?? "—"}</td>
                   <td><DirectionBadges account={a} /></td>
                   <td className="mono">{a.priority}</td>
-                  <td><LimitCell used={a.depositUsedToday} limit={a.depositDailyLimit} /></td>
-                  <td><LimitCell used={a.withdrawUsedToday} limit={a.withdrawDailyLimit} /></td>
+                  <td><LimitCell used={a.depositUsedToday} limit={a.depositDailyLimit} symbol={(a.symbol as any)?.slug} /></td>
+                  <td><LimitCell used={a.withdrawUsedToday} limit={a.withdrawDailyLimit} symbol={(a.symbol as any)?.slug} /></td>
                   <td><Badge kind={STATUS_KIND[a.status] ?? "gray"}>{BANK_ACCOUNT_STATUS[a.status] ?? a.status}</Badge></td>
                   <td>
                     <div className="row" style={{ gap: 4, flexWrap: "wrap" }}>
@@ -274,10 +286,10 @@ function BankAccountModal({
     useForDeposit: account?.useForDeposit ?? false,
     useForWithdraw: account?.useForWithdraw ?? false,
     priority: account?.priority ?? 0,
-    depositDailyLimit: account?.depositDailyLimit ?? "",
-    depositPerTxLimit: account?.depositPerTxLimit ?? "",
-    withdrawDailyLimit: account?.withdrawDailyLimit ?? "",
-    withdrawPerTxLimit: account?.withdrawPerTxLimit ?? "",
+    depositDailyLimit: rialToToman(account?.depositDailyLimit) ?? "",
+    depositPerTxLimit: rialToToman(account?.depositPerTxLimit) ?? "",
+    withdrawDailyLimit: rialToToman(account?.withdrawDailyLimit) ?? "",
+    withdrawPerTxLimit: rialToToman(account?.withdrawPerTxLimit) ?? "",
     activeFromHour: account?.activeFromHour ?? "",
     activeToHour: account?.activeToHour ?? "",
     notes: account?.notes ?? "",
@@ -294,6 +306,8 @@ function BankAccountModal({
 
   const identifierMissing = !form.iban && !form.accountNumber && !form.cardNumber;
   const num = (v: any) => (v === "" || v === null ? undefined : Number(v));
+  /** Limit fields are entered in toman; the API stores rial. */
+  const tomanNum = (v: any) => (v === "" || v === null ? undefined : tomanToRial(v) ?? undefined);
 
   return (
     <Modal title={account ? "ویرایش حساب بانکی" : "افزودن حساب بانکی شرکت"} onClose={onClose} wide>
@@ -313,10 +327,10 @@ function BankAccountModal({
             useForDeposit: form.useForDeposit,
             useForWithdraw: form.useForWithdraw,
             priority: Number(form.priority) || 0,
-            depositDailyLimit: num(form.depositDailyLimit),
-            depositPerTxLimit: num(form.depositPerTxLimit),
-            withdrawDailyLimit: num(form.withdrawDailyLimit),
-            withdrawPerTxLimit: num(form.withdrawPerTxLimit),
+            depositDailyLimit: tomanNum(form.depositDailyLimit),
+            depositPerTxLimit: tomanNum(form.depositPerTxLimit),
+            withdrawDailyLimit: tomanNum(form.withdrawDailyLimit),
+            withdrawPerTxLimit: tomanNum(form.withdrawPerTxLimit),
             activeFromHour: num(form.activeFromHour),
             activeToHour: num(form.activeToHour),
             notes: form.notes || undefined,
@@ -386,22 +400,22 @@ function BankAccountModal({
 
         <div className="form-grid" style={{ marginTop: 16 }}>
           <div className="field">
-            <label>سقف روزانه واریز</label>
+            <label>سقف روزانه واریز (تومان)</label>
             <input className="input" type="number" min="0" value={form.depositDailyLimit as any}
               onChange={(e) => set("depositDailyLimit", e.target.value)} placeholder="خالی = نامحدود" />
           </div>
           <div className="field">
-            <label>سقف هر تراکنش واریز</label>
+            <label>سقف هر تراکنش واریز (تومان)</label>
             <input className="input" type="number" min="0" value={form.depositPerTxLimit as any}
               onChange={(e) => set("depositPerTxLimit", e.target.value)} placeholder="خالی = نامحدود" />
           </div>
           <div className="field">
-            <label>سقف روزانه برداشت</label>
+            <label>سقف روزانه برداشت (تومان)</label>
             <input className="input" type="number" min="0" value={form.withdrawDailyLimit as any}
               onChange={(e) => set("withdrawDailyLimit", e.target.value)} placeholder="خالی = نامحدود" />
           </div>
           <div className="field">
-            <label>سقف هر تراکنش برداشت</label>
+            <label>سقف هر تراکنش برداشت (تومان)</label>
             <input className="input" type="number" min="0" value={form.withdrawPerTxLimit as any}
               onChange={(e) => set("withdrawPerTxLimit", e.target.value)} placeholder="خالی = نامحدود" />
           </div>

@@ -4,6 +4,7 @@ import { api, unwrap, apiError } from "../api/client";
 import { Card, Badge, Loading, ErrorState, Empty, Modal } from "../components/ui";
 import { WITHDRAW_TYPES } from "../lib/enums";
 import type { WithdrawRequest } from "../api/types";
+import { fmtBySymbol } from "../lib/money";
 
 const STATUS_LABELS: Record<string, string> = {
   PENDING: "در انتظار",
@@ -23,7 +24,7 @@ const STATUS_KINDS: Record<string, string> = {
 const GATEWAY_TYPES = new Set(["auto"]);
 const gatewayLabel = (code?: string) => code ?? "—";
 
-const fmtNum = (n: any) => (n ?? 0).toLocaleString("fa-IR");
+
 const fmtDate = (d: string | null) =>
   d ? new Date(d).toLocaleDateString("fa-IR", { year: "numeric", month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }) : "—";
 const typeLabel = (t: string) => WITHDRAW_TYPES.find((x) => x.value === t)?.label ?? t;
@@ -91,7 +92,7 @@ export default function WithdrawsPage() {
                   </td>
                   <td>{w.symbol?.slug || w.symbol?.name || w.symbolId}</td>
                   <td>{typeLabel(w.type)}</td>
-                  <td className="mono">{fmtNum(w.amount)}</td>
+                  <td className="mono">{fmtBySymbol(w.amount, w.symbol?.slug)}</td>
                   <td><Badge kind={(STATUS_KINDS[w.status] as "green" | "red" | "gold" | "gray")}>{STATUS_LABELS[w.status]}</Badge></td>
                   <td>{fmtDate(w.createAt)}</td>
                   <td>
@@ -207,7 +208,7 @@ function ProcessWithdrawModal({
             <div><strong>کد ملی ذینفع:</strong> {withdraw.metadata.beneficiaryId}</div>
           </>
         )}
-        <div><strong>مبلغ:</strong> {fmtNum(withdraw.amount)}</div>
+        <div><strong>مبلغ:</strong> {fmtBySymbol(withdraw.amount, withdraw.symbol?.slug)}</div>
         <div><strong>وضعیت:</strong> {STATUS_LABELS[withdraw.status] ?? withdraw.status}</div>
         {withdraw.notes && <div><strong>توضیحات کاربر:</strong> {withdraw.notes}</div>}
         {withdraw.adminNotes && <div><strong>توضیحات ادمین:</strong> {withdraw.adminNotes}</div>}

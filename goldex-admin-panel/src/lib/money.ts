@@ -16,6 +16,12 @@ export const RIAL_PER_TOMAN = 10;
 /** What the panel labels amounts with. */
 export const DISPLAY_UNIT = "تومان";
 
+/**
+ * Persian digits, matching the rest of this RTL panel and the ui-parszargar
+ * design. Override per call only where Latin digits are genuinely wanted.
+ */
+export const DISPLAY_LOCALE = "fa-IR";
+
 type Amount = number | string | null | undefined;
 
 const toNumber = (v: Amount): number | null => {
@@ -43,10 +49,13 @@ export function tomanToRial(toman: Amount): number | null {
  * already-converted value would double-convert, which is the one mistake this
  * module exists to prevent.
  */
-export function fmtToman(rial: Amount, opts: { unit?: boolean; digits?: number } = {}): string {
+export function fmtToman(
+  rial: Amount,
+  opts: { unit?: boolean; digits?: number; locale?: string } = {}
+): string {
   const toman = rialToToman(rial);
   if (toman === null) return "—";
-  const text = toman.toLocaleString("en-US", {
+  const text = toman.toLocaleString(opts.locale ?? DISPLAY_LOCALE, {
     maximumFractionDigits: opts.digits ?? 0,
   });
   return opts.unit === false ? text : `${text} ${DISPLAY_UNIT}`;
@@ -59,7 +68,7 @@ export function fmtToman(rial: Amount, opts: { unit?: boolean; digits?: number }
 export function fmtAmount(value: Amount, unit?: string, digits = 8): string {
   const n = toNumber(value);
   if (n === null) return "—";
-  const text = n.toLocaleString("en-US", { maximumFractionDigits: digits });
+  const text = n.toLocaleString(DISPLAY_LOCALE, { maximumFractionDigits: digits });
   return unit ? `${text} ${unit}` : text;
 }
 
@@ -72,6 +81,12 @@ export function isRialSymbol(slug: string | null | undefined): boolean {
  * Format by symbol: rial amounts become toman, everything else is shown in its
  * own unit. Use this wherever the symbol is known at render time.
  */
-export function fmtBySymbol(value: Amount, slug: string | null | undefined, unit?: string): string {
-  return isRialSymbol(slug) ? fmtToman(value) : fmtAmount(value, unit ?? slug ?? undefined);
+export function fmtBySymbol(
+  value: Amount,
+  slug: string | null | undefined,
+  opts: { unit?: string; digits?: number } = {}
+): string {
+  return isRialSymbol(slug)
+    ? fmtToman(value, { digits: opts.digits })
+    : fmtAmount(value, opts.unit ?? slug ?? undefined, opts.digits ?? 8);
 }

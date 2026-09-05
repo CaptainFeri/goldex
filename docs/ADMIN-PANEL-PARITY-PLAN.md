@@ -217,7 +217,7 @@ panel is the first consumer, so it is where each change gets proven:
 
 | Change | Admin panel work |
 |---|---|
-| **Rial stored, toman displayed** (§3.1) | **Landed** as `src/lib/money.ts` with tests. Every amount render must route through `fmtToman`/`fmtBySymbol`, and every money input through `tomanToRial` on submit — the panel shows raw rial today, so each unconverted call site is a factor-of-ten shown to an operator. Move the module into `@goldex/ui` when that package is extracted, so both panels share one conversion. |
+| **Rial stored, toman displayed** (§3.1) | **Landed** — `src/lib/money.ts` plus the money-screen call sites; see §6.1. Move the module into `@goldex/ui` when that package is extracted, so both panels share one conversion. |
 | **Ticker symbols** (§4.5) | Symbols page gains `tickerKey`, `isTicker`, `displayOrder`, `category`; it becomes the admin surface for the ticker itself. |
 | **Dynamic roles** (§5.7) | Admins page moves from the 4-value enum to role assignment; add the permission matrix; drive buttons off `capabilities`. |
 | **Operation OTP** (§4.3) | One shared `<OtpGate>` component wrapping the five money-moving flows — build it once here, and `ui-parszargar` imports it from `@goldex/ui`. |
@@ -225,6 +225,54 @@ panel is the first consumer, so it is where each change gets proven:
 | **Monitoring via `monitor`** (§5.4) | New page; must render `stale: true` snapshots visibly rather than hiding them. |
 | **Reports visibility** (§5.23) | Ownership-scoped list; render `artifactExpired` instead of a dead download button. |
 | **Permission-gated nav** (§4.2) | Both panels filter navigation from `me.permissions[]` — shared helper. |
+
+### 6.1 The rial → toman display audit
+
+The panel renders ~295 amounts through some `fmtNum`. **Most are not rial** —
+gold grams, USDT, percentages, counts, prices in non-rial quotes — so a blanket
+conversion would be worse than none. The audit is therefore per call site, and
+this is where it stands.
+
+**Converted** — operator-facing money, symbol known or rial by construction:
+
+| Screen | What |
+|---|---|
+| Withdraws | the amount being approved, via `fmtBySymbol` |
+| Deposits | the amount being processed, via `fmtBySymbol` |
+| Bank accounts | daily/per-tx limits, **display and edit form** |
+| P2P escalations | admin liquidity, per-symbol breakdown, today's settled total, match amount |
+| P2P settings | the two-person approval threshold input |
+| Dashboard | the IRR customer-balance and system-profit tiles |
+
+**Deliberately not converted:**
+
+- **OCR amount fields** on Withdraws and Deposits. Those transcribe what is
+  printed on a bank receipt, and the receipt is in rial. Converting would stop
+  the field matching the document the operator is reading off.
+- **Counts** — pending withdrawals, unmatched deposits, escalations. `fmtNum` is
+  correct for these; they are not money.
+- **Non-rial amounts** — gold grams, USDT balances, and prices quoted in other
+  symbols. `fmtBySymbol` leaves them in their own unit, which is why it takes
+  the symbol rather than assuming.
+
+**Still to audit:** the remaining pages — Wallets, Orders, Finance, Credit
+(20 files), Provider finance, CBP, Order book, Telegram market, Compare, Pairs,
+Symbols, Discounts, Levels, Users, Warehouse, Arbitrage. Each needs the same
+per-site judgement rather than a find-and-replace.
+
+**Two rules that make the audit safe to continue:**
+
+1. **Display and input convert together, per screen.** Converting a display
+   without its form is worse than converting neither: the operator reads toman,
+   types toman, and the form posts it as rial — a tenth of what they intended.
+   The bank-accounts form is the worked example.
+2. **Format through the symbol wherever it is in scope.** `fmtBySymbol` divides
+   a rial balance and leaves a gold balance in grams. A bare `fmtToman` on a
+   column that can hold either is a bug waiting for the first non-rial row.
+
+Four pages define their own local `fmtNum`, which is why there is no single
+choke point today. Removing those shadows as each page is audited is what makes
+the next audit cheaper than this one.
 
 ---
 

@@ -10,6 +10,7 @@ import {
   P2P_RESOLUTIONS,
 } from "../lib/enums";
 import type { P2pEscalation, P2pResolutionType } from "../api/types";
+import { fmtBySymbol, fmtToman } from "../lib/money";
 
 const fmtNum = (n: any) => Number(n ?? 0).toLocaleString("fa-IR");
 const fmtDateTime = (d?: string | null) =>
@@ -88,17 +89,17 @@ export default function P2pEscalationsPage() {
         <Stat label="نزدیک به مهلت" value={fmtNum(d?.timeoutRisk)} />
         <Stat
           label="نقدینگی حساب‌های مدیر"
-          value={fmtNum(d?.adminLiquidity)}
+          value={fmtToman(d?.adminLiquidity)}
           sub={
             d?.adminLiquidityBySymbol?.length
-              ? d.adminLiquidityBySymbol.map((r) => `${r.slug ?? "—"}: ${fmtNum(r.balance)}`).join(" · ")
+              ? d.adminLiquidityBySymbol.map((r) => `${r.slug ?? "—"}: ${fmtBySymbol(r.balance, r.slug)}`).join(" · ")
               : "کیف پول مدیر تنظیم نشده است"
           }
         />
         <Stat
           label="تسویه امروز"
           value={fmtNum(d?.todayCompletedCount)}
-          sub={`${fmtNum(d?.todayCompletedAmount)} ریال`}
+          sub={fmtToman(d?.todayCompletedAmount)}
         />
       </div>
 
@@ -214,7 +215,7 @@ function EscalationModal({
       {error && <div style={{ marginBottom: 12 }}><ErrorState message={error} /></div>}
 
       <div style={{ background: "var(--bg)", padding: 12, borderRadius: 8, marginBottom: 16, fontSize: 13, lineHeight: 1.9 }}>
-        <div><strong>مبلغ:</strong> <span className="mono">{fmtNum(m?.amount)}</span> ریال</div>
+        <div><strong>مبلغ:</strong> <span className="mono">{fmtToman(m?.amount)}</span></div>
         <div><strong>وضعیت تطبیق:</strong> {P2P_MATCH_STATUS[m?.status ?? ""] ?? m?.status ?? "—"}</div>
         <div><strong>منبع تطبیق:</strong> {m?.source === "ADMIN" ? "حساب مدیر" : "مشتری"}</div>
         <div><strong>مهلت پاسخ برداشت‌کننده:</strong> {fmtDateTime(m?.responseDeadlineAt)}</div>

@@ -5,6 +5,7 @@ import { api, unwrap } from "../api/client";
 import { Card, Stat, Loading, ErrorState, Empty, Badge } from "../components/ui";
 import { fmtNum } from "../lib/format";
 import { gridColor } from "../lib/chart";
+import { fmtToman } from "../lib/money";
 
 const num = (...vals: any[]) => {
   for (const v of vals) if (v !== undefined && v !== null) return Number(v) || 0;
@@ -111,13 +112,13 @@ export default function DashboardPage() {
             )}
             {irr ? (
               <>
-                <Stat label="ریال (IRR) — مشتریان" value={fmtNum(num(irr.customerFree), 0)} sub={`مسدود: ${fmtNum(num(irr.customerFrozen), 0)} | قفل: ${fmtNum(num(irr.customerLocked), 0)}`} />
-                <Stat label="ریال (IRR) — سود سیستم" value={fmtNum(num(irr.systemProfit), 0)} sub={num(irr.systemProfit) >= 0 ? "داشته" : "منفی"} />
+                <Stat label="تومان — مشتریان" value={fmtToman(num(irr.customerFree), { unit: false })} sub={`مسدود: ${fmtToman(num(irr.customerFrozen), { unit: false })} | قفل: ${fmtToman(num(irr.customerLocked), { unit: false })}`} />
+                <Stat label="تومان — سود سیستم" value={fmtToman(num(irr.systemProfit), { unit: false })} sub={num(irr.systemProfit) >= 0 ? "داشته" : "منفی"} />
               </>
             ) : (
               <>
-                <Stat label="ریال (IRR)" value="—" sub="داده‌ای موجود نیست" />
-                <Stat label="ریال (IRR) — سود" value="—" />
+                <Stat label="تومان" value="—" sub="داده‌ای موجود نیست" />
+                <Stat label="تومان — سود" value="—" />
               </>
             )}
       </div>

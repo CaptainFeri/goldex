@@ -34,13 +34,15 @@ describe("money", () => {
   });
 
   it("formats rial as toman with the unit", () => {
-    expect(fmtToman(1_250_000_000)).toBe("125,000,000 تومان");
-    expect(fmtToman(1_250_000_000, { unit: false })).toBe("125,000,000");
+    expect(fmtToman(1_250_000_000)).toBe("۱۲۵٬۰۰۰٬۰۰۰ تومان");
+    expect(fmtToman(1_250_000_000, { unit: false })).toBe("۱۲۵٬۰۰۰٬۰۰۰");
+    // Latin digits stay available for anywhere that needs them.
+    expect(fmtToman(1_250_000_000, { unit: false, locale: "en-US" })).toBe("125,000,000");
     expect(fmtToman(null)).toBe("—");
   });
 
   it("leaves non-rial amounts in their own unit", () => {
-    expect(fmtAmount(12.5, "گرم")).toBe("12.5 گرم");
+    expect(fmtAmount(12.5, "گرم")).toBe("۱۲٫۵ گرم");
     expect(fmtAmount(null)).toBe("—");
   });
 
@@ -52,8 +54,8 @@ describe("money", () => {
   });
 
   it("converts only rial amounts when formatting by symbol", () => {
-    expect(fmtBySymbol(1_250_000_000, "IRR")).toBe("125,000,000 تومان");
+    expect(fmtBySymbol(1_250_000_000, "IRR")).toBe("۱۲۵٬۰۰۰٬۰۰۰ تومان");
     // A gold balance is grams; dividing it by ten would be nonsense.
-    expect(fmtBySymbol(12.5, "XAU", "گرم")).toBe("12.5 گرم");
+    expect(fmtBySymbol(12.5, "XAU", { unit: "گرم" })).toBe("۱۲٫۵ گرم");
   });
 });
