@@ -120,7 +120,11 @@ export class DepositService {
         symbolType: symbol.symbolType,
         type: saved.type,
         amount: saved.amount,
-        currency: symbol.name,
+        // The slug, not symbol.name: this is a machine field on a payments
+        // rail, and the rial symbol's name is "ریال ایران" — a localized label
+        // no consumer can compare against. The gateway integrations already
+        // send "IRR", and symbolSlug above carries the same value.
+        currency: symbol.slug,
         gatewayCode,
         picturePath: saved.picturePath,
         notes: saved.notes,

@@ -250,6 +250,8 @@ this is where it stands.
 | Order book | ladder price by the pair's quote and size by its base, plus the depth, best bid/ask and spread columns |
 | Pairs | best buy/sell price by the quote; min/max buy/sell by the base |
 | Provider finance | outstanding, traded and settled balances by their symbol, and the settlement amount field |
+| Levels | the `{ amount, currency }` feature limits, **display and the edit field** |
+| CBP | payment amounts, by the joined symbol's slug |
 
 **Deliberately not converted:**
 
@@ -273,6 +275,20 @@ this is where it stands.
   is established. The order screen carries a comment saying so.
 - **`bridgeRate`, `spreadPercent`, `leverage`, drawdown percentages.** Rates and
   ratios, not amounts.
+- **Compare and Telegram market, entirely.** Both render an external feed that
+  is already in toman. The pricing engine settles it arithmetically rather than
+  by naming: `arbitrage.service.ts` computes `profitToman = bestSell.buyPrice -
+  bestBuy.sellPrice` from the very same `buyPrice`/`sellPrice` fields these
+  screens display. The telegram monitor documents its own figures as Toman
+  throughout. Converting either would introduce the error, not remove it.
+- **Discounts.** `discountAmount` and `maxDiscount` carry no symbol, and
+  nothing outside the discount module consumes them — the feature is stored and
+  displayed but never applied, so the unit was never established. `usageCount`,
+  `usageLimit` are counts and `discountPercentage` is a percentage.
+- **`gain` on a symbol.** It is an absolute amount or a percentage depending on
+  the row's `gainType`, and the row names no quote symbol, so it is ambiguous
+  in both directions.
+- **Users.** Every figure on it is a count.
 - **Warehouse, entirely.** All 42 sites are gram weights. The module's four
   entities carry no money column at all — only `pure_weight`,
   `apparent_weight`, `capacity_total/used/remaining` and a request `weight` —
@@ -281,8 +297,20 @@ this is where it stands.
   are grams too. The page was already correct; the audit's answer here is to
   change nothing.
 
-**Still to audit:** CBP, Telegram market, Compare, Discounts, Symbols, Levels,
-Users. Each needs the same per-site judgement rather than a find-and-replace.
+**The audit is complete.** Every screen has been walked. The result splits
+roughly three ways: screens converted, screens whose figures were never money
+(warehouse weights, user counts), and screens already in toman because they
+render an external feed (arbitrage, compare, telegram market).
+
+One backend bug fell out of the CBP screen. `deposit.service.ts` and
+`withdraw.service.ts` published `currency: symbol.name` onto the payments bus —
+the rial symbol's name is `"ریال ایران"`, a localized label, where the gateway
+integrations set `"IRR"`. A machine field on a payments rail carrying a display
+string cannot be compared by any consumer, so both now send `symbol.slug`,
+which is what `symbolSlug` in the same payload already carried. The panel
+prefers the joined `symbol.slug` and falls back to `currency`, so rows written
+either way format correctly and anything unrecognised is left unconverted
+rather than guessed.
 
 ### 6.2 Digit rendering
 
