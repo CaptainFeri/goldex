@@ -980,38 +980,59 @@ Document body is **discriminated by warehouse type** — validate per branch:
 Result row: `{ warehouseName, customerName, symbol, type, direction, weight,
 unit, value, fee, txHash, status: completed|pending|failed, date }`.
 
-### 5.21 Accounting
+### 5.21 Accounting — **implemented**
 
-| | Endpoint |
-|---|---|
-| X | `GET /v1/admin/accounting/stats` — income, expense, net profit, margin (`admin/financial/summary`) |
-| N | `GET /v1/admin/accounting/series?metric=income\|expense\|profit\|margin&granularity=month\|day\|hour&year=&month=&day=` |
-| X | `GET /v1/admin/accounting/ledger?q=&minAmount=&maxAmount=&year=&month=&day=&hour=&page=` — `{ id, description, type, amount, date }` |
-| N | `GET /v1/admin/accounting/ledger/export?format=xlsx` |
+`GET /v1/admin/accounting/stats` · `series?metric=&granularity=&year=&month=&day=`
+· `ledger?q=&minAmount=&maxAmount=&year=&month=&day=&hour=&page=` ·
+`ledger/export`
 
-### 5.22 Accounting documents (vouchers) — new
+A read model over `system_ledger`. Income and expense are the two **signs** of
+one column — a negative row is money out, not a separate type — so that is the
+only honest split available, and `netProfit` is their difference.
+`marginPercent` is null when there was no income: a margin on nothing is not a
+ratio, and 0% would read as "we earned nothing on what we sold".
 
-| | Endpoint |
-|---|---|
-| N | `GET /v1/admin/accounting/vouchers?customer=&customerType=formal\|informal\|all&amountFrom=&amountTo=&dateFrom=&dateTo=&page=` |
-| N | `POST /v1/admin/accounting/vouchers` |
-| N | `GET /v1/admin/accounting/vouchers/:id` |
-| N | `POST /v1/admin/accounting/vouchers/:id/finalize` · `/reject` |
-| N | `GET /v1/admin/accounting/catalogs` — categories (کارمزد، تسویه مشتری، اصلاح حساب، ثبت واریز، ثبت برداشت، هزینه عملیاتی), wallet options, wallet subsets (نقد/اعتبار/فریز) |
-| N | `GET /v1/admin/accounting/vouchers/export` |
+Buckets come from `moment-jalaali` at every granularity, for the same reason
+the dashboard's do. A day granularity uses the Jalali month's real length —
+Farvardin has 31 days and Aban 30, so a fixed 30 would silently drop one.
+**The margin metric carries no `unit`**, because a ratio is not money and
+sending `IRR` would have the panel render a percentage as toman.
 
-Create body:
-```jsonc
-{ "movement": "withdraw" | "deposit",
-  "customerId": "...", "customerType": "formal",
-  "category": "کارمزد", "wallet": "کیف پول ریالی", "walletSubset": "نقد",
-  "amount": "2450000000", "currency": "IRR",
-  "description": "...", "date": "1405/05/12",
-  "challengeId": "...", "otp": "123456" }
-```
-Row shape: `{ voucherId, customerName, detail, extraDesc, customerType,
-currency, amount, side: بدهکار|بستانکار, status: پیش‌نویس|در انتظار تایید|ثبت نهایی,
-createdBy, date }`. `side` is derived from `movement`, never client-supplied.
+The export takes the same filters as the list, so a downloaded file never
+disagrees with the screen it was taken from.
+
+### 5.22 Accounting documents (vouchers) — **implemented**
+
+`GET/POST /v1/admin/accounting/vouchers` · `/:id` · `/:id/submit` ·
+`/:id/finalize` · `/:id/reject` · `catalogs` · `vouchers/export`
+
+A new table, deliberately separate from `system_ledger`: that is what the
+platform writes itself when an order executes, while this is what an accountant
+books by hand, and so it records who entered it and who approved it.
+
+**`side` is derived from `movement` on write and ignored if sent.** A deposit
+increases what the platform owes the customer, so the customer stands as
+creditor; a withdrawal reduces it and they stand as debtor. A voucher whose
+stated side disagreed with its movement reconciles to nothing.
+
+The lifecycle is draft → pending → finalized or rejected. Two controls sit on
+it, both enforced in the service rather than left to roles:
+
+- Everything is created a **draft**, whatever status the request asks for —
+  booking is a separate step and a client must not skip it.
+- **The author cannot book their own entry.** This is the only control the
+  workflow has, and a finance lead legitimately holds both rights, so a role
+  check alone would let one person do both halves.
+
+Finalized is terminal: a correction is a new voucher, not an edit.
+
+**Two deviations from this section as written.** The create body specified
+`challengeId` and `otp`; operation OTP (§4.3) does not exist yet, and accepting
+a pair of fields that were then ignored would let a client believe it had
+supplied a second factor. They are absent until §4.3 lands, and `finalize` is
+where they attach. And the catalogs return **real wallet types** — the panels'
+mock offered "کیف پول ریالی" and "کیف پول تومانی" as separate options; they are
+one wallet, and toman is a display convention that belongs to the client.
 
 ### 5.23 Reports — **implemented**
 

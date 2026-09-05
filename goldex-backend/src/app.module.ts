@@ -4,6 +4,7 @@ import { FilesModule } from "./shared/files/files.module";
 import { AdminMarketModule } from "./admin-market/admin-market.module";
 import { ReportsModule } from "./reports/reports.module";
 import { AdminDashboardModule } from "./admin-dashboard/admin-dashboard.module";
+import { AdminAccountingModule } from "./admin-accounting/admin-accounting.module";
 import { AcceptLanguageResolver, I18nModule } from "nestjs-i18n";
 import { join } from "path";
 import * as path from "path";
@@ -188,6 +189,7 @@ import { ScheduleModule } from "@nestjs/schedule";
     AdminMarketModule,
     ReportsModule,
     AdminDashboardModule,
+    AdminAccountingModule,
   ],
   providers: [WinstonLoggerService],
   exports: [WinstonLoggerService],

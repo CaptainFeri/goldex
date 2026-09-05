@@ -24323,6 +24323,1546 @@
           "Admin-Dashboard"
         ]
       }
+    },
+    "/api/v1/admin/accounting/stats": {
+      "get": {
+        "description": "Over the whole ledger. Figures are in `unit`; margin is null when there was no income.",
+        "operationId": "AdminAccountingController_stats_v1",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/ResponseEnvelopeDto"
+                    },
+                    {
+                      "properties": {
+                        "data": {
+                          "$ref": "#/components/schemas/AccountingStatsDto"
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation failed — see `errors` for per-field messages",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or expired admin token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Authenticated, but lacking the required permission",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Income, expense, net profit and margin",
+        "tags": [
+          "Admin-Accounting"
+        ]
+      }
+    },
+    "/api/v1/admin/accounting/series": {
+      "get": {
+        "description": "Bucketed by Jalali month, day or hour — the boundaries come from the calendar, not from `date_trunc`, which would misfile the edges. `unit` is null for the margin metric, which is a percentage rather than money.",
+        "operationId": "AdminAccountingController_series_v1",
+        "parameters": [
+          {
+            "name": "metric",
+            "required": true,
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "income",
+                "expense",
+                "profit",
+                "margin"
+              ]
+            }
+          },
+          {
+            "name": "granularity",
+            "required": true,
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "month",
+                "day",
+                "hour"
+              ]
+            }
+          },
+          {
+            "name": "year",
+            "required": false,
+            "in": "query",
+            "description": "Jalali year. Defaults to the current one.",
+            "schema": {
+              "example": 1405,
+              "type": "number"
+            }
+          },
+          {
+            "name": "month",
+            "required": false,
+            "in": "query",
+            "description": "Jalali month 1–12. Required for day and hour granularity.",
+            "schema": {
+              "example": 5,
+              "type": "number"
+            }
+          },
+          {
+            "name": "day",
+            "required": false,
+            "in": "query",
+            "description": "Jalali day 1–31. Required for hour granularity.",
+            "schema": {
+              "example": 12,
+              "type": "number"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/ResponseEnvelopeDto"
+                    },
+                    {
+                      "properties": {
+                        "data": {
+                          "$ref": "#/components/schemas/AccountingSeriesDto"
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation failed — see `errors` for per-field messages",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or expired admin token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Authenticated, but lacking the required permission",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "A metric over Jalali buckets",
+        "tags": [
+          "Admin-Accounting"
+        ]
+      }
+    },
+    "/api/v1/admin/accounting/ledger/export": {
+      "get": {
+        "description": "Takes the same filters as the list, so an export never disagrees with the screen it was taken from. Streams the file; there is no PDF, as §4.7 settled.",
+        "operationId": "AdminAccountingController_exportLedger_v1",
+        "parameters": [
+          {
+            "name": "page",
+            "required": false,
+            "in": "query",
+            "description": "1-based page number",
+            "schema": {
+              "minimum": 1,
+              "default": 1,
+              "type": "number"
+            }
+          },
+          {
+            "name": "pageSize",
+            "required": false,
+            "in": "query",
+            "description": "Rows per page. Clamped to 100.",
+            "schema": {
+              "minimum": 1,
+              "maximum": 100,
+              "default": 20,
+              "type": "number"
+            }
+          },
+          {
+            "name": "sort",
+            "required": false,
+            "in": "query",
+            "description": "Column to sort by",
+            "schema": {
+              "example": "createdAt",
+              "type": "string"
+            }
+          },
+          {
+            "name": "order",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "default": "desc",
+              "type": "string",
+              "enum": [
+                "asc",
+                "desc"
+              ]
+            }
+          },
+          {
+            "name": "q",
+            "required": false,
+            "in": "query",
+            "description": "Free text over the description",
+            "schema": {
+              "example": "کارمزد",
+              "type": "string"
+            }
+          },
+          {
+            "name": "minAmount",
+            "required": false,
+            "in": "query",
+            "description": "Inclusive lower bound on the absolute amount",
+            "schema": {
+              "example": "1000000",
+              "type": "string"
+            }
+          },
+          {
+            "name": "maxAmount",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "example": "500000000",
+              "type": "string"
+            }
+          },
+          {
+            "name": "year",
+            "required": false,
+            "in": "query",
+            "description": "Jalali year",
+            "schema": {
+              "example": 1405,
+              "type": "number"
+            }
+          },
+          {
+            "name": "month",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "example": 5,
+              "type": "number"
+            }
+          },
+          {
+            "name": "day",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "example": 12,
+              "type": "number"
+            }
+          },
+          {
+            "name": "hour",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "example": 14,
+              "type": "number"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The workbook",
+            "content": {
+              "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation failed — see `errors` for per-field messages",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or expired admin token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Authenticated, but lacking the required permission",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "The filtered ledger as a spreadsheet",
+        "tags": [
+          "Admin-Accounting"
+        ]
+      }
+    },
+    "/api/v1/admin/accounting/ledger": {
+      "get": {
+        "operationId": "AdminAccountingController_ledger_v1",
+        "parameters": [
+          {
+            "name": "page",
+            "required": false,
+            "in": "query",
+            "description": "1-based page number",
+            "schema": {
+              "minimum": 1,
+              "default": 1,
+              "type": "number"
+            }
+          },
+          {
+            "name": "pageSize",
+            "required": false,
+            "in": "query",
+            "description": "Rows per page. Clamped to 100.",
+            "schema": {
+              "minimum": 1,
+              "maximum": 100,
+              "default": 20,
+              "type": "number"
+            }
+          },
+          {
+            "name": "sort",
+            "required": false,
+            "in": "query",
+            "description": "Column to sort by",
+            "schema": {
+              "example": "createdAt",
+              "type": "string"
+            }
+          },
+          {
+            "name": "order",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "default": "desc",
+              "type": "string",
+              "enum": [
+                "asc",
+                "desc"
+              ]
+            }
+          },
+          {
+            "name": "q",
+            "required": false,
+            "in": "query",
+            "description": "Free text over the description",
+            "schema": {
+              "example": "کارمزد",
+              "type": "string"
+            }
+          },
+          {
+            "name": "minAmount",
+            "required": false,
+            "in": "query",
+            "description": "Inclusive lower bound on the absolute amount",
+            "schema": {
+              "example": "1000000",
+              "type": "string"
+            }
+          },
+          {
+            "name": "maxAmount",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "example": "500000000",
+              "type": "string"
+            }
+          },
+          {
+            "name": "year",
+            "required": false,
+            "in": "query",
+            "description": "Jalali year",
+            "schema": {
+              "example": 1405,
+              "type": "number"
+            }
+          },
+          {
+            "name": "month",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "example": 5,
+              "type": "number"
+            }
+          },
+          {
+            "name": "day",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "example": 12,
+              "type": "number"
+            }
+          },
+          {
+            "name": "hour",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "example": 14,
+              "type": "number"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/ResponseEnvelopeDto"
+                    },
+                    {
+                      "properties": {
+                        "data": {
+                          "allOf": [
+                            {
+                              "$ref": "#/components/schemas/PaginatedDto"
+                            },
+                            {
+                              "properties": {
+                                "items": {
+                                  "type": "array",
+                                  "items": {
+                                    "$ref": "#/components/schemas/AccountingLedgerRowDto"
+                                  }
+                                }
+                              }
+                            }
+                          ]
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation failed — see `errors` for per-field messages",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or expired admin token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Authenticated, but lacking the required permission",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "System ledger rows, filtered",
+        "tags": [
+          "Admin-Accounting"
+        ]
+      }
+    },
+    "/api/v1/admin/accounting/catalogs": {
+      "get": {
+        "description": "Categories, wallet types, subsets, symbols, customer types and movements.",
+        "operationId": "AdminAccountingController_catalogs_v1",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/ResponseEnvelopeDto"
+                    },
+                    {
+                      "properties": {
+                        "data": {
+                          "$ref": "#/components/schemas/VoucherCatalogsDto"
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation failed — see `errors` for per-field messages",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or expired admin token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Authenticated, but lacking the required permission",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Options for the voucher form",
+        "tags": [
+          "Admin-Accounting"
+        ]
+      }
+    },
+    "/api/v1/admin/accounting/vouchers/export": {
+      "get": {
+        "operationId": "AdminAccountingController_exportVouchers_v1",
+        "parameters": [
+          {
+            "name": "page",
+            "required": false,
+            "in": "query",
+            "description": "1-based page number",
+            "schema": {
+              "minimum": 1,
+              "default": 1,
+              "type": "number"
+            }
+          },
+          {
+            "name": "pageSize",
+            "required": false,
+            "in": "query",
+            "description": "Rows per page. Clamped to 100.",
+            "schema": {
+              "minimum": 1,
+              "maximum": 100,
+              "default": 20,
+              "type": "number"
+            }
+          },
+          {
+            "name": "sort",
+            "required": false,
+            "in": "query",
+            "description": "Column to sort by",
+            "schema": {
+              "example": "createdAt",
+              "type": "string"
+            }
+          },
+          {
+            "name": "order",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "default": "desc",
+              "type": "string",
+              "enum": [
+                "asc",
+                "desc"
+              ]
+            }
+          },
+          {
+            "name": "customer",
+            "required": false,
+            "in": "query",
+            "description": "Free text over the customer name",
+            "schema": {
+              "example": "زرین",
+              "type": "string"
+            }
+          },
+          {
+            "name": "customerType",
+            "required": false,
+            "in": "query",
+            "description": "Omit for both",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "formal",
+                "informal"
+              ]
+            }
+          },
+          {
+            "name": "status",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "draft",
+                "pending",
+                "finalized",
+                "rejected"
+              ]
+            }
+          },
+          {
+            "name": "amountFrom",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "example": "1000000",
+              "type": "string"
+            }
+          },
+          {
+            "name": "amountTo",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "example": "500000000",
+              "type": "string"
+            }
+          },
+          {
+            "name": "dateFrom",
+            "required": false,
+            "in": "query",
+            "description": "On the document date, not the row's creation",
+            "schema": {
+              "example": "2026-08-01T00:00:00.000Z",
+              "type": "string"
+            }
+          },
+          {
+            "name": "dateTo",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "example": "2026-09-01T00:00:00.000Z",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The workbook",
+            "content": {
+              "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation failed — see `errors` for per-field messages",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or expired admin token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Authenticated, but lacking the required permission",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "The filtered vouchers as a spreadsheet",
+        "tags": [
+          "Admin-Accounting"
+        ]
+      }
+    },
+    "/api/v1/admin/accounting/vouchers": {
+      "get": {
+        "operationId": "AdminAccountingController_listVouchers_v1",
+        "parameters": [
+          {
+            "name": "page",
+            "required": false,
+            "in": "query",
+            "description": "1-based page number",
+            "schema": {
+              "minimum": 1,
+              "default": 1,
+              "type": "number"
+            }
+          },
+          {
+            "name": "pageSize",
+            "required": false,
+            "in": "query",
+            "description": "Rows per page. Clamped to 100.",
+            "schema": {
+              "minimum": 1,
+              "maximum": 100,
+              "default": 20,
+              "type": "number"
+            }
+          },
+          {
+            "name": "sort",
+            "required": false,
+            "in": "query",
+            "description": "Column to sort by",
+            "schema": {
+              "example": "createdAt",
+              "type": "string"
+            }
+          },
+          {
+            "name": "order",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "default": "desc",
+              "type": "string",
+              "enum": [
+                "asc",
+                "desc"
+              ]
+            }
+          },
+          {
+            "name": "customer",
+            "required": false,
+            "in": "query",
+            "description": "Free text over the customer name",
+            "schema": {
+              "example": "زرین",
+              "type": "string"
+            }
+          },
+          {
+            "name": "customerType",
+            "required": false,
+            "in": "query",
+            "description": "Omit for both",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "formal",
+                "informal"
+              ]
+            }
+          },
+          {
+            "name": "status",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "draft",
+                "pending",
+                "finalized",
+                "rejected"
+              ]
+            }
+          },
+          {
+            "name": "amountFrom",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "example": "1000000",
+              "type": "string"
+            }
+          },
+          {
+            "name": "amountTo",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "example": "500000000",
+              "type": "string"
+            }
+          },
+          {
+            "name": "dateFrom",
+            "required": false,
+            "in": "query",
+            "description": "On the document date, not the row's creation",
+            "schema": {
+              "example": "2026-08-01T00:00:00.000Z",
+              "type": "string"
+            }
+          },
+          {
+            "name": "dateTo",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "example": "2026-09-01T00:00:00.000Z",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/ResponseEnvelopeDto"
+                    },
+                    {
+                      "properties": {
+                        "data": {
+                          "allOf": [
+                            {
+                              "$ref": "#/components/schemas/PaginatedDto"
+                            },
+                            {
+                              "properties": {
+                                "items": {
+                                  "type": "array",
+                                  "items": {
+                                    "$ref": "#/components/schemas/VoucherDto"
+                                  }
+                                }
+                              }
+                            }
+                          ]
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation failed — see `errors` for per-field messages",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or expired admin token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Authenticated, but lacking the required permission",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Vouchers, filtered",
+        "tags": [
+          "Admin-Accounting"
+        ]
+      },
+      "post": {
+        "description": "`side` is derived from `movement` and ignored if sent — a voucher whose stated side disagreed with its movement reconciles to nothing. Always created as a draft; booking is a separate, reviewed step.",
+        "operationId": "AdminAccountingController_createVoucher_v1",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateVoucherDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/ResponseEnvelopeDto"
+                    },
+                    {
+                      "properties": {
+                        "data": {
+                          "$ref": "#/components/schemas/VoucherDto"
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation failed — see `errors` for per-field messages",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or expired admin token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Authenticated, but lacking the required permission",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Create a voucher as a draft",
+        "tags": [
+          "Admin-Accounting"
+        ]
+      }
+    },
+    "/api/v1/admin/accounting/vouchers/{id}": {
+      "get": {
+        "operationId": "AdminAccountingController_findVoucher_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/ResponseEnvelopeDto"
+                    },
+                    {
+                      "properties": {
+                        "data": {
+                          "$ref": "#/components/schemas/VoucherDto"
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation failed — see `errors` for per-field messages",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or expired admin token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Authenticated, but lacking the required permission",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "One voucher",
+        "tags": [
+          "Admin-Accounting"
+        ]
+      }
+    },
+    "/api/v1/admin/accounting/vouchers/{id}/submit": {
+      "post": {
+        "operationId": "AdminAccountingController_submitVoucher_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/ResponseEnvelopeDto"
+                    },
+                    {
+                      "properties": {
+                        "data": {
+                          "$ref": "#/components/schemas/VoucherDto"
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation failed — see `errors` for per-field messages",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or expired admin token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Authenticated, but lacking the required permission",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Move a draft into the approval queue",
+        "tags": [
+          "Admin-Accounting"
+        ]
+      }
+    },
+    "/api/v1/admin/accounting/vouchers/{id}/finalize": {
+      "post": {
+        "description": "Refused for the admin who created it: booking one's own entry removes the only control this workflow has, and a finance lead holding both rights could otherwise do both halves alone. A second factor belongs in operation OTP (§4.3), which is not built yet — this deliberately accepts no otp field it would have to ignore.",
+        "operationId": "AdminAccountingController_finalizeVoucher_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReviewVoucherDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/ResponseEnvelopeDto"
+                    },
+                    {
+                      "properties": {
+                        "data": {
+                          "$ref": "#/components/schemas/VoucherDto"
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation failed — see `errors` for per-field messages",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or expired admin token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Authenticated, but lacking the required permission",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Book a pending voucher",
+        "tags": [
+          "Admin-Accounting"
+        ]
+      }
+    },
+    "/api/v1/admin/accounting/vouchers/{id}/reject": {
+      "post": {
+        "operationId": "AdminAccountingController_rejectVoucher_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReviewVoucherDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/ResponseEnvelopeDto"
+                    },
+                    {
+                      "properties": {
+                        "data": {
+                          "$ref": "#/components/schemas/VoucherDto"
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation failed — see `errors` for per-field messages",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or expired admin token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Authenticated, but lacking the required permission",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Refuse a pending voucher",
+        "tags": [
+          "Admin-Accounting"
+        ]
+      }
     }
   },
   "info": {
@@ -33108,6 +34648,491 @@
           "columnKinds",
           "rows"
         ]
+      },
+      "AccountingStatsDto": {
+        "type": "object",
+        "properties": {
+          "income": {
+            "type": "string",
+            "example": "1284000000.00",
+            "description": "Positive ledger movement, decimal string"
+          },
+          "expense": {
+            "type": "string",
+            "example": "312000000.00",
+            "description": "Negative ledger movement, as a positive figure"
+          },
+          "netProfit": {
+            "type": "string",
+            "example": "972000000.00",
+            "description": "income − expense"
+          },
+          "marginPercent": {
+            "type": "number",
+            "nullable": true,
+            "example": 75.7,
+            "description": "netProfit ÷ income, as a percentage. Null when there was no income to divide by."
+          },
+          "unit": {
+            "type": "string",
+            "example": "IRR",
+            "description": "The unit every figure above is in. The API never converts; the panel shows toman."
+          }
+        },
+        "required": [
+          "income",
+          "expense",
+          "netProfit",
+          "unit"
+        ]
+      },
+      "AccountingSeriesPointDto": {
+        "type": "object",
+        "properties": {
+          "key": {
+            "type": "string",
+            "example": "1405/05",
+            "description": "Jalali bucket key"
+          },
+          "label": {
+            "type": "string",
+            "example": "مرد",
+            "description": "Short label for the axis"
+          },
+          "value": {
+            "type": "string",
+            "example": "1284000000.00",
+            "description": "Decimal string; a percentage for the margin metric"
+          }
+        },
+        "required": [
+          "key",
+          "label",
+          "value"
+        ]
+      },
+      "AccountingSeriesDto": {
+        "type": "object",
+        "properties": {
+          "metric": {
+            "type": "string",
+            "enum": [
+              "income",
+              "expense",
+              "profit",
+              "margin"
+            ]
+          },
+          "granularity": {
+            "type": "string",
+            "enum": [
+              "month",
+              "day",
+              "hour"
+            ]
+          },
+          "unit": {
+            "type": "string",
+            "nullable": true,
+            "example": "IRR",
+            "description": "Unit of `value`. Null for the margin metric, which is a percentage."
+          },
+          "points": {
+            "description": "Every bucket in range, zeroes included",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AccountingSeriesPointDto"
+            }
+          }
+        },
+        "required": [
+          "metric",
+          "granularity",
+          "points"
+        ]
+      },
+      "AccountingLedgerRowDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "type": {
+            "type": "string",
+            "example": "COMMISSION_BUY"
+          },
+          "description": {
+            "type": "string",
+            "example": "کارمزد خرید سفارش ORD-1204"
+          },
+          "amount": {
+            "type": "string",
+            "example": "1250000.00",
+            "description": "Signed: negative is money out"
+          },
+          "unit": {
+            "type": "string",
+            "nullable": true,
+            "example": "IRR"
+          },
+          "providerKey": {
+            "type": "string",
+            "nullable": true,
+            "example": "tgju"
+          },
+          "date": {
+            "format": "date-time",
+            "type": "string",
+            "example": "2026-09-05T09:12:00.000Z"
+          }
+        },
+        "required": [
+          "id",
+          "type",
+          "description",
+          "amount",
+          "date"
+        ]
+      },
+      "CatalogOptionDto": {
+        "type": "object",
+        "properties": {
+          "value": {
+            "type": "string",
+            "example": "fee",
+            "description": "The value to send back"
+          },
+          "label": {
+            "type": "string",
+            "example": "کارمزد",
+            "description": "What to show"
+          }
+        },
+        "required": [
+          "value",
+          "label"
+        ]
+      },
+      "VoucherCatalogsDto": {
+        "type": "object",
+        "properties": {
+          "categories": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CatalogOptionDto"
+            }
+          },
+          "walletTypes": {
+            "description": "Real wallet types, not a list of currency labels. The panels' mock offered a rial wallet and a toman wallet as two options; they are one wallet, and toman is a display convention.",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CatalogOptionDto"
+            }
+          },
+          "walletSubsets": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CatalogOptionDto"
+            }
+          },
+          "symbols": {
+            "description": "Active symbols a voucher may be denominated in",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CatalogOptionDto"
+            }
+          },
+          "customerTypes": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CatalogOptionDto"
+            }
+          },
+          "movements": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CatalogOptionDto"
+            }
+          }
+        },
+        "required": [
+          "categories",
+          "walletTypes",
+          "walletSubsets",
+          "symbols",
+          "customerTypes",
+          "movements"
+        ]
+      },
+      "VoucherDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "voucherCode": {
+            "type": "string",
+            "example": "DOC-14050012"
+          },
+          "customerId": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "customerName": {
+            "type": "string",
+            "example": "شرکت زرین تجارت"
+          },
+          "customerType": {
+            "type": "string",
+            "enum": [
+              "formal",
+              "informal"
+            ]
+          },
+          "category": {
+            "type": "string",
+            "enum": [
+              "fee",
+              "customer_settlement",
+              "account_correction",
+              "deposit_entry",
+              "withdraw_entry",
+              "operating_cost"
+            ]
+          },
+          "categoryLabel": {
+            "type": "string",
+            "example": "کارمزد",
+            "description": "The category's Persian label, so the client need not map it"
+          },
+          "movement": {
+            "type": "string",
+            "enum": [
+              "deposit",
+              "withdraw"
+            ]
+          },
+          "side": {
+            "type": "string",
+            "enum": [
+              "debtor",
+              "creditor"
+            ],
+            "description": "Derived from `movement`; never client-supplied"
+          },
+          "sideLabel": {
+            "type": "string",
+            "example": "بستانکار"
+          },
+          "symbolId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "unit": {
+            "type": "string",
+            "nullable": true,
+            "example": "IRR",
+            "description": "Format `amount` by this"
+          },
+          "amount": {
+            "type": "string",
+            "example": "2450000000.00000000",
+            "description": "Always positive; direction is `side`"
+          },
+          "walletType": {
+            "type": "string",
+            "example": "DEPOSIT"
+          },
+          "walletSubset": {
+            "type": "string",
+            "enum": [
+              "cash",
+              "credit",
+              "frozen"
+            ]
+          },
+          "walletSubsetLabel": {
+            "type": "string",
+            "example": "نقد"
+          },
+          "description": {
+            "type": "string",
+            "example": "تسویه فاکتور خرید طلا"
+          },
+          "extraDescription": {
+            "type": "string",
+            "nullable": true
+          },
+          "documentDate": {
+            "format": "date-time",
+            "type": "string",
+            "example": "2026-08-03T00:00:00.000Z"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "draft",
+              "pending",
+              "finalized",
+              "rejected"
+            ]
+          },
+          "statusLabel": {
+            "type": "string",
+            "example": "ثبت نهایی"
+          },
+          "createdBy": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "createdByName": {
+            "type": "string",
+            "nullable": true,
+            "description": "The operator's identifier, for the «ثبت کننده» column"
+          },
+          "reviewedBy": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "reviewedAt": {
+            "format": "date-time",
+            "type": "string",
+            "nullable": true
+          },
+          "reviewNote": {
+            "type": "string",
+            "nullable": true
+          },
+          "createAt": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "voucherCode",
+          "customerName",
+          "customerType",
+          "category",
+          "categoryLabel",
+          "movement",
+          "side",
+          "sideLabel",
+          "symbolId",
+          "amount",
+          "walletType",
+          "walletSubset",
+          "walletSubsetLabel",
+          "description",
+          "documentDate",
+          "status",
+          "statusLabel",
+          "createdBy",
+          "createAt"
+        ]
+      },
+      "CreateVoucherDto": {
+        "type": "object",
+        "properties": {
+          "movement": {
+            "type": "string",
+            "enum": [
+              "deposit",
+              "withdraw"
+            ],
+            "description": "The only direction input. `side` is derived from it."
+          },
+          "customerId": {
+            "type": "string",
+            "format": "uuid",
+            "description": "The customer, when they are a platform user"
+          },
+          "customerName": {
+            "type": "string",
+            "example": "شرکت زرین تجارت",
+            "description": "Used when there is no `customerId`, and stored either way"
+          },
+          "customerType": {
+            "type": "string",
+            "enum": [
+              "formal",
+              "informal"
+            ]
+          },
+          "category": {
+            "type": "string",
+            "enum": [
+              "fee",
+              "customer_settlement",
+              "account_correction",
+              "deposit_entry",
+              "withdraw_entry",
+              "operating_cost"
+            ]
+          },
+          "symbolId": {
+            "type": "string",
+            "format": "uuid",
+            "description": "The symbol the amount is in"
+          },
+          "amount": {
+            "type": "string",
+            "example": "2450000000",
+            "description": "Positive, in the symbol's own units"
+          },
+          "walletType": {
+            "type": "string",
+            "example": "DEPOSIT",
+            "description": "Wallet type, from the catalogs endpoint"
+          },
+          "walletSubset": {
+            "type": "string",
+            "enum": [
+              "cash",
+              "credit",
+              "frozen"
+            ]
+          },
+          "description": {
+            "type": "string",
+            "example": "تسویه فاکتور خرید طلا"
+          },
+          "extraDescription": {
+            "type": "string",
+            "example": "بابت سفارش شماره 8451"
+          },
+          "documentDate": {
+            "type": "string",
+            "example": "2026-08-03T00:00:00.000Z",
+            "description": "The accounting date, which need not be today"
+          }
+        },
+        "required": [
+          "movement",
+          "customerName",
+          "customerType",
+          "category",
+          "symbolId",
+          "amount",
+          "walletType",
+          "walletSubset",
+          "description",
+          "documentDate"
+        ]
+      },
+      "ReviewVoucherDto": {
+        "type": "object",
+        "properties": {
+          "note": {
+            "type": "string",
+            "example": "مدارک ناقص است",
+            "description": "Recorded against the decision"
+          }
+        }
       }
     }
   }
