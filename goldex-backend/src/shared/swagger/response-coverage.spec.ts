@@ -16,8 +16,20 @@ import { join } from "path";
  */
 
 const ROUTE = /^\s*@(Get|Post|Put|Patch|Delete)\s*\(/;
-const RESPONSE = /@(ApiEnvelopeResponse|ApiPaginatedResponse|ApiEnvelopePrimitiveResponse|ApiEnvelopeNoDataResponse|ApiOkResponse|ApiCreatedResponse|ApiResponse)\s*\(/;
 const DECORATOR = /^\s*@/;
+
+/** Our decorators always carry a payload type, so their presence is enough. */
+const ENVELOPE_RESPONSE =
+  /@(ApiEnvelopeResponse|ApiPaginatedResponse|ApiEnvelopePrimitiveResponse|ApiEnvelopeNoDataResponse)\s*\(/;
+
+/**
+ * A plain `@ApiResponse` counts only when it actually says what comes back.
+ *
+ * 56 of the 58 uses in this repo were `{ status: 200, description: "Wallets
+ * retrieved" }` — prose that reads like documentation and generates no schema,
+ * which is exactly the gap this test exists to close.
+ */
+const TYPED_RESPONSE = /@(ApiOkResponse|ApiCreatedResponse|ApiResponse)\s*\([^)]*?(type:|schema:)/s;
 
 /** Controllers still to backfill. Remove a line when its module is done. */
 const UNDOCUMENTED = [
@@ -28,7 +40,6 @@ const UNDOCUMENTED = [
   "admin-pair/admin-pair.controller.ts",
   "admin-pair/market.controller.ts",
   "admin-schedule/admin-schedule.controller.ts",
-  "admin-symbol/admin-symbol.controller.ts",
   "admin-telegram-monitoring/admin-telegram-monitoring.controller.ts",
   "baseinfo/baseinfo.controller.ts",
   "cbp-admin/cbp-admin.controller.ts",
@@ -49,6 +60,7 @@ const UNDOCUMENTED = [
   "notification/notification-template.controller.ts",
   "notification/notification.controller.ts",
   "ocr/ocr.controller.ts",
+  "order/admin/admin-ordeer.controller.ts",
   "order/order.controller.ts",
   "p2p/p2p-admin.controller.ts",
   "p2p/p2p-user.controller.ts",
@@ -68,6 +80,7 @@ const UNDOCUMENTED = [
   "user-telegram/user-telegram.controller.ts",
   "user-wallet/user-wallet.controller.ts",
   "warehouse/admin/admin-warehouse.controller.ts",
+  "warehouse/warehouse.controller.ts",
   "withdraw/withdraw.controller.ts",
 ];
 
@@ -100,7 +113,8 @@ function undocumentedRoutes(source: string): string[] {
     if (block.length) {
       const text = block.join("\n");
       const route = block.find((l) => ROUTE.test(l));
-      if (route && !RESPONSE.test(text)) missing.push(route.trim());
+      const documented = ENVELOPE_RESPONSE.test(text) || TYPED_RESPONSE.test(text);
+      if (route && !documented) missing.push(route.trim());
       block = [];
     }
   }

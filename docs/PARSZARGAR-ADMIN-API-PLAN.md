@@ -397,29 +397,43 @@ are the embedded forms joined into most resources, defined once so a field
 added to one does not leak into every response that joins it.
 
 **Backfilled so far** — `admin/bank-accounts`, `admin/withdraw`,
-`admin/deposit`, `admin/accounts`, `admin/users`, `admin/kyc`. The pattern for each: extend
+`admin/deposit`, `admin/accounts`, `admin/users`, `admin/kyc`, `admin/wallets`,
+`admin/symbols`. The pattern for each: extend
 `PaginationQueryDto`, keep the old param as a `deprecated: true` alias for one
 release, return `paginate(...)`, add a response DTO, decorate the controller.
 
 **A CI guard holds the line.** `response-coverage.spec.ts` scans every
 controller and fails when a route ships without a response decorator. Its
-`UNDOCUMENTED` list is the remaining debt — **48 controllers, ~343 routes** — and
+`UNDOCUMENTED` list is the remaining debt — **49 controllers, ~381 routes** — and
 only shrinks: the test also fails when a listed controller is renamed, deleted,
 or has become fully documented, so finishing one cannot go unrecorded. A
 regression probe confirmed it names the offending route rather than merely
 failing.
+
+**Prose does not count as documentation.** The guard originally accepted any
+`@ApiResponse`, and 56 of the 58 in the repo were
+`{ status: 200, description: "Wallets retrieved" }` — text that reads like a
+contract and generates no schema. Six controllers were passing on that basis,
+`admin/wallets` among them. `@ApiResponse` now counts only when it carries a
+`type:` or a `schema:`, which moved the real baseline from 362 routes to 397.
+The one legitimate use of a bare response is a binary stream, and
+`admin/kyc/document/:objectName` now declares
+`schema: { type: "string", format: "binary" }` rather than being exempted.
 
 Still required, in order:
 
 1. A response DTO per endpoint, working down the `UNDOCUMENTED` list — the
    admin controllers the panels already call come first.
 
-Two endpoints are typed but still off the shared pagination contract, and are
-documented as such rather than quietly reshaped: `admin/kyc/admin/pending` and
-`admin/kyc/admin/all` return `limit` where `PaginatedDto` says `pageSize`, and
-`admin/kyc/admin/users` returns `items` and `total` with no page echo. Aligning
-them changes the KYC review screens, so it belongs with that page's work rather
-than with the DTO pass.
+Several endpoints are typed but still off the shared pagination contract, and
+are documented as they are rather than quietly reshaped — aligning each one
+changes the screen that reads it, so it belongs with that page's work:
+
+| Endpoint | Divergence |
+|---|---|
+| `admin/kyc/admin/pending`, `.../all` | `limit` where `PaginatedDto` says `pageSize` |
+| `admin/kyc/admin/users` | `items` + `total`, no page echo |
+| `admin/wallets/all-wallets` | rows under `data`, so `data.data` on the wire, plus `limit` |
 2. An `@ApiEnvelope(Dto)` decorator (`ApiExtraModels` + `getSchemaPath`) that
    documents the real wire shape `{ status, message, data: Dto }` —
    `ResponseInterceptor` wraps every handler, so an inner-shape-only schema is

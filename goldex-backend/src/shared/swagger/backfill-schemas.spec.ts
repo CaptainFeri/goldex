@@ -5,6 +5,10 @@ import { WithdrawAdminController } from "../../withdraw/withdraw-admin.controlle
 import { DepositAdminController } from "../../deposit/deposit-admin.controller";
 import { AdminManagementController } from "../../admin-management/admin-management.controller";
 import { AdminBankAccountController } from "../../admin-bank-account/admin-bank-account.controller";
+import { AdminUserController } from "../../admin-user/admin-user.controller";
+import { AdminKycController } from "../../admin-kyc/admin-kyc.controller";
+import { AdminWalletController } from "../../admin-wallet/admin-wallet.controller";
+import { AdminSymbolController } from "../../admin-symbol/admin-symbol.controller";
 
 const stub = {} as any;
 
@@ -20,6 +24,10 @@ describe("backfilled response schemas", () => {
         DepositAdminController,
         AdminManagementController,
         AdminBankAccountController,
+        AdminUserController,
+        AdminKycController,
+        AdminWalletController,
+        AdminSymbolController,
       ],
     })
       .useMocker(() => stub)
@@ -62,6 +70,44 @@ describe("backfilled response schemas", () => {
     expect(doc.components.schemas.UserRefDto).toBeDefined();
     expect(doc.components.schemas.WithdrawDto.properties.symbol.$ref).toBe(
       "#/components/schemas/SymbolRefDto"
+    );
+  });
+
+  it("types the user list as a paginated envelope of AdminUserListItemDto", () => {
+    const data = ok("/admin/users/users").allOf[1].properties.data;
+    expect(data.allOf[1].properties.items.items.$ref).toBe(
+      "#/components/schemas/AdminUserListItemDto"
+    );
+  });
+
+  it("types the KYC document queue", () => {
+    expect(ok("/admin/kyc/admin/pending").allOf[1].properties.data.$ref).toBe(
+      "#/components/schemas/KycDocumentPageDto"
+    );
+  });
+
+  it("documents the KYC document stream as binary, not as the envelope", () => {
+    const res = doc.paths["/admin/kyc/document/{objectName}"].get.responses["200"];
+    // A client that JSON-parsed this would fail confusingly, so the schema says bytes.
+    expect(res.content["application/octet-stream"].schema.format).toBe("binary");
+  });
+
+  it("types the wallet mutations, which prose-only @ApiResponse left blank", () => {
+    for (const path of [
+      "/admin/wallets/update-balance",
+      "/admin/wallets/adjust-balance",
+      "/admin/wallets/freeze",
+      "/admin/wallets/update-status",
+    ]) {
+      expect(ok(path, "post").allOf[1].properties.data.$ref).toBe(
+        "#/components/schemas/AdminWalletMutationDto"
+      );
+    }
+  });
+
+  it("types the symbol capabilities the panel renders its form from", () => {
+    expect(ok("/admin/symbols/capabilities").allOf[1].properties.data.$ref).toBe(
+      "#/components/schemas/SymbolCapabilitiesDto"
     );
   });
 

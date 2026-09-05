@@ -110,7 +110,11 @@ export class AdminKycController {
     description: "Returns the raw file, not the response envelope — pipe it, do not JSON-parse it",
   })
   @ApiProduces("application/octet-stream")
-  @ApiResponse({ status: 200, description: "The file, with its own content type and length" })
+  @ApiResponse({
+    status: 200,
+    description: "The file, with its own content type and length",
+    schema: { type: "string", format: "binary" },
+  })
   async getDocument(@Param("objectName") objectName: string, @Res() res: Response) {
     const bucket = process.env.MINIO_BUCKET || "default";
     const stat = await this.minioService.getFileStat(bucket, objectName);
