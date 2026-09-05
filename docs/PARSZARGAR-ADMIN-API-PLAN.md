@@ -545,20 +545,40 @@ Legend — **E** = exists, **X** = extend existing, **N** = new.
 | N | `GET /v1/admin/notifications/unread-count` | bell badge |
 | X | `GET /v1/admin/auth/me` | sidebar identity, permission-filtered nav |
 
-### 5.3 Dashboard
+### 5.3 Dashboard — **implemented**
 
 Four KPI cards act as a **global filter** (`users | volume | profit |
-withdrawals`) that reshapes the chart, pie, feed, health panel and table.
-One parameterised set rather than four page-specific sets:
+withdrawals`) that reshapes the chart, pie, feed, health panel and table. One
+parameterised set rather than four page-specific sets, all under
+`/v1/admin/dashboard`: `kpis`, `series?metric=&year=`, `distribution?metric=`,
+`activity?metric=&limit=`, `health?metric=`, `recent?metric=&limit=`.
 
-| | Endpoint | Response |
-|---|---|---|
-| N | `GET /v1/admin/dashboard/kpis` | all four cards at once: totals, deltas, sub-values |
-| N | `GET /v1/admin/dashboard/series?metric=&year=` | 12 Jalali months × `{ month, primary, secondary }` |
-| N | `GET /v1/admin/dashboard/distribution?metric=` | 4-slice pie `{ label, percent }` |
-| N | `GET /v1/admin/dashboard/activity?metric=&limit=5` | feed `{ title, description, severity, at }` |
-| N | `GET /v1/admin/dashboard/health?metric=` | `{ label, percent, variant }[]` |
-| N | `GET /v1/admin/dashboard/recent?metric=&limit=5` | the metric-shaped table rows |
+Each metric reads one existing table — users, orders, `system_ledger`,
+withdraws — so nothing here is a new source of truth.
+
+**The series buckets by Jalali month, not Gregorian.** The two do not line up:
+1 Farvardin 1405 is 21 March 2026, so a `date_trunc('month')` grouping labelled
+in Persian would file roughly ten days of every month under the wrong name.
+`jalaliMonthBounds()` is exported and pure precisely because that failure is
+silent — it is unit-tested for month lengths (six of 31, five of 30, a leap
+Esfand), for chaining with no gap or overlap, and for the case that motivates
+it: 15 March lands in Esfand 1404 while 25 March lands in Farvardin 1405. All
+twelve months are returned even when empty, so the axis does not shift as data
+arrives.
+
+**`health` is composition, not uptime.** The platform records no uptime signal,
+and a number an operator could act on wrongly is worse than no number. What it
+reports truthfully is how the last thirty days divide — completed against
+failed orders, waiting against paid withdrawals — which is what the strip is
+read for.
+
+**`recent` is deliberately generic.** `columns` names the headers in order and
+each row's `cells` follow the same order, so one component renders all four
+metrics instead of four shapes on the wire for one table to switch over.
+
+Money keeps the platform's rule: values are in `unit`'s own terms, and the
+panel converts rial to toman on display. `deltaPercent` is null when the
+previous period was empty — a rise from nothing is not a percentage.
 
 `metric` also decides the "مشاهده همه" target, which the client already maps.
 
