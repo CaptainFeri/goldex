@@ -1515,7 +1515,7 @@ export class CreditService {
   async getUserActiveCredit(userId: string): Promise<CreditEntity | null> {
     return await this.creditRepository.findOne({
       where: { userId, status: CreditStatusEnum.ACTIVE },
-      relations: { creditOrders: true },
+      relations: { creditOrders: true, creditBaseSymbol: true, collateralSymbol: true },
     });
   }
 
@@ -1656,6 +1656,12 @@ export class CreditService {
       usedCredit,
       availableCredit,
       collateralSymbolId: credit.collateralSymbolId,
+      // The overview is a hand-built projection, so the symbols have to be
+      // named explicitly: without them the panel cannot tell whether
+      // creditLimit is rial, and collateralAmount is a quantity in a different
+      // symbol again.
+      creditBaseSymbol: credit.creditBaseSymbol ?? null,
+      collateralSymbol: credit.collateralSymbol ?? null,
       collateralAmount: Number(credit.collateralAmount) || 0,
       collateralLocked: lockSummary.totalLocked,
       collateralAvailable: lockSummary.available,
@@ -1997,7 +2003,7 @@ export class CreditService {
   async getUserCreditsAdmin(userId: string): Promise<any> {
     const credits = await this.creditRepository.find({
       where: { userId },
-      relations: { creditOrders: true },
+      relations: { creditOrders: true, creditBaseSymbol: true, collateralSymbol: true },
       order: { createAt: "DESC" },
     });
     let activeOverview: any = null;
@@ -2300,7 +2306,12 @@ export class CreditService {
   }): Promise<{ items: CreditEntity[]; total: number; page: number; limit: number }> {
     const qb = this.creditRepository.createQueryBuilder("credit")
       .leftJoinAndSelect("credit.user", "user")
-      .leftJoinAndSelect("credit.creditOrders", "creditOrders");
+      .leftJoinAndSelect("credit.creditOrders", "creditOrders")
+      // Money on a credit is denominated in creditBaseSymbol and collateral is
+      // a quantity in collateralSymbol; without these the client cannot format
+      // either and has to guess the unit.
+      .leftJoinAndSelect("credit.creditBaseSymbol", "creditBaseSymbol")
+      .leftJoinAndSelect("credit.collateralSymbol", "collateralSymbol");
 
     if (query?.userId) {
       qb.andWhere("credit.userId = :userId", { userId: query.userId });

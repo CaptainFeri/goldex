@@ -56,3 +56,18 @@ export function colorFor(key: string): string {
   for (let i = 0; i < key.length; i++) h = (h * 31 + key.charCodeAt(i)) >>> 0;
   return PALETTE[h % PALETTE.length];
 }
+
+/**
+ * Base and quote slugs off a price pair.
+ *
+ * Orders carry amounts in two different units — quantity in the base symbol,
+ * price and value in the quote — so a screen showing both needs each one
+ * separately to format correctly.
+ */
+export function baseSlug(pair: any): string | null {
+  return pair?.baseSymbol?.slug ?? pair?.baseSymbol?.name ?? pair?.baseCode ?? null;
+}
+
+export function quoteSlug(pair: any): string | null {
+  return pair?.quoteSymbol?.slug ?? pair?.quoteSymbol?.name ?? pair?.quoteCode ?? null;
+}

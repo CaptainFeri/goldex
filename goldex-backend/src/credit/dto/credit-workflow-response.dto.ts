@@ -379,4 +379,13 @@ export class SettlementEligibilityDto {
 
   @ApiProperty({ example: 932835820, description: "Collateral valued now, in the credit currency" })
   collateralValue: number;
+
+  @ApiPropertyOptional({
+    nullable: true,
+    example: "IRR",
+    description:
+      "Slug of the symbol netEquity, deficit, shortfall and collateralValue are denominated in. " +
+      "Null for a legacy facility, which has no valuation. Format by it rather than assuming rial.",
+  })
+  creditBaseSymbolSlug?: string | null;
 }

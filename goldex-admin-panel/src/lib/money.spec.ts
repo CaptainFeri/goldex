@@ -1,5 +1,8 @@
 import {
   RIAL_PER_TOMAN,
+  toApiAmount,
+  toFormAmount,
+  unitLabel,
   fmtAmount,
   fmtBySymbol,
   fmtToman,
@@ -57,5 +60,36 @@ describe("money", () => {
     expect(fmtBySymbol(1_250_000_000, "IRR")).toBe("۱۲۵٬۰۰۰٬۰۰۰ تومان");
     // A gold balance is grams; dividing it by ten would be nonsense.
     expect(fmtBySymbol(12.5, "XAU", { unit: "گرم" })).toBe("۱۲٫۵ گرم");
+  });
+});
+
+describe("form helpers", () => {
+  it("labels a rial symbol in toman and everything else by its slug", () => {
+    expect(unitLabel("IRR")).toBe("تومان");
+    expect(unitLabel("XAU")).toBe("XAU");
+    expect(unitLabel(null)).toBe("");
+  });
+
+  it("converts a typed rial-symbol amount back to rial", () => {
+    expect(toApiAmount("1250", "IRR")).toBe(12500);
+  });
+
+  it("leaves a non-rial symbol's amount alone", () => {
+    // Gold grams are already in the symbol's own units; converting would be a
+    // ten-fold error in the other direction.
+    expect(toApiAmount("2.5", "XAU")).toBe(2.5);
+  });
+
+  it("round-trips a rial amount through a form", () => {
+    const fromApi = toFormAmount(12500, "IRR");
+    expect(fromApi).toBe(1250);
+    expect(toApiAmount(fromApi, "IRR")).toBe(12500);
+  });
+
+  it("returns null rather than 0 for a missing amount", () => {
+    // 0 is a real balance; a blank field is not. Collapsing them would let an
+    // empty input submit as a deliberate zero.
+    expect(toApiAmount("", "IRR")).toBeNull();
+    expect(toFormAmount(null, "XAU")).toBeNull();
   });
 });

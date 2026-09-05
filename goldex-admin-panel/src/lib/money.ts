@@ -90,3 +90,35 @@ export function fmtBySymbol(
     ? fmtToman(value, { digits: opts.digits })
     : fmtAmount(value, opts.unit ?? slug ?? undefined, opts.digits ?? 8);
 }
+
+/**
+ * The unit an operator reads and types for a symbol.
+ *
+ * Use it on input labels. A field showing rial under a "تومان" label — or the
+ * reverse — makes the operator out by a factor of ten, and the form gives no
+ * hint which one it meant.
+ */
+export function unitLabel(slug: string | null | undefined): string {
+  return isRialSymbol(slug) ? DISPLAY_UNIT : (slug ?? "");
+}
+
+/**
+ * A value the operator typed → the symbol's own units, for the API.
+ *
+ * The counterpart to {@link fmtBySymbol}: wherever a form displays converted
+ * amounts, its submit must pass through here, or the operator posts a tenth of
+ * what they intended.
+ */
+export function toApiAmount(value: Amount, slug: string | null | undefined): number | null {
+  return isRialSymbol(slug) ? tomanToRial(value) : toNumber(value);
+}
+
+/**
+ * An amount from the API → the number to seed a form input with.
+ *
+ * Returns a plain number, not a formatted string: grouping separators and
+ * Persian digits do not survive a round trip through `<input type="number">`.
+ */
+export function toFormAmount(value: Amount, slug: string | null | undefined): number | null {
+  return isRialSymbol(slug) ? rialToToman(value) : toNumber(value);
+}

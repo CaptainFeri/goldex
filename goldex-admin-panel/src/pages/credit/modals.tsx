@@ -3,7 +3,8 @@ import { useQuery } from "@tanstack/react-query";
 import { api, unwrap } from "../../api/client";
 import { Modal } from "../../components/ui";
 import type { Credit, SettlementEligibility } from "../../api/types";
-import { fmtNum, isMarginCalled } from "./labels";
+import { isMarginCalled } from "./labels";
+import { fmtBySymbol, toApiAmount, toFormAmount, unitLabel } from "../../lib/money";
 
 export function CreateCreditModal({ onClose, onSave, loading }: { onClose: () => void; onSave: (d: any) => void; loading: boolean }) {
   const [form, setForm] = useState({
@@ -222,12 +223,12 @@ export function SettleCreditModal({ credit, onClose, onSave, loading }: { credit
         {blocked && (
           <div style={{ background: "var(--red-bg, #3a1414)", color: "var(--red)", padding: "10px 12px", borderRadius: 8, marginBottom: 16, fontSize: 13, lineHeight: 1.6 }}>
             <div style={{ fontWeight: 600, marginBottom: 4 }}>
-              کیف‌پول‌های اعتبار این کاربر منفی است و تسویه معمولی مسدود شده (کسری {fmtNum(elig.shortfall)} ریال پس از وثیقه).
+              کیف‌پول‌های اعتبار این کاربر منفی است و تسویه معمولی مسدود شده (کسری {fmtBySymbol(elig.shortfall, credit.creditBaseSymbol?.slug)} پس از وثیقه).
             </div>
             {negativePositions.length > 0 && (
               <ul style={{ margin: "4px 0 8px", paddingInlineStart: 18 }}>
                 {negativePositions.map((p: any) => (
-                  <li key={p.symbolId}>بدهکار {fmtNum(Math.abs(Number(p.netXau)))} {p.baseSymbolSlug}</li>
+                  <li key={p.symbolId}>بدهکار {fmtBySymbol(Math.abs(Number(p.netXau)), p.baseSymbolSlug)}</li>
                 ))}
               </ul>
             )}
@@ -347,17 +348,29 @@ export function ExtendCreditModal({ credit, onClose, onSave, loading }: { credit
 }
 
 export function AdjustLimitModal({ credit, onClose, onSave, loading }: { credit: Credit; onClose: () => void; onSave: (d: any) => void; loading: boolean }) {
-  const [newLimit, setNewLimit] = useState(String(credit.creditLimit ?? 0));
+  // The field is seeded, labelled and submitted in the facility's own credit
+  // base unit. Displaying a converted limit while posting the raw number would
+  // cut every rial limit to a tenth.
+  const slug = credit.creditBaseSymbol?.slug;
+  const [newLimit, setNewLimit] = useState(String(toFormAmount(credit.creditLimit, slug) ?? 0));
   const [reason, setReason] = useState("");
   return (
     <Modal title={`تغییر حد اعتبار ${credit.creditCode}`} onClose={onClose}>
-      <form className="modal-form" onSubmit={(e) => { e.preventDefault(); if (Number(newLimit) < 0) return; onSave({ newLimit: Number(newLimit), reason }); }}>
+      <form
+        className="modal-form"
+        onSubmit={(e) => {
+          e.preventDefault();
+          const limit = toApiAmount(newLimit, slug);
+          if (limit === null || limit < 0) return;
+          onSave({ newLimit: limit, reason });
+        }}
+      >
         <div style={{ background: "var(--bg)", padding: 12, borderRadius: 8, marginBottom: 16, fontSize: 13, color: "var(--text-faint)", lineHeight: 1.6 }}>
-          حد اعتبار فعلی: {fmtNum(credit.creditLimit)} ریال. اختلاف روی کیف‌پول اعتبار (نماد پایه) اعمال می‌شود.
+          حد اعتبار فعلی: {fmtBySymbol(credit.creditLimit, slug)}. اختلاف روی کیف‌پول اعتبار (نماد پایه) اعمال می‌شود.
         </div>
         <div className="form-grid">
           <div className="field">
-            <label>حد جدید (ریال)</label>
+            <label>حد جدید ({unitLabel(slug)})</label>
             <input className="input mono" type="number" min={0} value={newLimit} onChange={(e) => setNewLimit(e.target.value)} />
           </div>
           <div className="field">

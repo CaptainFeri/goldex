@@ -504,6 +504,13 @@ export interface CashoutOptions {
   creditCode: string;
   markPrice: number;
   creditBaseSymbolId: string | null;
+  /**
+   * The symbol creditLimit, usedCredit and every *Value field are money in.
+   * Format by it — a credit is not necessarily denominated in rial.
+   */
+  creditBaseSymbol?: { id?: string; slug?: string; name?: string } | null;
+  /** The symbol collateralAmount is a quantity in — often gold, not money. */
+  collateralSymbol?: { id?: string; slug?: string; name?: string } | null;
   collateralSymbolId: string | null;
   depositBalance: number;
   collateralAvailable: number;
@@ -580,6 +587,11 @@ export interface SettlementEligibility {
   deficit: number;
   shortfall: number;
   collateralValue: number;
+  /**
+   * Symbol the money figures above are denominated in. Null for a legacy
+   * facility. Format by it — do not assume rial.
+   */
+  creditBaseSymbolSlug: string | null;
 }
 
 export type FinanceAction =
