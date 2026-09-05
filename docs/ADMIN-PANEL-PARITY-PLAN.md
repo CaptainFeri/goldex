@@ -5,8 +5,8 @@ Goal, as stated: bring **`goldex-admin-panel`** (styles and features) to match
 plus Swagger as the working documentation for the developer building
 `ui-parszargar`.
 
-Companion to `docs/PARSZARGAR-ADMIN-API-PLAN.md` (the API spec) and
-`ui-parszargar/docs/API-CONTRACT.md` (the client-side index). Read that plan
+Companion to `PARSZARGAR-ADMIN-API-PLAN.md` (the API spec) and
+`UI-PARSZARGAR-API-CONTRACT.md` (the client-side index). Read that plan
 first — this one assumes its §5 endpoint numbering.
 
 ---
