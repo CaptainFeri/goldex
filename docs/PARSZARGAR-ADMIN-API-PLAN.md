@@ -380,10 +380,32 @@ receipts (which already flow through OCR).
 
 ### 4.8 OpenAPI + mock server
 
-Swagger is configured and basic-auth protected. Every new endpoint gets full
-`@ApiProperty` DTOs. Generate a Prism mock from the spec on day one so the
-frontend can migrate off `data/*Mock.js` in parallel with backend work rather
-than after it.
+Swagger is configured and basic-auth protected, but it currently documents
+**zero response shapes** — 444 routes, 126 request DTOs, 3 response files, and
+no `@ApiOkResponse({ type })` anywhere. Since the spec is meant to be the
+frontend developer's primary documentation, closing that is Phase 0 work, not a
+polish item. It also blocks client generation: every operation would return
+`any`.
+
+Required, in order:
+
+1. A response DTO per endpoint, starting with the ~70 the panels already call.
+2. An `@ApiEnvelope(Dto)` decorator (`ApiExtraModels` + `getSchemaPath`) that
+   documents the real wire shape `{ status, message, data: Dto }` —
+   `ResponseInterceptor` wraps every handler, so an inner-shape-only schema is
+   wrong at the outermost level.
+3. A generic `PaginatedDto<T>` so `{ items, total, page, pageSize, totalPages }`
+   is declared once.
+4. `@ApiOperation` on the 168 routes without one; `@ApiTags` on the 7
+   controllers missing it; `@ApiQuery` for every filter in §3's search trio.
+5. Realistic `example` values — a real IBAN, a real Jalali date, a real decimal
+   string. For a Persian-reading frontend developer these carry more than the
+   type names do.
+
+Then publish `openapi.json` as a build artefact, generate a Prism mock from it
+so the frontend can migrate off `data/*Mock.js` in parallel with backend work,
+and generate the typed client described in
+`docs/ADMIN-PANEL-PARITY-PLAN.md` §7.
 
 ---
 
