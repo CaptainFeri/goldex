@@ -993,19 +993,48 @@ Row shape: `{ voucherId, customerName, detail, extraDesc, customerType,
 currency, amount, side: بدهکار|بستانکار, status: پیش‌نویس|در انتظار تایید|ثبت نهایی,
 createdBy, date }`. `side` is derived from `movement`, never client-supplied.
 
-### 5.23 Reports
+### 5.23 Reports — **implemented**
 
 | | Endpoint |
 |---|---|
-| N | `GET /v1/admin/reports/stats` — generated, active schedules, downloads this month, avg generation minutes |
-| N | `GET /v1/admin/reports?kpi=generated\|schedules\|downloads\|duration&from=&to=` |
-| N | `POST /v1/admin/reports/generate` `{ type: معاملات\|کاربران\|مالی\|برداشت‌ها\|آربیتراژ, format: PDF\|Excel\|CSV, from, to }` → async job |
-| N | `GET /v1/admin/reports/:id` — job status |
-| N | `GET /v1/admin/reports/:id/download` |
-| N | `GET/POST/PATCH/DELETE /v1/admin/reports/schedules` |
+| ✓ | `GET /v1/admin/reports/stats` — generated, active schedules, downloads this month, mean generation time |
+| ✓ | `GET /v1/admin/reports?kpi=generated\|schedules\|downloads\|duration&type=&from=&to=` |
+| ✓ | `POST /v1/admin/reports/generate` `{ type, format, from, to }` → queued job |
+| ✓ | `GET /v1/admin/reports/:id` — job status |
+| ✓ | `GET /v1/admin/reports/:id/download` → `{ url, fileName }` |
+| ✓ | `GET/POST/PATCH/DELETE /v1/admin/reports/schedules` |
 
-Generation runs on the existing `@nestjs/schedule` + RabbitMQ workers; the HTTP
-call must not block.
+**Two things this section specified that turned out to be wrong, and what was
+built instead.**
+
+*Arbitrage is not a report type.* The panels' form offers **آربیتراژ**, but
+arbitrage signals live only in the pricing engine's Redis snapshots and are
+never written to Postgres — there is no entity for them at all. A date-ranged
+export would have been empty or invented, so the type is absent from
+`ReportTypeEnum` until the signals are persisted. The four that remain —
+trades, users, financial, withdrawals — each map to a table that exists.
+
+*PDF is not a format.* §4.7 already settled that printable documents stay
+client-side, where the panels own pixel-perfect print CSS; adding a headless
+renderer here to duplicate that would be a heavy dependency for a worse result.
+XLSX and CSV both come from `exceljs`, already a dependency. An enum that
+accepted PDF and then failed at generation time would be a trap, so PDF is
+absent rather than rejected at runtime.
+
+Generation is a **sweep with `FOR UPDATE SKIP LOCKED`**, not a RabbitMQ
+consumer. The claim is atomic in the database, so two instances sweeping at
+once take different jobs rather than the same one twice, and there is no broker
+topology to keep in step — the same guarantee the plan wanted, with one fewer
+moving part. Verified against Postgres 16: two concurrent claims of one pending
+job yield exactly one winner. The HTTP call only writes a `pending` row, so a
+report over a year of orders never holds a request open.
+
+Schedules are dispatched by reading the table every minute rather than
+registering a dynamic cron job per row, because schedules are edited through
+the API and a live registry would have to be kept in step on every create,
+update, delete and restart. Each run covers a rolling `windowDays` window, so a
+schedule does not re-export the same rows forever. A malformed cron expression
+is logged and skipped rather than stopping the other schedules.
 
 **Visibility (decided): super admin sees everything, everyone else sees only
 their own.** `report_job.created_by` and `report_schedule.owner_id` are the

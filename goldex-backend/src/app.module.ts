@@ -2,6 +2,7 @@ import { Module } from "@nestjs/common";
 import { EventEmitterModule } from "@nestjs/event-emitter";
 import { FilesModule } from "./shared/files/files.module";
 import { AdminMarketModule } from "./admin-market/admin-market.module";
+import { ReportsModule } from "./reports/reports.module";
 import { AcceptLanguageResolver, I18nModule } from "nestjs-i18n";
 import { join } from "path";
 import * as path from "path";
@@ -184,6 +185,7 @@ import { ScheduleModule } from "@nestjs/schedule";
     AdminArbitrageModule,
     FilesModule,
     AdminMarketModule,
+    ReportsModule,
   ],
   providers: [WinstonLoggerService],
   exports: [WinstonLoggerService],

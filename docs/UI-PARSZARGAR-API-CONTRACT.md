@@ -263,10 +263,30 @@ Document body is discriminated by `warehouseType`: material adds
 `GET /admin/text-ids?q=&type=&from=&to=&minAmount=&maxAmount=&page=` ·
 `/:id` · `/:id/document`
 
-### Reports
-`GET /admin/reports/stats` · `GET /admin/reports?kpi=&from=&to=` ·
-`POST /admin/reports/generate` (async job) · `GET /admin/reports/:id` ·
+### Reports — **live**
+`GET /admin/reports/stats` · `GET /admin/reports?kpi=&type=&from=&to=` ·
+`POST /admin/reports/generate` · `GET /admin/reports/:id` ·
 `/:id/download` · `CRUD /admin/reports/schedules`
+
+**Generating one is a poll, not a wait.** `POST /generate` answers immediately
+with a job in `pending`; poll `GET /admin/reports/{id}` until `status` is
+`completed`, then call `/download` for a short-lived `{ url, fileName }`. Drop
+the URL straight into a link — it carries its own authorization, needs no
+bearer token, and expires in about two minutes, so mint it on click rather than
+holding one. A `failed` job carries `error`, which is written to be read by an
+operator.
+
+**Two options on your form do not exist on the wire.** `type` is
+`trades | users | financial | withdrawals` — there is no `arbitrage`, because
+those signals are never persisted and a date-ranged export of them would be
+fabricated. `format` is `xlsx | csv` — there is no `pdf`; printing stays with
+you, where the print CSS already lives.
+
+`artifactExpired: true` means the file was purged at 90 days and the row is now
+only an audit record — show the row, disable the download. `downloadCount` is
+on every job. Everyone sees only their own reports and schedules; a super admin
+sees all, and a report you may not see returns 404, not 403, so do not treat a
+missing report as an error worth reporting.
 
 The list is already scoped server-side: a super admin sees every report, anyone
 else sees only their own — no client-side filtering, and no "whose report is
