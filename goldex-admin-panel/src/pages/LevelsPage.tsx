@@ -4,6 +4,7 @@ import { api, unwrap, apiError } from "../api/client";
 import { Card, Badge, Loading, ErrorState, Empty, Modal } from "../components/ui";
 import { pairLabel } from "../lib/format";
 import { fmtBySymbol, toApiAmount, toFormAmount, unitLabel } from "../lib/money";
+import DateField from "../components/DateField";
 
 const fmtDate = (d: string | null) =>
   d ? new Date(d).toLocaleDateString("fa-IR", { year: "numeric", month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }) : "—";
@@ -628,7 +629,7 @@ function AssignLevelModal({ level, onClose, onSave, loading }: {
           </div>
           <div className="field" style={{ gridColumn: "1 / -1" }}>
             <label>تاریخ انقضا (اختیاری)</label>
-            <input className="input" type="datetime-local" value={expiresAt} onChange={(e) => setExpiresAt(e.target.value)} />
+            <DateField mode="datetime" value={expiresAt} onChange={setExpiresAt} />
           </div>
         </div>
         <div className="modal-actions">

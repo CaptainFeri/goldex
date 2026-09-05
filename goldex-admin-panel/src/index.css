@@ -1163,3 +1163,94 @@ tbody tr:hover {
     overflow-x: auto;
   }
 }
+
+/* ---- Jalali date field ---------------------------------------------------
+   react-multi-date-picker ships its own light theme, so the calendar is
+   restyled onto the panel's tokens rather than left as a white card on a dark
+   page. Only colour and border are touched — layout stays the library's. */
+
+.datefield,
+.datefield > div:first-child {
+  display: inline-block;
+}
+
+.rmdp-container .input {
+  width: 100%;
+}
+
+/* `:root` only to out-specify the library's own `.rmdp-wrapper` rule, which
+   the bundler emits after this file. One class each would tie, and the tie
+   goes to whichever lands last — which is not ours. */
+:root .rmdp-wrapper,
+:root .rmdp-wrapper.rmdp-shadow,
+.rmdp-container .rmdp-calendar {
+  background: var(--bg-elev);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow);
+}
+
+.rmdp-top-class,
+.rmdp-header,
+.rmdp-panel-body,
+.rmdp-time-picker {
+  background: transparent;
+  color: var(--text);
+}
+
+.rmdp-header-values,
+.rmdp-week-day,
+.rmdp-day span,
+.rmdp-time-picker div input {
+  color: var(--text);
+}
+
+.rmdp-week-day {
+  color: var(--text-dim);
+}
+
+.rmdp-arrow {
+  border-color: var(--text-dim);
+}
+
+.rmdp-arrow-container:hover {
+  background: var(--bg-elev-2);
+  box-shadow: none;
+}
+
+.rmdp-arrow-container:hover .rmdp-arrow {
+  border-color: var(--gold);
+}
+
+.rmdp-day:not(.rmdp-disabled):not(.rmdp-day-hidden) span:hover {
+  background: var(--bg-elev-2);
+  color: var(--text);
+}
+
+.rmdp-day.rmdp-selected span:not(.highlight) {
+  background: var(--gold);
+  color: #14161c;
+  box-shadow: none;
+}
+
+/* Today is a hint, not a selection — outline it rather than filling it. */
+.rmdp-day.rmdp-today span {
+  background: transparent;
+  color: var(--gold-soft);
+  border: 1px solid var(--gold-dim);
+}
+
+.rmdp-day.rmdp-deactive span,
+.rmdp-day.rmdp-disabled span {
+  color: var(--text-faint);
+}
+
+.rmdp-time-picker div .rmdp-am,
+.rmdp-time-picker div input {
+  background: transparent;
+}
+
+.rmdp-time-picker {
+  border-top: 1px solid var(--border);
+}

@@ -532,14 +532,8 @@ rather than leaving an operator to wonder where PDF went.
 A schedule's type is disabled when editing, matching the API's refusal to
 change it, with a line saying why.
 
-**Known gap: the date inputs are Gregorian.** They are native `type="date"`,
-which renders in the browser's locale, so a Persian panel shows `mm/dd/yyyy`
-while every date it *displays* is Jalali. ui-parszargar uses
-`react-multi-date-picker` with a Persian calendar. This was left as-is
-deliberately: `FinanceLogsPage`, `FinancePage` and `UsersPage` all use native
-date inputs too, so a Jalali picker on Reports alone would trade one
-inconsistency for another. Adopting it is a panel-wide change and a new
-dependency — worth doing, but as its own piece of work.
+Date inputs use the shared Jalali `DateField` (§9), like every other date in
+the panel.
 
 Verified by rendering the built panel headlessly against a stub API: the KPI
 cards read in Persian digits, the four report rows render their status,
@@ -548,3 +542,46 @@ and the schedules table shows cron expressions LTR inside the RTL layout. The
 range column was cut to dates only after the first render showed the download
 button pushed off the edge — a report window is day-granular anyway, so two
 full timestamps were both wider and more precise than the truth.
+
+
+## 9. Jalali date fields
+
+`src/components/DateField.tsx` replaced all ten native `type="date"` and
+`type="datetime-local"` inputs, across Reports, Finance, Finance logs, Users,
+Warehouse, Levels and Discounts. `react-multi-date-picker` with the Persian
+calendar, matching ui-parszargar, which uses the same library.
+
+**The panel displays Jalali and sends Gregorian**, exactly as it displays toman
+and sends rial. `value` and `onChange` carry the same
+`YYYY-MM-DD` / `YYYY-MM-DDTHH:mm` strings the native inputs carried, so no call
+site and no API changed — only the glyphs an operator reads. That is the whole
+point of the component: the calendar is a display concern and must not reach
+the wire.
+
+The conversion lives in `lib/dates.ts` behind its own tests rather than inline
+in the component, because the failure mode is silent. `toWireDate` builds the
+string from the date's own local parts instead of `toISOString()`, which would
+shift a picked day *backwards* for any timezone east of UTC — Tehran included —
+and `fromWireDate` parses `YYYY-MM-DD` as local midnight rather than letting
+`new Date()` read it as UTC, which is the same off-by-one in the other
+direction. A report window quietly moved back a day is invisible until someone
+reconciles an export against the database, so both directions are pinned by
+round-trip tests.
+
+Two details worth keeping: time is a **plugin** in this library's v4, not a
+prop, so a `timePicker` prop would have been accepted silently and the field
+would have dropped the time; and the library's own `.rmdp-wrapper` rule is
+emitted after `index.css`, so the dark theme needs one extra specificity step
+(`:root .rmdp-wrapper`) rather than `!important` to win the cascade.
+
+`react-date-object` is pinned as a direct dependency even though the picker
+pulls it in transitively, because the component imports the calendar and locale
+from it directly and a transitive version bump should not be able to break
+that.
+
+Verified by driving the built panel headlessly: the calendar renders Jalali
+(`شهریور، ۱۴۰۵`, Persian weekday names) on the panel's dark tokens, the field
+shows `۱۴۰۵/۰۶/۱۵`, and the request that follows carries
+`from=2026-09-06T00:00:00.000Z` — the correct Gregorian instant, no off-by-one.
+The datetime variant renders the time plugin with hour and minute segments and
+shows `۱۴۰۵/۰۶/۱۰ ۱۹:۱۸`.

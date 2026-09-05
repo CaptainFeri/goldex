@@ -4,6 +4,7 @@ import { api, unwrap, apiError } from "../api/client";
 import { Card, Stat, Loading, ErrorState, Empty, Badge, Modal } from "../components/ui";
 import { fmtNum, fmtDate } from "../lib/format";
 import { MARKET_TYPES_ENUM, MARKET_KINDS_ENUM } from "../lib/enums";
+import DateField from "../components/DateField";
 
 const ROLE_LABEL: Record<number, string> = { 0: "مشتری", 1: "ادمین", 2: "کاربر جدید", 3: "شریک" };
 function roleBadge(r: number) {
@@ -72,7 +73,7 @@ function CreatePartner({ onDone }: { onDone: () => void }) {
         </div>
         <div className="field" style={{ margin: 0, minWidth: 160 }}>
           <label>فعال تا (اختیاری)</label>
-          <input className="input" type="date" value={form.activeUntil} onChange={(e) => set("activeUntil", e.target.value)} />
+          <DateField value={form.activeUntil} onChange={(v) => set("activeUntil", v)} />
         </div>
         <div className="field" style={{ margin: 0, minWidth: 240 }}>
           <label>نوع بازار (رسمی / غیررسمی)</label>

@@ -6,6 +6,8 @@ import { Card, Loading, ErrorState, Empty, Badge } from "../components/ui";
 import { fmtNum, fmtDate, fmtDuration, pairLabel, symbolLabel, baseSlug, quoteSlug } from "../lib/format";
 import { fmtBySymbol } from "../lib/money";
 import { gridColor } from "../lib/chart";
+import { fromWireDate } from "../lib/dates";
+import DateField from "../components/DateField";
 
 type Tab = "overview" | "orders" | "transactions" | "ledger" | "providers" | "customers";
 
@@ -393,20 +395,20 @@ export default function FinancePage() {
                   {pr.label}
                 </button>
               ))}
-              <input
-                className="input"
-                type="date"
+              <DateField
                 style={{ width: 150 }}
                 value={toInput(range.from)}
-                onChange={(e) => setRange((r) => ({ ...r, from: new Date(e.target.value).getTime() }))}
+                onChange={(v) => setRange((r) => ({ ...r, from: fromWireDate(v)?.getTime() ?? r.from }))}
               />
               <span className="muted">تا</span>
-              <input
-                className="input"
-                type="date"
+              <DateField
                 style={{ width: 150 }}
                 value={toInput(range.to)}
-                onChange={(e) => setRange((r) => ({ ...r, to: new Date(e.target.value).getTime() + DAY - 1 }))}
+                onChange={(v) => {
+                  const picked = fromWireDate(v);
+                  // The upper bound is the end of the chosen day, as before.
+                  if (picked) setRange((r) => ({ ...r, to: picked.getTime() + DAY - 1 }));
+                }}
               />
             </div>
           ) : null
