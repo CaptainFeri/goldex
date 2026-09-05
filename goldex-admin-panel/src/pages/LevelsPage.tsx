@@ -585,8 +585,9 @@ function AssignLevelModal({ level, onClose, onSave, loading }: {
   const users = useQuery({
     queryKey: ["users-dropdown"],
     queryFn: async () => {
-      const res = await api.get("/admin/users/users", { params: { pageSize: 999, pageNumber: 1 } });
-      return (res.data?.data?.userList ?? []) as any[];
+      // 100 is the server cap. It used to clamp 999 silently; it now rejects it.
+      const res = await api.get("/admin/users/users", { params: { pageSize: 100, page: 1 } });
+      return (res.data?.data?.items ?? []) as any[];
     },
   });
 

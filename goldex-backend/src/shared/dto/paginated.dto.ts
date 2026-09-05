@@ -32,13 +32,13 @@ export class PaginatedDto<T> {
 export function paginate<T>(
   items: T[],
   total: number,
-  query: { pageNumber: number; take: number }
+  query: { currentPage: number; take: number }
 ): PaginatedDto<T> {
   const pageSize = query.take;
   return {
     items,
     total,
-    page: query.pageNumber,
+    page: query.currentPage,
     pageSize,
     totalPages: pageSize > 0 ? Math.ceil(total / pageSize) : 0,
   };

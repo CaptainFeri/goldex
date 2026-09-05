@@ -31,6 +31,8 @@ import {
 } from "../shared/market-access.helper";
 import { UserEvents } from "../shared/constants/events.constants";
 import { UserLevelService } from "../user-level/user-level.service";
+import { PaginatedDto, paginate } from "../shared/dto/paginated.dto";
+import { AdminUserListQueryDto } from "./dto/admin-user-list-query.dto";
 
 const ONLINE_SET = "online_users";
 
@@ -241,14 +243,11 @@ export class AdminUserService {
     );
   }
 
-  async getUserAdminList(
-    take: number,
-    skip: number,
-    searchkey?: string
-  ): Promise<{ userList: UserEntity[]; totalItems: number }> {
+  async getUserAdminList(query: AdminUserListQueryDto): Promise<PaginatedDto<UserEntity>> {
+    const searchkey = query.search;
     const [userList, totalItems] = await this.userRepo.findAndCount({
-      take,
-      skip,
+      take: query.take,
+      skip: query.skip,
       where: searchkey
         ? [
             { firstName: ILike(`%${searchkey}%`) },
@@ -274,7 +273,7 @@ export class AdminUserService {
         createAt: "desc",
       },
     });
-    return { userList: userList, totalItems: totalItems };
+    return paginate(userList, totalItems, query);
   }
 
   async switchBlockStatusUserById(id: string): Promise<AdminUserDto> {

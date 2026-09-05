@@ -2,7 +2,17 @@ import { Body, Controller, Get, Param, ParseUUIDPipe, Post, Query, Req, Res, Use
 import { Response } from "express";
 import { AdminKycService } from "./admin-kyc.service";
 import { AdminAuthGuard } from "../admin/auth/Guard/admin.guard";
-import { ApiBearerAuth, ApiOperation, ApiQuery, ApiTags } from "@nestjs/swagger";
+import { ApiBearerAuth, ApiOperation, ApiProduces, ApiQuery, ApiResponse, ApiTags } from "@nestjs/swagger";
+import {
+  ApiAdminErrorResponses,
+  ApiEnvelopeResponse,
+} from "../shared/swagger";
+import {
+  KycDocumentDto,
+  KycDocumentPageDto,
+  KycDocumentStatsDto,
+  KycUserListDto,
+} from "./dto/admin-kyc-response.dto";
 import { AdminApproveDocumentsDto, AdminRejectDocumentDto, GetKycDocumentsQueryDto } from "./dto/admin-kyc.dto";
 import { AdminRoles } from "../admin/role/admin.role.decorator";
 import { AdminRole } from "../admin/role/admin.roles.enum";
@@ -10,6 +20,7 @@ import { MinioService } from "../minio/minio.service";
 
 @Controller("admin/kyc")
 @ApiTags("Admin-Kyc")
+@ApiAdminErrorResponses()
 export class AdminKycController {
   constructor(
     private readonly adminKycService: AdminKycService,
@@ -21,6 +32,7 @@ export class AdminKycController {
   @AdminRoles(AdminRole.ADMIN, AdminRole.SUPER_ADMIN)
   @UseGuards(AdminAuthGuard)
   @ApiOperation({ summary: "Get pending documents for review" })
+  @ApiEnvelopeResponse(KycDocumentPageDto)
   async getPendingDocuments(@Query() query: GetKycDocumentsQueryDto) {
     return { data: await this.adminKycService.getPendingDocuments(query) };
   }
@@ -30,6 +42,7 @@ export class AdminKycController {
   @UseGuards(AdminAuthGuard)
   @ApiBearerAuth()
   @ApiOperation({ summary: "Get all documents (Admin only)" })
+  @ApiEnvelopeResponse(KycDocumentPageDto)
   async getAllDocuments(@Query() query: GetKycDocumentsQueryDto) {
     return { data: await this.adminKycService.getAllDocumentsForAdmin(query) };
   }
@@ -39,6 +52,7 @@ export class AdminKycController {
   @ApiBearerAuth()
   @AdminRoles(AdminRole.ADMIN, AdminRole.SUPER_ADMIN)
   @ApiOperation({ summary: "Get document statistics" })
+  @ApiEnvelopeResponse(KycDocumentStatsDto)
   async getDocumentStats() {
     return { data: await this.adminKycService.getDocumentStats() };
   }
@@ -48,6 +62,7 @@ export class AdminKycController {
   @ApiBearerAuth()
   @AdminRoles(AdminRole.ADMIN, AdminRole.SUPER_ADMIN)
   @ApiOperation({ summary: "List users with their KYC level/status and info" })
+  @ApiEnvelopeResponse(KycUserListDto)
   @ApiQuery({ name: "pageNumber", required: false, type: Number })
   @ApiQuery({ name: "pageSize", required: false, type: Number })
   @ApiQuery({ name: "searchKey", required: false, type: String })
@@ -66,6 +81,7 @@ export class AdminKycController {
   @ApiBearerAuth()
   @AdminRoles(AdminRole.ADMIN, AdminRole.SUPER_ADMIN)
   @ApiOperation({ summary: "Approve one or more documents" })
+  @ApiEnvelopeResponse(KycDocumentDto, { isArray: true, description: "The approved documents, in the order requested" })
   async approveDocuments(@Req() req, @Body() dto: AdminApproveDocumentsDto) {
     return { data: await this.adminKycService.approveDocuments(req.admin.id, dto.documentIds, dto.notes) };
   }
@@ -75,6 +91,7 @@ export class AdminKycController {
   @ApiBearerAuth()
   @AdminRoles(AdminRole.ADMIN, AdminRole.SUPER_ADMIN)
   @ApiOperation({ summary: "Reject a single document" })
+  @ApiEnvelopeResponse(KycDocumentDto)
   async rejectDocument(@Req() req, @Body() dto: AdminRejectDocumentDto) {
     return { data: await this.adminKycService.rejectDocument(req.admin.id, dto.documentId, dto.reason, dto.notes) };
   }
@@ -88,7 +105,12 @@ export class AdminKycController {
   //   }
 
   @Get("document/:objectName")
-  @ApiOperation({ summary: "Get KYC document content (Admin)" })
+  @ApiOperation({
+    summary: "Stream a KYC document's bytes (Admin)",
+    description: "Returns the raw file, not the response envelope — pipe it, do not JSON-parse it",
+  })
+  @ApiProduces("application/octet-stream")
+  @ApiResponse({ status: 200, description: "The file, with its own content type and length" })
   async getDocument(@Param("objectName") objectName: string, @Res() res: Response) {
     const bucket = process.env.MINIO_BUCKET || "default";
     const stat = await this.minioService.getFileStat(bucket, objectName);
@@ -102,6 +124,7 @@ export class AdminKycController {
   @ApiBearerAuth()
   @AdminRoles(AdminRole.ADMIN, AdminRole.SUPER_ADMIN)
   @ApiOperation({ summary: "Get documents for a specific user (Admin)" })
+  @ApiEnvelopeResponse(KycDocumentDto, { isArray: true })
   async getUserDocumentsById(@Param("userId", ParseUUIDPipe) userId: string) {
     return { data: await this.adminKycService.getUserDocuments(userId) };
   }

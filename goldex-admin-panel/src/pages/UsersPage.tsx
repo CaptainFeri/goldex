@@ -225,7 +225,7 @@ export default function UsersPage() {
   const list = useQuery({
     queryKey: ["users", search],
     queryFn: async () =>
-      unwrap<any>((await api.get("/admin/users/users", { params: { pageSize: 100, pageNumber: 1, searchKey: search || undefined } })).data),
+      unwrap<any>((await api.get("/admin/users/users", { params: { pageSize: 100, page: 1, q: search || undefined } })).data),
   });
 
   const toggleBlock = useMutation({
@@ -246,7 +246,7 @@ export default function UsersPage() {
 
   const s = stats.data;
   const onlineSet = new Set(online.data ?? []);
-  const users: any[] = list.data?.userList ?? [];
+  const users: any[] = list.data?.items ?? [];
 
   return (
     <>
@@ -264,7 +264,7 @@ export default function UsersPage() {
       <CreatePartner onDone={() => {}} />
 
       <Card
-        title={`کاربران${list.data ? ` (${list.data.totalItems})` : ""}`}
+        title={`کاربران${list.data ? ` (${list.data.total})` : ""}`}
         action={
           <input className="input" style={{ width: 220 }} placeholder="جستجو (نام/ایمیل)…" value={search} onChange={(e) => setSearch(e.target.value)} />
         }
