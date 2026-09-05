@@ -2,6 +2,7 @@ import { Injectable, Inject, Logger, BadRequestException, NotFoundException, Str
 import * as Minio from "minio";
 import { Readable } from "stream";
 import * as path from "path";
+import { randomBytes } from "crypto";
 import { MINIO_CONNECTION } from "./minio.constants";
 import { UploadFileOptions, FileInfo, PresignedUrlOptions } from "./minio.interface";
 
@@ -60,10 +61,17 @@ export class MinioService {
     const bucketName = options.bucketName || this.defaultBucket;
     await this.ensureBucket(bucketName);
     const fileExtName = path.extname(options.objectName);
-    const randomName = Array(8)
-      .fill(null)
-      .map(() => Math.round(Math.random() * 16).toString(16))
-      .join("");
+    // The stored key is the only thing protecting these objects: the picture
+    // routes in PublicFileController stream any key in this bucket to anyone
+    // who names it. `fileTarget` is one of a handful of known strings and the
+    // date suffix is guessable, so an attacker who can guess this segment can
+    // read other users' receipts and KYC documents.
+    //
+    // Math.round(Math.random() * 16) drew from 17 non-uniform values via a
+    // non-cryptographic PRNG whose state is recoverable from a few outputs --
+    // and any user can harvest outputs by uploading their own files. Use a
+    // CSPRNG instead. Existing keys are unaffected; only new uploads change.
+    const randomName = randomBytes(16).toString("hex");
     try {
       const objectName = `${fileTarget}-${randomName}-${new Date().toISOString().slice(0, 10)}${fileExtName}`;
       const userMeta = this.prepareMetadata(options.metadata);
