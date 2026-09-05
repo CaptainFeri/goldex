@@ -15,6 +15,7 @@ import { RIAL_SYMBOL_SLUG } from "../shared/constants/currency.constants";
 import { DashboardMetric, DashboardSeverity } from "./dashboard.enums";
 import {
   DashboardActivityItemDto,
+  DashboardColumnKind,
   DashboardDistributionDto,
   DashboardHealthDto,
   DashboardKpisDto,
@@ -24,6 +25,9 @@ import {
 
 /** Short Jalali month names, as the panels label their axis. */
 const JALALI_MONTHS = ["فرو", "ارد", "خرد", "تیر", "مرد", "شهر", "مهر", "آبا", "آذر", "دی", "بهم", "اسف"];
+
+/** Shorthand for the column-kind enum, which appears once per table column. */
+const K = DashboardColumnKind;
 
 /** How far back the health composition and the deltas look. */
 const WINDOW_DAYS = 30;
@@ -142,7 +146,12 @@ export class AdminDashboardService {
           value: String(pendingWithdraws),
           unit: null,
           deltaPercent: this.delta(withdrawnNow, withdrawnPrev),
-          sub: `${pendingAmount.toFixed(0)} ${RIAL_SYMBOL_SLUG} در انتظار`,
+          sub: "در انتظار بررسی",
+          // Handed over as a value rather than baked into `sub`: a rial figure
+          // inside a sentence is one the panel cannot convert to toman, and it
+          // would be the only unformatted amount on the page.
+          subValue: pendingAmount.toFixed(2),
+          subUnit: RIAL_SYMBOL_SLUG,
         },
       ],
       generatedAt: now.toISOString(),
@@ -473,6 +482,7 @@ export class AdminDashboardService {
         return {
           title: "آخرین کاربران",
           columns: ["شناسه", "کاربر", "موبایل", "نقش", "پیوستن"],
+          columnKinds: [K.TEXT, K.TEXT, K.TEXT, K.TEXT, K.DATE],
           unit: null,
           rows: rows.map((u) => ({
             id: u.id,
@@ -496,6 +506,8 @@ export class AdminDashboardService {
         return {
           title: "آخرین تراکنش‌ها",
           columns: ["شناسه", "کاربر", "سمت", "جفت‌ارز", "مقدار", "ارزش"],
+          // Quantity is base units (gold grams); value is the pair's quote.
+          columnKinds: [K.TEXT, K.TEXT, K.TEXT, K.TEXT, K.QUANTITY, K.MONEY],
           // The value column is in the pair's quote — rial for a rial-quoted
           // pair, which the panel shows as toman.
           unit: RIAL_SYMBOL_SLUG,
@@ -522,6 +534,7 @@ export class AdminDashboardService {
         return {
           title: "آخرین سودها",
           columns: ["شناسه", "نوع", "نماد", "مبلغ", "تأمین‌کننده"],
+          columnKinds: [K.TEXT, K.TEXT, K.TEXT, K.MONEY, K.TEXT],
           unit: RIAL_SYMBOL_SLUG,
           rows: rows.map((l: any) => ({
             id: l.id,
@@ -540,6 +553,7 @@ export class AdminDashboardService {
         return {
           title: "برداشت‌های در انتظار",
           columns: ["شناسه", "کاربر", "نماد", "مبلغ", "نوع", "زمان"],
+          columnKinds: [K.TEXT, K.TEXT, K.TEXT, K.MONEY, K.TEXT, K.DATE],
           unit: RIAL_SYMBOL_SLUG,
           rows: rows.map((w: any) => ({
             id: w.id,

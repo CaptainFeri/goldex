@@ -64,8 +64,21 @@ export class DashboardKpiDto {
   })
   deltaPercent?: number | null;
 
-  @ApiProperty({ example: "۸ مورد در انتظار", description: "The card's sub-line" })
+  @ApiProperty({ example: "30 روز گذشته", description: "The card's sub-line" })
   sub: string;
+
+  @ApiPropertyOptional({
+    nullable: true,
+    example: "21000000000.00",
+    description:
+      "A figure belonging to the sub-line, kept separate from `sub` so the client formats it. " +
+      "The API must not bake an amount into prose: a rial number inside a sentence cannot be " +
+      "converted to toman by the panel, and would be the one unformatted amount on the page.",
+  })
+  subValue?: string | null;
+
+  @ApiPropertyOptional({ nullable: true, example: "IRR", description: "Unit of `subValue`" })
+  subUnit?: string | null;
 }
 
 export class DashboardKpisDto {
@@ -198,12 +211,37 @@ export class DashboardRecentRowDto {
   status?: string | null;
 }
 
+/**
+ * What a column holds, so the client can format it.
+ *
+ * `cells` are strings by design — one table serves four metrics — but a client
+ * that cannot tell a rial amount from an order code renders raw digits where
+ * the rest of the panel shows toman. This says which is which, by position.
+ */
+export enum DashboardColumnKind {
+  TEXT = "text",
+  /** Money in the table's `unit`; the panel converts rial to toman. */
+  MONEY = "money",
+  /** An amount in its own symbol's units — gold grams, not money. */
+  QUANTITY = "quantity",
+  /** An ISO instant, to be shown in the panel's calendar. */
+  DATE = "date",
+}
+
 export class DashboardRecentDto {
   @ApiProperty({ example: "آخرین تراکنش‌ها" })
   title: string;
 
   @ApiProperty({ type: [String], example: ["شناسه", "کاربر", "نوع", "جفت‌ارز", "ارزش"] })
   columns: string[];
+
+  @ApiProperty({
+    enum: DashboardColumnKind,
+    isArray: true,
+    description: "One per column, in the same order",
+    example: ["text", "text", "text", "text", "quantity", "money"],
+  })
+  columnKinds: DashboardColumnKind[];
 
   @ApiProperty({ type: [DashboardRecentRowDto] })
   rows: DashboardRecentRowDto[];
