@@ -466,3 +466,38 @@ React majors and two chart libraries means doing it twice.
    becomes a merge-conflict surface. One team, with the other raising PRs.
 5. **The 20 admin-panel-only pages** — roadmap for `ui-parszargar`, or
    permanently admin-panel-only? Affects whether B1 restyles them fully.
+
+
+## 7. Market ticker — implemented
+
+`src/components/MarketTicker.tsx`, mounted as the first child of `.app-shell`
+so the strip spans the full width above both the sidebar and the main pane,
+matching where ui-parszargar puts it. `.app-shell` gained a
+`grid-template-rows: auto 1fr`, which keeps the shell at exactly the viewport
+height so only `.main` scrolls — the ticker must not scroll away with the
+content.
+
+It polls `GET /admin/market/ticker` every 3s, the cadence the endpoint
+advertises and the reference panel uses. It renders `sellPrice` through
+`fmtBySymbol`, so a rial quote becomes toman in Persian digits like every other
+amount, and an instrument with no live quote shows an em dash and a stale mark
+rather than a zero. While the query is loading or failing the component returns
+null: the strip is ambient context, and a permanently empty marquee or an error
+an operator cannot act on is worse than no strip.
+
+Direction arrows are derived by remembering the previous poll, because the API
+sends no `change` field — it keeps no history to send. Two cases deliberately
+show no arrow: the first value seen, and a price that has gone null because its
+quote dropped out. Reading the latter as a fall to zero would paint the whole
+strip red the moment a feed hiccups.
+
+The decisions live in `src/lib/ticker.ts` — `directionOf`, `isGoldCategory`,
+`marqueeDuration` — rather than in the component, so they are covered by the
+`node`-environment vitest suite without pulling in a DOM stack the panel does
+not otherwise have. The JSX left behind holds no logic worth testing.
+
+Verified by rendering the built panel headlessly against a stub API: the strip
+is 38px like the reference, the grid rows come out `38px` + the remainder, the
+track is RTL with a 2.5s-per-item duration and two sets for a seamless loop,
+92,800,000 rial renders as `۹٬۲۸۰٬۰۰۰ تومان`, and a null-priced instrument
+renders as `— ⧗`.

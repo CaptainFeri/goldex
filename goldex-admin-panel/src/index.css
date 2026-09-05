@@ -77,6 +77,10 @@ select {
 .app-shell {
   display: grid;
   grid-template-columns: 248px 1fr;
+  /* Ticker across the top, then the sidebar and main pane beneath it. The
+     rows keep the shell at exactly the viewport height, so only .main
+     scrolls — the strip must not scroll away with the content. */
+  grid-template-rows: auto 1fr;
   height: 100vh;
 }
 
@@ -1027,4 +1031,135 @@ tbody tr:hover {
 @keyframes fadeUp {
   from { opacity: 0; transform: translateY(8px); }
   to { opacity: 1; transform: translateY(0); }
+}
+
+
+/* ---- Market ticker ------------------------------------------------------ */
+
+.market-ticker {
+  grid-column: 1 / -1;
+  height: 38px;
+  display: flex;
+  align-items: center;
+  background: linear-gradient(90deg, #0b0e14, #11151c);
+  border-bottom: 1px solid var(--border);
+  font-size: 12.5px;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.ticker-live {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  flex-shrink: 0;
+  padding: 0 18px;
+  color: var(--text-dim);
+  /* RTL panel: the divider belongs on the side the marquee runs from. */
+  border-left: 1px solid var(--border);
+  background: inherit;
+  z-index: 1;
+}
+
+.ticker-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--green);
+  box-shadow: 0 0 0 3px var(--green-soft);
+}
+
+.ticker-dot.off {
+  background: var(--text-faint);
+  box-shadow: none;
+}
+
+.ticker-marquee {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  direction: rtl;
+  /* Fade the leading edge so items enter rather than pop into view. */
+  mask-image: linear-gradient(to right, transparent, #000 48px);
+  -webkit-mask-image: linear-gradient(to right, transparent, #000 48px);
+}
+
+.ticker-track {
+  display: flex;
+  width: max-content;
+  /* Stated rather than inherited from <html dir="rtl">: the scroll direction
+     and the entry-edge fade below are both chosen for RTL, so a future change
+     to the document direction must not silently reverse them. */
+  direction: rtl;
+  will-change: transform;
+  animation: ticker-scroll var(--ticker-duration, 40s) linear infinite;
+}
+
+/* Pause on hover so an operator can actually read a rate they spotted. */
+.market-ticker:hover .ticker-track {
+  animation-play-state: paused;
+}
+
+.ticker-set {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+  gap: 32px;
+  padding-inline: 16px;
+}
+
+@keyframes ticker-scroll {
+  from {
+    transform: translateX(0);
+  }
+  to {
+    /* Half the track is one full set, so the loop is seamless. */
+    transform: translateX(50%);
+  }
+}
+
+.ticker-item {
+  color: var(--text-dim);
+}
+
+.ticker-value {
+  color: var(--text);
+  transition: color 0.25s ease;
+}
+
+.ticker-gold {
+  color: var(--gold-soft);
+  transition: color 0.25s ease;
+}
+
+.ticker-up {
+  color: var(--green);
+}
+
+.ticker-down {
+  color: var(--red);
+}
+
+.ticker-change {
+  font-size: 11px;
+}
+
+.ticker-stale {
+  color: var(--text-faint);
+}
+
+.ticker-stale-mark {
+  color: var(--text-faint);
+  font-size: 11px;
+}
+
+/* Respect a reader who has asked for less motion: show the strip static
+   rather than animating a marquee they did not ask for. */
+@media (prefers-reduced-motion: reduce) {
+  .ticker-track {
+    animation: none;
+  }
+  .ticker-marquee {
+    overflow-x: auto;
+  }
 }

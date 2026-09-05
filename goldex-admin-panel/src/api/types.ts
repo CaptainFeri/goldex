@@ -1153,3 +1153,33 @@ export interface PaginationParams {
   sort?: string;
   order?: "asc" | "desc";
 }
+
+
+/** One instrument in the market ticker. */
+export interface MarketTickerItem {
+  symbolId: string;
+  slug: string;
+  /** The camelCase key the panels' own constants file used, where one exists. */
+  tickerKey: string | null;
+  label: string;
+  category: string | null;
+  displayOrder: number;
+  /**
+   * Prices in the unit `quoteSlug` names — rial today. Format through
+   * `fmtBySymbol`; the API never converts. Null when there is no live quote.
+   */
+  buyPrice: number | null;
+  sellPrice: number | null;
+  buyGramPrice: number | null;
+  sellGramPrice: number | null;
+  quoteSlug: string | null;
+  lastUpdated: string | null;
+  /** The quote is older than the freshness window, or missing entirely. */
+  stale: boolean;
+}
+
+export interface MarketTicker {
+  items: MarketTickerItem[];
+  generatedAt: string;
+  freshnessWindowSeconds: number;
+}

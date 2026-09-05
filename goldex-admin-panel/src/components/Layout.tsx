@@ -4,6 +4,7 @@ import { useAuth } from "../auth/auth";
 import MobileNav from "./MobileNav";
 import { adminNotificationSocket } from "../api/admin-socket";
 import { getToken } from "../api/client";
+import MarketTicker from "./MarketTicker";
 
 type NavGroup = {
   label: string;
@@ -170,6 +171,7 @@ export default function Layout() {
 
   return (
     <div className="app-shell">
+      <MarketTicker />
       <aside className="sidebar">
         <div className="brand">
           <div className="brand-logo">G</div>
