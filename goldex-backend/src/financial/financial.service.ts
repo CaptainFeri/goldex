@@ -11,6 +11,7 @@ import { OrderStatusEnum } from "../order/enum/order.status.enum";
 import { UserEntity } from "../user/entity/user.entity";
 import { UserKycEntity } from "../user/entity/user.kyc.entity";
 import { KycStatusEnum } from "../baseinfo/enum/kycStatus.enum";
+import { RIAL_SYMBOL_SLUG } from "../shared/constants/currency.constants";
 
 const PROFIT_INTERVALS = ["hour", "day", "week", "month"] as const;
 type ProfitInterval = (typeof PROFIT_INTERVALS)[number];
@@ -182,7 +183,7 @@ export class FinancialService {
     return rows.map((r) => {
       const symbols: { symbol: string; value: number }[] = [];
       if (r.goldBalance != null) symbols.push({ symbol: "XAU", value: Number(r.goldBalance) });
-      if (r.rialBalance != null) symbols.push({ symbol: "IRR", value: Number(r.rialBalance) });
+      if (r.rialBalance != null) symbols.push({ symbol: RIAL_SYMBOL_SLUG, value: Number(r.rialBalance) });
       return {
         providerKey: r.providerKey,
         goldBalance: r.goldBalance != null ? Number(r.goldBalance) : null,
@@ -201,7 +202,7 @@ export class FinancialService {
       const netVolume = Number(r.netVolume); // net base asset (e.g. gold)
       const netValue = Number(r.netValue); // net quote asset (e.g. currency)
       const base = r.baseSymbol ?? "XAU";
-      const quote = r.quoteSymbol ?? "IRR";
+      const quote = r.quoteSymbol ?? RIAL_SYMBOL_SLUG;
       return {
         providerKey: r.providerKey,
         itemId: r.itemId,

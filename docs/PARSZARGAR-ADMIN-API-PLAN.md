@@ -190,9 +190,51 @@ levels all point at by FK, plus a hardcoded `"IRR"` string in at least
 `credit.service.ts`, `financial.service.ts`, `user-level.service.ts` and
 `provider-deal.consumer.ts`.
 
-One migration, one transaction, in Phase 0 before any new endpoint ships:
+**Step 1 landed** — `1000000000093-rialToTomanSymbolMig.ts`. It renames the
+symbol in place (id preserved, so no FK moves), rewrites the free-text slug
+references in `provider_deal_snapshots.base_symbol` / `.quote_symbol` and
+`provider_settlements.symbol`, and adds the ticker/instrument columns
+(`ticker_key`, `is_ticker`, `display_order`, `category`). Verified against a
+real Postgres: up → down → up round-trips, the symbol id survives, and all 93
+migrations run clean from an empty database.
 
-1. **Symbol row** — update in place, keep the id so no FK moves:
+It deliberately does **not** touch balances, and that has a consequence worth
+stating plainly: **between step 1 and step 2 the database is self-inconsistent.**
+The seeded pair becomes `XAU/IRT` while its price is still the rial figure
+(74,626,865.67 rather than 7,462,686.567). The two migrations must ship in the
+same release, behind maintenance mode. Never deploy step 1 alone.
+
+**Step 2, the ÷10 conversion, is blocked on four denomination decisions.** The
+column inventory below was taken from the live schema, not inferred from
+entities. Most columns are unambiguous; these are not, and a wrong guess on any
+of them is a factor-of-ten error in production money:
+
+| Column | Question |
+|---|---|
+| `transaction.price` | `amount` is in the wallet's symbol, but `price` looks quote-denominated — for a gold wallet the amount is grams while the price is rial per gram. Scoping the conversion by wallet symbol would therefore be wrong for `price`. Which is it? |
+| `order.bridge_rate` | A rate between two symbols. Whether it needs ÷10 depends on which leg is the rial one. |
+| `symbol.gain` | Paired with `gain_type`: when `number`, is it an absolute amount in the quote symbol (convert) or something else? When `percent`, no conversion either way. |
+| `discount_coupon.discount_amount` | Carries no symbol linkage at all in the schema. What is it denominated in? |
+
+Resolved while taking the inventory, for the record:
+
+- **Do not convert** `price_pairs.min_buy` / `max_buy` / `min_sell` / `max_sell` —
+  seeded as `0.001` and `10` on the XAU pairs, so they are base quantities, not
+  quote money.
+- **Do not convert** `buy_commission`, `sell_commission`, `order.commission` —
+  `decimal(10,2)` percentages.
+- **Do not convert** `shahin_accounts.balance`, `shahin_entries.amount`, or
+  `shahin_entries.currency` — bank-side, and rial there is correct (§3.2).
+- **Do not convert** `packet.*`, `warehouse.capacity_*`, `warehouse_request.weight` —
+  weights and capacities, not currency.
+- Columns denominated in a *collateral or asset* symbol rather than the credit
+  base (`credit.collateral_amount`, `collateral_lock.amount`,
+  `credit_cashout.asset_amount`) convert only when that symbol is the rial one —
+  they need their own scoping clause, not the credit base's.
+
+The remaining steps, once those four are answered:
+
+1. ~~**Symbol row**~~ — done in step 1: updated in place, id kept so no FK moves:
    `slug: IRR → IRT`, `name: "ریال ایران" → "تومان ایران"`,
    `pic_path: /icons/irr.png → /icons/irt.png`. Updating beats
    delete-and-insert; a new id would orphan every wallet.

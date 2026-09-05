@@ -41,6 +41,7 @@ import { WalletOrderService } from "../wallet/services/wallet-order.service";
 import { CreditSettlementService, SettlementState } from "./settlement/credit-settlement.service";
 import { CreditEvents } from "../shared/constants/events.constants";
 import { UserLevelService } from "../user-level/user-level.service";
+import { RIAL_SYMBOL_SLUG } from "../shared/constants/currency.constants";
 
 Decimal.set({ precision: 20, rounding: Decimal.ROUND_HALF_UP, toExpNeg: -7, toExpPos: 21 });
 
@@ -277,7 +278,7 @@ export class CreditService {
           if (!rialSymbol) {
             rialSymbol = manager.create(SymbolEntity, {
               name: "RIAL",
-              slug: "IRR",
+              slug: RIAL_SYMBOL_SLUG,
               symbolType: SymbolTypeEnum.RIAL,
               marketType: MarketTypeEnum.FORMAL,
               isActive: true,
