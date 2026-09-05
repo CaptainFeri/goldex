@@ -1183,3 +1183,68 @@ export interface MarketTicker {
   generatedAt: string;
   freshnessWindowSeconds: number;
 }
+
+
+// ── Reports ────────────────────────────────────────────────────────────────
+
+/**
+ * What a report covers. There is no `arbitrage`: those signals are never
+ * persisted, so a date-ranged export of them would be fabricated.
+ */
+export type ReportType = "trades" | "users" | "financial" | "withdrawals";
+
+/**
+ * Output formats. There is no `pdf` — printing stays client-side, where the
+ * print CSS already lives.
+ */
+export type ReportFormat = "xlsx" | "csv";
+
+export type ReportStatus = "pending" | "running" | "completed" | "failed";
+
+export interface ReportJob {
+  id: string;
+  type: ReportType;
+  format: ReportFormat;
+  status: ReportStatus;
+  fromDate: string | null;
+  toDate: string | null;
+  createdBy: string;
+  rowCount: number | null;
+  fileSize: string | null;
+  durationMs: number | null;
+  artifactExpiresAt: string | null;
+  /** The file was purged at 90 days; the row remains as the audit record. */
+  artifactExpired: boolean;
+  downloadCount: number;
+  error: string | null;
+  scheduleId: string | null;
+  createAt: string;
+  completedAt: string | null;
+}
+
+export interface ReportStats {
+  generated: number;
+  activeSchedules: number;
+  downloadsThisMonth: number;
+  averageDurationMs: number | null;
+}
+
+export interface ReportDownload {
+  /** Short-lived and bearer-free — follow it on click, never store it. */
+  url: string;
+  fileName: string;
+}
+
+export interface ReportSchedule {
+  id: string;
+  ownerId: string;
+  name: string;
+  type: ReportType;
+  format: ReportFormat;
+  cronExpression: string;
+  windowDays: number;
+  isActive: boolean;
+  lastRunAt: string | null;
+  nextRunAt: string | null;
+  createAt: string;
+}

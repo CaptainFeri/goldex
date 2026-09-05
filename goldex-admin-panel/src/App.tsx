@@ -21,6 +21,7 @@ import OrderBookPage from "./pages/OrderBookPage";
 import DiscountsPage from "./pages/DiscountsPage";
 import CreditsPage from "./pages/CreditsPage";
 import FinanceLogsPage from "./pages/FinanceLogsPage";
+import ReportsPage from "./pages/ReportsPage";
 import LevelsPage from "./pages/LevelsPage";
 import DepositsPage from "./pages/DepositsPage";
 import WithdrawsPage from "./pages/WithdrawsPage";
@@ -87,6 +88,7 @@ export default function App() {
         <Route path="/discounts" element={<DiscountsPage />} />
         <Route path="/credits" element={<CreditsPage />} />
         <Route path="/finance-logs" element={<FinanceLogsPage />} />
+        <Route path="/reports" element={<ReportsPage />} />
         <Route path="/user-levels" element={<LevelsPage />} />
         <Route path="/deposits" element={<DepositsPage />} />
         <Route path="/withdraws" element={<WithdrawsPage />} />

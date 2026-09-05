@@ -501,3 +501,50 @@ is 38px like the reference, the grid rows come out `38px` + the remainder, the
 track is RTL with a 2.5s-per-item duration and two sets for a seamless loop,
 92,800,000 rial renders as `۹٬۲۸۰٬۰۰۰ تومان`, and a null-priced instrument
 renders as `— ⧗`.
+
+
+## 8. Reports — implemented
+
+`src/pages/ReportsPage.tsx` at `/reports`, under مدیریت in the sidebar.
+
+Four clickable KPI cards over `GET /admin/reports/stats`, each selecting a view
+of the same list (`generated`, `schedules`, `downloads`, `duration`); a
+generator form; the report list; and a schedules table with create, edit and
+delete.
+
+**Generating is a poll, not a wait.** `POST /generate` returns a queued job, so
+the list refetches every 3s *only while* something is `pending` or `running`
+and stops on its own once everything has settled — a fixed interval would poll
+a quiet desk forever.
+
+**The download URL is minted per click.** It expires in about two minutes, so a
+link rendered at page load would be dead by the time anyone pressed it. The
+button fetches `/:id/download` and follows the returned URL, which is
+bearer-free by design. A job whose artefact has been purged shows «منقضی شده»
+in place of the button rather than offering a download that would fail — the
+row survives as the audit record, the file does not.
+
+The type select offers only the four the API has, and the format select only
+Excel and CSV. Both omissions are the API's, for reasons recorded in
+`PARSZARGAR-ADMIN-API-PLAN.md` §5.23; the form says so in a line under it
+rather than leaving an operator to wonder where PDF went.
+
+A schedule's type is disabled when editing, matching the API's refusal to
+change it, with a line saying why.
+
+**Known gap: the date inputs are Gregorian.** They are native `type="date"`,
+which renders in the browser's locale, so a Persian panel shows `mm/dd/yyyy`
+while every date it *displays* is Jalali. ui-parszargar uses
+`react-multi-date-picker` with a Persian calendar. This was left as-is
+deliberately: `FinanceLogsPage`, `FinancePage` and `UsersPage` all use native
+date inputs too, so a Jalali picker on Reports alone would trade one
+inconsistency for another. Adopting it is a panel-wide change and a new
+dependency — worth doing, but as its own piece of work.
+
+Verified by rendering the built panel headlessly against a stub API: the KPI
+cards read in Persian digits, the four report rows render their status,
+schedule origin and inline failure message, the expired row offers no download,
+and the schedules table shows cron expressions LTR inside the RTL layout. The
+range column was cut to dates only after the first render showed the download
+button pushed off the edge — a report window is day-granular anyway, so two
+full timestamps were both wider and more precise than the truth.
