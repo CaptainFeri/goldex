@@ -226,7 +226,7 @@ export default function AccountingPage() {
                 onClick: (_e, els) => {
                   if (els.length > 0) drillInto(els[0].index);
                 },
-                scales: { x: { grid: { color: gridColor } }, y: { grid: { color: gridColor } } },
+                scales: { x: { grid: { color: gridColor() } }, y: { grid: { color: gridColor() } } },
                 plugins: {
                   legend: { display: false },
                   tooltip: {

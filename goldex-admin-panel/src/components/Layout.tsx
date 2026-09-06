@@ -10,6 +10,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, unwrap } from "../api/client";
 import type { UnreadCount } from "../api/types";
 import { fmtNum } from "../lib/format";
+import { applyTheme, persistTheme, storedTheme, type Theme } from "../lib/theme";
 
 type NavItem = {
   to: string;
@@ -209,6 +210,12 @@ export default function Layout() {
   const { admin, logout } = useAuth();
   const { permissions, can } = usePermissions();
   const qc = useQueryClient();
+
+  const [theme, setTheme] = useState<Theme>(storedTheme);
+  useEffect(() => {
+    applyTheme(theme);
+    persistTheme(theme);
+  }, [theme]);
   const loc = useLocation();
   const title = TITLES[loc.pathname] ?? "Goldex";
 
@@ -340,9 +347,19 @@ export default function Layout() {
                 {admin?.role}
               </div>
             </div>
-            <button className="btn ghost sm" onClick={logout}>
-              خروج
-            </button>
+            <div className="row" style={{ gap: 6 }}>
+              <button
+                className="btn ghost sm"
+                title={theme === "dark" ? "حالت روشن" : "حالت تیره"}
+                aria-label={theme === "dark" ? "حالت روشن" : "حالت تیره"}
+                onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
+              >
+                {theme === "dark" ? "☀" : "☾"}
+              </button>
+              <button className="btn ghost sm" onClick={logout}>
+                خروج
+              </button>
+            </div>
           </div>
         </div>
       </aside>
