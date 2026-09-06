@@ -1488,3 +1488,75 @@ export interface RoleMember {
   isSuspended: boolean;
   lastLoginAt: string | null;
 }
+
+export interface AdminProfile {
+  id: string;
+  fullName: string | null;
+  phone: string | null;
+  email: string | null;
+  roleName: string | null;
+  permissions: string[];
+  lastLoginAt: string | null;
+}
+
+export interface SecuritySettings {
+  twoFactor: boolean;
+  biometric: boolean;
+  unknownLoginAlert: boolean;
+}
+
+export interface NotificationSettings {
+  tradeAlerts: boolean;
+  dailyEmailReport: boolean;
+  systemAlerts: boolean;
+}
+
+export interface PlatformSettings {
+  displayCurrency: string;
+  language: string;
+  timezone: string;
+  calendar: string;
+  /** Rial, like every amount on the wire. */
+  minWithdrawal: string;
+  defaultProfitPercent: string;
+  updateAt: string | null;
+}
+
+export type ApiKeyStatus = "active" | "limited" | "revoked";
+
+export interface ApiKey {
+  id: string;
+  name: string;
+  maskedKey: string;
+  status: ApiKeyStatus;
+  monthlyQuota: number | null;
+  monthlyRequests: number;
+  lastUsedAt: string | null;
+  createAt: string | null;
+}
+
+export interface CreatedApiKey extends ApiKey {
+  /** Present on the create response only, and never again. */
+  plaintextKey: string;
+}
+
+export interface ApiStats {
+  requestsToday: number;
+  /** Null when there was no traffic to average — not zero, and not 100%. */
+  avgResponseMs: number | null;
+  successPercent: number | null;
+  errorPercent: number | null;
+  activeKeys: number;
+  keyedRouteCount: number;
+}
+
+export interface TrafficPoint {
+  bucket: string;
+  requests: number;
+  errors: number;
+}
+
+export interface ApiTraffic {
+  points: TrafficPoint[];
+  keyedRouteCount: number;
+}
