@@ -1,17 +1,32 @@
 import { Body, Controller, Get, Patch, Query, Req, UseGuards } from "@nestjs/common";
 import { ApiBearerAuth, ApiOperation, ApiQuery, ApiTags } from "@nestjs/swagger";
+import { ApiAdminErrorResponses, ApiEnvelopeResponse } from "../shared/swagger";
+import {
+  AccountingHoldingsDto,
+  AccountingRatesDto,
+  AccountingSettingsDto,
+  AccountingSummaryDto,
+} from "./dto/accounting-response.dto";
 import { AccountingService } from "./accounting.service";
 import { AccountingSettingService } from "./accounting-setting.service";
 import { UpdateAccountingSettingDto } from "./dto/update-accounting-setting.dto";
 import { AdminAuthGuard } from "../admin/auth/Guard/admin.guard";
-import { AdminRolesGuard } from "../admin/auth/Guard/admin.role.guard";
-import { AdminRoles } from "../admin/role/admin.role.decorator";
-import { AdminRole } from "../admin/role/admin.roles.enum";
+import { AdminPermissionsGuard } from "../admin-role/guard/admin-permissions.guard";
+import { RequirePermissions } from "../admin-role/guard/require-permissions.decorator";
 
-@ApiTags("Admin-Accounting")
+/**
+ * Valuation of the books at live prices.
+ *
+ * `admin/accounting` proper is the general ledger and vouchers (see
+ * `admin-accounting`); this sits beneath it as the marking-to-market view, so
+ * the two never compete for a route.
+ */
+@ApiTags("Admin-Accounting-Valuation")
 @ApiBearerAuth()
-@UseGuards(AdminAuthGuard, AdminRolesGuard)
-@Controller("admin/accounting")
+@ApiAdminErrorResponses()
+@UseGuards(AdminAuthGuard, AdminPermissionsGuard)
+@RequirePermissions("accounting")
+@Controller("admin/accounting/valuation")
 export class AccountingController {
   constructor(
     private readonly accounting: AccountingService,
@@ -19,8 +34,8 @@ export class AccountingController {
   ) {}
 
   @Get("settings")
-  @AdminRoles(AdminRole.SUPER_ADMIN, AdminRole.ADMIN, AdminRole.FINANCE)
   @ApiOperation({ summary: "Accounting policy: reference (pricing) symbol and valuation basis" })
+  @ApiEnvelopeResponse(AccountingSettingsDto)
   async getSettings() {
     const [settings, reference] = await Promise.all([
       this.settings.get(),
@@ -42,17 +57,17 @@ export class AccountingController {
   }
 
   @Patch("settings")
-  @AdminRoles(AdminRole.SUPER_ADMIN, AdminRole.ADMIN)
   @ApiOperation({ summary: "Choose the pricing symbol the books are reported in" })
+  @ApiEnvelopeResponse(AccountingSettingsDto)
   async updateSettings(@Body() dto: UpdateAccountingSettingDto, @Req() req: any) {
     return { data: await this.settings.update(dto, req?.admin?.id) };
   }
 
   @Get("summary")
-  @AdminRoles(AdminRole.SUPER_ADMIN, AdminRole.ADMIN, AdminRole.FINANCE)
   @ApiOperation({
     summary: "Profit, cost and net profit per asset, valued at live prices in the reference symbol",
   })
+  @ApiEnvelopeResponse(AccountingSummaryDto)
   @ApiQuery({ name: "from", required: false, description: "ISO date (default: 30 days ago)" })
   @ApiQuery({ name: "to", required: false, description: "ISO date (default: now)" })
   async summary(@Query("from") from?: string, @Query("to") to?: string) {
@@ -65,15 +80,15 @@ export class AccountingController {
   }
 
   @Get("holdings")
-  @AdminRoles(AdminRole.SUPER_ADMIN, AdminRole.ADMIN, AdminRole.FINANCE)
   @ApiOperation({ summary: "Customer and system balances valued in the reference symbol" })
+  @ApiEnvelopeResponse(AccountingHoldingsDto)
   async holdings() {
     return { data: await this.accounting.getHoldings() };
   }
 
   @Get("rates")
-  @AdminRoles(AdminRole.SUPER_ADMIN, AdminRole.ADMIN, AdminRole.FINANCE)
   @ApiOperation({ summary: "Live conversion rate from each symbol into the reference" })
+  @ApiEnvelopeResponse(AccountingRatesDto)
   async rates() {
     return { data: await this.accounting.getRates() };
   }

@@ -29,6 +29,8 @@ import {
 import { CreateArbitrageBotDto } from "./dto/create-arbitrage-bot.dto";
 import { UpdateArbitrageBotDto } from "./dto/update-arbitrage-bot.dto";
 import { AllocateCapitalDto, ReleaseCapitalDto } from "./dto/allocate-capital.dto";
+import { paginate } from "../shared/dto/paginated.dto";
+import { pageOf } from "../shared/dto/page-of";
 import { ManagerAccountService } from "../manager-account/manager-account.service";
 import { AdminRole } from "../admin/role/admin.roles.enum";
 import { ArbitrageBotNotifierService } from "./arbitrage-bot-notifier.service";
@@ -350,23 +352,25 @@ export class ArbitrageBotService {
   }
 
   async getTrades(botId: string, limit = 50, offset = 0) {
+    const take = Math.min(limit, 200);
     const [items, total] = await this.tradeRepo.findAndCount({
       where: { botId },
       order: { createAt: "DESC" },
-      take: Math.min(limit, 200),
+      take,
       skip: offset,
     });
-    return { items, total };
+    return paginate(items, total, { currentPage: pageOf(offset, take), take });
   }
 
   async getEvents(botId: string, limit = 50, offset = 0) {
+    const take = Math.min(limit, 200);
     const [items, total] = await this.eventRepo.findAndCount({
       where: { botId },
       order: { createAt: "DESC" },
-      take: Math.min(limit, 200),
+      take,
       skip: offset,
     });
-    return { items, total };
+    return paginate(items, total, { currentPage: pageOf(offset, take), take });
   }
 
   /** How many open trades a bot currently has, for its concurrency cap. */

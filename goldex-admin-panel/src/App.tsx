@@ -12,7 +12,6 @@ import PairsPage from "./pages/PairsPage";
 import MappingsPage from "./pages/MappingsPage";
 import AdminsPage from "./pages/AdminsPage";
 import FinancePage from "./pages/FinancePage";
-import AccountingPage from "./pages/AccountingPage";
 import ManagerAccountsPage from "./pages/ManagerAccountsPage";
 import ProviderFinancePage from "./pages/ProviderFinancePage";
 import CbpPage from "./pages/CbpPage";
@@ -25,6 +24,7 @@ import CreditsPage from "./pages/CreditsPage";
 import FinanceLogsPage from "./pages/FinanceLogsPage";
 import ReportsPage from "./pages/ReportsPage";
 import AccountingPage from "./pages/AccountingPage";
+import AccountingValuationPage from "./pages/AccountingValuationPage";
 import AccountingVouchersPage from "./pages/AccountingVouchersPage";
 import RolesPage from "./pages/RolesPage";
 import SettingsPage from "./pages/SettingsPage";
@@ -92,7 +92,6 @@ export default function App() {
         <Route path="/pairs" element={<PairsPage />} />
         <Route path="/mappings" element={<MappingsPage />} />
         <Route path="/finance" element={<FinancePage />} />
-        <Route path="/accounting" element={<AccountingPage />} />
         <Route path="/manager-accounts" element={<ManagerAccountsPage />} />
         <Route path="/provider-finance" element={<ProviderFinancePage />} />
         <Route path="/cbp" element={<CbpPage />} />
@@ -111,6 +110,7 @@ export default function App() {
         <Route path="/finance-logs" element={<FinanceLogsPage />} />
         <Route path="/reports" element={<ReportsPage />} />
         <Route path="/accounting" element={<AccountingPage />} />
+        <Route path="/accounting/valuation" element={<AccountingValuationPage />} />
         <Route path="/accounting/vouchers" element={<AccountingVouchersPage />} />
         <Route path="/user-levels" element={<LevelsPage />} />
         <Route path="/deposits" element={<DepositsPage />} />
