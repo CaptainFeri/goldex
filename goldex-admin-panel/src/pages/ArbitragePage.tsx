@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, unwrap, apiError } from "../api/client";
 import { Card, Loading, ErrorState, Empty, Badge, Stat, Modal } from "../components/ui";
-import { fmtNum, fmtDuration, fmtTime, colorFor } from "../lib/format";
+import { fmtNum, fmtDuration, fmtTime, colorFor, fmtIrrFromToman, irrToToman, IRR_PER_TOMAN } from "../lib/format";
 import type {
   ArbitrageSignal,
   ArbitrageStatus,
@@ -98,8 +98,22 @@ function SourceBanner({ status }: { status?: ArbitrageStatus }) {
   );
 }
 
-const CONFIG_FIELDS: { key: keyof ArbitrageConfig; label: string; hint: string }[] = [
-  { key: "minProfitToman", label: "حداقل سود (تومان)", hint: "سیگنال با سود کمتر منتشر نمی‌شود" },
+/**
+ * `irrFromToman` marks a field the engine keeps in toman but the panel shows
+ * in rial — converted when the form is filled and again when it is submitted.
+ */
+const CONFIG_FIELDS: {
+  key: keyof ArbitrageConfig;
+  label: string;
+  hint: string;
+  irrFromToman?: boolean;
+}[] = [
+  {
+    key: "minProfitToman",
+    label: "حداقل سود (ریال)",
+    hint: "سیگنال با سود کمتر منتشر نمی‌شود",
+    irrFromToman: true,
+  },
   { key: "minProfitPercent", label: "حداقل سود (٪)", hint: "۰ تا ۱۰۰" },
   { key: "maxSignals", label: "حداکثر تعداد سیگنال", hint: "۱ تا ۱۰۰۰" },
   { key: "quoteFreshnessMs", label: "اعتبار قیمت (ms)", hint: "قیمت قدیمی‌تر نادیده گرفته می‌شود" },
@@ -122,7 +136,14 @@ function ConfigModal({ onClose }: { onClose: () => void }) {
   useEffect(() => {
     if (!config) return;
     const next: Record<string, string> = {};
-    for (const f of CONFIG_FIELDS) next[f.key] = String(config[f.key] ?? "");
+    for (const f of CONFIG_FIELDS) {
+      const v = config[f.key];
+      if (v === undefined || v === null) {
+        next[f.key] = "";
+        continue;
+      }
+      next[f.key] = String(f.irrFromToman ? v * IRR_PER_TOMAN : v);
+    }
     setDraft(next);
   }, [config]);
 
@@ -141,7 +162,8 @@ function ConfigModal({ onClose }: { onClose: () => void }) {
       const raw = draft[f.key];
       if (raw === undefined || raw === "") continue;
       const n = Number(raw);
-      if (Number.isFinite(n)) body[f.key] = n;
+      if (!Number.isFinite(n)) continue;
+      body[f.key] = f.irrFromToman ? n / IRR_PER_TOMAN : n;
     }
     save.mutate(body);
   }
@@ -221,7 +243,7 @@ function SignalTable({
             <th>قلم</th>
             <th>خرید از (ارزان‌ترین)</th>
             <th>فروش به (گران‌ترین)</th>
-            <th>سود (تومان)</th>
+            <th>سود (ریال)</th>
             <th>سود ٪</th>
             <th>سود (گرم طلا)</th>
             <th>{showDetected ? "زمان کشف" : "مهلت"}</th>
@@ -246,7 +268,7 @@ function SignalTable({
                     {s.buyLeg?.providerKey ?? "—"}
                   </span>
                   <div className="muted mono" style={{ fontSize: 11 }}>
-                    {s.buyLeg?.priceStr ?? fmtNum(s.buyLeg?.price)}
+                    {fmtIrrFromToman(s.buyLeg?.price)} ریال
                   </div>
                 </td>
                 <td>
@@ -257,11 +279,11 @@ function SignalTable({
                     {s.sellLeg?.providerKey ?? "—"}
                   </span>
                   <div className="muted mono" style={{ fontSize: 11 }}>
-                    {s.sellLeg?.priceStr ?? fmtNum(s.sellLeg?.price)}
+                    {fmtIrrFromToman(s.sellLeg?.price)} ریال
                   </div>
                 </td>
                 <td className="mono" style={{ color: "var(--green)", fontWeight: 600 }}>
-                  +{fmtNum(s.profitToman)}
+                  +{fmtIrrFromToman(s.profitToman)}
                 </td>
                 <td className="mono" style={{ color: "var(--gold-soft)" }}>
                   {fmtNum(s.profitPercent, 2)}٪
@@ -353,10 +375,10 @@ export default function ArbitragePage() {
   }, [opps]);
 
   const visible = useMemo(() => {
-    const min = Number(minProfit) || 0;
+    const minToman = irrToToman(minProfit) ?? 0;
     const term = search.trim().toLowerCase();
     const filtered = opps.filter((s) => {
-      if ((s.profitToman ?? 0) < min) return false;
+      if ((s.profitToman ?? 0) < minToman) return false;
       if (provider && s.buyLeg?.providerKey !== provider && s.sellLeg?.providerKey !== provider)
         return false;
       if (term && !(s.itemName ?? "").toLowerCase().includes(term)) return false;
@@ -393,7 +415,7 @@ export default function ArbitragePage() {
           value={live}
           sub={opps.length !== live ? `${opps.length} کل (شامل منقضی)` : undefined}
         />
-        <Stat label="بهترین سود (تومان)" value={fmtNum(best)} />
+        <Stat label="بهترین سود (ریال)" value={fmtIrrFromToman(best)} />
         <Stat label="هشدارهای جدید" value={alertList.length} />
         <Stat
           label="پوشش اسکن"
@@ -456,7 +478,7 @@ export default function ArbitragePage() {
               dir="ltr"
               style={{ maxWidth: 160 }}
               inputMode="numeric"
-              placeholder="حداقل سود (تومان)"
+              placeholder="حداقل سود (ریال)"
               value={minProfit}
               onChange={(e) => setMinProfit(e.target.value)}
             />
@@ -477,7 +499,7 @@ export default function ArbitragePage() {
               value={sortKey}
               onChange={(e) => setSortKey(e.target.value as SortKey)}
             >
-              <option value="profitToman">مرتب‌سازی: سود تومانی</option>
+              <option value="profitToman">مرتب‌سازی: سود ریالی</option>
               <option value="profitPercent">مرتب‌سازی: سود درصدی</option>
               <option value="deadline">مرتب‌سازی: نزدیک‌ترین مهلت</option>
               <option value="itemName">مرتب‌سازی: نام قلم</option>
