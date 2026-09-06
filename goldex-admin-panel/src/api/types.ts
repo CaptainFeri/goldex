@@ -1560,3 +1560,34 @@ export interface ApiTraffic {
   points: TrafficPoint[];
   keyedRouteCount: number;
 }
+
+export type InboxCategory = "withdrawal" | "deposit" | "kyc" | "arbitrage" | "user" | "system";
+export type InboxSeverity = "info" | "warning" | "urgent";
+
+export interface InboxItem {
+  id: string;
+  event: string;
+  category: InboxCategory;
+  severity: InboxSeverity;
+  title: string;
+  body: string;
+  /** Ids to link to, and amounts in rial for the client to format. */
+  metadata: Record<string, unknown> | null;
+  /** Read by the calling admin, not by anyone. */
+  isRead: boolean;
+  readAt: string | null;
+  createAt: string;
+}
+
+export interface InboxStats {
+  unread: number;
+  urgent: number;
+  today: number;
+  /** False means the panel is polling, not receiving live pushes. */
+  realtimeEnabled: boolean;
+  connectedAdmins: number;
+}
+
+export interface UnreadCount {
+  unread: number;
+}

@@ -6,6 +6,10 @@ import { adminNotificationSocket } from "../api/admin-socket";
 import { getToken } from "../api/client";
 import MarketTicker from "./MarketTicker";
 import { usePermissions } from "../lib/permissions";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { api, unwrap } from "../api/client";
+import type { UnreadCount } from "../api/types";
+import { fmtNum } from "../lib/format";
 
 type NavItem = {
   to: string;
@@ -50,7 +54,8 @@ const NAV: NavGroup[] = [
       { to: "/crm/tickets", label: "تیکت‌ها", icon: "🎫" },
       { to: "/crm/tags", label: "برچسب‌ها", icon: "🏷️" },
       { to: "/crm/segments", label: "بخش‌بندی", icon: "📋" },
-      { to: "/notifications", label: "اعلان‌ها", icon: "🔔" },
+      { to: "/inbox", label: "صندوق اعلان‌ها", icon: "🔔" },
+      { to: "/notifications", label: "ارسال اعلان", icon: "📣" },
     ],
   },
   {
@@ -151,6 +156,7 @@ const TITLES: Record<string, string> = {
   "/bank-accounts": "حساب‌های بانکی شرکت — واریز، برداشت و سقف‌ها",
   "/ocr": "مدیریت سرویس OCR — وضعیت مدل و آموزش خودکار",
   "/telegram-market": "بازار طلا — قیمت‌های لحظه‌ای از تلگرام",
+  "/inbox": "صندوق اعلان‌ها — رویدادهای نیازمند رسیدگی",
   "/notifications": "مدیریت اعلان‌ها — آمار و وضعیت ارسال",
   "/crm": "داشبورد CRM — آمار تیکت‌ها و رضایت مشتریان",
   "/crm/users": "مشتریان — نمای 360 درجه",
@@ -162,6 +168,7 @@ const TITLES: Record<string, string> = {
 export default function Layout() {
   const { admin, logout } = useAuth();
   const { permissions, can } = usePermissions();
+  const qc = useQueryClient();
   const loc = useLocation();
   const title = TITLES[loc.pathname] ?? "Goldex";
 
@@ -193,15 +200,32 @@ export default function Layout() {
   const toggle = (label: string) =>
     setOpen((prev) => (prev.includes(label) ? prev.filter((x) => x !== label) : [...prev, label]));
 
-  // Real-time pending-item badge on the deposits/withdraws nav links.
-  const [pendingCount, setPendingCount] = useState(0);
+  /**
+   * Unread inbox count for the badge.
+   *
+   * Previously this was a counter incremented per websocket message, starting
+   * from zero on every page load — so it showed "how many arrived while this
+   * tab was open", not how many were waiting, and reading them never cleared
+   * it. It now comes from the server, and a live message just refetches it.
+   */
+  const unread = useQuery({
+    queryKey: ["inbox-unread"],
+    queryFn: async () =>
+      unwrap<UnreadCount>((await api.get("/admin/notifications/inbox/unread-count")).data),
+    // A fallback for when the socket is not connected at all.
+    refetchInterval: 60_000,
+    enabled: !!getToken(),
+  });
+  const pendingCount = unread.data?.unread ?? 0;
+
   useEffect(() => {
     if (!getToken()) return;
-    const cleanup = adminNotificationSocket.connect(() => {
-      setPendingCount((c) => c + 1);
+    return adminNotificationSocket.connect(() => {
+      qc.invalidateQueries({ queryKey: ["inbox-unread"] });
+      qc.invalidateQueries({ queryKey: ["inbox"] });
+      qc.invalidateQueries({ queryKey: ["inbox-stats"] });
     });
-    return cleanup;
-  }, []);
+  }, [qc]);
   const navSub = (item: NavItem) => (
     <NavLink
       key={item.to}
@@ -211,8 +235,8 @@ export default function Layout() {
     >
       <span className="ico sm">{item.icon}</span>
       {item.label}
-      {(item.to === "/deposits" || item.to === "/withdraws") && pendingCount > 0 && (
-        <span className="nav-badge">{pendingCount}</span>
+      {item.to === "/inbox" && pendingCount > 0 && (
+        <span className="nav-badge">{fmtNum(pendingCount)}</span>
       )}
     </NavLink>
   );
