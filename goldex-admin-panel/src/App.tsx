@@ -25,6 +25,8 @@ import ReportsPage from "./pages/ReportsPage";
 import AccountingPage from "./pages/AccountingPage";
 import AccountingVouchersPage from "./pages/AccountingVouchersPage";
 import RolesPage from "./pages/RolesPage";
+import SettingsPage from "./pages/SettingsPage";
+import ApiPage from "./pages/ApiPage";
 import LevelsPage from "./pages/LevelsPage";
 import DepositsPage from "./pages/DepositsPage";
 import WithdrawsPage from "./pages/WithdrawsPage";
@@ -86,6 +88,8 @@ export default function App() {
         <Route path="/cbp" element={<CbpPage />} />
         <Route path="/admins" element={<AdminsPage />} />
         <Route path="/roles" element={<RolesPage />} />
+        <Route path="/settings" element={<SettingsPage />} />
+        <Route path="/api" element={<ApiPage />} />
         <Route path="/warehouse" element={<WarehousePage />} />
         <Route path="/orders" element={<OrdersPage />} />
         <Route path="/order-book" element={<OrderBookPage />} />

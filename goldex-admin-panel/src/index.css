@@ -1254,3 +1254,54 @@ tbody tr:hover {
 .rmdp-time-picker {
   border-top: 1px solid var(--border);
 }
+
+/* Settings toggles */
+.toggle {
+  position: relative;
+  width: 42px;
+  height: 24px;
+  flex: 0 0 auto;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--bg-soft, rgba(255, 255, 255, 0.06));
+  cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+.toggle.on {
+  background: var(--gold);
+  border-color: var(--gold);
+}
+.toggle:disabled {
+  opacity: 0.5;
+  cursor: progress;
+}
+.toggle-knob {
+  position: absolute;
+  top: 2px;
+  /* RTL: the knob rests on the right and travels left when on. */
+  right: 2px;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: #fff;
+  transition: transform 0.15s ease;
+}
+.toggle.on .toggle-knob {
+  transform: translateX(-18px);
+}
+.settings-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--border);
+}
+.settings-row:last-child {
+  border-bottom: 0;
+}
+.settings-row-desc {
+  font-size: 12px;
+  color: var(--text-faint);
+  margin-top: 2px;
+}
