@@ -10,6 +10,10 @@ export class AdminEntity extends myBaseEntity {
   @Column({ unique: true, nullable: true })
   phone: string;
 
+  /** Display name for the panel. Optional: admins are created by phone. */
+  @Column({ name: "full_name", type: "varchar", length: 120, nullable: true })
+  fullName: string | null;
+
   // Email/password are legacy/optional now — kept for identification only.
   @Column({ unique: true, nullable: true })
   email: string;
