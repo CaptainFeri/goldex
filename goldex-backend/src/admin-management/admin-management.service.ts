@@ -13,6 +13,10 @@ import { SuspendAdminDto } from "./dto/suspend-admin.dto";
 import { AdminEntity } from "../admin/entity/admin.entity";
 import { AdminScheduleEntity } from "../admin-schedule/entity/admin-schedule.entity";
 import { AdminRole, RoleHierarchy } from "../admin/role/admin.roles.enum";
+import { AdminRoleEntity } from "../admin-role/entity/admin-role.entity";
+import { permissionsOf } from "../admin-role/guard/admin-permissions.guard";
+import { legacyRoleFor } from "../admin-role/legacy-role";
+import { PERMISSION_KEYS, ROOT_ROLE_SLUG } from "../admin-role/permission.catalog";
 import * as bcrypt from "bcryptjs";
 
 const FINANCE_DEFAULT_SCHEDULE = [
@@ -30,9 +34,11 @@ export class AdminManagementService {
     private adminRepository: Repository<AdminEntity>,
     @InjectRepository(AdminScheduleEntity)
     private scheduleRepository: Repository<AdminScheduleEntity>,
+    @InjectRepository(AdminRoleEntity)
+    private roleRepository: Repository<AdminRoleEntity>,
   ) {}
 
-  async create(createAdminDto: CreateAdminDto, currentAdminId?: string): Promise<AdminEntity> {
+  async create(createAdminDto: CreateAdminDto, currentAdmin?: AdminEntity): Promise<AdminEntity> {
     // Phone is the primary identity — reject duplicates.
     const existingByPhone = await this.adminRepository.findOne({
       where: { phone: createAdminDto.phone },
@@ -51,12 +57,19 @@ export class AdminManagementService {
       }
     }
 
+    // Resolved before the row is written: an admin saved without `role_id` has
+    // no permissions at all, and looks identical to one whose role was set —
+    // which is exactly how new super admins ended up seeing nothing.
+    const role = await this.resolveRole(createAdminDto.roleId, createAdminDto.role);
+    if (currentAdmin) this.assertMayGrantRole(currentAdmin, role);
+
     const admin = this.adminRepository.create({
       phone: createAdminDto.phone,
       email: createAdminDto.email ?? null,
       // Password is required for login step 1 (phone+password) before OTP.
       hashPassword: await bcrypt.hash(createAdminDto.password, 10),
-      role: createAdminDto.role || AdminRole.ADMIN,
+      roleId: role.id,
+      role: legacyRoleFor(role),
     });
 
     const saved = await this.adminRepository.save(admin);
@@ -134,9 +147,17 @@ export class AdminManagementService {
     }
 
     // Update role with permission check
-    if (updateAdminDto.role && updateAdminDto.role !== admin.role) {
-      this.checkRoleUpdatePermission(currentAdmin, admin, updateAdminDto.role);
-      admin.role = updateAdminDto.role;
+    if (updateAdminDto.roleId !== undefined || (updateAdminDto.role && updateAdminDto.role !== admin.role)) {
+      const role = await this.resolveRole(updateAdminDto.roleId, updateAdminDto.role ?? admin.role);
+      const nextLegacy = legacyRoleFor(role);
+      if (role.id !== admin.roleId || nextLegacy !== admin.role) {
+        this.checkRoleUpdatePermission(currentAdmin, admin, nextLegacy);
+        this.assertMayGrantRole(currentAdmin, role);
+        admin.roleId = role.id;
+        // Kept in step with `role_id`: the hierarchy checks above read this
+        // column, and a stale value would let the wrong people edit each other.
+        admin.role = nextLegacy;
+      }
     }
 
     // Update password if provided
@@ -197,6 +218,50 @@ export class AdminManagementService {
 
   async validatePassword(admin: AdminEntity, password: string): Promise<boolean> {
     return await bcrypt.compare(password, admin.hashPassword);
+  }
+
+  /**
+   * The role row an admin is being placed in.
+   *
+   * `roleId` wins when given — it is the only way to reach a custom role. The
+   * legacy `role` enum falls back to the row whose slug matches it, which is
+   * the join migration 097 used to backfill every admin that existed then.
+   *
+   * A missing row is an error rather than a null `role_id`: an install whose
+   * seeded roles are gone is broken, and quietly creating a permission-less
+   * admin hides that until someone logs in and finds an empty panel. Naming
+   * neither is an error for the same reason in reverse — a default here would
+   * hand out whatever role it named.
+   */
+  private async resolveRole(roleId: string | undefined, slug: AdminRole | undefined): Promise<AdminRoleEntity> {
+    // Neither given is a caller mistake, not a reason to pick one. Defaulting
+    // would quietly hand out whatever role the default names.
+    if (!roleId && !slug) throw new BadRequestException("ADMIN.ROLE_REQUIRED");
+    if (roleId) {
+      const byId = await this.roleRepository.findOne({ where: { id: roleId } });
+      if (!byId) throw new BadRequestException(`ADMIN.ROLE_NOT_FOUND:${roleId}`);
+      return byId;
+    }
+    const wanted = slug as AdminRole;
+    const bySlug = await this.roleRepository.findOne({ where: { slug: wanted } });
+    if (!bySlug) throw new BadRequestException(`ADMIN.ROLE_NOT_FOUND:${wanted}`);
+    return bySlug;
+  }
+
+  /**
+   * Whatever a role grants, the caller must already hold.
+   *
+   * The same rule the roles module applies to editing a role — without it,
+   * creating an account is a way around the catalog: anyone able to reach this
+   * endpoint could mint a super admin and log in as them.
+   */
+  private assertMayGrantRole(currentAdmin: AdminEntity, role: AdminRoleEntity): void {
+    const granted = role.slug === ROOT_ROLE_SLUG ? [...PERMISSION_KEYS] : (role.permissions ?? []);
+    const held = permissionsOf(currentAdmin);
+    const escalating = granted.filter((p) => !held.includes(p));
+    if (escalating.length > 0) {
+      throw new ForbiddenException(`ADMIN.CANNOT_GRANT_UNHELD:${escalating.join(",")}`);
+    }
   }
 
   // Permission checking methods

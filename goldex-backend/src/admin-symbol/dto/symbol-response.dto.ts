@@ -83,6 +83,13 @@ export class SymbolDto {
   @ApiPropertyOptional({ nullable: true, example: "طلا", description: "Grouping for the price screen" })
   category?: string | null;
 
+  @ApiPropertyOptional({
+    nullable: true,
+    example: "#d4af37",
+    description: "Chart colour on the price screen. Null means the price endpoints derive one from the slug.",
+  })
+  color?: string | null;
+
   @ApiProperty()
   createAt: Date;
 

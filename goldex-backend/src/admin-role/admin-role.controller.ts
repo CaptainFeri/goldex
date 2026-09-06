@@ -8,6 +8,7 @@ import { AdminPermissionsGuard, permissionsOf } from "./guard/admin-permissions.
 import { RequirePermissions } from "./guard/require-permissions.decorator";
 import {
   AdminRoleDto,
+  AssignMembersDto,
   CreateRoleDto,
   PermissionDto,
   RoleMemberDto,
@@ -91,6 +92,27 @@ export class AdminRoleController {
   @ApiEnvelopeResponse(RoleMemberDto, { isArray: true })
   async members(@Param("id", ParseUUIDPipe) id: string) {
     return { data: await this.roles.members(id) };
+  }
+
+  @Post("roles/:id/members")
+  @HttpCode(200)
+  @RequirePermissions("roles_manage")
+  @ApiOperation({
+    summary: "Move admins into this role",
+    description:
+      "An admin belongs to exactly one role, so this replaces whatever role each of them was " +
+      "in — there is no counterpart that removes an admin from a role, because an admin with " +
+      "none holds no permissions at all and suspension is what takes access away deliberately. " +
+      "Refused if the role grants a permission the caller does not hold, if the caller names " +
+      "themselves, or if it would leave no active admin able to manage roles.",
+  })
+  @ApiEnvelopeResponse(RoleMemberDto, { isArray: true })
+  async assignMembers(
+    @Req() req: AdminExpressRequest,
+    @Param("id", ParseUUIDPipe) id: string,
+    @Body() dto: AssignMembersDto,
+  ) {
+    return { data: await this.roles.assignMembers(req.admin, id, dto) };
   }
 
   @Get("roles/:id/permissions")

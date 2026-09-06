@@ -4,6 +4,7 @@ import { In, Not, Repository } from "typeorm";
 import { AdminEntity } from "../admin/entity/admin.entity";
 import { AdminRoleEntity } from "./entity/admin-role.entity";
 import { permissionsOf } from "./guard/admin-permissions.guard";
+import { legacyRoleFor } from "./legacy-role";
 import {
   PERMISSIONS,
   PERMISSION_KEYS,
@@ -12,6 +13,7 @@ import {
 } from "./permission.catalog";
 import {
   AdminRoleDto,
+  AssignMembersDto,
   CreateRoleDto,
   MAX_CREDIT_AMOUNT,
   PermissionDto,
@@ -71,6 +73,51 @@ export class AdminRoleService {
       isSuspended: a.isSuspended,
       lastLoginAt: a.lastLoginAt ?? null,
     }));
+  }
+
+  /**
+   * Move admins into this role.
+   *
+   * An admin belongs to exactly one role, so this is a move, not an addition —
+   * which is also why there is no "remove from role" counterpart. An admin with
+   * no role holds no permissions at all and can see nothing; that state is
+   * reachable only through a broken install, and the way to take access away
+   * deliberately is suspension, which says so on the account.
+   *
+   * The `admin.role` column is written alongside `role_id`. It is legacy, but
+   * `admin-management` still compares hierarchy weights off it, and leaving it
+   * stale would let a warehouse operator be edited as though they were an
+   * admin — or, worse, leave it undefined, which makes every weight comparison
+   * false and lets anyone through.
+   */
+  async assignMembers(caller: AdminEntity, id: string, dto: AssignMembersDto): Promise<RoleMemberDto[]> {
+    const role = await this.require(id);
+    const adminIds = [...new Set(dto.adminIds)];
+
+    // Reassigning yourself is either a lock-out or a self-promotion; neither is
+    // something this endpoint should make easy, and another manager can do it.
+    if (adminIds.includes(caller.id)) throw new ForbiddenException("ROLE.CANNOT_REASSIGN_SELF");
+
+    this.assertMayGrant(caller, role);
+
+    const admins = await this.admins.find({ where: { id: In(adminIds) } });
+    const unknown = adminIds.filter((x) => !admins.some((a) => a.id === x));
+    // Validated before any of them moves: half an assignment is worse than
+    // none, because nothing on the screen says which half landed.
+    if (unknown.length > 0) throw new BadRequestException(`ROLE.UNKNOWN_ADMIN:${unknown.join(",")}`);
+
+    const legacy = legacyRoleFor(role);
+    for (const admin of admins) {
+      admin.roleId = role.id;
+      admin.role = legacy;
+    }
+
+    if (!(await this.manageSurvives(admins, role))) {
+      throw new ForbiddenException("ROLE.LAST_ROLES_MANAGE");
+    }
+
+    await this.admins.save(admins);
+    return this.members(id);
   }
 
   async create(caller: AdminEntity, dto: CreateRoleDto): Promise<AdminRoleDto> {
@@ -164,6 +211,49 @@ export class AdminRoleService {
       throw new ForbiddenException("ROLE.LAST_ROLES_MANAGE");
     }
     return next;
+  }
+
+  /**
+   * Whatever a role grants, the caller must already hold.
+   *
+   * The same rule `validatePermissions` applies to editing a role, applied to
+   * *entering* one — without it, any holder of `roles_manage` could mint a
+   * super admin and then log in as them, and the catalog would mean nothing.
+   * The root role is checked as the whole catalog, which is what it grants.
+   */
+  private assertMayGrant(caller: AdminEntity, role: AdminRoleEntity): void {
+    const granted = role.slug === ROOT_ROLE_SLUG ? [...PERMISSION_KEYS] : (role.permissions ?? []);
+    const held = permissionsOf(caller);
+    const escalating = granted.filter((p) => !held.includes(p));
+    if (escalating.length > 0) {
+      throw new ForbiddenException(`ROLE.CANNOT_GRANT_UNHELD:${escalating.join(",")}`);
+    }
+  }
+
+  /**
+   * Would at least one active admin still hold `roles_manage` after this move?
+   *
+   * Moving the last manager into a role without the key locks the whole install
+   * out of the roles screen with no way back through the API — the same
+   * invariant `checkedPermissions` protects when a role *loses* the key, from
+   * the other direction.
+   */
+  private async manageSurvives(moving: AdminEntity[], target: AdminRoleEntity): Promise<boolean> {
+    const targetManages =
+      target.slug === ROOT_ROLE_SLUG || (target.permissions ?? []).includes(ROLES_MANAGE);
+    if (targetManages) return true;
+
+    const roles = await this.roles.find();
+    const keepers = roles
+      .filter((r) => r.slug === ROOT_ROLE_SLUG || r.permissions.includes(ROLES_MANAGE))
+      .map((r) => r.id);
+    if (keepers.length === 0) return false;
+
+    const movingIds = moving.map((a) => a.id);
+    const remaining = await this.admins.find({
+      where: { roleId: In(keepers), isSuspended: false },
+    });
+    return remaining.some((a) => !movingIds.includes(a.id));
   }
 
   /** Is there an active admin outside this role who still holds `roles_manage`? */

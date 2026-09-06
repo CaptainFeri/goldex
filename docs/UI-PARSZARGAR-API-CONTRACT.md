@@ -192,17 +192,46 @@ selector.
 `GET /admin/credits/stats` · `/series?metric=&granularity=month|day|hour&…` ·
 `GET /admin/credits?q=&type=&minAmount=&maxAmount=&…` · `/export`
 
-### Price engine
+### Price engine — **live**
 
-`GET /admin/price/instruments` (grouped by category, includes `marketOpen`) ·
-`/history?symbols=&points=30` ·
+`GET /admin/price/instruments?category=&search=` (grouped by category, includes
+`marketOpen`) · `/history?symbols=&points=30&hours=24&providerKey=` ·
 `PATCH /admin/price/instruments/:id/market-status` ·
-`GET|PATCH /admin/price/engine-config`
+`GET|PATCH /admin/price/engine-config`. All gated on `price_engine`.
+Full notes: `docs/PRICE-ENGINE.md`.
 
 The instruments are real symbol rows server-side, carrying a `tickerKey` equal
 to the camelCase key the client uses today. So **both** `data/priceInstruments.js`
 and `constants/prices.js` get deleted once `/instruments` and `/market/ticker`
 are live — not kept in sync by hand.
+
+What the mock got wrong, and the client must not carry over:
+
+- **The catalogue is not sixty rows.** It is the symbols that genuinely exist;
+  the rest need a symbol, a pair and a provider mapping first. Seeding the
+  reference list would give every customer sixty junk wallets (migration 094).
+  Instruments with no category group under `سایر`; ones with no rial pair come
+  back with null prices and `marketOpen: null`, present and visibly
+  unconfigured.
+- **`symbols=` takes slugs**, not the mock's `gold18`-style ids, and at most 25.
+  Rows are keyed `<slug>_buy` / `<slug>_sell` — but read the key names off
+  `series[]` rather than building them. Slugs that cannot be charted come back
+  in `missing[]` with a reason.
+- **The history is real**, from `price_pair_histories`, bucketed onto one time
+  grid — not `buildChartData`'s sine wave. A bucket with no report carries the
+  last one before it; before an instrument's first price the value is `null`,
+  never `0`. Render null as a gap.
+- **`color` may be derived.** `colorConfigured: false` means the server picked a
+  stable hue from the slug because the desk set none.
+- **`autoSpread` is read-only** — `{ enabled, pairsWithCommission,
+symbolsWithGain, writable: false }`. Render it as state, not a switch: the
+  spread is the desk's margin on every quote and is configured per pair and per
+  symbol. PATCHing it back unchanged is fine; changing it is a 400.
+- **`refreshIntervalSec` is the poll cadence for this client**, and is the value
+  to use for the price screen's own refetch interval rather than a hardcoded 3.
+- `PATCH .../market-status` takes `{ open: true | false | null }`; `null` clears
+  the override and is the only way back to automatic derivation. Closing cancels
+  the orders resting in that market, so keep it behind a confirm.
 
 ### Arbitrage
 

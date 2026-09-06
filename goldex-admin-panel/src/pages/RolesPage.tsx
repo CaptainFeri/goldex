@@ -5,7 +5,7 @@ import { Card, Stat, Badge, Loading, ErrorState, Empty, Modal } from "../compone
 import { fmtNum, fmtDate } from "../lib/format";
 import { fmtToman, toApiAmount, toFormAmount, unitLabel } from "../lib/money";
 import { usePermissions } from "../lib/permissions";
-import type { AdminRoleItem, Permission, RoleMember, RoleStats } from "../api/types";
+import type { Admin, AdminRoleItem, Permission, RoleMember, RoleStats } from "../api/types";
 
 type KpiFilter = "all" | "members" | "fixed" | "empty";
 
@@ -193,11 +193,43 @@ function CreateRoleModal({ catalog, mine, onClose }: { catalog: Permission[]; mi
   );
 }
 
-function MembersModal({ role, onClose }: { role: AdminRoleItem; onClose: () => void }) {
+function MembersModal({
+  role,
+  canManage,
+  onClose,
+}: {
+  role: AdminRoleItem;
+  canManage: boolean;
+  onClose: () => void;
+}) {
+  const qc = useQueryClient();
+  const [adding, setAdding] = useState("");
+
   const members = useQuery({
     queryKey: ["role-members", role.id],
     queryFn: async () => unwrap<RoleMember[]>((await api.get(`/admin/roles/${role.id}/members`)).data),
   });
+
+  const admins = useQuery({
+    queryKey: ["admins"],
+    queryFn: async () => unwrap<Admin[]>((await api.get("/admin/accounts")).data),
+    enabled: canManage,
+  });
+
+  const assign = useMutation({
+    mutationFn: (adminId: string) =>
+      api.post(`/admin/roles/${role.id}/members`, { adminIds: [adminId] }),
+    onSuccess: () => {
+      setAdding("");
+      qc.invalidateQueries({ queryKey: ["role-members", role.id] });
+      // An admin belongs to one role, so a move changes two member counts.
+      qc.invalidateQueries({ queryKey: ["roles"] });
+      qc.invalidateQueries({ queryKey: ["role-stats"] });
+      qc.invalidateQueries({ queryKey: ["admins"] });
+    },
+  });
+
+  const outsiders = (admins.data ?? []).filter((a) => a.roleId !== role.id);
 
   return (
     <Modal title={`اعضای نقش «${role.roleName}»`} onClose={onClose}>
@@ -220,6 +252,46 @@ function MembersModal({ role, onClose }: { role: AdminRoleItem; onClose: () => v
               ))}
             </tbody>
           </table>
+        </div>
+      )}
+
+      {canManage && (
+        <div style={{ marginTop: 16 }}>
+          <label className="muted" style={{ display: "block", marginBottom: 6 }}>
+            افزودن مدیر به این نقش
+          </label>
+          <div className="row" style={{ gap: 8 }}>
+            <select
+              className="select"
+              value={adding}
+              onChange={(e) => setAdding(e.target.value)}
+              disabled={assign.isPending || outsiders.length === 0}
+            >
+              <option value="">انتخاب مدیر…</option>
+              {outsiders.map((a) => (
+                <option key={a.id} value={a.id}>
+                  {a.phone ?? a.email ?? a.id.slice(0, 8)}
+                </option>
+              ))}
+            </select>
+            <button
+              className="btn"
+              disabled={!adding || assign.isPending}
+              onClick={() => assign.mutate(adding)}
+            >
+              {assign.isPending ? "در حال انتقال…" : "افزودن"}
+            </button>
+          </div>
+          {/*
+            Each admin has exactly one role, so adding is a move — and there is
+            no "remove", because an admin with no role sees nothing at all and
+            suspension is what takes access away deliberately.
+          */}
+          <p className="muted" style={{ marginTop: 8 }}>
+            هر مدیر تنها یک نقش دارد؛ افزودن به این نقش، او را از نقش فعلی خارج می‌کند. برای حذف
+            دسترسی، مدیر را در صفحهٔ «مدیران» تعلیق کنید.
+          </p>
+          {assign.isError && <ErrorState message={roleError(assign.error)} />}
         </div>
       )}
     </Modal>
@@ -326,13 +398,14 @@ export default function RolesPage() {
                     <td>{r.wallets.length ? r.wallets.join("، ") : "—"}</td>
                     <td>{r.maxCredit ? fmtToman(r.maxCredit) : "—"}</td>
                     <td>
-                      {r.memberCount > 0 ? (
-                        <button className="btn ghost sm" onClick={() => setViewingMembers(r)}>
-                          {fmtNum(r.memberCount)}
-                        </button>
-                      ) : (
-                        fmtNum(0)
-                      )}
+                      {/*
+                        Always a button, including at zero: the modal is where
+                        a member is added, and a role with nobody in it is
+                        exactly the one that needs opening.
+                      */}
+                      <button className="btn ghost sm" onClick={() => setViewingMembers(r)}>
+                        {fmtNum(r.memberCount)}
+                      </button>
                     </td>
                     <td>{fmtDate(r.createAt)}</td>
                     <td>
@@ -374,7 +447,13 @@ export default function RolesPage() {
       {creating && catalog.data && (
         <CreateRoleModal catalog={catalog.data} mine={mine ?? []} onClose={() => setCreating(false)} />
       )}
-      {viewingMembers && <MembersModal role={viewingMembers} onClose={() => setViewingMembers(null)} />}
+      {viewingMembers && (
+        <MembersModal
+          role={viewingMembers}
+          canManage={can("roles_manage")}
+          onClose={() => setViewingMembers(null)}
+        />
+      )}
       {deleting && (
         <Modal title="حذف نقش" onClose={() => setDeleting(null)}>
           <p>نقش «{deleting.roleName}» حذف شود؟ این کار قابل بازگشت نیست.</p>
