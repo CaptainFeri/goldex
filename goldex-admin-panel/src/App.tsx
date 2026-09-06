@@ -45,6 +45,7 @@ import CrmUsersPage from "./pages/crm/CrmUsersPage";
 import CrmUser360Page from "./pages/crm/CrmUser360Page";
 import ProvidersPage from "./pages/ProvidersPage";
 import MarketStatusPage from "./pages/MarketStatusPage";
+import PricePage from "./pages/PricePage";
 import ArbitragePage from "./pages/ArbitragePage";
 import BankAccountsPage from "./pages/BankAccountsPage";
 import P2pEscalationsPage from "./pages/P2pEscalationsPage";
@@ -79,6 +80,7 @@ export default function App() {
         <Route path="/compare" element={<ComparePage />} />
         <Route path="/providers" element={<ProvidersPage />} />
         <Route path="/market-status" element={<MarketStatusPage />} />
+        <Route path="/price" element={<PricePage />} />
         <Route path="/arbitrage" element={<ArbitragePage />} />
         <Route path="/users" element={<UsersPage />} />
         <Route path="/kyc" element={<KycPage />} />

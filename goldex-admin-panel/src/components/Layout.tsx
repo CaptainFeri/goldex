@@ -88,6 +88,7 @@ const NAV: NavGroup[] = [
     label: "بازار",
     icon: "◈",
     children: [
+      { to: "/price", label: "موتور قیمت", icon: "📉", perm: "price_engine" },
       { to: "/symbols", label: "نمادها", icon: "◈" },
       { to: "/pairs", label: "جفت‌ارزها", icon: "⇄" },
       { to: "/mappings", label: "نگاشت تأمین‌کننده", icon: "🔗" },
