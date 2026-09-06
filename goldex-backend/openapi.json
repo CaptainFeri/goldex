@@ -22814,6 +22814,489 @@
         ]
       }
     },
+    "/api/v1/admin/price/instruments": {
+      "get": {
+        "description": "The catalogue is the symbol table. Instruments the desk has not given a category are grouped under `سایر` rather than dropped, so a half-configured symbol is visible as such.",
+        "operationId": "AdminPriceController_instruments_v1",
+        "parameters": [
+          {
+            "name": "category",
+            "required": false,
+            "in": "query",
+            "description": "Exact category match, e.g. `ارز`",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "search",
+            "required": false,
+            "in": "query",
+            "description": "Case-insensitive contains, over name, slug and ticker key",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/ResponseEnvelopeDto"
+                    },
+                    {
+                      "properties": {
+                        "data": {
+                          "$ref": "#/components/schemas/PriceInstrumentsDto"
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation failed — see `errors` for per-field messages",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or expired admin token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Authenticated, but lacking the required permission",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Priceable instruments, grouped by category",
+        "tags": [
+          "Admin-Price"
+        ]
+      }
+    },
+    "/api/v1/admin/price/history": {
+      "get": {
+        "description": "Real rows from `price_pair_histories`, bucketed so series with different report rates line up on the same x axis. Slugs that cannot be charted come back in `missing` with a reason instead of silently thinning the chart.",
+        "operationId": "AdminPriceController_history_v1",
+        "parameters": [
+          {
+            "name": "symbols",
+            "required": true,
+            "in": "query",
+            "description": "Comma-separated **symbol slugs**, as returned by `GET /admin/price/instruments`. At most 25.",
+            "schema": {
+              "example": "XAU,USD,EUR",
+              "type": "string"
+            }
+          },
+          {
+            "name": "points",
+            "required": false,
+            "in": "query",
+            "description": "Number of equal-width buckets across the window",
+            "schema": {
+              "default": 30,
+              "type": "number"
+            }
+          },
+          {
+            "name": "hours",
+            "required": false,
+            "in": "query",
+            "description": "How far back the window reaches, in hours",
+            "schema": {
+              "default": 24,
+              "type": "number"
+            }
+          },
+          {
+            "name": "providerKey",
+            "required": false,
+            "in": "query",
+            "description": "Restrict to one provider's reported prices. Left off, each bucket carries the most recent price from whichever provider reported last — which is what the pair's own best price follows.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/ResponseEnvelopeDto"
+                    },
+                    {
+                      "properties": {
+                        "data": {
+                          "$ref": "#/components/schemas/PriceHistoryDto"
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation failed — see `errors` for per-field messages",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or expired admin token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Authenticated, but lacking the required permission",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Recorded prices for a set of instruments, on one aligned time grid",
+        "tags": [
+          "Admin-Price"
+        ]
+      }
+    },
+    "/api/v1/admin/price/instruments/{id}/market-status": {
+      "patch": {
+        "description": "Sets the admin override on every pool of the instrument's rial pair. Closing a pool cancels the orders resting in it, so this is a confirm-gated action in the panel. Send `open: null` to clear the override and return the pools to automatic derivation.",
+        "operationId": "AdminPriceController_setMarketStatus_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "Symbol id, from `GET /admin/price/instruments`",
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SetInstrumentMarketStatusDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/ResponseEnvelopeDto"
+                    },
+                    {
+                      "properties": {
+                        "data": {
+                          "$ref": "#/components/schemas/PriceInstrumentDto"
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation failed — see `errors` for per-field messages",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or expired admin token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Authenticated, but lacking the required permission",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Force an instrument's market open or closed",
+        "tags": [
+          "Admin-Price"
+        ]
+      }
+    },
+    "/api/v1/admin/price/engine-config": {
+      "get": {
+        "description": "`sources` are the registered providers — the same rows the providers screen shows, not a copy. `autoSpread` is derived and read-only; it reports whether a spread is configured and says where to change it.",
+        "operationId": "AdminPriceController_engineConfig_v1",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/ResponseEnvelopeDto"
+                    },
+                    {
+                      "properties": {
+                        "data": {
+                          "$ref": "#/components/schemas/PriceEngineConfigDto"
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation failed — see `errors` for per-field messages",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or expired admin token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Authenticated, but lacking the required permission",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Price sources, spread state and the client refresh cadence",
+        "tags": [
+          "Admin-Price"
+        ]
+      },
+      "patch": {
+        "description": "Toggling a source publishes the same engine command the providers screen does. `autoSpread` is accepted only when it matches the current derived value, so a client can send the whole object back; asking to change it is a 400.",
+        "operationId": "AdminPriceController_updateEngineConfig_v1",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateEngineConfigDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/ResponseEnvelopeDto"
+                    },
+                    {
+                      "properties": {
+                        "data": {
+                          "$ref": "#/components/schemas/PriceEngineConfigDto"
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation failed — see `errors` for per-field messages",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or expired admin token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Authenticated, but lacking the required permission",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Turn price sources on or off and set the refresh cadence",
+        "tags": [
+          "Admin-Price"
+        ]
+      }
+    },
     "/api/v1/admin/reports/stats": {
       "get": {
         "description": "Scoped to the caller: an operator's counts are their own, a super admin's are everyone's.",
@@ -31537,6 +32020,12 @@
             "example": "طلا",
             "description": "Grouping for the price screen"
           },
+          "color": {
+            "type": "string",
+            "nullable": true,
+            "example": "#d4af37",
+            "description": "Chart colour on the price screen. Null means the price endpoints derive one from the slug."
+          },
           "createAt": {
             "format": "date-time",
             "type": "string"
@@ -31667,6 +32156,12 @@
             "nullable": true,
             "example": "ارز",
             "description": "Grouping for the price screen: طلا / سکه / نقره / ارز / کریپتو / کالا"
+          },
+          "color": {
+            "type": "string",
+            "nullable": true,
+            "example": "#d4af37",
+            "description": "Chart colour on the price screen, as a CSS hex string. Left unset, the price endpoints derive a stable hue from the slug — so this is a preference, not a requirement."
           }
         },
         "required": [
@@ -38712,6 +39207,461 @@
           "generatedAt",
           "freshnessWindowSeconds"
         ]
+      },
+      "PriceInstrumentDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Symbol id — what the market-status route takes"
+          },
+          "slug": {
+            "type": "string",
+            "example": "XAU",
+            "description": "Symbol slug — what `GET /price/history?symbols=` takes"
+          },
+          "tickerKey": {
+            "type": "string",
+            "nullable": true,
+            "example": "usdToman",
+            "description": "The camelCase key the panels' own constants file used, where one exists"
+          },
+          "name": {
+            "type": "string",
+            "example": "دلار آمریکا"
+          },
+          "category": {
+            "type": "string",
+            "nullable": true,
+            "example": "ارز",
+            "description": "Grouping: طلا / سکه / نقره / ارز / کریپتو / کالا. Null groups under سایر."
+          },
+          "color": {
+            "type": "string",
+            "example": "#d4af37",
+            "description": "Chart stroke. The desk's configured colour when it set one, otherwise a hue derived from the slug — deterministic, so a series keeps its colour between polls."
+          },
+          "colorConfigured": {
+            "type": "boolean",
+            "example": false,
+            "description": "False when `color` was derived rather than configured on the symbol"
+          },
+          "buy": {
+            "type": "number",
+            "nullable": true,
+            "example": 8925000,
+            "description": "What the desk buys at, in the quote symbol's units. Null when there is no live quote."
+          },
+          "sell": {
+            "type": "number",
+            "nullable": true,
+            "example": 8935000,
+            "description": "What the desk sells at"
+          },
+          "buyGram": {
+            "type": "number",
+            "nullable": true,
+            "description": "Per-gram, for instruments quoted by weight"
+          },
+          "sellGram": {
+            "type": "number",
+            "nullable": true
+          },
+          "quoteSlug": {
+            "type": "string",
+            "nullable": true,
+            "example": "IRR",
+            "description": "The symbol the prices are denominated in. Null when this instrument has no pair."
+          },
+          "pairId": {
+            "type": "string",
+            "nullable": true,
+            "format": "uuid",
+            "description": "The pair carrying the price. Null when none is configured — the prices are then null too."
+          },
+          "marketOpen": {
+            "type": "boolean",
+            "nullable": true,
+            "example": true,
+            "description": "Whether the MARKET pool of this instrument's pair is open. Null when the pair has never been reconciled (or does not exist) — which is not the same as closed, so it is not reported as closed."
+          },
+          "marketStatusReason": {
+            "type": "string",
+            "nullable": true,
+            "example": "price-fresh",
+            "description": "Why the pool is in that state: price-fresh / stale-price / no-price / bridge-price / admin-override"
+          },
+          "marketOverridden": {
+            "type": "boolean",
+            "example": false,
+            "description": "An admin has forced this instrument's market open or closed, overriding derivation"
+          },
+          "lastUpdated": {
+            "type": "string",
+            "nullable": true,
+            "example": "2026-09-06T09:12:00.000Z"
+          },
+          "stale": {
+            "type": "boolean",
+            "example": false,
+            "description": "The quote is older than the freshness window, or missing entirely"
+          }
+        },
+        "required": [
+          "id",
+          "slug",
+          "name",
+          "color",
+          "colorConfigured",
+          "marketOverridden",
+          "stale"
+        ]
+      },
+      "PriceInstrumentGroupDto": {
+        "type": "object",
+        "properties": {
+          "category": {
+            "type": "string",
+            "example": "ارز",
+            "description": "`سایر` collects instruments with no category set"
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PriceInstrumentDto"
+            }
+          }
+        },
+        "required": [
+          "category",
+          "items"
+        ]
+      },
+      "PriceInstrumentsDto": {
+        "type": "object",
+        "properties": {
+          "groups": {
+            "description": "Categories in first-appearance order of their instruments, so display order drives both levels",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PriceInstrumentGroupDto"
+            }
+          },
+          "total": {
+            "type": "number",
+            "example": 12,
+            "description": "Instruments across every group"
+          },
+          "quoteSlug": {
+            "type": "string",
+            "example": "IRR",
+            "description": "The symbol every price here is quoted in"
+          },
+          "generatedAt": {
+            "type": "string",
+            "example": "2026-09-06T09:12:03.000Z"
+          },
+          "freshnessWindowSeconds": {
+            "type": "number",
+            "example": 15,
+            "description": "Seconds after which a quote counts as stale"
+          }
+        },
+        "required": [
+          "groups",
+          "total",
+          "quoteSlug",
+          "generatedAt",
+          "freshnessWindowSeconds"
+        ]
+      },
+      "PriceHistorySeriesDto": {
+        "type": "object",
+        "properties": {
+          "symbolId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "slug": {
+            "type": "string",
+            "example": "XAU"
+          },
+          "name": {
+            "type": "string",
+            "example": "طلا"
+          },
+          "color": {
+            "type": "string",
+            "example": "#d4af37"
+          },
+          "buyKey": {
+            "type": "string",
+            "example": "XAU_buy",
+            "description": "Key of the buy value on every row"
+          },
+          "sellKey": {
+            "type": "string",
+            "example": "XAU_sell"
+          },
+          "filledPoints": {
+            "type": "number",
+            "example": 30,
+            "description": "Buckets that end up with a value once gaps are carried forward. Zero means no recorded price in or before the window."
+          }
+        },
+        "required": [
+          "symbolId",
+          "slug",
+          "name",
+          "color",
+          "buyKey",
+          "sellKey",
+          "filledPoints"
+        ]
+      },
+      "PriceHistoryMissingDto": {
+        "type": "object",
+        "properties": {
+          "slug": {
+            "type": "string",
+            "example": "BTC"
+          },
+          "reason": {
+            "type": "string",
+            "example": "no-pair",
+            "description": "unknown-symbol — no such slug; no-pair — the symbol has no pair against the quote symbol"
+          }
+        },
+        "required": [
+          "slug",
+          "reason"
+        ]
+      },
+      "PriceHistoryDto": {
+        "type": "object",
+        "properties": {
+          "series": {
+            "description": "In the order the slugs were requested, minus the ones in `missing`",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PriceHistorySeriesDto"
+            }
+          },
+          "missing": {
+            "description": "Requested slugs that produced no series. Empty on a fully served request.",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PriceHistoryMissingDto"
+            }
+          },
+          "rows": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": true
+            },
+            "description": "One object per bucket, oldest first: `{ i, at, \"<slug>_buy\": number|null, \"<slug>_sell\": number|null }`. A bucket with no price of its own carries the last one before it; buckets before an instrument's first recorded price are null rather than zero, so a gap reads as a gap.",
+            "example": [
+              {
+                "i": 0,
+                "at": "2026-09-05T09:00:00.000Z",
+                "XAU_buy": 89250000,
+                "XAU_sell": 89350000
+              }
+            ]
+          },
+          "from": {
+            "type": "string",
+            "example": "2026-09-05T09:00:00.000Z",
+            "description": "Start of the first bucket"
+          },
+          "to": {
+            "type": "string",
+            "example": "2026-09-06T09:00:00.000Z",
+            "description": "End of the last bucket"
+          },
+          "points": {
+            "type": "number",
+            "example": 30
+          },
+          "bucketSeconds": {
+            "type": "number",
+            "example": 2880,
+            "description": "Bucket width in seconds"
+          },
+          "quoteSlug": {
+            "type": "string",
+            "example": "IRR",
+            "description": "The symbol every price here is quoted in"
+          }
+        },
+        "required": [
+          "series",
+          "missing",
+          "rows",
+          "from",
+          "to",
+          "points",
+          "bucketSeconds",
+          "quoteSlug"
+        ]
+      },
+      "SetInstrumentMarketStatusDto": {
+        "type": "object",
+        "properties": {
+          "open": {
+            "type": "boolean",
+            "nullable": true,
+            "example": true,
+            "description": "true forces open, false forces closed, null clears the override"
+          }
+        }
+      },
+      "PriceEngineSourceDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "key": {
+            "type": "string",
+            "example": "tgju"
+          },
+          "label": {
+            "type": "string",
+            "nullable": true,
+            "example": "تی‌جی‌جی‌یو",
+            "description": "Persian name, where the provider has one"
+          },
+          "category": {
+            "type": "string",
+            "example": "gold"
+          },
+          "active": {
+            "type": "boolean",
+            "example": true,
+            "description": "Whether the engine is asked to poll this source"
+          },
+          "status": {
+            "type": "string",
+            "example": "connected",
+            "description": "Runtime state last reported by the engine: connected / connecting / disconnected / stopped / inactive / error"
+          },
+          "lastStatusChangeAt": {
+            "type": "string",
+            "nullable": true,
+            "example": "2026-09-06T09:00:00.000Z"
+          }
+        },
+        "required": [
+          "id",
+          "key",
+          "category",
+          "active",
+          "status"
+        ]
+      },
+      "AutoSpreadDto": {
+        "type": "object",
+        "properties": {
+          "enabled": {
+            "type": "boolean",
+            "example": true,
+            "description": "Whether an automatic spread is in effect anywhere — true when at least one valid pair carries a commission or at least one symbol carries a gain."
+          },
+          "pairsWithCommission": {
+            "type": "number",
+            "example": 4,
+            "description": "Valid pairs with a non-zero buy or sell commission"
+          },
+          "symbolsWithGain": {
+            "type": "number",
+            "example": 2,
+            "description": "Symbols with a non-zero gain"
+          },
+          "writable": {
+            "type": "boolean",
+            "example": false,
+            "description": "Always false. The spread is the desk's margin on every quote and is configured per pair (`buyCommission` / `sellCommission`) and per symbol (`gain`); a single global switch would zero that margin platform-wide in one click, and there is no code path that restores it. Change it where it is configured."
+          }
+        },
+        "required": [
+          "enabled",
+          "pairsWithCommission",
+          "symbolsWithGain",
+          "writable"
+        ]
+      },
+      "PriceEngineConfigDto": {
+        "type": "object",
+        "properties": {
+          "sources": {
+            "description": "Every registered provider, by key",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PriceEngineSourceDto"
+            }
+          },
+          "autoSpread": {
+            "$ref": "#/components/schemas/AutoSpreadDto"
+          },
+          "refreshIntervalSec": {
+            "type": "number",
+            "example": 3,
+            "description": "How often a client should refresh prices, in seconds. The **client** cadence — the engine's own fetch interval is per provider and is not set from here."
+          },
+          "updateAt": {
+            "type": "string",
+            "nullable": true,
+            "example": "2026-09-06T09:00:00.000Z"
+          }
+        },
+        "required": [
+          "sources",
+          "autoSpread",
+          "refreshIntervalSec"
+        ]
+      },
+      "UpdateEngineSourceDto": {
+        "type": "object",
+        "properties": {
+          "key": {
+            "type": "string",
+            "example": "tgju",
+            "description": "Provider key, as returned by `GET /admin/price/engine-config`"
+          },
+          "active": {
+            "type": "boolean",
+            "example": true
+          }
+        },
+        "required": [
+          "key",
+          "active"
+        ]
+      },
+      "UpdateEngineConfigDto": {
+        "type": "object",
+        "properties": {
+          "sources": {
+            "description": "Only the sources named are touched; one already in the requested state is left alone rather than re-commanded, so replaying the whole config is safe.",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/UpdateEngineSourceDto"
+            }
+          },
+          "autoSpread": {
+            "type": "boolean",
+            "description": "Accepted only when it matches the current derived value, so a client can send the whole config object back unchanged. Any other value is a 400 — see `autoSpread.writable`."
+          },
+          "refreshIntervalSec": {
+            "type": "number",
+            "minimum": 1,
+            "maximum": 300
+          }
+        }
       },
       "ReportStatsDto": {
         "type": "object",
