@@ -1,25 +1,120 @@
+/*
+ * The ui-parszargar design language.
+ *
+ * The `--gx-*` tokens are that project's palette, taken verbatim so the two
+ * surfaces stay recognisably one product. The panel's own names (`--bg`,
+ * `--gold`, …) are then defined *in terms of* them, which is what lets ~1,300
+ * lines of existing rules pick up the new theme without being rewritten — and
+ * what makes the light theme work at all, since those rules reference tokens
+ * rather than literals.
+ *
+ * Dark is the default on bare `:root`; `.theme-light` on <html> overrides it.
+ */
+@font-face {
+  font-family: "IRANSans";
+  src: url("/font/IRANSansWeb.ttf") format("truetype");
+  font-display: swap;
+}
+
+:root,
+:root.theme-dark {
+  --gx-bg: #0a0e1a;
+  --gx-bg2: #0d1426;
+  --gx-surface: #111a30;
+  --gx-surface2: #16213b;
+  --gx-surface3: #1d2b48;
+  --gx-border: rgba(212, 175, 55, 0.14);
+  --gx-border-soft: rgba(255, 255, 255, 0.06);
+  --gx-text: #eaedf5;
+  --gx-dim: #8a93ab;
+  --gx-faint: #5a6b8a;
+  --gx-gold: #d4af37;
+  --gx-gold-b: #ebcb6e;
+  --gx-glass: rgba(17, 26, 48, 0.72);
+  --gx-grid: rgba(255, 255, 255, 0.05);
+  --gx-gold-alpha-0d: rgba(212, 175, 55, 0.05);
+  --gx-gold-alpha-14: rgba(212, 175, 55, 0.08);
+  --gx-gold-alpha-1a: rgba(212, 175, 55, 0.1);
+  --gx-gold-alpha-1f: rgba(212, 175, 55, 0.12);
+  --gx-gold-alpha-22: rgba(212, 175, 55, 0.13);
+  --gx-gold-alpha-26: rgba(212, 175, 55, 0.15);
+  --gx-gold-alpha-33: rgba(212, 175, 55, 0.2);
+  --gx-gold-alpha-44: rgba(212, 175, 55, 0.27);
+  --gx-gold-grad: linear-gradient(
+    135deg, #9a7b2c 0%, #d4af37 32%, #f5e6b8 50%, #d4af37 68%, #9a7b2c 100%
+  );
+  --gx-ticker-bg: linear-gradient(90deg, #070b16, #0d1426);
+  --gx-shadow: 0 8px 28px rgba(0, 0, 0, 0.35);
+}
+
+:root.theme-light {
+  --gx-bg: #eef1f7;
+  --gx-bg2: #e6eaf2;
+  --gx-surface: #ffffff;
+  --gx-surface2: #f4f6fb;
+  --gx-surface3: #e9edf6;
+  --gx-border: rgba(154, 123, 44, 0.28);
+  --gx-border-soft: rgba(20, 30, 55, 0.08);
+  --gx-text: #0e1730;
+  --gx-dim: #5a6b86;
+  --gx-faint: #9aa3b8;
+  --gx-gold: #9a7b2c;
+  --gx-gold-b: #b8941f;
+  --gx-glass: rgba(255, 255, 255, 0.8);
+  --gx-grid: rgba(20, 30, 55, 0.07);
+  --gx-gold-alpha-0d: rgba(154, 123, 44, 0.05);
+  --gx-gold-alpha-14: rgba(154, 123, 44, 0.08);
+  --gx-gold-alpha-1a: rgba(154, 123, 44, 0.1);
+  --gx-gold-alpha-1f: rgba(154, 123, 44, 0.12);
+  --gx-gold-alpha-22: rgba(154, 123, 44, 0.13);
+  --gx-gold-alpha-26: rgba(154, 123, 44, 0.15);
+  --gx-gold-alpha-33: rgba(154, 123, 44, 0.2);
+  --gx-gold-alpha-44: rgba(154, 123, 44, 0.27);
+  --gx-gold-grad: linear-gradient(
+    135deg, #9a7b2c 0%, #d4af37 32%, #f5e6b8 50%, #d4af37 68%, #9a7b2c 100%
+  );
+  --gx-ticker-bg: linear-gradient(90deg, #e6eaf2, #f4f6fb);
+  --gx-shadow: 0 8px 28px rgba(20, 30, 55, 0.12);
+}
+
 :root {
-  --bg: #0e1117;
-  --bg-elev: #161b22;
-  --bg-elev-2: #1c2230;
-  --surface: #1a2030;
-  --border: #262d3d;
-  --border-soft: #20262f;
-  --text: #e6e9ef;
-  --text-dim: #9aa4b2;
-  --text-faint: #6b7585;
-  --gold: #d4af37;
-  --gold-soft: #e8c766;
-  --gold-dim: rgba(212, 175, 55, 0.14);
-  --green: #2ea861;
-  --green-soft: rgba(46, 168, 97, 0.16);
-  --red: #e5544b;
-  --red-soft: rgba(229, 84, 75, 0.16);
-  --blue: #4c8dff;
+  /* The panel's vocabulary, expressed in the palette above. */
+  --bg: var(--gx-bg);
+  --bg-elev: var(--gx-surface);
+  --bg-elev-2: var(--gx-surface2);
+  --bg-soft: var(--gx-surface3);
+  --surface: var(--gx-surface);
+  --border: var(--gx-border);
+  --border-soft: var(--gx-border-soft);
+  --text: var(--gx-text);
+  --text-dim: var(--gx-dim);
+  --text-faint: var(--gx-faint);
+  --gold: var(--gx-gold);
+  --gold-soft: var(--gx-gold-b);
+  --gold-dim: var(--gx-gold-alpha-26);
+  --gold-grad: var(--gx-gold-grad);
+
+  /* Status colours from the reference's badge set. */
+  --green: #3fb985;
+  --green-soft: rgba(63, 185, 133, 0.13);
+  --red: #e0625a;
+  --red-soft: rgba(224, 98, 90, 0.13);
+  --amber: #e0a53c;
+  --amber-soft: rgba(224, 165, 60, 0.13);
+  --blue: #5ba3d0;
+  --blue-soft: rgba(91, 163, 208, 0.13);
+
   --radius: 12px;
   --radius-sm: 8px;
-  --shadow: 0 8px 28px rgba(0, 0, 0, 0.35);
-  --font: "Vazirmatn", "Segoe UI", Tahoma, system-ui, sans-serif;
+  --shadow: var(--gx-shadow);
+  --font: "IRANSans", "Vazirmatn", "Segoe UI", Tahoma, system-ui, sans-serif;
+
+  /* Tells the browser which form controls and scrollbars to draw. */
+  color-scheme: dark;
+}
+
+:root.theme-light {
+  color-scheme: light;
 }
 
 * {
@@ -85,7 +180,7 @@ select {
 }
 
 .sidebar {
-  background: linear-gradient(180deg, #11151c, #0c0f14);
+  background: linear-gradient(180deg, var(--gx-surface), var(--gx-bg2));
   border-left: 1px solid var(--border);
   display: flex;
   flex-direction: column;
@@ -227,7 +322,7 @@ select {
   position: sticky;
   top: 0;
   z-index: 10;
-  background: rgba(14, 17, 23, 0.85);
+  background: var(--gx-glass);
   backdrop-filter: blur(8px);
   border-bottom: 1px solid var(--border);
   padding: 16px 28px;
@@ -367,11 +462,11 @@ tbody tr:hover {
 }
 .badge.green {
   background: var(--green-soft);
-  color: #5fd394;
+  color: var(--green);
 }
 .badge.red {
   background: var(--red-soft);
-  color: #f0857d;
+  color: var(--red);
 }
 .badge.gold {
   background: var(--gold-dim);
@@ -386,7 +481,7 @@ tbody tr:hover {
    FinanceLogsPage already asked for this kind; until now it rendered unstyled. */
 .badge.blue {
   background: rgba(76, 141, 255, 0.15);
-  color: #7aa9ff;
+  color: var(--blue);
 }
 
 /* ---------- Buttons ---------- */
@@ -404,7 +499,7 @@ tbody tr:hover {
   transition: all 0.15s;
 }
 .btn:hover {
-  border-color: #38415480;
+  border-color: var(--border);
   background: #222a38;
 }
 .btn.primary {
@@ -420,7 +515,7 @@ tbody tr:hover {
 }
 .btn.danger {
   background: var(--red-soft);
-  color: #f0857d;
+  color: var(--red);
   border-color: transparent;
 }
 .btn.sm {
@@ -507,7 +602,7 @@ tbody tr:hover {
   color: var(--text-dim);
 }
 .error-text {
-  color: #f0857d;
+  color: var(--red);
   font-size: 13px;
   margin-top: 8px;
   min-height: 18px;
@@ -515,7 +610,7 @@ tbody tr:hover {
 
 /* The success counterpart to .error-text. */
 .ok-text {
-  color: #5bd08a;
+  color: var(--green);
   font-size: 13px;
   margin-top: 8px;
   min-height: 18px;
@@ -598,7 +693,7 @@ tbody tr:hover {
 }
 .form-err {
   background: rgba(240, 133, 125, 0.15);
-  color: #f0857d;
+  color: var(--red);
   padding: 10px 14px;
   border-radius: 6px;
   font-size: 13px;
@@ -729,7 +824,7 @@ tbody tr:hover {
   transition: background 0.15s;
 }
 .opp-row:last-child { border-bottom: none; }
-.opp-row:hover { background: rgba(255,255,255,0.02); margin: 0 -8px; padding: 10px 8px; border-radius: 6px; }
+.opp-row:hover { background: var(--gx-grid); margin: 0 -8px; padding: 10px 8px; border-radius: 6px; }
 
 .opp-row-top {
   display: flex;
@@ -1030,7 +1125,7 @@ tbody tr:hover {
   border: 1px solid var(--border);
   background: var(--bg-elev-2);
   color: var(--text);
-  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.45);
+  box-shadow: var(--shadow);
   animation: fadeUp 0.3s ease both;
 }
 
@@ -1056,7 +1151,7 @@ tbody tr:hover {
   height: 38px;
   display: flex;
   align-items: center;
-  background: linear-gradient(90deg, #0b0e14, #11151c);
+  background: var(--gx-ticker-bg);
   border-bottom: 1px solid var(--border);
   font-size: 12.5px;
   overflow: hidden;
@@ -1278,7 +1373,7 @@ tbody tr:hover {
   flex: 0 0 auto;
   border-radius: 999px;
   border: 1px solid var(--border);
-  background: var(--bg-soft, rgba(255, 255, 255, 0.06));
+  background: var(--bg-soft);
   cursor: pointer;
   transition: background 0.15s ease, border-color 0.15s ease;
 }

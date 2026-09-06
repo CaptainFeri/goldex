@@ -134,7 +134,7 @@ function OverviewTab({ range }: { range: Range }) {
                 responsive: true,
                 maintainAspectRatio: false,
                 interaction: { mode: "index", intersect: false },
-                scales: { x: { grid: { color: gridColor } }, y: { grid: { color: gridColor } } },
+                scales: { x: { grid: { color: gridColor() } }, y: { grid: { color: gridColor() } } },
                 plugins: { legend: { position: "bottom" } },
               }}
             />

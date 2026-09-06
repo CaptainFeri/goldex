@@ -234,7 +234,7 @@ function TxModal({ walletId, onClose }: { walletId: string; onClose: () => void 
                     options={{
                       responsive: true,
                       maintainAspectRatio: false,
-                      scales: { x: { type: "time", grid: { color: gridColor } }, y: { grid: { color: gridColor } } },
+                      scales: { x: { type: "time", grid: { color: gridColor() } }, y: { grid: { color: gridColor() } } },
                       plugins: { legend: { position: "bottom" } },
                     }}
                   />
