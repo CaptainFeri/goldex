@@ -11,6 +11,8 @@ interface Provider {
   apiBaseUrl?: string;
   persianName?: string;
   phone?: string;
+  /** Unit the provider quotes in; the engine converts everything to Rial. */
+  priceUnit?: "IRR" | "TOMAN";
   active: boolean;
   status: string;
   lastStatusChangeAt?: string;
@@ -37,6 +39,11 @@ const STATUS_LABEL: Record<string, string> = {
   error: "خطا",
 };
 
+const PRICE_UNIT_LABEL: Record<string, string> = {
+  IRR: "ریال",
+  TOMAN: "تومان",
+};
+
 const emptyForm = {
   key: "",
   category: "zaryar",
@@ -44,6 +51,7 @@ const emptyForm = {
   apiBaseUrl: "",
   persianName: "",
   phone: "",
+  priceUnit: "TOMAN",
   sendOtpUrl: "",
   verifyCodeUrl: "",
 };
@@ -64,6 +72,7 @@ function ProviderForm({
     apiBaseUrl: initial.apiBaseUrl ?? "",
     persianName: initial.persianName ?? "",
     phone: initial.phone ?? "",
+    priceUnit: initial.priceUnit ?? "TOMAN",
     sendOtpUrl: "",
     verifyCodeUrl: "",
   } : emptyForm);
@@ -89,6 +98,7 @@ function ProviderForm({
       apiBaseUrl: form.apiBaseUrl.trim() || undefined,
       persianName: form.persianName.trim() || undefined,
       phone: form.phone.trim(),
+      priceUnit: form.priceUnit,
       sendOtpUrl: form.sendOtpUrl.trim() || undefined,
       verifyCodeUrl: form.verifyCodeUrl.trim() || undefined,
     });
@@ -125,6 +135,21 @@ function ProviderForm({
         <div className="field">
           <label>تلفن (برای OTP)</label>
           <input className="input mono" dir="ltr" value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} />
+        </div>
+        <div className="field">
+          <label>واحد قیمت اعلامی</label>
+          <select
+            className="select"
+            value={form.priceUnit}
+            onChange={(e) => setForm({ ...form, priceUnit: e.target.value })}
+            required
+          >
+            <option value="TOMAN">تومان</option>
+            <option value="IRR">ریال</option>
+          </select>
+          <div className="muted" style={{ fontSize: 12, marginTop: 4 }}>
+            واحدی که این تأمین‌کننده قیمت‌ها را با آن اعلام می‌کند. قیمت‌های تومانی هنگام دریافت در ۱۰ ضرب و به ریال تبدیل می‌شوند؛ کل حسابداری سامانه بر مبنای ریال است.
+          </div>
         </div>
         {save.isError && <div className="error-text">{apiError(save.error)}</div>}
         <div className="row" style={{ justifyContent: "flex-end", gap: 10 }}>
@@ -249,6 +274,7 @@ export default function ProvidersPage() {
                   <th>نام</th>
                   <th>کلید</th>
                   <th>دسته</th>
+                  <th>واحد قیمت</th>
                   <th>تلفن</th>
                   <th>وضعیت</th>
                   <th>فعال</th>
@@ -261,6 +287,11 @@ export default function ProvidersPage() {
                     <td>{p.persianName || "—"}</td>
                     <td className="mono">{p.key}</td>
                     <td>{p.category}</td>
+                    <td>
+                      <Badge kind={p.priceUnit === "IRR" ? "green" : "gold"}>
+                        {PRICE_UNIT_LABEL[p.priceUnit ?? "TOMAN"]}
+                      </Badge>
+                    </td>
                     <td className="mono" dir="ltr">{p.phone || "—"}</td>
                     <td>
                       <Badge kind={STATUS_KIND[p.status] ?? "gray"}>

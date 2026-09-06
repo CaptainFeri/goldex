@@ -44,7 +44,7 @@ export class AdminArbitrageService {
     // Keep the latest scan's opportunities visible even if an individual quote
     // deadline has already passed; otherwise the page collapses to 0 between
     // scans. The panel renders the deadline so a stale row is still obvious.
-    return [...signals].sort((a, b) => (b.profitToman ?? 0) - (a.profitToman ?? 0));
+    return [...signals].sort((a, b) => (b.profitRial ?? 0) - (a.profitRial ?? 0));
   }
 
   async getAlerts(): Promise<ArbitrageSignal[]> {
@@ -63,7 +63,7 @@ export class AdminArbitrageService {
       trigger: snapshot.trigger,
       totalProviders: snapshot.totalProviders,
       totalItems: snapshot.totalItems,
-      bestProfitToman: snapshot.bestProfitToman,
+      bestProfitRial: snapshot.bestProfitRial,
       opportunityCount: snapshot.opportunityCount,
     };
   }
@@ -116,9 +116,9 @@ export class AdminArbitrageService {
       opportunityCount: meta?.opportunityCount ?? signals.length,
       totalProviders: meta?.totalProviders ?? 0,
       totalItems: meta?.totalItems ?? 0,
-      bestProfitToman:
-        meta?.bestProfitToman ??
-        signals.reduce((max, s) => Math.max(max, s.profitToman ?? 0), 0),
+      bestProfitRial:
+        meta?.bestProfitRial ??
+        signals.reduce((max, s) => Math.max(max, s.profitRial ?? 0), 0),
       engineRedisReachable,
       message,
     };
@@ -180,7 +180,7 @@ export class AdminArbitrageService {
           trigger: snapshot.trigger,
           totalProviders: snapshot.totalProviders,
           totalItems: snapshot.totalItems,
-          bestProfitToman: snapshot.bestProfitToman,
+          bestProfitRial: snapshot.bestProfitRial,
           opportunityCount: snapshot.opportunityCount ?? snapshot.signals.length,
           source: 'pricing-redis',
         },
@@ -213,7 +213,7 @@ export class AdminArbitrageService {
           trigger: snapshot.trigger,
           totalProviders: snapshot.totalProviders,
           totalItems: snapshot.totalItems,
-          bestProfitToman: snapshot.bestProfitToman,
+          bestProfitRial: snapshot.bestProfitRial,
           opportunityCount: snapshot.opportunityCount ?? snapshot.signals.length,
           source: 'pricing-redis',
         },

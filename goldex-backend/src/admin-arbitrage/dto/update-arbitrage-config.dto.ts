@@ -11,8 +11,8 @@ export class UpdateArbitrageConfigDto {
   @IsOptional()
   @IsNumber()
   @Min(0)
-  @ApiProperty({ required: false, description: 'Minimum absolute profit (toman) for a signal' })
-  minProfitToman?: number;
+  @ApiProperty({ required: false, description: 'Minimum absolute profit (rial) for a signal' })
+  minProfitRial?: number;
 
   @IsOptional()
   @IsNumber()

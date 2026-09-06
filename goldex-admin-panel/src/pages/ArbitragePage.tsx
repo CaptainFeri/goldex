@@ -1,8 +1,25 @@
 import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, unwrap, apiError } from "../api/client";
-import { Card, Loading, ErrorState, Empty, Badge, Stat, Modal } from "../components/ui";
-import { fmtNum, fmtDuration, fmtTime, colorFor, fmtIrrFromToman, irrToToman, IRR_PER_TOMAN } from "../lib/format";
+import {
+  Card,
+  Loading,
+  ErrorState,
+  Empty,
+  Badge,
+  Stat,
+  Modal,
+} from "../components/ui";
+import {
+  fmtNum,
+  fmtDuration,
+  fmtTime,
+  colorFor,
+  fmtIrrFromToman,
+  irrToToman,
+  IRR_PER_TOMAN,
+} from "../lib/format";
+import ArbitrageBotsPanel from "./arbitrage/ArbitrageBotsPanel";
 import type {
   ArbitrageSignal,
   ArbitrageStatus,
@@ -12,13 +29,14 @@ import type {
 
 const REFRESH_MS = 5000;
 
-type Tab = "live" | "alerts" | "history";
-type SortKey = "profitToman" | "profitPercent" | "itemName" | "deadline";
+type Tab = "live" | "alerts" | "history" | "bots";
+type SortKey = "profitRial" | "profitPercent" | "itemName" | "deadline";
 
 const TABS: { key: Tab; label: string }[] = [
   { key: "live", label: "فرصت‌های فعال" },
   { key: "alerts", label: "هشدارهای جدید" },
   { key: "history", label: "تاریخچه" },
+  { key: "bots", label: "ربات‌ها" },
 ];
 
 const toArray = <T,>(x: unknown): T[] => (Array.isArray(x) ? (x as T[]) : []);
@@ -27,11 +45,17 @@ const toArray = <T,>(x: unknown): T[] => (Array.isArray(x) ? (x as T[]) : []);
 function deadlineState(deadline: string | undefined, now: number) {
   if (!deadline) return { kind: "gray" as const, label: "—", expired: false };
   const ms = new Date(deadline).getTime() - now;
-  if (Number.isNaN(ms)) return { kind: "gray" as const, label: "—", expired: false };
+  if (Number.isNaN(ms))
+    return { kind: "gray" as const, label: "—", expired: false };
   if (ms <= 0) return { kind: "gray" as const, label: "منقضی", expired: true };
   const s = Math.floor(ms / 1000);
   return {
-    kind: ms < 30_000 ? ("red" as const) : ms < 120_000 ? ("gold" as const) : ("green" as const),
+    kind:
+      ms < 30_000
+        ? ("red" as const)
+        : ms < 120_000
+          ? ("gold" as const)
+          : ("green" as const),
     label: `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`,
     expired: false,
   };
@@ -42,7 +66,11 @@ function SourceBanner({ status }: { status?: ArbitrageStatus }) {
   if (!status) return null;
 
   const tone =
-    status.source === "none" ? "red" : status.source === "pricing-redis" || status.stale ? "gold" : "green";
+    status.source === "none"
+      ? "red"
+      : status.source === "pricing-redis" || status.stale
+        ? "gold"
+        : "green";
   const sourceLabel =
     status.source === "bus"
       ? "جریان زنده (RabbitMQ)"
@@ -75,15 +103,22 @@ function SourceBanner({ status }: { status?: ArbitrageStatus }) {
     >
       <div className="row" style={{ gap: 10, flexWrap: "wrap" }}>
         <Badge kind={tone}>{sourceLabel}</Badge>
-        {explain && <span className="muted" style={{ fontSize: 12 }}>{explain}</span>}
+        {explain && (
+          <span className="muted" style={{ fontSize: 12 }}>
+            {explain}
+          </span>
+        )}
       </div>
       <div className="row" style={{ gap: 14, fontSize: 12 }}>
         <span className="muted">
           آخرین اسکن:{" "}
-          <span className="mono">{status.scannedAt ? fmtTime(status.scannedAt) : "—"}</span>
+          <span className="mono">
+            {status.scannedAt ? fmtTime(status.scannedAt) : "—"}
+          </span>
         </span>
         <span className="muted">
-          سن داده: <span className="mono">{fmtDuration(status.ageSeconds)}</span>
+          سن داده:{" "}
+          <span className="mono">{fmtDuration(status.ageSeconds)}</span>
         </span>
         <span className="muted">
           موتور:{" "}
@@ -98,28 +133,34 @@ function SourceBanner({ status }: { status?: ArbitrageStatus }) {
   );
 }
 
-/**
- * `irrFromToman` marks a field the engine keeps in toman but the panel shows
- * in rial — converted when the form is filled and again when it is submitted.
- */
 const CONFIG_FIELDS: {
   key: keyof ArbitrageConfig;
   label: string;
   hint: string;
-  irrFromToman?: boolean;
 }[] = [
   {
-    key: "minProfitToman",
+    key: "minProfitRial",
     label: "حداقل سود (ریال)",
     hint: "سیگنال با سود کمتر منتشر نمی‌شود",
-    irrFromToman: true,
   },
   { key: "minProfitPercent", label: "حداقل سود (٪)", hint: "۰ تا ۱۰۰" },
   { key: "maxSignals", label: "حداکثر تعداد سیگنال", hint: "۱ تا ۱۰۰۰" },
-  { key: "quoteFreshnessMs", label: "اعتبار قیمت (ms)", hint: "قیمت قدیمی‌تر نادیده گرفته می‌شود" },
+  {
+    key: "quoteFreshnessMs",
+    label: "اعتبار قیمت (ms)",
+    hint: "قیمت قدیمی‌تر نادیده گرفته می‌شود",
+  },
   { key: "signalTtlMs", label: "عمر سیگنال (ms)", hint: "مهلت اجرای فرصت" },
-  { key: "scanIntervalMs", label: "فاصله اسکن دوره‌ای (ms)", hint: "۱۰۰۰ تا ۶۰۰۰۰۰" },
-  { key: "recomputeDebounceMs", label: "تجمیع محاسبه مجدد (ms)", hint: "پنجره ادغام تیک‌های قیمت" },
+  {
+    key: "scanIntervalMs",
+    label: "فاصله اسکن دوره‌ای (ms)",
+    hint: "۱۰۰۰ تا ۶۰۰۰۰۰",
+  },
+  {
+    key: "recomputeDebounceMs",
+    label: "تجمیع محاسبه مجدد (ms)",
+    hint: "پنجره ادغام تیک‌های قیمت",
+  },
 ];
 
 function ConfigModal({ onClose }: { onClose: () => void }) {
@@ -127,7 +168,9 @@ function ConfigModal({ onClose }: { onClose: () => void }) {
   const q = useQuery({
     queryKey: ["arbitrage-config"],
     queryFn: async () =>
-      unwrap<ArbitrageConfigResponse>((await api.get("/admin/arbitrage/config")).data),
+      unwrap<ArbitrageConfigResponse>(
+        (await api.get("/admin/arbitrage/config")).data,
+      ),
   });
 
   const [draft, setDraft] = useState<Record<string, string>>({});
@@ -148,10 +191,14 @@ function ConfigModal({ onClose }: { onClose: () => void }) {
   }, [config]);
 
   const save = useMutation({
-    mutationFn: (body: Partial<ArbitrageConfig>) => api.patch("/admin/arbitrage/config", body),
+    mutationFn: (body: Partial<ArbitrageConfig>) =>
+      api.patch("/admin/arbitrage/config", body),
     onSuccess: () => {
       // The engine echoes the values it applied; re-read rather than assume.
-      setTimeout(() => qc.invalidateQueries({ queryKey: ["arbitrage-config"] }), 800);
+      setTimeout(
+        () => qc.invalidateQueries({ queryKey: ["arbitrage-config"] }),
+        800,
+      );
     },
   });
 
@@ -177,18 +224,21 @@ function ConfigModal({ onClose }: { onClose: () => void }) {
       ) : (
         <form onSubmit={submit}>
           <div className="muted" style={{ fontSize: 12, marginBottom: 14 }}>
-            این مقادیر روی موتور قیمت اعمال می‌شوند. پس از ذخیره، موتور مقادیر واقعیِ اعمال‌شده را
-            بازمی‌گرداند — اگر عددی خارج از محدوده مجاز باشد نادیده گرفته می‌شود.
+            این مقادیر روی موتور قیمت اعمال می‌شوند. پس از ذخیره، موتور مقادیر
+            واقعیِ اعمال‌شده را بازمی‌گرداند — اگر عددی خارج از محدوده مجاز باشد
+            نادیده گرفته می‌شود.
             {q.data?.reportedAt && (
               <>
                 {" "}
-                آخرین گزارش موتور: <span className="mono">{fmtTime(q.data.reportedAt)}</span>
+                آخرین گزارش موتور:{" "}
+                <span className="mono">{fmtTime(q.data.reportedAt)}</span>
               </>
             )}
           </div>
           {!config && (
             <div className="muted" style={{ fontSize: 12, marginBottom: 12 }}>
-              موتور هنوز تنظیماتش را گزارش نکرده است. مقادیر را وارد کنید تا ارسال شود.
+              موتور هنوز تنظیماتش را گزارش نکرده است. مقادیر را وارد کنید تا
+              ارسال شود.
             </div>
           )}
           <div className="grid grid-2">
@@ -200,18 +250,31 @@ function ConfigModal({ onClose }: { onClose: () => void }) {
                   dir="ltr"
                   inputMode="numeric"
                   value={draft[f.key] ?? ""}
-                  onChange={(e) => setDraft((d) => ({ ...d, [f.key]: e.target.value }))}
+                  onChange={(e) =>
+                    setDraft((d) => ({ ...d, [f.key]: e.target.value }))
+                  }
                 />
-                <span className="muted" style={{ fontSize: 11 }}>{f.hint}</span>
+                <span className="muted" style={{ fontSize: 11 }}>
+                  {f.hint}
+                </span>
               </div>
             ))}
           </div>
-          {save.isError && <div className="error-text">{apiError(save.error)}</div>}
-          {save.isSuccess && !save.isPending && (
-            <div className="muted" style={{ fontSize: 12 }}>ارسال شد — در انتظار تأیید موتور…</div>
+          {save.isError && (
+            <div className="error-text">{apiError(save.error)}</div>
           )}
-          <div className="row" style={{ justifyContent: "flex-end", gap: 10, marginTop: 12 }}>
-            <button type="button" className="btn ghost" onClick={onClose}>بستن</button>
+          {save.isSuccess && !save.isPending && (
+            <div className="muted" style={{ fontSize: 12 }}>
+              ارسال شد — در انتظار تأیید موتور…
+            </div>
+          )}
+          <div
+            className="row"
+            style={{ justifyContent: "flex-end", gap: 10, marginTop: 12 }}
+          >
+            <button type="button" className="btn ghost" onClick={onClose}>
+              بستن
+            </button>
             <button className="btn primary" disabled={save.isPending}>
               {save.isPending ? <span className="spin" /> : "اعمال روی موتور"}
             </button>
@@ -253,7 +316,10 @@ function SignalTable({
           {signals.map((s) => {
             const ds = deadlineState(s.deadline, now);
             return (
-              <tr key={s.id ?? s.key} style={ds.expired ? { opacity: 0.55 } : undefined}>
+              <tr
+                key={s.id ?? s.key}
+                style={ds.expired ? { opacity: 0.55 } : undefined}
+              >
                 <td>
                   <b>{s.itemName}</b>
                   <div className="muted" style={{ fontSize: 11 }}>
@@ -263,7 +329,10 @@ function SignalTable({
                 <td>
                   <span
                     className="mono"
-                    style={{ color: colorFor(s.buyLeg?.providerKey ?? ""), fontWeight: 600 }}
+                    style={{
+                      color: colorFor(s.buyLeg?.providerKey ?? ""),
+                      fontWeight: 600,
+                    }}
                   >
                     {s.buyLeg?.providerKey ?? "—"}
                   </span>
@@ -274,7 +343,10 @@ function SignalTable({
                 <td>
                   <span
                     className="mono"
-                    style={{ color: colorFor(s.sellLeg?.providerKey ?? ""), fontWeight: 600 }}
+                    style={{
+                      color: colorFor(s.sellLeg?.providerKey ?? ""),
+                      fontWeight: 600,
+                    }}
                   >
                     {s.sellLeg?.providerKey ?? "—"}
                   </span>
@@ -282,8 +354,11 @@ function SignalTable({
                     {fmtIrrFromToman(s.sellLeg?.price)} ریال
                   </div>
                 </td>
-                <td className="mono" style={{ color: "var(--green)", fontWeight: 600 }}>
-                  +{fmtIrrFromToman(s.profitToman)}
+                <td
+                  className="mono"
+                  style={{ color: "var(--green)", fontWeight: 600 }}
+                >
+                  +{fmtNum(s.profitRial)}
                 </td>
                 <td className="mono" style={{ color: "var(--gold-soft)" }}>
                   {fmtNum(s.profitPercent, 2)}٪
@@ -291,7 +366,9 @@ function SignalTable({
                 <td className="mono muted">{fmtNum(s.profitGold, 4)}</td>
                 <td>
                   {showDetected ? (
-                    <span className="mono muted">{s.detectedAt ? fmtTime(s.detectedAt) : "—"}</span>
+                    <span className="mono muted">
+                      {s.detectedAt ? fmtTime(s.detectedAt) : "—"}
+                    </span>
                   ) : (
                     <Badge kind={ds.kind}>{ds.label}</Badge>
                   )}
@@ -313,7 +390,7 @@ export default function ArbitragePage() {
   const [minProfit, setMinProfit] = useState("");
   const [provider, setProvider] = useState("");
   const [search, setSearch] = useState("");
-  const [sortKey, setSortKey] = useState<SortKey>("profitToman");
+  const [sortKey, setSortKey] = useState<SortKey>("profitRial");
   const [now, setNow] = useState(() => Date.now());
 
   // Deadlines are relative, so the countdown column has to tick on its own —
@@ -328,23 +405,31 @@ export default function ArbitragePage() {
   const opp = useQuery({
     queryKey: ["arbitrage-opportunities"],
     queryFn: async () =>
-      unwrap<ArbitrageSignal[]>((await api.get("/admin/arbitrage/opportunities")).data),
+      unwrap<ArbitrageSignal[]>(
+        (await api.get("/admin/arbitrage/opportunities")).data,
+      ),
     refetchInterval,
   });
   const alerts = useQuery({
     queryKey: ["arbitrage-alerts"],
-    queryFn: async () => unwrap<ArbitrageSignal[]>((await api.get("/admin/arbitrage/alerts")).data),
+    queryFn: async () =>
+      unwrap<ArbitrageSignal[]>(
+        (await api.get("/admin/arbitrage/alerts")).data,
+      ),
     refetchInterval,
   });
   const status = useQuery({
     queryKey: ["arbitrage-status"],
-    queryFn: async () => unwrap<ArbitrageStatus>((await api.get("/admin/arbitrage/status")).data),
+    queryFn: async () =>
+      unwrap<ArbitrageStatus>((await api.get("/admin/arbitrage/status")).data),
     refetchInterval,
   });
   const history = useQuery({
     queryKey: ["arbitrage-history"],
     queryFn: async () =>
-      unwrap<ArbitrageSignal[]>((await api.get("/admin/arbitrage/history?limit=100")).data),
+      unwrap<ArbitrageSignal[]>(
+        (await api.get("/admin/arbitrage/history?limit=100")).data,
+      ),
     enabled: tab === "history",
     refetchInterval: tab === "history" ? refetchInterval : undefined,
   });
@@ -378,10 +463,15 @@ export default function ArbitragePage() {
     const minToman = irrToToman(minProfit) ?? 0;
     const term = search.trim().toLowerCase();
     const filtered = opps.filter((s) => {
-      if ((s.profitToman ?? 0) < minToman) return false;
-      if (provider && s.buyLeg?.providerKey !== provider && s.sellLeg?.providerKey !== provider)
+      if ((s.profitRial ?? 0) < min) return false;
+      if (
+        provider &&
+        s.buyLeg?.providerKey !== provider &&
+        s.sellLeg?.providerKey !== provider
+      )
         return false;
-      if (term && !(s.itemName ?? "").toLowerCase().includes(term)) return false;
+      if (term && !(s.itemName ?? "").toLowerCase().includes(term))
+        return false;
       return true;
     });
     return filtered.sort((a, b) => {
@@ -391,16 +481,21 @@ export default function ArbitragePage() {
         case "itemName":
           return (a.itemName ?? "").localeCompare(b.itemName ?? "");
         case "deadline":
-          return new Date(a.deadline ?? 0).getTime() - new Date(b.deadline ?? 0).getTime();
+          return (
+            new Date(a.deadline ?? 0).getTime() -
+            new Date(b.deadline ?? 0).getTime()
+          );
         default:
-          return (b.profitToman ?? 0) - (a.profitToman ?? 0);
+          return (b.profitRial ?? 0) - (a.profitRial ?? 0);
       }
     });
   }, [opps, minProfit, provider, search, sortKey]);
 
   const st = status.data;
-  const best = opps.reduce((m, s) => Math.max(m, s.profitToman ?? 0), 0);
-  const live = opps.filter((s) => !deadlineState(s.deadline, now).expired).length;
+  const best = opps.reduce((m, s) => Math.max(m, s.profitRial ?? 0), 0);
+  const live = opps.filter(
+    (s) => !deadlineState(s.deadline, now).expired,
+  ).length;
 
   const loading = opp.isLoading || status.isLoading;
   const error = opp.error || status.error;
@@ -413,9 +508,11 @@ export default function ArbitragePage() {
         <Stat
           label="فرصت فعال"
           value={live}
-          sub={opps.length !== live ? `${opps.length} کل (شامل منقضی)` : undefined}
+          sub={
+            opps.length !== live ? `${opps.length} کل (شامل منقضی)` : undefined
+          }
         />
-        <Stat label="بهترین سود (ریال)" value={fmtIrrFromToman(best)} />
+        <Stat label="بهترین سود (ریال)" value={fmtNum(best)} />
         <Stat label="هشدارهای جدید" value={alertList.length} />
         <Stat
           label="پوشش اسکن"
@@ -443,11 +540,15 @@ export default function ArbitragePage() {
             >
               {scanNow.isPending ? <span className="spin" /> : "اسکن فوری"}
             </button>
-            <button className="btn sm" onClick={() => setConfigOpen(true)}>تنظیمات موتور</button>
+            <button className="btn sm" onClick={() => setConfigOpen(true)}>
+              تنظیمات موتور
+            </button>
           </div>
         }
       >
-        {scanNow.isError && <div className="error-text">{apiError(scanNow.error)}</div>}
+        {scanNow.isError && (
+          <div className="error-text">{apiError(scanNow.error)}</div>
+        )}
 
         <div className="toolbar" style={{ marginBottom: 14 }}>
           {TABS.map((t) => (
@@ -490,7 +591,9 @@ export default function ArbitragePage() {
             >
               <option value="">همه تأمین‌کنندگان</option>
               {providers.map((p) => (
-                <option key={p} value={p}>{p}</option>
+                <option key={p} value={p}>
+                  {p}
+                </option>
               ))}
             </select>
             <select
@@ -499,7 +602,7 @@ export default function ArbitragePage() {
               value={sortKey}
               onChange={(e) => setSortKey(e.target.value as SortKey)}
             >
-              <option value="profitToman">مرتب‌سازی: سود ریالی</option>
+              <option value="profitRial">مرتب‌سازی: سود ریالی</option>
               <option value="profitPercent">مرتب‌سازی: سود درصدی</option>
               <option value="deadline">مرتب‌سازی: نزدیک‌ترین مهلت</option>
               <option value="itemName">مرتب‌سازی: نام قلم</option>
@@ -512,7 +615,9 @@ export default function ArbitragePage() {
           </div>
         )}
 
-        {loading ? (
+        {tab === "bots" ? (
+          <ArbitrageBotsPanel />
+        ) : loading ? (
           <Loading label="در حال دریافت فرصت‌های آربیتراژ…" />
         ) : error ? (
           <ErrorState message={apiError(error)} />

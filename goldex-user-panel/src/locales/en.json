@@ -518,12 +518,19 @@
   },
   "forgotPassword": {
     "title": "Reset Password",
-    "subtitle": "Enter your email and we'll send you a reset link",
-    "sentSuccess": "If an account exists for <1>{{email}}</1>, a password reset link is on its way.",
-    "email": "Email Address",
-    "emailPlaceholder": "you@example.com",
-    "sendResetLink": "Send Reset Link",
-    "sendFailed": "Could not send the reset link. Please try again."
+    "subtitle": "Enter your phone number and we'll text you a verification code",
+    "phone": "Phone Number",
+    "phonePlaceholder": "09123456789",
+    "sendCode": "Send Code",
+    "sendFailed": "Could not send the verification code. Please try again.",
+    "codeSent": "We sent a 5-digit code to <1>{{phone}}</1>.",
+    "code": "Verification Code",
+    "codePlaceholder": "12345",
+    "verifyCode": "Verify Code",
+    "verifyFailed": "The code is not valid or has expired.",
+    "resendCode": "Resend code",
+    "resendIn": "Resend in {{seconds}}s",
+    "changePhone": "Use a different number"
   },
   "resetPassword": {
     "title": "New Password",

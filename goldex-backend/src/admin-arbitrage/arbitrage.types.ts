@@ -18,7 +18,7 @@ export interface ArbitrageSignal {
   buyLeg: ArbitrageLeg;
   sellLeg: ArbitrageLeg;
   legs: ArbitrageLeg[];
-  profitToman: number;
+  profitRial: number;
   profitPercent: number;
   profitGold: number;
   goldPriceRef: number;
@@ -33,7 +33,7 @@ export interface ArbitrageScanResult {
   totalProviders: number;
   totalItems: number;
   opportunityCount: number;
-  bestProfitToman: number;
+  bestProfitRial: number;
 }
 
 /** Flattened metadata of the most recent scan, as cached for the panel. */
@@ -42,13 +42,13 @@ export interface ArbitrageScanMeta {
   trigger?: string;
   totalProviders?: number;
   totalItems?: number;
-  bestProfitToman?: number;
+  bestProfitRial?: number;
   opportunityCount?: number;
   source?: ArbitrageSource;
 }
 
 export interface ArbitrageConfig {
-  minProfitToman: number;
+  minProfitRial: number;
   minProfitPercent: number;
   maxSignals: number;
   quoteFreshnessMs: number;
@@ -74,7 +74,7 @@ export interface ArbitrageStatus {
   opportunityCount: number;
   totalProviders: number;
   totalItems: number;
-  bestProfitToman: number;
+  bestProfitRial: number;
   /** Whether the engine's Redis answered a PING just now. */
   engineRedisReachable: boolean;
   /** Set when nothing is arriving, so the panel can say why. */

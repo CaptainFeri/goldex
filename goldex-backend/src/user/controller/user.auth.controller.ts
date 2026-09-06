@@ -14,6 +14,7 @@ import { UpdateRefreshTokenDto } from "../dto/update.refresh.dto";
 import { UserExpressRequest } from "../auth/types/user-express-request";
 import { VerifyOtpPhoneDto } from "../dto/verify-otp-phone.dto";
 import { LoginWithOtpDto } from "../dto/login-with-otp.dto";
+import { VerifyForgetPasswordOtpDto } from "../dto/verify-forget-password-otp.dto";
 
 @ApiTags("User-Auth")
 @Controller({ path: "auth", version: "1" })
@@ -29,10 +30,20 @@ export class AuthUserController {
     };
   }
 
+  // Step 1 — send the recovery code by SMS to the account's phone number.
   @Post("forget-password")
   async forgetPassword(@Body() data: ForgetPasswordDto) {
     return {
       data: await this.userService.forgetPassword(data),
+    };
+  }
+
+  // Step 2 — trade the SMS code for the short-lived reset token that
+  // `POST /auth/reset-password` accepts as its bearer credential.
+  @Post("forget-password/verify")
+  async verifyForgetPasswordOtp(@Body() data: VerifyForgetPasswordOtpDto) {
+    return {
+      data: await this.userService.verifyForgetPasswordOtp(data.phone, data.otp),
     };
   }
 

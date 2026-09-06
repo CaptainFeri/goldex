@@ -1,5 +1,9 @@
 import { myBaseEntity } from '../../shared/entity/base.entity';
 import { Entity, Column, Index } from 'typeorm';
+import {
+  CurrencyUnit,
+  DEFAULT_PROVIDER_PRICE_UNIT,
+} from '../../shared/currency/currency-unit';
 
 /**
  * Admin-facing mirror of a pricing-engine provider. The pricing-engine owns the
@@ -36,6 +40,14 @@ export class ProviderEntity extends myBaseEntity {
 
   @Column({ type: 'text', nullable: true, name: 'verify_code_url' })
   verifyCodeUrl?: string;
+
+  /**
+   * Unit this provider quotes in. Rial and Toman differ by a factor of ten, so
+   * the engine converts every incoming quote to Rial using this — the books
+   * are Rial-only.
+   */
+  @Column({ type: 'varchar', length: 10, default: DEFAULT_PROVIDER_PRICE_UNIT, name: 'price_unit' })
+  priceUnit: CurrencyUnit;
 
   @Column({ type: 'jsonb', default: {} })
   auth?: Record<string, any>;
