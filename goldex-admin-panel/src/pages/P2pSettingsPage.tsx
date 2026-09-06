@@ -4,7 +4,7 @@ import { apiError } from "../api/client";
 import { p2pApi } from "../api/p2p";
 import { Card, Loading, ErrorState } from "../components/ui";
 import type { P2pSettings } from "../api/types";
-import { rialToToman, tomanToRial } from "../lib/money";
+import { DISPLAY_UNIT, rialToToman, tomanToRial } from "../lib/money";
 
 const WEIGHT_LABELS: Record<keyof P2pSettings["matchingWeights"], string> = {
   amountFit: "تناسب مبلغ",
@@ -151,7 +151,7 @@ export default function P2pSettingsPage() {
 
       <div className="form-grid" style={{ marginTop: 12 }}>
         <div className="field">
-          <label>آستانه تأیید دو نفره (تومان)</label>
+          <label>آستانه تأیید دو نفره ({DISPLAY_UNIT})</label>
           <input className="input" type="number" min="0"
             value={rialToToman(form.twoPersonApprovalThreshold) ?? ""}
             onChange={(e) => set("twoPersonApprovalThreshold", tomanToRial(e.target.value) ?? 0)} />
