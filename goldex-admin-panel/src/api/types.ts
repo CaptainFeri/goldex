@@ -13,7 +13,10 @@ export interface Admin {
   id: string;
   phone: string | null;
   email: string | null;
+  /** Legacy enum, still written by the server for its hierarchy checks. */
   role: AdminRole;
+  /** The role row permissions actually come from. Read this, not `role`. */
+  roleId: string | null;
   isSuspended: boolean;
   lastLoginAt: string | null;
   createAt: string;
@@ -1829,4 +1832,99 @@ export interface EmStats {
   awaitingReceipt: number;
   receiptPaid: number;
   rejected: number;
+}
+
+// ── Price engine ────────────────────────────────────────────────────────────
+
+export interface PriceInstrument {
+  id: string;
+  slug: string;
+  tickerKey: string | null;
+  name: string;
+  category: string | null;
+  /** Chart stroke. Derived from the slug when the desk configured none. */
+  color: string;
+  colorConfigured: boolean;
+  /** In `quoteSlug`'s units — rial, so render through `fmtBySymbol`. */
+  buy: number | null;
+  sell: number | null;
+  buyGram: number | null;
+  sellGram: number | null;
+  quoteSlug: string | null;
+  pairId: string | null;
+  /** Null when the pair has never been reconciled — not the same as closed. */
+  marketOpen: boolean | null;
+  marketStatusReason: string | null;
+  marketOverridden: boolean;
+  lastUpdated: string | null;
+  stale: boolean;
+}
+
+export interface PriceInstrumentGroup {
+  category: string;
+  items: PriceInstrument[];
+}
+
+export interface PriceInstruments {
+  groups: PriceInstrumentGroup[];
+  total: number;
+  quoteSlug: string;
+  generatedAt: string;
+  freshnessWindowSeconds: number;
+}
+
+export interface PriceHistorySeries {
+  symbolId: string;
+  slug: string;
+  name: string;
+  color: string;
+  /** Read the key names off here rather than building `${slug}_buy` by hand. */
+  buyKey: string;
+  sellKey: string;
+  filledPoints: number;
+}
+
+export interface PriceHistoryMissing {
+  slug: string;
+  reason: "unknown-symbol" | "no-pair" | string;
+}
+
+/** `{ i, at, "<slug>_buy": number | null, … }` — null is a gap, never a zero. */
+export type PriceHistoryRow = Record<string, number | string | null>;
+
+export interface PriceHistory {
+  series: PriceHistorySeries[];
+  missing: PriceHistoryMissing[];
+  rows: PriceHistoryRow[];
+  from: string;
+  to: string;
+  points: number;
+  bucketSeconds: number;
+  quoteSlug: string;
+}
+
+export interface PriceEngineSource {
+  id: string;
+  key: string;
+  label: string | null;
+  category: string;
+  active: boolean;
+  status: string;
+  lastStatusChangeAt: string | null;
+}
+
+/** Derived server-side; `writable` is always false. Render it as state. */
+export interface AutoSpread {
+  enabled: boolean;
+  pairsWithCommission: number;
+  symbolsWithGain: number;
+  writable: boolean;
+}
+
+export interface PriceEngineConfig {
+  sources: PriceEngineSource[];
+  autoSpread: AutoSpread;
+  /** Seconds. The cadence this client should poll at. */
+  refreshIntervalSec: number;
+  updateAt: string | null;
 }

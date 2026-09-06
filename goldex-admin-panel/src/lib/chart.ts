@@ -3,6 +3,7 @@ import {
   Chart as ChartJS,
   CategoryScale,
   LinearScale,
+  LogarithmicScale,
   TimeScale,
   PointElement,
   LineElement,
@@ -17,6 +18,9 @@ import "chartjs-adapter-date-fns";
 ChartJS.register(
   CategoryScale,
   LinearScale,
+  // The price screen falls back to a log axis when the selected instruments
+  // are decades apart; an unregistered scale throws at first render.
+  LogarithmicScale,
   TimeScale,
   PointElement,
   LineElement,

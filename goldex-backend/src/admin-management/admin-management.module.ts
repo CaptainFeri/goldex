@@ -4,9 +4,10 @@ import { AdminManagementController } from "./admin-management.controller";
 import { TypeOrmModule } from "@nestjs/typeorm";
 import { AdminEntity } from "../admin/entity/admin.entity";
 import { AdminScheduleEntity } from "../admin-schedule/entity/admin-schedule.entity";
+import { AdminRoleEntity } from "../admin-role/entity/admin-role.entity";
 
 @Module({
-  imports: [TypeOrmModule.forFeature([AdminEntity, AdminScheduleEntity])],
+  imports: [TypeOrmModule.forFeature([AdminEntity, AdminScheduleEntity, AdminRoleEntity])],
   providers: [AdminManagementService],
   controllers: [AdminManagementController],
 })

@@ -1,5 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from "@nestjs/swagger";
-import { IsEmail, IsNotEmpty, MinLength, IsEnum, IsOptional, IsString, Matches, IsArray, ValidateNested, IsNumber, Min, Max } from "class-validator";
+import { IsEmail, IsNotEmpty, MinLength, IsEnum, IsOptional, IsString, IsUUID, Matches, IsArray, ValidateNested, IsNumber, Min, Max } from "class-validator";
 import { Type } from "class-transformer";
 import { AdminRole } from "../../admin/role/admin.roles.enum";
 
@@ -46,9 +46,26 @@ export class CreateAdminDto {
   @ApiProperty({ description: "Admin login password (verified in step 1 of login, before OTP)" })
   password: string;
 
+  @IsOptional()
   @IsEnum(AdminRole)
-  @ApiProperty({ enum: AdminRole })
-  role: AdminRole;
+  @ApiPropertyOptional({
+    enum: AdminRole,
+    description:
+      "One of the four migrated roles. Ignored when `roleId` is given, which is the only way " +
+      "to place an admin in a custom role. One of the two is required.",
+  })
+  role?: AdminRole;
+
+  @IsOptional()
+  @IsUUID()
+  @ApiPropertyOptional({
+    format: "uuid",
+    description:
+      "The data-driven role this admin's permissions come from, from `GET /admin/roles`. " +
+      "Wins over `role`. Omitted, the role matching `role`'s slug is used — an admin with no " +
+      "role holds no permissions at all, so one is always assigned.",
+  })
+  roleId?: string;
 
   @IsOptional()
   @IsArray()

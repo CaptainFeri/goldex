@@ -61,8 +61,20 @@ function build(rows: any[] = [role(), rootRole], adminRows: any[] = []) {
       return v;
     }),
   };
+  /** `In(...)` unwrapped, so the mock filters the way the repository does. */
+  const values = (v: any) => (v?._value !== undefined ? v._value : v);
+  const matches = (a: any, where: any = {}) =>
+    Object.entries(where).every(([key, raw]) => {
+      const wanted = values(raw);
+      return Array.isArray(wanted) ? wanted.includes(a[key]) : a[key] === wanted;
+    });
+
   const admins = {
-    find: jest.fn(async () => adminRows),
+    // Honours `where`: assignMembers looks admins up by id and then asks who
+    // is left holding roles_manage, and a mock that returned everything would
+    // pass those checks no matter what the code did.
+    find: jest.fn(async (opts: any = {}) => adminRows.filter((a) => matches(a, opts.where))),
+    save: jest.fn(async (v: any) => v),
     count: jest.fn(async ({ where }: any) => {
       const wanted = where.roleId?._value ?? where.roleId;
       const ids = Array.isArray(wanted) ? wanted : [wanted];
@@ -328,5 +340,148 @@ describe("AdminRoleService errors", () => {
     await expect(service.setPermissions(admin(["dashboard"]), "r-custom", ["nope"])).rejects.toBeInstanceOf(
       BadRequestException,
     );
+  });
+});
+
+describe("AdminRoleService.assignMembers", () => {
+  const target = (over: Record<string, unknown> = {}) =>
+    role({ id: "r-target", slug: "ops-desk", permissions: ["dashboard", "reports"], ...over });
+
+  const member = (id: string, over: Record<string, unknown> = {}) => ({
+    id,
+    roleId: "r-plain",
+    role: "warehouse",
+    isSuspended: false,
+    createAt: new Date(),
+    ...over,
+  });
+
+  const keeper = role({ id: "r-keeper", slug: "keeper", permissions: ["dashboard", "roles_manage"] });
+
+  it("moves the named admins into the role and reports them back", async () => {
+    // a-1 is the caller, sitting in the role that keeps roles_manage alive.
+    const rows = [member("a-1", { roleId: "r-keeper" }), member("a-2"), member("a-3"), member("a-9")];
+    const { service, admins } = build([target(), keeper, rootRole], rows);
+
+    const result = await service.assignMembers(
+      admin(["dashboard", "reports", "roles_manage"], "r-keeper"),
+      "r-target",
+      { adminIds: ["a-2", "a-3"] },
+    );
+
+    expect(admins.save).toHaveBeenCalled();
+    expect(rows.filter((r) => r.roleId === "r-target").map((r) => r.id)).toEqual(["a-2", "a-3"]);
+    expect(result.map((m) => m.id).sort()).toEqual(["a-2", "a-3"]);
+  });
+
+  it("keeps the legacy role column in step, so hierarchy checks stay meaningful", async () => {
+    // A stale or undefined `role` makes every RoleHierarchy comparison in
+    // admin-management false, which lets anyone edit anyone.
+    const rows = [member("a-1", { roleId: "r-keeper" }), member("a-2", { role: "superAdmin" })];
+    const { service } = build([target(), keeper, rootRole], rows);
+
+    await service.assignMembers(
+      admin(["dashboard", "reports", "roles_manage"], "r-keeper"),
+      "r-target",
+      { adminIds: ["a-2"] },
+    );
+    expect(rows[1].role).toBe("warehouse");
+  });
+
+  it("refuses to put someone into a role granting a key the caller lacks", async () => {
+    const { service, admins } = build([target({ permissions: ["dashboard", "settings"] }), keeper, rootRole], [member("a-2")]);
+
+    await expect(
+      service.assignMembers(admin(["dashboard", "roles_manage"], "r-keeper"), "r-target", {
+        adminIds: ["a-2"],
+      }),
+    ).rejects.toThrow(/CANNOT_GRANT_UNHELD:settings/);
+    expect(admins.save).not.toHaveBeenCalled();
+  });
+
+  it("refuses to hand out the root role to a caller who is not root", async () => {
+    // Otherwise any holder of roles_manage mints a super admin and logs in.
+    const { service } = build([target(), keeper, rootRole], [member("a-2")]);
+
+    await expect(
+      service.assignMembers(admin(["dashboard", "roles_manage"], "r-keeper"), "r-root", {
+        adminIds: ["a-2"],
+      }),
+    ).rejects.toThrow(/CANNOT_GRANT_UNHELD/);
+  });
+
+  it("lets a root caller hand out the root role", async () => {
+    const rows = [member("a-1", { roleId: "r-root" }), member("a-2")];
+    const { service } = build([target(), keeper, rootRole], rows);
+
+    await service.assignMembers(admin([...PERMISSION_KEYS], "r-root"), "r-root", { adminIds: ["a-2"] });
+    expect(rows[1].roleId).toBe("r-root");
+    expect(rows[1].role).toBe("superAdmin");
+  });
+
+  it("refuses to reassign the caller — a lock-out or a self-promotion", async () => {
+    const { service } = build([target(), keeper, rootRole], [member("a-1")]);
+    await expect(
+      service.assignMembers(admin(["dashboard", "reports", "roles_manage"], "r-keeper"), "r-target", {
+        adminIds: ["a-1"],
+      }),
+    ).rejects.toThrow(/CANNOT_REASSIGN_SELF/);
+  });
+
+  it("rejects an unknown admin id before moving any of them", async () => {
+    const rows = [member("a-1", { roleId: "r-keeper" }), member("a-2")];
+    const { service, admins } = build([target(), keeper, rootRole], rows);
+
+    await expect(
+      service.assignMembers(admin(["dashboard", "reports", "roles_manage"], "r-keeper"), "r-target", {
+        adminIds: ["a-2", "a-ghost"],
+      }),
+    ).rejects.toThrow(/UNKNOWN_ADMIN:a-ghost/);
+    expect(admins.save).not.toHaveBeenCalled();
+    expect(rows[1].roleId).toBe("r-plain");
+  });
+
+  it("refuses the move that would leave nobody able to manage roles", async () => {
+    // a-2 is the only active admin in the only role holding roles_manage.
+    const rows = [member("a-2", { roleId: "r-keeper" })];
+    const { service, admins } = build([target(), keeper], rows);
+
+    await expect(
+      service.assignMembers(admin(["dashboard", "reports", "roles_manage"], "r-other"), "r-target", {
+        adminIds: ["a-2"],
+      }),
+    ).rejects.toThrow(/LAST_ROLES_MANAGE/);
+    expect(admins.save).not.toHaveBeenCalled();
+  });
+
+  it("allows the move when another active manager remains", async () => {
+    const rows = [member("a-2", { roleId: "r-keeper" }), member("a-3", { roleId: "r-keeper" })];
+    const { service } = build([target(), keeper], rows);
+
+    await service.assignMembers(admin(["dashboard", "reports", "roles_manage"], "r-other"), "r-target", {
+      adminIds: ["a-2"],
+    });
+    expect(rows[0].roleId).toBe("r-target");
+  });
+
+  it("does not count a suspended manager as the one who keeps the lights on", async () => {
+    const rows = [
+      member("a-2", { roleId: "r-keeper" }),
+      member("a-3", { roleId: "r-keeper", isSuspended: true }),
+    ];
+    const { service } = build([target(), keeper], rows);
+
+    await expect(
+      service.assignMembers(admin(["dashboard", "reports", "roles_manage"], "r-other"), "r-target", {
+        adminIds: ["a-2"],
+      }),
+    ).rejects.toThrow(/LAST_ROLES_MANAGE/);
+  });
+
+  it("404s for a role that does not exist", async () => {
+    const { service } = build([target(), keeper, rootRole], [member("a-1", { roleId: "r-root" }), member("a-2")]);
+    await expect(
+      service.assignMembers(admin([...PERMISSION_KEYS], "r-root"), "r-missing", { adminIds: ["a-2"] }),
+    ).rejects.toThrow(/ROLE.NOT_FOUND|not found/i);
   });
 });

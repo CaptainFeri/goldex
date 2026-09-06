@@ -842,6 +842,25 @@ building UI-first.
 | N   | `GET /v1/admin/price/engine-config` · `PATCH` — `{ sources: { tgju, brsapi }, autoSpread, refreshIntervalSec }`                                                                                                            |
 | E   | `admin/symbols`, `admin/pair`, `admin/monitoring/best-prices`                                                                                                                                                              | underlying data |
 
+**Built.** See `docs/PRICE-ENGINE.md`. Three deviations from the rows above,
+each deliberate:
+
+- The 60+ instruments are **not** seeded into `admin-symbol`, for the reason
+  migration 094 already records for the ticker: `admin-user.service` creates a
+  wallet per active symbol for every user, and `credit.service` enumerates
+  active material symbols, so display-only rows would mean junk wallets per
+  customer and would leak into the credit machinery. The catalogue is the
+  symbols that genuinely exist.
+- `history` takes **slugs**, not the mock's `gold18`-style ids, and serves real
+  rows from `price_pair_histories` bucketed onto one time grid — not
+  `buildChartData`'s sine wave. It also takes `hours` and an optional
+  `providerKey`, and reports unchartable slugs in `missing[]`.
+- `autoSpread` is **derived and read-only**. The spread is the pair commission
+  and the symbol gain — the desk's margin on every quote, booked as profit by
+  `wallet-order.service` — so a global switch would zero it platform-wide in one
+  click with no code path back. The endpoint reports whether one is configured
+  and where to change it; `sources` and `refreshIntervalSec` are writable.
+
 ### 5.14 Arbitrage
 
 |     | Endpoint                                                                                     |

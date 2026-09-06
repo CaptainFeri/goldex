@@ -1,6 +1,16 @@
 import { ApiProperty, ApiPropertyOptional } from "@nestjs/swagger";
 import { Type } from "class-transformer";
-import { IsArray, IsNumberString, IsObject, IsOptional, IsString, Length } from "class-validator";
+import {
+  ArrayMaxSize,
+  ArrayNotEmpty,
+  IsArray,
+  IsNumberString,
+  IsObject,
+  IsOptional,
+  IsString,
+  IsUUID,
+  Length,
+} from "class-validator";
 
 /** The largest credit a role may grant, from the panels' MAX_CREDIT_AMOUNT. */
 export const MAX_CREDIT_AMOUNT = 10_000_000;
@@ -100,6 +110,27 @@ export class RoleMemberDto {
 
   @ApiPropertyOptional({ nullable: true })
   lastLoginAt?: Date | null;
+}
+
+/**
+ * Move admins into a role.
+ *
+ * An admin belongs to exactly one role, so this replaces whatever role they
+ * were in. There is no counterpart that takes an admin *out* of a role: an
+ * admin with none holds no permissions at all, and taking access away
+ * deliberately is what suspension is for.
+ */
+export class AssignMembersDto {
+  @ApiProperty({
+    type: [String],
+    format: "uuid",
+    description: "Admin ids to move into this role. Unknown ids fail the whole request.",
+  })
+  @IsArray()
+  @ArrayNotEmpty()
+  @ArrayMaxSize(200)
+  @IsUUID("4", { each: true })
+  adminIds: string[];
 }
 
 export class CreateRoleDto {

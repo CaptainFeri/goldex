@@ -1415,3 +1415,32 @@ tbody tr:hover {
   color: var(--text-faint);
   margin-top: 2px;
 }
+
+/* ---------- Price engine screen ---------- */
+.price-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  gap: 12px;
+}
+.price-card {
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 14px 16px;
+  display: grid;
+  gap: 8px;
+  align-content: start;
+}
+.price-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+/* The instrument's own colour, so a chip and its chart line match. */
+.price-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  vertical-align: middle;
+}
