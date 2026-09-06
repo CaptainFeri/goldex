@@ -27,6 +27,7 @@ import AccountingVouchersPage from "./pages/AccountingVouchersPage";
 import RolesPage from "./pages/RolesPage";
 import SettingsPage from "./pages/SettingsPage";
 import InboxPage from "./pages/InboxPage";
+import ShahinPage from "./pages/ShahinPage";
 import ApiPage from "./pages/ApiPage";
 import LevelsPage from "./pages/LevelsPage";
 import DepositsPage from "./pages/DepositsPage";
@@ -91,6 +92,7 @@ export default function App() {
         <Route path="/roles" element={<RolesPage />} />
         <Route path="/settings" element={<SettingsPage />} />
         <Route path="/inbox" element={<InboxPage />} />
+        <Route path="/shahin" element={<ShahinPage />} />
         <Route path="/api" element={<ApiPage />} />
         <Route path="/warehouse" element={<WarehousePage />} />
         <Route path="/orders" element={<OrdersPage />} />

@@ -1591,3 +1591,52 @@ export interface InboxStats {
 export interface UnreadCount {
   unread: number;
 }
+
+export interface ShahinAccount {
+  id: number;
+  accountNumber: string;
+  iban: string | null;
+  ownerName: string | null;
+  bankName: string | null;
+  bankCode: string;
+  /** Rial. Last known — refresh via the balance endpoint. */
+  balance: string | null;
+  accountStatus: string;
+  lastAccessedAt: string | null;
+}
+
+export interface ShahinBalance {
+  accountNumber: string;
+  availableBalance: string | null;
+  effectiveBalance: string | null;
+  fetchedAt: string;
+}
+
+export interface ShahinStatementRow {
+  date: string | null;
+  description: string | null;
+  /** Rial. */
+  amount: string | null;
+  balance: string | null;
+  trackNo: string | null;
+  direction: "credit" | "debit" | null;
+}
+
+export interface ShahinInquiry {
+  ownerName: string | null;
+  accountNumber: string;
+  bankName: string | null;
+}
+
+export interface ShahinConnection {
+  accountId: number;
+  accountNumber: string;
+  bankName: string | null;
+  connected: boolean;
+  lastSyncAt: string | null;
+  accessScope: string | null;
+  consentExpiresAt: string | null;
+  lastError: string | null;
+}
+
+export type ShahinTransferMethod = "satna" | "paya" | "pol" | "account";
