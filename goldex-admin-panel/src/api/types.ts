@@ -1640,3 +1640,60 @@ export interface ShahinConnection {
 }
 
 export type ShahinTransferMethod = "satna" | "paya" | "pol" | "account";
+
+export type EmRequestType = "withdraw" | "deposit" | "settlement" | "transfer";
+export type EmStatus = "awaiting_account" | "awaiting_receipt" | "receipt_paid" | "rejected" | "closed";
+export type EmSearchBy = "requester" | "performer" | "account";
+
+export interface EmParty {
+  userId: string | null;
+  name: string | null;
+  phone: string | null;
+}
+
+export interface EmProof {
+  id: string;
+  matchId: string;
+  /** Rial. */
+  amount: string;
+  sourceAccount: string | null;
+  destinationAccount: string | null;
+  trackingCode: string | null;
+  paidAt: string | null;
+  /** Short-lived signed URL; null when no receipt was uploaded. */
+  receiptUrl: string | null;
+  ocrMismatch: boolean;
+  createAt: string;
+}
+
+export interface EmRequestRow {
+  id: string;
+  type: EmRequestType;
+  status: EmStatus;
+  /** Rial. */
+  amount: string;
+  symbolSlug: string | null;
+  requester: EmParty;
+  performer: EmParty | null;
+  destinationAccount: string | null;
+  assignedAccount: string | null;
+  /** A timestamp — the countdown is rendered on the client. */
+  expiresAt: string | null;
+  hasEnclosure: boolean;
+  proofCount: number;
+  createAt: string;
+}
+
+export interface EmRequestDetail extends EmRequestRow {
+  proofs: EmProof[];
+  parts: unknown[];
+  escalationId: string | null;
+}
+
+export interface EmStats {
+  total: number;
+  awaitingAccount: number;
+  awaitingReceipt: number;
+  receiptPaid: number;
+  rejected: number;
+}

@@ -119,7 +119,7 @@ export default function FinanceLogsPage() {
                 <tr key={l.id}>
                   <td>{fmtDate(l.actionTime)}</td>
                   <td>
-                    <Badge kind={(ACTION_KINDS[l.actionType] ?? "gray") as "green" | "red" | "gold" | "gray"}>
+                    <Badge kind={(ACTION_KINDS[l.actionType] ?? "gray") as "green" | "red" | "gold" | "blue" | "gray"}>
                       {ACTION_LABELS[l.actionType] ?? l.actionType}
                     </Badge>
                   </td>
