@@ -29,10 +29,15 @@ export const authApi = {
   logout: async (deviceId) =>
     unwrap(await http.post('/auth/logout', { deviceId })),
 
-  forgetPassword: async (email) =>
-    unwrap(await http.post('/auth/forget-password', { email }, PUBLIC)),
+  // Step 1 of recovery: text a one-time code to the account's phone.
+  forgetPassword: async (phone) =>
+    unwrap(await http.post('/auth/forget-password', { phone }, PUBLIC)),
 
-  // The reset token arrives via the email link and is used as a bearer token.
+  // Step 2: trade the SMS code for a short-lived reset token.
+  verifyForgetPasswordOtp: async (phone, otp) =>
+    unwrap(await http.post('/auth/forget-password/verify', { phone, otp }, PUBLIC)),
+
+  // Step 3: the reset token from step 2 is used as the bearer token.
   resetPassword: async (resetToken, newPassword) =>
     unwrap(await http.post('/auth/reset-password', { newPassword }, {
       headers: { Authorization: `Bearer ${resetToken}` }, skipAuth: true

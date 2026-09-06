@@ -6,6 +6,7 @@ import { PriceData, RedisService } from '../redis/redis.service';
 import { ItemMetadata, ItemMetadataService } from './item-metadata.service';
 import { RabbitMQService, MessagePatterns } from '../rabbitmq/rabbitmq.module';
 import { ItemUnit } from './types';
+import { CurrencyUnit, formatRial, resolvePriceUnit, toRial } from '../common/currency-unit';
 
 export abstract class BaseRealtimeProvider implements IRealtimePriceProvider, OnModuleDestroy {
   protected formatter!: ConsoleFormatterService;
@@ -68,14 +69,15 @@ export abstract class BaseRealtimeProvider implements IRealtimePriceProvider, On
     }
 
     this.normalizePrices(priceData);
+    this.convertToRial(priceData);
     const enriched = await this.metadataService.enrichPriceData(priceData);
 
     if (enriched.unit === ItemUnit.GRAM || enriched.groupId === 1) {
       const mithqalToGram = 4.3318;
       enriched.buyPricePerGram = enriched.buyPrice / mithqalToGram;
       enriched.sellPricePerGram = enriched.sellPrice / mithqalToGram;
-      enriched.buyPricePerGramStr = enriched.buyPricePerGram.toLocaleString('fa-IR') + ' تومان';
-      enriched.sellPricePerGramStr = enriched.sellPricePerGram.toLocaleString('fa-IR') + ' تومان';
+      enriched.buyPricePerGramStr = formatRial(enriched.buyPricePerGram);
+      enriched.sellPricePerGramStr = formatRial(enriched.sellPricePerGram);
     } else {
       enriched.buyPricePerGram = undefined;
       enriched.sellPricePerGram = undefined;
@@ -100,6 +102,28 @@ export abstract class BaseRealtimeProvider implements IRealtimePriceProvider, On
       this.updateCount = 0;
       this.lastLogTime = now;
     }
+  }
+
+  /**
+   * Brings the quote onto the system's single currency: Rial. A provider that
+   * publishes Toman is scaled by ten here, once, before the quote is cached,
+   * broadcast or scanned for arbitrage — so no consumer has to know or ask
+   * which unit a given provider speaks in.
+   *
+   * The display strings are rebuilt rather than passed through, because the
+   * provider's own string still says what it quoted.
+   */
+  private convertToRial(data: PriceData): void {
+    const sourceUnit = resolvePriceUnit(this.config?.priceUnit);
+    data.sourcePriceUnit = sourceUnit;
+    data.priceUnit = CurrencyUnit.RIAL;
+
+    if (sourceUnit === CurrencyUnit.RIAL) return;
+
+    data.buyPrice = toRial(data.buyPrice, sourceUnit);
+    data.sellPrice = toRial(data.sellPrice, sourceUnit);
+    data.buyPriceStr = formatRial(data.buyPrice);
+    data.sellPriceStr = formatRial(data.sellPrice);
   }
 
   private normalizePrices(data: PriceData): void {

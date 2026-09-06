@@ -34,6 +34,7 @@ import { RabbitMQModule } from "./rabbitmq/rabbitmq.module";
 import { ProviderPairMappingModule } from "./provider-pair-mapping/provider-pair-mapping.module";
 import { WalletCoreModule } from "./wallet/wallet-core.module";
 import { FinancialModule } from "./financial/financial.module";
+import { AccountingModule } from "./accounting/accounting.module";
 import { AdminMonitoringModule } from "./admin-monitoring/admin-monitoring.module";
 import { ProviderFinanceModule } from "./provider-finance/provider-finance.module";
 import { WarehouseModule } from "./warehouse/warehouse.module";
@@ -156,6 +157,7 @@ import { ScheduleModule } from "@nestjs/schedule";
     ProviderPairMappingModule,
     WalletCoreModule,
     FinancialModule,
+    AccountingModule,
     AdminMonitoringModule,
     ProviderFinanceModule,
     WarehouseModule,

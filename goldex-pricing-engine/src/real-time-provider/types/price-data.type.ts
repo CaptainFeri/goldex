@@ -1,3 +1,5 @@
+import { CurrencyUnit } from '../../common/currency-unit';
+
 export interface PriceData {
   itemName?: string;
   groupId?: number;
@@ -22,6 +24,10 @@ export interface PriceData {
   iSell?: boolean;
   isShow?: boolean;
   providerKey?: string;
+  /** Always IRR once the engine has normalized the quote. */
+  priceUnit?: CurrencyUnit;
+  /** What the provider itself quoted in, kept for auditing the conversion. */
+  sourcePriceUnit?: CurrencyUnit;
   buyPricePerGram?: number;
   sellPricePerGram?: number;
   buyPricePerGramStr?: string;

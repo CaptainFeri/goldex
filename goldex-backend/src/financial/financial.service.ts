@@ -115,6 +115,9 @@ export class FinancialService {
         quantity: Number(o.quantity),
         price: Number(o.price),
         totalValue: o.totalValue != null ? Number(o.totalValue) : null,
+        // Credit-funded orders settle against a granted credit line, not the
+        // customer's deposited balance — accounting reads them differently.
+        fundingSource: o.isCreditLinked ? "CREDIT" : "WALLET",
         base: o.pricePair?.baseSymbol?.slug ?? null,
         quote: o.pricePair?.quoteSymbol?.slug ?? null,
         user: o.user ? `${o.user.firstName ?? ""} ${o.user.lastName ?? ""}`.trim() : null,

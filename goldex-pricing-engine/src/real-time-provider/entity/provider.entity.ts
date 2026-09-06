@@ -5,6 +5,7 @@ import {
   CreateDateColumn,
   UpdateDateColumn,
 } from 'typeorm';
+import { CurrencyUnit, DEFAULT_PROVIDER_PRICE_UNIT } from '../../common/currency-unit';
 
 @Entity('providers')
 export class ProviderEntity {
@@ -37,6 +38,14 @@ export class ProviderEntity {
 
   @Column({ type: 'text', nullable: true })
   verifyCodeUrl?: string;
+
+  /**
+   * Unit this provider quotes in. Rial and Toman differ by a factor of ten, so
+   * a wrong reading here is a 10x pricing error — the engine converts every
+   * incoming quote to Rial using this before anything else sees it.
+   */
+  @Column({ type: 'varchar', length: 10, default: DEFAULT_PROVIDER_PRICE_UNIT })
+  priceUnit!: CurrencyUnit;
 
   @Column({ type: 'jsonb', default: {} })
   auth!: Record<string, any>;

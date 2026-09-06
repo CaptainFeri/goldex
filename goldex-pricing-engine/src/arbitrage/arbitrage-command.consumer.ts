@@ -8,7 +8,7 @@ const LABEL = 'Arbitrage';
 
 /** Config fields the backend is allowed to change, with their sane bounds. */
 const CONFIG_BOUNDS: Record<keyof ArbitrageConfig, { min: number; max: number }> = {
-  minProfitToman: { min: 0, max: Number.MAX_SAFE_INTEGER },
+  minProfitRial: { min: 0, max: Number.MAX_SAFE_INTEGER },
   minProfitPercent: { min: 0, max: 100 },
   maxSignals: { min: 1, max: 1000 },
   quoteFreshnessMs: { min: 1_000, max: 600_000 },

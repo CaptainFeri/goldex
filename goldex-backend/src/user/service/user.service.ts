@@ -51,6 +51,13 @@ import { UserMarketTypeEntity } from "../entity/user.market.type.entity";
 import { UserEvents } from "../../shared/constants/events.constants";
 import { MarketTypeEnum } from "../../admin-pair/enum/market.type.enum";
 
+/** Recovery OTP, kept apart from the login/registration OTP for the same user. */
+const PASSWORD_RESET_OTP_PREFIX = "pwd_reset_otp:";
+/** Marker proving a reset token was issued and has not been spent yet. */
+const PASSWORD_RESET_TOKEN_PREFIX = "pwd_reset_token:";
+const PASSWORD_RESET_OTP_TTL_SECONDS = 300;
+const PASSWORD_RESET_TOKEN_TTL_SECONDS = 600;
+
 @Injectable()
 export class UserService {
   private readonly templatesDir: string;
@@ -84,6 +91,15 @@ export class UserService {
   }
 
   async resetPassword(user: UserEntity, data: NewPasswordDto) {
+    if (!data.newPassword || data.newPassword.length < 6) {
+      throw new BadRequestException("PASSWORD.IS_SHORT");
+    }
+    // The reset token is single-use: verifying the SMS code stored a marker,
+    // and consuming it here stops the same token from being replayed.
+    const pending = await this.redisService.get(`${PASSWORD_RESET_TOKEN_PREFIX}${user.id}`);
+    if (!pending) throw new BadRequestException("PASSWORD_RESET.TOKEN_EXPIRED");
+    await this.redisService.del(`${PASSWORD_RESET_TOKEN_PREFIX}${user.id}`);
+
     user.password = await bcrypt.hash(data.newPassword, 10);
     await this.userRepository.save(user);
     const userwithDevice = await this.userRepository.findOne({
@@ -96,25 +112,86 @@ export class UserService {
     }
   }
 
+  /**
+   * Recovery token minted only after the SMS code checks out. Signed with the
+   * dedicated reset secret so it is accepted by `/auth/reset-password` and
+   * nowhere else — an access token cannot reset a password, and this token
+   * cannot call anything else.
+   */
   public makeRecoveryJwtToken(userId: string, role: UserRoleEnum) {
-    const payload = { userId, role };
-    const token = this.jwtService.sign(payload);
-    return token;
+    return this.jwtService.sign(
+      { userId, role, isPasswordReset: true },
+      {
+        expiresIn: PASSWORD_RESET_TOKEN_TTL_SECONDS,
+        secret: this.configService.get("user", { infer: true }).userResetPasswordSecret,
+      }
+    );
   }
 
+  /**
+   * Step 1 of password recovery: send a one-time code by SMS.
+   *
+   * The code lives under its own Redis key so a recovery in flight never
+   * consumes or collides with a login/registration OTP for the same user.
+   */
   async forgetPassword(data: ForgetPasswordDto) {
-    const user = await this.userRepository.findOne({
-      where: { email: data.email },
-    });
+    this.validatePhoneNumber(data.phone);
+
+    const user = await this.userRepository.findOne({ where: { phone: data.phone } });
     if (!user) throw new BadRequestException("USER.NOT_FOUND");
     if (user.role == UserRoleEnum.NEW_USER) throw new BadRequestException("USER.NOT_ALLOWED");
 
-    const token = this.makeRecoveryJwtToken(user.id, user.role);
-    const url =
-      this.configService.get("application", { infer: true }).url +
-      this.configService.get("application", { infer: true }).resetPasswordRout +
-      `?token=${token}`;
-    this.sendRecoveryEmail(user.email, url);
+    const key = `${PASSWORD_RESET_OTP_PREFIX}${user.id}`;
+    if (await this.redisService.get(key)) {
+      throw new BadRequestException("OTP.ALREADY_SENT");
+    }
+
+    const otpCode = this.generateRandomOtp().toString();
+    await this.redisService.setWithExpiration(
+      key,
+      await bcrypt.hash(otpCode, 10),
+      PASSWORD_RESET_OTP_TTL_SECONDS
+    );
+
+    const smsResult = await this.smsService.sendOTP(user.phone, otpCode, "verify");
+    if (!smsResult.success) {
+      await this.redisService.del(key);
+      throw new BadRequestException("SMS.SEND_FAILED");
+    }
+
+    return { phone: user.phone, expiresIn: PASSWORD_RESET_OTP_TTL_SECONDS };
+  }
+
+  /**
+   * Step 2 of password recovery: exchange a valid SMS code for a short-lived
+   * reset token. The matching Redis marker is what makes that token usable
+   * exactly once in `resetPassword`.
+   */
+  async verifyForgetPasswordOtp(phone: string, otpCode: string) {
+    this.validatePhoneNumber(phone);
+    this.validateOtpCode(otpCode);
+
+    const user = await this.userRepository.findOne({ where: { phone } });
+    if (!user) throw new BadRequestException("USER.NOT_FOUND");
+    if (user.role == UserRoleEnum.NEW_USER) throw new BadRequestException("USER.NOT_ALLOWED");
+
+    const key = `${PASSWORD_RESET_OTP_PREFIX}${user.id}`;
+    const storedOtp = await this.redisService.get(key);
+    if (!storedOtp) throw new BadRequestException("OTP.EXPIRED");
+
+    const isOtpValid = await bcrypt.compare(otpCode, storedOtp as string);
+    if (!isOtpValid) throw new BadRequestException("OTP.INVALID");
+
+    await this.redisService.del(key);
+
+    const resetToken = this.makeRecoveryJwtToken(user.id, user.role);
+    await this.redisService.setWithExpiration(
+      `${PASSWORD_RESET_TOKEN_PREFIX}${user.id}`,
+      "1",
+      PASSWORD_RESET_TOKEN_TTL_SECONDS
+    );
+
+    return { resetToken, expiresIn: PASSWORD_RESET_TOKEN_TTL_SECONDS };
   }
 
   async update2faSetting(user: UserEntity, data: Update2faSettingDto): Promise<User2faSettingDto> {
@@ -159,18 +236,6 @@ export class UserService {
       const filePath = path.join(this.templatesDir, templateName);
       let fileContent = await fs.readFile(filePath, "utf-8");
       fileContent = fileContent.replace("{{code}}", code);
-      return fileContent;
-    } catch (error) {
-      console.error("Error reading or processing the template:", error);
-      return null;
-    }
-  }
-
-  async getRecoveryTemplateWithLink(templateName: string, url: string) {
-    try {
-      const filePath = path.join(this.templatesDir, templateName);
-      let fileContent = await fs.readFile(filePath, "utf-8");
-      fileContent = fileContent.replace("{{resetUrl}}", url);
       return fileContent;
     } catch (error) {
       console.error("Error reading or processing the template:", error);
@@ -410,12 +475,6 @@ export class UserService {
     const mailService = this.mailStrategyService.getStrategy("mailgun");
     const templateWithCode = await this.getTemplateWithCode("send-otp-template.html", `${code}`);
     await mailService.sendMail(to, title, templateWithCode);
-  }
-
-  private async sendRecoveryEmail(to: string, url: string): Promise<void> {
-    const mailService = this.mailStrategyService.getStrategy("mailgun");
-    const templateWithLink = await this.getRecoveryTemplateWithLink("recovery-password.html", url);
-    await mailService.sendMail(to, "Reset Password", templateWithLink);
   }
 
   async getUserSettings(userId: string): Promise<UserProfileSettingDto> {

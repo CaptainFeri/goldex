@@ -42,7 +42,7 @@ export function Stat({
   );
 }
 
-export function Badge({ kind, children }: { kind: "green" | "red" | "gold" | "gray"; children: ReactNode }) {
+export function Badge({ kind, children }: { kind: "green" | "red" | "gold" | "gray" | "blue"; children: ReactNode }) {
   // Defensive: several backend payloads nest symbol as an object — never let an
   // object child crash the whole page, coerce to a readable label.
   const safe =

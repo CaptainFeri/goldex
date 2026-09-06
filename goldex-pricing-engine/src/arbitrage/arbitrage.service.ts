@@ -24,7 +24,7 @@ interface GroupedItem {
 const LABEL = 'Arbitrage';
 
 const DEFAULT_CONFIG: ArbitrageConfig = {
-  minProfitToman: 1,
+  minProfitRial: 1,
   minProfitPercent: 0,
   maxSignals: 100,
   quoteFreshnessMs: 60_000,
@@ -230,7 +230,7 @@ export class ArbitrageService implements OnModuleInit, OnModuleDestroy {
       if (signal) signals.push(signal);
     }
 
-    signals.sort((a, b) => b.profitToman - a.profitToman);
+    signals.sort((a, b) => b.profitRial - a.profitRial);
     const top = signals.slice(0, this.config.maxSignals);
 
     return {
@@ -240,7 +240,7 @@ export class ArbitrageService implements OnModuleInit, OnModuleDestroy {
       totalProviders: providerSet.size,
       totalItems: itemMap.size,
       opportunityCount: signals.length,
-      bestProfitToman: top.length > 0 ? top[0].profitToman : 0,
+      bestProfitRial: top.length > 0 ? top[0].profitRial : 0,
     };
   }
 
@@ -265,18 +265,18 @@ export class ArbitrageService implements OnModuleInit, OnModuleDestroy {
     if (!bestBuy || !bestSell) return null;
     if (bestBuy.providerKey === bestSell.providerKey) return null;
 
-    const profitToman = bestSell.buyPrice - bestBuy.sellPrice;
-    if (profitToman <= 0) return null;
+    const profitRial = bestSell.buyPrice - bestBuy.sellPrice;
+    if (profitRial <= 0) return null;
 
-    const profitPercent = bestBuy.sellPrice > 0 ? (profitToman / bestBuy.sellPrice) * 100 : 0;
-    if (profitToman < this.config.minProfitToman) return null;
+    const profitPercent = bestBuy.sellPrice > 0 ? (profitRial / bestBuy.sellPrice) * 100 : 0;
+    if (profitRial < this.config.minProfitRial) return null;
     if (profitPercent < this.config.minProfitPercent) return null;
 
     const deadline = this.computeDeadline([bestBuy.timestamp, bestSell.timestamp]);
     if (deadline && new Date(deadline).getTime() <= Date.now()) return null;
 
     const goldPriceRef = bestBuy.sellPricePerGram ?? bestBuy.sellPrice;
-    const profitGold = goldPriceRef > 0 ? profitToman / goldPriceRef : 0;
+    const profitGold = goldPriceRef > 0 ? profitRial / goldPriceRef : 0;
 
     const buyLeg: ArbitrageLeg = {
       providerKey: bestBuy.providerKey,
@@ -306,7 +306,7 @@ export class ArbitrageService implements OnModuleInit, OnModuleDestroy {
       buyLeg,
       sellLeg,
       legs: [buyLeg, sellLeg],
-      profitToman,
+      profitRial,
       profitPercent,
       profitGold,
       goldPriceRef,
@@ -360,7 +360,7 @@ export class ArbitrageService implements OnModuleInit, OnModuleDestroy {
         LABEL,
         `💹 ${fresh.length} new opportunit${fresh.length === 1 ? 'y' : 'ies'} ` +
           `(top: ${top.itemName} ${top.buyLeg.providerKey}→${top.sellLeg.providerKey} ` +
-          `+${top.profitToman.toLocaleString('en-US')} تومان / ${top.profitPercent.toFixed(2)}%)`,
+          `+${top.profitRial.toLocaleString('en-US')} ریال / ${top.profitPercent.toFixed(2)}%)`,
       );
     }
   }
@@ -373,7 +373,7 @@ export class ArbitrageService implements OnModuleInit, OnModuleDestroy {
       totalProviders: 0,
       totalItems: 0,
       opportunityCount: 0,
-      bestProfitToman: 0,
+      bestProfitRial: 0,
     };
   }
 

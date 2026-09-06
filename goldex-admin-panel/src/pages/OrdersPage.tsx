@@ -12,6 +12,26 @@ function sideBadge(side: string) {
   return <Badge kind="gray">{side ?? "—"}</Badge>;
 }
 
+/**
+ * Credit-funded orders draw on an admin-granted credit line; wallet orders
+ * spend the customer's own deposited balance. Different money, different
+ * settlement — the list says which without opening the row.
+ */
+function fundingBadge(o: any) {
+  const v = String(o?.fundingSource ?? (o?.isCreditLinked ? "CREDIT" : "WALLET")).toUpperCase();
+  if (v === "CREDIT") {
+    return (
+      <div>
+        <Badge kind="gold">اعتباری</Badge>
+        {o?.credit?.creditCode && (
+          <div className="mono muted" style={{ fontSize: 11, marginTop: 2 }}>{o.credit.creditCode}</div>
+        )}
+      </div>
+    );
+  }
+  return <Badge kind="blue">کیف پول</Badge>;
+}
+
 function statusBadge(s: string) {
   const v = String(s ?? "").toUpperCase();
   if (v === "COMPLETED") return <Badge kind="green">انجام شد</Badge>;
@@ -114,6 +134,10 @@ function OrderDetailsModal({ orderId, onClose }: { orderId: string; onClose: () 
             <div className="field">
               <label>شناسه کاربر</label>
               <div className="mono" style={{ fontSize: 12 }}>{order.userId}</div>
+            </div>
+            <div className="field">
+              <label>منبع تأمین</label>
+              <div>{fundingBadge(order)}</div>
             </div>
             <div className="field">
               <label>جفت‌ارز</label>
@@ -220,6 +244,7 @@ export default function OrdersPage() {
   const [status, setStatus] = useState("");
   const [side, setSide] = useState("");
   const [orderType, setOrderType] = useState("");
+  const [fundingSource, setFundingSource] = useState("");
   const [page, setPage] = useState(0);
   const [detailId, setDetailId] = useState<string | null>(null);
   const [editOrderId, setEditOrderId] = useState<string | null>(null);
@@ -229,6 +254,7 @@ export default function OrdersPage() {
   if (status) params.status = status;
   if (side) params.side = side;
   if (orderType) params.orderType = orderType;
+  if (fundingSource) params.fundingSource = fundingSource;
 
   const list = useQuery({
     queryKey: ["admin-orders", params],
@@ -274,7 +300,12 @@ export default function OrdersPage() {
           <option value="">همه انواع</option>
           {ORDER_TYPES.map((t) => <option key={t} value={t}>{typeLabel(t)}</option>)}
         </select>
-        <button className="btn ghost sm" onClick={() => { setSearch(""); setStatus(""); setSide(""); setOrderType(""); setPage(0); }}>
+        <select className="select" value={fundingSource} onChange={(e) => { setFundingSource(e.target.value); setPage(0); }}>
+          <option value="">همه منابع تأمین</option>
+          <option value="CREDIT">اعتباری</option>
+          <option value="WALLET">کیف پول (واریزی)</option>
+        </select>
+        <button className="btn ghost sm" onClick={() => { setSearch(""); setStatus(""); setSide(""); setOrderType(""); setFundingSource(""); setPage(0); }}>
           پاک کردن فیلترها
         </button>
       </div>
@@ -298,6 +329,7 @@ export default function OrdersPage() {
                   <th>جفت‌ارز</th>
                   <th>سمت</th>
                   <th>نوع</th>
+                  <th>منبع تأمین</th>
                   <th>مقدار (g)</th>
                   <th>قیمت</th>
                   <th>اجرا شده</th>
@@ -318,6 +350,7 @@ export default function OrdersPage() {
                     <td>{o.pricePair ? pairLabel(o.pricePair) : "—"}</td>
                     <td>{sideBadge(o.side)}</td>
                     <td style={{ fontSize: 13 }}>{typeLabel(o.orderType)}</td>
+                    <td>{fundingBadge(o)}</td>
                     <td className="mono">{fmtNum(o.quantity, 4)}</td>
                     <td className="mono">{fmtNum(o.price ?? o.averagePrice, 2)}</td>
                     <td className="mono">{fmtNum(o.executedQuantity, 4)}</td>

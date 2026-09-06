@@ -50,7 +50,7 @@ export class AdminArbitrageConsumer implements OnModuleInit {
           trigger: scan.trigger,
           totalProviders: scan.totalProviders,
           totalItems: scan.totalItems,
-          bestProfitToman: scan.bestProfitToman,
+          bestProfitRial: scan.bestProfitRial,
           opportunityCount: scan.opportunityCount ?? scan.signals.length,
           source: 'bus',
         },
