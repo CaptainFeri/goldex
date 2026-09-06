@@ -26,9 +26,12 @@ together in this repository. Three documents, in reading order:
 
 Recorded in full in `PARSZARGAR-ADMIN-API-PLAN.md` §9; the load-bearing ones:
 
-- **The backend works in rial; toman is display-only.** No balance migration
-  and no unit conversion anywhere in the backend — the panels convert at the
-  render boundary and back on submit. §3.1–3.2.
+- **The backend works in rial, and the admin panel now displays rial too.** No
+  balance migration and no unit conversion anywhere in the backend. The panel
+  used to render toman at the boundary; `goldex-admin-panel/src/lib/money.ts`
+  still owns the unit decision but no longer rescales, so an operator reads and
+  types the same rial figure the API carries. §3.1–3.2 describe the earlier
+  toman convention.
 - **EM is the existing rial P2P settlement desk**, so its screens are a
   projection over `p2p_*` rather than a second money path. §5.17.
 - **Ticker instruments are symbols**, not a mapping table. §4.5.

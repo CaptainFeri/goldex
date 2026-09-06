@@ -1,20 +1,26 @@
 /**
- * Rial → toman, at the display boundary.
+ * Rial at the display boundary.
  *
  * The backend stores and serves **rial** everywhere: balances, orders, credits,
- * bank rails, the wire format. Toman is a presentation convention that belongs
- * to this panel — so every conversion in the system happens in this file, on
- * the way to the screen and back from a form.
+ * bank rails, the wire format. The panel used to render that as toman; it now
+ * shows rial end to end, so this file converts nothing — it is the single place
+ * that decides the unit, and the pass-through helpers below keep every screen
+ * and form going through it.
  *
- * The rule that keeps it honest: **never store a toman value.** Convert on
- * render, convert back on submit, and keep everything in between in rial.
+ * The names still say toman because ~290 call sites across 31 screens use them.
+ * They are pass-throughs: **nothing here divides or multiplies by ten.** Read
+ * `rialToToman` as "an API amount, ready to display" and `tomanToRial` as "a
+ * typed amount, ready to post". Everything is rial, in and out.
  */
 
-/** 1 toman = 10 rial. */
+/**
+ * Kept for reference: 1 toman = 10 rial. Nothing in this module applies it any
+ * more — it is here so the old ratio is documented rather than rediscovered.
+ */
 export const RIAL_PER_TOMAN = 10;
 
 /** What the panel labels amounts with. */
-export const DISPLAY_UNIT = "تومان";
+export const DISPLAY_UNIT = "ریال";
 
 /**
  * Persian digits, matching the rest of this RTL panel and the ui-parszargar
@@ -30,32 +36,24 @@ const toNumber = (v: Amount): number | null => {
   return Number.isFinite(n) ? n : null;
 };
 
-/** Rial from the API → toman for display. */
+/** An amount from the API, ready to display. Rial in, rial out. */
 export function rialToToman(rial: Amount): number | null {
-  const n = toNumber(rial);
-  return n === null ? null : n / RIAL_PER_TOMAN;
+  return toNumber(rial);
 }
 
-/** Toman a user typed → rial for the API. */
+/** An amount a user typed, ready to post. Rial in, rial out. */
 export function tomanToRial(toman: Amount): number | null {
-  const n = toNumber(toman);
-  return n === null ? null : n * RIAL_PER_TOMAN;
+  return toNumber(toman);
 }
 
-/**
- * Format a rial amount as toman for display.
- *
- * Takes rial because that is what the API returns — passing an
- * already-converted value would double-convert, which is the one mistake this
- * module exists to prevent.
- */
+/** Format a rial amount for display, in rial. */
 export function fmtToman(
   rial: Amount,
   opts: { unit?: boolean; digits?: number; locale?: string } = {}
 ): string {
-  const toman = rialToToman(rial);
-  if (toman === null) return "—";
-  const text = toman.toLocaleString(opts.locale ?? DISPLAY_LOCALE, {
+  const n = toNumber(rial);
+  if (n === null) return "—";
+  const text = n.toLocaleString(opts.locale ?? DISPLAY_LOCALE, {
     maximumFractionDigits: opts.digits ?? 0,
   });
   return opts.unit === false ? text : `${text} ${DISPLAY_UNIT}`;
@@ -72,14 +70,14 @@ export function fmtAmount(value: Amount, unit?: string, digits = 8): string {
   return unit ? `${text} ${unit}` : text;
 }
 
-/** True when a symbol slug is the rial-family one, i.e. display it as toman. */
+/** True when a symbol slug is the rial-family one. */
 export function isRialSymbol(slug: string | null | undefined): boolean {
   return (slug ?? "").toUpperCase() === "IRR";
 }
 
 /**
- * Format by symbol: rial amounts become toman, everything else is shown in its
- * own unit. Use this wherever the symbol is known at render time.
+ * Format by symbol: rial amounts get the rial label, everything else is shown
+ * in its own unit. Use this wherever the symbol is known at render time.
  */
 export function fmtBySymbol(
   value: Amount,
@@ -94,9 +92,8 @@ export function fmtBySymbol(
 /**
  * The unit an operator reads and types for a symbol.
  *
- * Use it on input labels. A field showing rial under a "تومان" label — or the
- * reverse — makes the operator out by a factor of ten, and the form gives no
- * hint which one it meant.
+ * Use it on input labels: a rial field under any other label leaves the
+ * operator guessing which unit the form meant.
  */
 export function unitLabel(slug: string | null | undefined): string {
   return isRialSymbol(slug) ? DISPLAY_UNIT : (slug ?? "");
@@ -105,9 +102,8 @@ export function unitLabel(slug: string | null | undefined): string {
 /**
  * A value the operator typed → the symbol's own units, for the API.
  *
- * The counterpart to {@link fmtBySymbol}: wherever a form displays converted
- * amounts, its submit must pass through here, or the operator posts a tenth of
- * what they intended.
+ * The counterpart to {@link fmtBySymbol}. It no longer rescales rial, but every
+ * form still submits through it, so the unit stays decided in one place.
  */
 export function toApiAmount(value: Amount, slug: string | null | undefined): number | null {
   return isRialSymbol(slug) ? tomanToRial(value) : toNumber(value);
