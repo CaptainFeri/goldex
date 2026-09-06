@@ -15,9 +15,6 @@ import {
   fmtDuration,
   fmtTime,
   colorFor,
-  fmtIrrFromToman,
-  irrToToman,
-  IRR_PER_TOMAN,
 } from "../lib/format";
 import ArbitrageBotsPanel from "./arbitrage/ArbitrageBotsPanel";
 import type {
@@ -185,7 +182,7 @@ function ConfigModal({ onClose }: { onClose: () => void }) {
         next[f.key] = "";
         continue;
       }
-      next[f.key] = String(f.irrFromToman ? v * IRR_PER_TOMAN : v);
+      next[f.key] = String(v);
     }
     setDraft(next);
   }, [config]);
@@ -210,7 +207,7 @@ function ConfigModal({ onClose }: { onClose: () => void }) {
       if (raw === undefined || raw === "") continue;
       const n = Number(raw);
       if (!Number.isFinite(n)) continue;
-      body[f.key] = f.irrFromToman ? n / IRR_PER_TOMAN : n;
+      body[f.key] = n;
     }
     save.mutate(body);
   }
@@ -337,7 +334,7 @@ function SignalTable({
                     {s.buyLeg?.providerKey ?? "—"}
                   </span>
                   <div className="muted mono" style={{ fontSize: 11 }}>
-                    {fmtIrrFromToman(s.buyLeg?.price)} ریال
+                    {fmtNum(s.buyLeg?.price)} ریال
                   </div>
                 </td>
                 <td>
@@ -351,7 +348,7 @@ function SignalTable({
                     {s.sellLeg?.providerKey ?? "—"}
                   </span>
                   <div className="muted mono" style={{ fontSize: 11 }}>
-                    {fmtIrrFromToman(s.sellLeg?.price)} ریال
+                    {fmtNum(s.sellLeg?.price)} ریال
                   </div>
                 </td>
                 <td
@@ -460,7 +457,9 @@ export default function ArbitragePage() {
   }, [opps]);
 
   const visible = useMemo(() => {
-    const minToman = irrToToman(minProfit) ?? 0;
+    // The filter box and the signals are both in rial, so this is a plain
+    // comparison — no unit conversion belongs here any more.
+    const min = Number(minProfit) || 0;
     const term = search.trim().toLowerCase();
     const filtered = opps.filter((s) => {
       if ((s.profitRial ?? 0) < min) return false;

@@ -20,6 +20,8 @@ import {
 import { SymbolEntity } from "../admin-symbol/entity/symbol.entity";
 import { AdminEntity } from "../admin/entity/admin.entity";
 import { AdminRole } from "../admin/role/admin.roles.enum";
+import { paginate } from "../shared/dto/paginated.dto";
+import { pageOf } from "../shared/dto/page-of";
 import { CreateFundingRequestDto } from "./dto/create-funding-request.dto";
 import { ReviewFundingRequestDto } from "./dto/review-funding-request.dto";
 
@@ -355,13 +357,14 @@ export class ManagerAccountService {
   }
 
   async getLedger(accountId: string, limit = 100, offset = 0) {
+    const take = Math.min(limit, 500);
     const [items, total] = await this.ledgerRepo.findAndCount({
       where: { accountId },
       order: { createAt: "DESC" },
-      take: Math.min(limit, 500),
+      take,
       skip: offset,
     });
-    return { items, total };
+    return paginate(items, total, { currentPage: pageOf(offset, take), take });
   }
 
   // ── Internals ────────────────────────────────────────────────────────────

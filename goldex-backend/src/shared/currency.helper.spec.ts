@@ -1,15 +1,20 @@
 import Decimal from "decimal.js";
 import { isWholeToman, rialToToman, tomanToRial } from "./currency.helper";
-import { RIAL_PER_TOMAN, RIAL_SYMBOL_SLUG, BANK_SYMBOL_SLUG } from "./constants/currency.constants";
+import {
+  DISPLAY_CURRENCY,
+  RIAL_PER_TOMAN,
+  RIAL_SYMBOL_SLUG,
+} from "./constants/currency.constants";
 
 /**
- * These tests are the guard rail for the entire money model: if the factor at
- * the bank boundary is wrong, every payout is wrong by an order of magnitude.
+ * These tests are the guard rail for the entire money model: stored amounts are
+ * rial, toman is what the panels render, and if the factor between them is
+ * wrong every figure on screen is out by an order of magnitude.
  */
 describe("currency helper", () => {
-  it("uses toman on the platform and rial at the bank", () => {
-    expect(RIAL_SYMBOL_SLUG).toBe("IRT");
-    expect(BANK_SYMBOL_SLUG).toBe("IRR");
+  it("stores rial, and treats toman as a display convention only", () => {
+    expect(RIAL_SYMBOL_SLUG).toBe("IRR");
+    expect(DISPLAY_CURRENCY).toBe("IRT");
     expect(RIAL_PER_TOMAN).toBe(10);
   });
 
