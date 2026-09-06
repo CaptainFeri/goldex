@@ -1,6 +1,6 @@
 import { Injectable } from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
-import { Brackets, In, Repository } from "typeorm";
+import { In, Repository } from "typeorm";
 import { P2pWithdrawRequestEntity } from "../p2p/entity/p2p-withdraw-request.entity";
 import { P2pDepositIntentEntity } from "../p2p/entity/p2p-deposit-intent.entity";
 import { P2pMatchEntity } from "../p2p/entity/p2p-match.entity";
