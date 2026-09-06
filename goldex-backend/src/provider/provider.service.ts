@@ -190,6 +190,22 @@ export class ProviderService {
     return saved;
   }
 
+  /**
+   * Set a provider's active flag to a given value.
+   *
+   * The idempotent counterpart of {@link toggleActive}, for callers that hold a
+   * checkbox rather than a button — the price-engine config screen sends the
+   * state it wants, and sending it twice must not turn the source back off. A
+   * provider already in the requested state is returned untouched: the engine
+   * command is a *toggle* on its side too, so re-publishing it would flip the
+   * thing this call was asked to leave alone.
+   */
+  async setActiveByKey(key: string, active: boolean): Promise<ProviderEntity> {
+    const provider = await this.findByKey(key);
+    if (provider.active === active) return provider;
+    return this.toggleActive(provider.id);
+  }
+
   async sendOtp(id: string, phone: string): Promise<{ message: string }> {
     const provider = await this.findOne(id);
     provider.phone = phone;
