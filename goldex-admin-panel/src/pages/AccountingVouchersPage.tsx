@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, unwrap, apiError } from "../api/client";
 import { Card, Loading, ErrorState, Empty, Badge, Modal } from "../components/ui";
 import DateField from "../components/DateField";
+import OtpConfirmModal, { otpError } from "../components/OtpConfirmModal";
 import { fmtNum, fmtDate } from "../lib/format";
 import { fmtBySymbol, toApiAmount, unitLabel } from "../lib/money";
 import { downloadExport, stampedName } from "../lib/download";
@@ -195,14 +196,45 @@ function ReviewModal({
   const [note, setNote] = useState("");
   const finalizing = action === "finalize";
 
+  // Finalising books the money, so the server requires a second factor bound
+  // to this voucher and this note. Rejecting books nothing and stays direct.
+  const [confirming, setConfirming] = useState(false);
+
   const run = useMutation({
-    mutationFn: () =>
-      api.post(`/admin/accounting/vouchers/${voucher.id}/${action}`, { note: note || undefined }),
+    mutationFn: (confirmation?: { challengeId: string; otp: string }) =>
+      api.post(`/admin/accounting/vouchers/${voucher.id}/${action}`, {
+        note: note || undefined,
+        ...(confirmation ?? {}),
+      }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["vouchers"] });
       onClose();
     },
   });
+
+  // Exactly what the request will send, so the hash the server recomputes from
+  // the body matches the one the code was issued against. `note` is included
+  // because the scope hashes it — editing the note after requesting a code
+  // correctly invalidates that code.
+  const otpPayload = { note: note || undefined };
+
+  if (confirming) {
+    return (
+      <OtpConfirmModal
+        title={`تأیید ثبت نهایی سند ${voucher.voucherCode}`}
+        description="این عملیات مبلغ را در دفتر ثبت می‌کند و برگشت‌پذیر نیست."
+        scope="accounting.voucher"
+        refId={voucher.id}
+        fields={["note"]}
+        payload={otpPayload}
+        confirmLabel="ثبت نهایی"
+        pending={run.isPending}
+        actionError={run.isError ? run.error : undefined}
+        onConfirm={(confirmation) => run.mutate(confirmation)}
+        onClose={() => setConfirming(false)}
+      />
+    );
+  }
 
   return (
     <Modal title={`${finalizing ? "ثبت نهایی" : "رد"} سند ${voucher.voucherCode}`} onClose={onClose}>
@@ -222,11 +254,15 @@ function ReviewModal({
         <label>یادداشت (اختیاری)</label>
         <textarea className="input" rows={2} value={note} onChange={(e) => setNote(e.target.value)} />
       </div>
-      {run.isError && <div className="error-text">{apiError(run.error)}</div>}
+      {run.isError && <div className="error-text">{otpError(run.error)}</div>}
       <div className="row" style={{ justifyContent: "flex-end", gap: 10, marginTop: 12 }}>
         <button type="button" className="btn ghost" onClick={onClose}>انصراف</button>
-        <button className="btn primary" disabled={run.isPending} onClick={() => run.mutate()}>
-          {run.isPending ? <span className="spin" /> : finalizing ? "ثبت نهایی" : "رد سند"}
+        <button
+          className="btn primary"
+          disabled={run.isPending}
+          onClick={() => (finalizing ? setConfirming(true) : run.mutate(undefined))}
+        >
+          {run.isPending ? <span className="spin" /> : finalizing ? "ادامه و دریافت کد" : "رد سند"}
         </button>
       </div>
     </Modal>
