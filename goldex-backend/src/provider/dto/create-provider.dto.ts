@@ -6,7 +6,12 @@ import {
   IsOptional,
   IsObject,
   IsNotEmpty,
+  IsEnum,
 } from 'class-validator';
+import {
+  CurrencyUnit,
+  DEFAULT_PROVIDER_PRICE_UNIT,
+} from '../../shared/currency/currency-unit';
 
 export class CreateProviderDto {
   @IsString()
@@ -48,6 +53,16 @@ export class CreateProviderDto {
   @IsObject()
   @IsOptional()
   auth?: Record<string, any>;
+
+  @ApiPropertyOptional({
+    enum: CurrencyUnit,
+    default: DEFAULT_PROVIDER_PRICE_UNIT,
+    description:
+      'Currency unit this provider quotes in. Toman quotes are multiplied by ten on ingest so the books stay Rial-only.',
+  })
+  @IsEnum(CurrencyUnit)
+  @IsOptional()
+  priceUnit?: CurrencyUnit;
 
   @ApiPropertyOptional({ type: Object })
   @IsObject()

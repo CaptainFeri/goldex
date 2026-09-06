@@ -13,7 +13,7 @@ import type {
 const REFRESH_MS = 5000;
 
 type Tab = "live" | "alerts" | "history";
-type SortKey = "profitToman" | "profitPercent" | "itemName" | "deadline";
+type SortKey = "profitRial" | "profitPercent" | "itemName" | "deadline";
 
 const TABS: { key: Tab; label: string }[] = [
   { key: "live", label: "فرصت‌های فعال" },
@@ -99,7 +99,7 @@ function SourceBanner({ status }: { status?: ArbitrageStatus }) {
 }
 
 const CONFIG_FIELDS: { key: keyof ArbitrageConfig; label: string; hint: string }[] = [
-  { key: "minProfitToman", label: "حداقل سود (تومان)", hint: "سیگنال با سود کمتر منتشر نمی‌شود" },
+  { key: "minProfitRial", label: "حداقل سود (ریال)", hint: "سیگنال با سود کمتر منتشر نمی‌شود" },
   { key: "minProfitPercent", label: "حداقل سود (٪)", hint: "۰ تا ۱۰۰" },
   { key: "maxSignals", label: "حداکثر تعداد سیگنال", hint: "۱ تا ۱۰۰۰" },
   { key: "quoteFreshnessMs", label: "اعتبار قیمت (ms)", hint: "قیمت قدیمی‌تر نادیده گرفته می‌شود" },
@@ -221,7 +221,7 @@ function SignalTable({
             <th>قلم</th>
             <th>خرید از (ارزان‌ترین)</th>
             <th>فروش به (گران‌ترین)</th>
-            <th>سود (تومان)</th>
+            <th>سود (ریال)</th>
             <th>سود ٪</th>
             <th>سود (گرم طلا)</th>
             <th>{showDetected ? "زمان کشف" : "مهلت"}</th>
@@ -261,7 +261,7 @@ function SignalTable({
                   </div>
                 </td>
                 <td className="mono" style={{ color: "var(--green)", fontWeight: 600 }}>
-                  +{fmtNum(s.profitToman)}
+                  +{fmtNum(s.profitRial)}
                 </td>
                 <td className="mono" style={{ color: "var(--gold-soft)" }}>
                   {fmtNum(s.profitPercent, 2)}٪
@@ -291,7 +291,7 @@ export default function ArbitragePage() {
   const [minProfit, setMinProfit] = useState("");
   const [provider, setProvider] = useState("");
   const [search, setSearch] = useState("");
-  const [sortKey, setSortKey] = useState<SortKey>("profitToman");
+  const [sortKey, setSortKey] = useState<SortKey>("profitRial");
   const [now, setNow] = useState(() => Date.now());
 
   // Deadlines are relative, so the countdown column has to tick on its own —
@@ -356,7 +356,7 @@ export default function ArbitragePage() {
     const min = Number(minProfit) || 0;
     const term = search.trim().toLowerCase();
     const filtered = opps.filter((s) => {
-      if ((s.profitToman ?? 0) < min) return false;
+      if ((s.profitRial ?? 0) < min) return false;
       if (provider && s.buyLeg?.providerKey !== provider && s.sellLeg?.providerKey !== provider)
         return false;
       if (term && !(s.itemName ?? "").toLowerCase().includes(term)) return false;
@@ -371,13 +371,13 @@ export default function ArbitragePage() {
         case "deadline":
           return new Date(a.deadline ?? 0).getTime() - new Date(b.deadline ?? 0).getTime();
         default:
-          return (b.profitToman ?? 0) - (a.profitToman ?? 0);
+          return (b.profitRial ?? 0) - (a.profitRial ?? 0);
       }
     });
   }, [opps, minProfit, provider, search, sortKey]);
 
   const st = status.data;
-  const best = opps.reduce((m, s) => Math.max(m, s.profitToman ?? 0), 0);
+  const best = opps.reduce((m, s) => Math.max(m, s.profitRial ?? 0), 0);
   const live = opps.filter((s) => !deadlineState(s.deadline, now).expired).length;
 
   const loading = opp.isLoading || status.isLoading;
@@ -393,7 +393,7 @@ export default function ArbitragePage() {
           value={live}
           sub={opps.length !== live ? `${opps.length} کل (شامل منقضی)` : undefined}
         />
-        <Stat label="بهترین سود (تومان)" value={fmtNum(best)} />
+        <Stat label="بهترین سود (ریال)" value={fmtNum(best)} />
         <Stat label="هشدارهای جدید" value={alertList.length} />
         <Stat
           label="پوشش اسکن"
@@ -456,7 +456,7 @@ export default function ArbitragePage() {
               dir="ltr"
               style={{ maxWidth: 160 }}
               inputMode="numeric"
-              placeholder="حداقل سود (تومان)"
+              placeholder="حداقل سود (ریال)"
               value={minProfit}
               onChange={(e) => setMinProfit(e.target.value)}
             />
@@ -477,7 +477,7 @@ export default function ArbitragePage() {
               value={sortKey}
               onChange={(e) => setSortKey(e.target.value as SortKey)}
             >
-              <option value="profitToman">مرتب‌سازی: سود تومانی</option>
+              <option value="profitRial">مرتب‌سازی: سود ریالی</option>
               <option value="profitPercent">مرتب‌سازی: سود درصدی</option>
               <option value="deadline">مرتب‌سازی: نزدیک‌ترین مهلت</option>
               <option value="itemName">مرتب‌سازی: نام قلم</option>

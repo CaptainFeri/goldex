@@ -1,5 +1,14 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsString, IsBoolean, IsNumber, IsOptional, IsObject, IsNotEmpty } from 'class-validator';
+import {
+  IsString,
+  IsBoolean,
+  IsNumber,
+  IsOptional,
+  IsObject,
+  IsNotEmpty,
+  IsEnum,
+} from 'class-validator';
+import { CurrencyUnit, DEFAULT_PROVIDER_PRICE_UNIT } from '../../common/currency-unit';
 
 export class CreateProviderDto {
   @ApiProperty({ description: 'Unique key', example: 'mirrokni' })
@@ -75,6 +84,16 @@ export class CreateProviderDto {
   @IsObject()
   @IsOptional()
   auth?: Record<string, any>;
+
+  @ApiPropertyOptional({
+    description:
+      'Currency unit this provider quotes in. Rial and Toman differ by a factor of ten; the engine converts everything to Rial on the way in.',
+    enum: CurrencyUnit,
+    default: DEFAULT_PROVIDER_PRICE_UNIT,
+  })
+  @IsEnum(CurrencyUnit)
+  @IsOptional()
+  priceUnit?: CurrencyUnit;
 
   @ApiPropertyOptional({ description: 'Extra config', example: {} })
   @IsObject()

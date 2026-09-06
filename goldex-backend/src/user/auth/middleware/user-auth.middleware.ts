@@ -58,12 +58,16 @@ export class UserAuthMiddleware implements NestMiddleware {
         decode = verify(token, this.configService.get("user", { infer: true })?.userJwtSecret || "");
       }
 
-      let fundUser;
-      if (req.path.includes("register")) {
-        fundUser = await this.userService.findUser(req, decode["userId"], decode["role"], false);
-      } else {
-        fundUser = await this.userService.findUser(req, decode["userId"], decode["role"], true);
-      }
+      // Registration and password recovery both happen without an established
+      // session, so the device/refresh-token check cannot apply to them — the
+      // reset token itself is the credential there.
+      const skipDeviceCheck = req.path.includes("register") || req.path.includes("reset-password");
+      const fundUser = await this.userService.findUser(
+        req,
+        decode["userId"],
+        decode["role"],
+        !skipDeviceCheck
+      );
 
       req.user = fundUser;
       next();

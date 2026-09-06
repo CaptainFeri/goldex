@@ -8,6 +8,7 @@ import { TalaAbWebSocketProvider } from './providers/talaab-websocket.provider';
 import { PriceData, RedisService } from '../redis/redis.service';
 import { ItemMetadataService } from './item-metadata.service';
 import { ProviderEntity } from './entity/provider.entity';
+import { resolvePriceUnit } from '../common/currency-unit';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { RabbitMQService, MessagePatterns } from '../rabbitmq/rabbitmq.module';
@@ -107,6 +108,7 @@ export class ProviderManagerService implements OnModuleInit, OnModuleDestroy {
       apiBaseUrl: entity.apiBaseUrl ?? undefined,
       originUrl: entity.config?.originUrl as string | undefined,
       auth: entity.auth,
+      priceUnit: resolvePriceUnit(entity.priceUnit),
       metadataRefreshIntervalMs: entity.metadataRefreshIntervalMs || 60000,
     };
 

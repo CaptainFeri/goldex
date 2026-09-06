@@ -734,6 +734,15 @@ export interface AdminOrder {
   totalValue?: number;
   commission?: number;
   status: string;
+  /** CREDIT = drawn on a credit line, WALLET = spent from a deposited balance. */
+  fundingSource?: "CREDIT" | "WALLET";
+  isCreditLinked?: boolean;
+  credit?: {
+    creditId: string;
+    creditCode: string | null;
+    creditOrderStatus: string;
+    priceAtOrderTime: number | null;
+  } | null;
   notes?: string;
   providerOrderId?: string;
   metadata?: any;
@@ -895,7 +904,7 @@ export interface ArbitrageSignal {
   buyLeg: ArbitrageLeg;
   sellLeg: ArbitrageLeg;
   legs: ArbitrageLeg[];
-  profitToman: number;
+  profitRial: number;
   profitPercent: number;
   /** Profit expressed in grams of gold, using `goldPriceRef`. */
   profitGold: number;
@@ -915,13 +924,13 @@ export interface ArbitrageStatus {
   opportunityCount: number;
   totalProviders: number;
   totalItems: number;
-  bestProfitToman: number;
+  bestProfitRial: number;
   engineRedisReachable: boolean;
   message?: string;
 }
 
 export interface ArbitrageConfig {
-  minProfitToman: number;
+  minProfitRial: number;
   minProfitPercent: number;
   maxSignals: number;
   quoteFreshnessMs: number;
