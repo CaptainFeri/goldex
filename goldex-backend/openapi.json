@@ -27237,6 +27237,105 @@
         "tags": [
           "Admin-Roles"
         ]
+      },
+      "post": {
+        "description": "An admin belongs to exactly one role, so this replaces whatever role each of them was in — there is no counterpart that removes an admin from a role, because an admin with none holds no permissions at all and suspension is what takes access away deliberately. Refused if the role grants a permission the caller does not hold, if the caller names themselves, or if it would leave no active admin able to manage roles.",
+        "operationId": "AdminRoleController_assignMembers_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AssignMembersDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/ResponseEnvelopeDto"
+                    },
+                    {
+                      "properties": {
+                        "data": {
+                          "type": "array",
+                          "items": {
+                            "$ref": "#/components/schemas/RoleMemberDto"
+                          }
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation failed — see `errors` for per-field messages",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or expired admin token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Authenticated, but lacking the required permission",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Move admins into this role",
+        "tags": [
+          "Admin-Roles"
+        ]
       }
     },
     "/api/v1/admin/roles/{id}/permissions": {
@@ -36748,7 +36847,13 @@
               "admin",
               "finance",
               "warehouse"
-            ]
+            ],
+            "description": "One of the four migrated roles. Ignored when `roleId` is given, which is the only way to place an admin in a custom role. One of the two is required."
+          },
+          "roleId": {
+            "type": "string",
+            "format": "uuid",
+            "description": "The data-driven role this admin's permissions come from, from `GET /admin/roles`. Wins over `role`. Omitted, the role matching `role`'s slug is used — an admin with no role holds no permissions at all, so one is always assigned."
           },
           "schedules": {
             "description": "Work schedule entries (auto-created for FINANCE role with defaults if omitted)",
@@ -36760,8 +36865,7 @@
         },
         "required": [
           "phone",
-          "password",
-          "role"
+          "password"
         ]
       },
       "UpdateAdminDto": {
@@ -36785,7 +36889,13 @@
               "admin",
               "finance",
               "warehouse"
-            ]
+            ],
+            "description": "Ignored when `roleId` is given"
+          },
+          "roleId": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Move the admin into this role. The only way to reach a custom role."
           },
           "schedules": {
             "description": "Work schedule entries (auto-created for FINANCE role with defaults if omitted)",
@@ -41262,6 +41372,22 @@
         "required": [
           "id",
           "isSuspended"
+        ]
+      },
+      "AssignMembersDto": {
+        "type": "object",
+        "properties": {
+          "adminIds": {
+            "description": "Admin ids to move into this role. Unknown ids fail the whole request.",
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        },
+        "required": [
+          "adminIds"
         ]
       },
       "SetPermissionsDto": {

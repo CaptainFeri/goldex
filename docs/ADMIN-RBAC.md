@@ -148,9 +148,14 @@ reachable by URL. Do not treat the sidebar as an access control.
 | GET | `/admin/roles/:id/members` | `roles_view` |
 | GET | `/admin/roles/:id/permissions` | `roles_view` |
 | POST | `/admin/roles` | `roles_manage` |
+| POST | `/admin/roles/:id/members` | `roles_manage` |
 | PATCH | `/admin/roles/:id` | `roles_manage` |
 | PUT | `/admin/roles/:id/permissions` | `roles_manage` |
 | DELETE | `/admin/roles/:id` | `roles_manage` |
+
+`/admin/accounts` (the admin-account CRUD) is gated on `roles_manage` too:
+creating an account now places it in a role, so it can grant permissions and
+has to be held to the same key as the roles screen.
 
 `GET /admin/me/permissions` deliberately requires no permission: an operator
 must always be able to discover their own access, or the panel cannot decide
@@ -160,6 +165,56 @@ Each role carries `capabilities` (`canDelete` / `canRename` /
 `canEditPermissions` / `canEditConfig`), computed server-side from the caller's
 own permissions and the role's state. The panel disables controls from it, so a
 greyed-out button and a 403 always agree.
+
+## Membership
+
+An admin belongs to **exactly one** role, and `admin.role_id` is that link.
+
+`POST /admin/roles/:id/members` takes `{ adminIds }` and moves them in. There is
+no counterpart that takes an admin *out* of a role, and that is deliberate:
+`permissionsOf` returns an empty list for a null `role_id`, so an admin with no
+role can log in and see nothing. Taking access away deliberately is what
+suspension is for, and it says so on the account. To move someone out of role A
+you put them in role B.
+
+Three refusals, mirroring the ones on editing a role:
+
+| | |
+| --- | --- |
+| the role grants a key the caller lacks | `ROLE.CANNOT_GRANT_UNHELD:<keys>` |
+| the caller names themselves | `ROLE.CANNOT_REASSIGN_SELF` |
+| it would leave no active admin able to manage roles | `ROLE.LAST_ROLES_MANAGE` |
+
+The first is what stops account management being a way around the catalog:
+without it, any holder of `roles_manage` could put someone into the root role —
+or create an account there — and log in as them. The root role is checked as
+the whole catalog, which is what it grants.
+
+`AdminManagementService.create` and `update` apply the same rule, and both now
+resolve and write `role_id`. **`AdminManagementService.create` used to write
+only the legacy `role` enum.** Migration 097 backfilled every admin that existed
+when it ran, so the seeded super admin was fine — but every account created
+afterwards, a new super admin included, was saved with `role_id` NULL. It could
+log in, every gated screen refused it, and the roles screen listed it under no
+role, because membership is a `role_id` lookup. Migration 104 repairs those rows
+with the same join 097 used; `rbac-assignment.db.spec.ts` reproduces the bug
+against the real seeded roles and is what keeps it from coming back.
+
+### The legacy column
+
+`admin.role` is still written alongside `role_id`, by `legacyRoleFor`. It has to
+be: `admin-management` compares `RoleHierarchy[admin.role]` to decide who may
+edit, suspend or delete whom, and `RoleHierarchy[undefined]` is `undefined`,
+which makes every one of those comparisons false and silently lets anyone
+through.
+
+The four migrated roles keep their own value — their slugs *are* the enum
+values, which is the join 097 backfilled on. A custom role has no enum value, so
+one is derived from the single capability the hierarchy still gates: a custom
+role holding `roles_manage` maps to `admin`, everything else to `warehouse`. A
+role that can already rewrite any non-root role's permissions is not meaningfully
+restrained by denying it the matching weight; one without it cannot touch other
+admins at all.
 
 ## Notes for whoever picks this up
 

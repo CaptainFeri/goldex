@@ -13,7 +13,10 @@ export interface Admin {
   id: string;
   phone: string | null;
   email: string | null;
+  /** Legacy enum, still written by the server for its hierarchy checks. */
   role: AdminRole;
+  /** The role row permissions actually come from. Read this, not `role`. */
+  roleId: string | null;
   isSuspended: boolean;
   lastLoginAt: string | null;
   createAt: string;
