@@ -82,24 +82,27 @@ with 403. Specifically:
 ## Enforcement coverage
 
 Enforcement is opt-in per controller: a controller without
-`AdminPermissionsGuard` in its `@UseGuards` is unaffected. This change applies
-it to the four controllers added in this workstream and leaves the rest alone,
-because assigning a permission to a legacy route is a product decision about
-who should be able to do what — not a mechanical rename, and not something to
-land 250 routes of on inference.
+`AdminPermissionsGuard` in its `@UseGuards` is unaffected. It is applied to the
+controllers built in this workstream — roles, reports, dashboard, accounting,
+settings and API keys — and the rest are left alone, because assigning a
+permission to a legacy route is a product decision about who should be able to
+do what, not a mechanical rename, and not something to land 250 routes of on
+inference.
 
 The table below is the worklist for that sweep. "Inert `@AdminRoles`" counts
 decorators that currently do nothing; they are the best available evidence of
 original intent, and should be read before choosing a key. **The suggested keys
 are a starting point for that conversation, not a decision.**
 
-<!-- 31 admin controllers, 295 routes; 38 enforced -->
+<!-- 33 admin controllers, 309 routes; 52 enforced -->
 
 | Controller | Routes | Enforced | Inert `@AdminRoles` | Suggested key |
 | --- | ---: | :---: | ---: | --- |
 | `admin/accounting` | 12 | **yes** | 0 | already applied |
 | `admin` | 11 | **yes** | 0 | already applied |
 | `admin/reports` | 9 | **yes** | 0 | already applied |
+| `admin/settings` | 8 | **yes** | 0 | already applied |
+| `admin` | 6 | **yes** | 0 | already applied |
 | `admin/dashboard` | 6 | **yes** | 0 | already applied |
 | `admin/credits` | 36 | no | 36 | `wallets_ops` |
 | `admin/crm` | 36 | no | 0 | `users_view` |
@@ -128,7 +131,6 @@ are a starting point for that conversation, not a decision.**
 | `admin/deposit` | 3 | no | 3 | **needs a decision** |
 | `admin/finance-logs` | 2 | no | 2 | `accounting` |
 | `admin/market` | 1 | no | 0 | none — panel chrome, deliberate |
-
 Until a controller appears with **yes** above, its routes are reachable by any
 authenticated admin. The permission-aware sidebar hides pages an operator lacks
 the key for, but that is presentation only — an unenforced route is still
@@ -177,3 +179,17 @@ greyed-out button and a 403 always agree.
   written; several places outside this change read it. It is now the legacy
   identity only. Removing it is a separate change, and should come after the
   sweep above is finished.
+
+## `settings` and `api`
+
+These two keys are held by the root role only, by seed. That is deliberate:
+`settings` reconfigures the install (withdrawal floor, default profit,
+calendar), and `api` mints credentials that authenticate as the platform. The
+`admin` role gets the other twenty.
+
+If an operations team needs either, grant it explicitly to a role — that is a
+decision worth making on purpose rather than inheriting from a seed.
+
+The per-admin settings (`profile`, `security`, `notifications`) require **no**
+permission at all. An operator must be able to reach their own two-factor
+toggle, and gating those would allow a role to exist that cannot.
