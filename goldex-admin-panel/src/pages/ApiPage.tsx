@@ -4,7 +4,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, unwrap, apiError } from "../api/client";
 import { Card, Stat, Badge, Loading, ErrorState, Empty, Modal } from "../components/ui";
 import { fmtNum, fmtDate } from "../lib/format";
-import "../lib/chart";
+import { gridColor } from "../lib/chart";
 import type { ApiKey, ApiKeyStatus, ApiStats, ApiTraffic, CreatedApiKey } from "../api/types";
 
 const STATUS_LABEL: Record<ApiKeyStatus, string> = {
@@ -17,8 +17,6 @@ const STATUS_KIND: Record<ApiKeyStatus, "green" | "gold" | "red"> = {
   limited: "gold",
   revoked: "red",
 };
-
-const gridColor = "rgba(255,255,255,0.06)";
 
 /** "—" rather than a number the server did not have. */
 export const orDash = (v: number | null, suffix = "") => (v === null ? "—" : `${fmtNum(v, 2)}${suffix}`);
@@ -48,7 +46,7 @@ function CreatedKeyModal({ created, onClose }: { created: CreatedApiKey; onClose
       <div
         dir="ltr"
         style={{
-          background: "var(--bg-soft, rgba(255,255,255,0.04))",
+          background: "var(--bg-soft)",
           border: "1px solid var(--border)",
           borderRadius: 8,
           padding: 12,
@@ -267,9 +265,9 @@ export default function ApiPage() {
                   maintainAspectRatio: false,
                   interaction: { mode: "index", intersect: false },
                   scales: {
-                    x: { grid: { color: gridColor } },
+                    x: { grid: { color: gridColor() } },
                     // Request counts are integers; fractional ticks read as noise.
-                    y: { grid: { color: gridColor }, beginAtZero: true, ticks: { precision: 0 } },
+                    y: { grid: { color: gridColor() }, beginAtZero: true, ticks: { precision: 0 } },
                   },
                   plugins: { legend: { position: "bottom" } },
                 }}

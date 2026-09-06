@@ -1,6 +1,6 @@
 import { Injectable } from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
-import { Brackets, In, Repository } from "typeorm";
+import { In, Repository } from "typeorm";
 import { P2pWithdrawRequestEntity } from "../p2p/entity/p2p-withdraw-request.entity";
 import { P2pDepositIntentEntity } from "../p2p/entity/p2p-deposit-intent.entity";
 import { P2pMatchEntity } from "../p2p/entity/p2p-match.entity";
@@ -162,13 +162,13 @@ export class P2pEmViewService {
         requester: {
           userId: r.userId,
           name: personName(r.user),
-          phone: (r.user as any)?.phone ?? null,
+          phone: r.user?.phone ?? null,
         },
         performer: performerMatch
           ? {
               userId: performerMatch.depositIntent!.userId,
               name: personName(performerMatch.depositIntent!.user),
-              phone: (performerMatch.depositIntent!.user as any)?.phone ?? null,
+              phone: performerMatch.depositIntent!.user?.phone ?? null,
             }
           : null,
         destinationAccount: snapshot.iban ?? snapshot.accountNumber ?? null,
@@ -177,7 +177,7 @@ export class P2pEmViewService {
           r.expiresAt,
           parts.map((p) => p.reservedUntil)
         ),
-        hasEnclosure: (r as any).hasEnclosure ?? false,
+        hasEnclosure: r.hasEnclosure,
         proofCount: mine.reduce((n, m) => n + (proofCounts.get(m.id) ?? 0), 0),
         createAt: r.createAt as Date,
       };
@@ -189,15 +189,13 @@ export class P2pEmViewService {
       status: depositStatus(i.state),
       amount: String(i.requestedAmount),
       symbolSlug: i.symbol?.slug ?? null,
-      requester: { userId: i.userId, name: personName(i.user), phone: (i.user as any)?.phone ?? null },
+      requester: { userId: i.userId, name: personName(i.user), phone: i.user?.phone ?? null },
       performer: null,
-      // need to edit
-      // destinationAccount: i.sourceIban ?? null,
-      // assignedAccount: i.sourceBankAccountId ?? null,
       destinationAccount: null,
       assignedAccount: null,
-      expiresAt: (i as any).expiresAt ?? null,
-      hasEnclosure: (i as any).hasEnclosure ?? false,
+      expiresAt: i.expiresAt ?? null,
+      // دارای لف is a withdraw-request column; a deposit intent has none.
+      hasEnclosure: false,
       proofCount: 0,
       createAt: i.createAt as Date,
     }));
@@ -280,11 +278,11 @@ export class P2pEmViewService {
   }
 }
 
-function personName(user: unknown): string | null {
-  const u = user as any;
-  if (!u) return null;
-  const name = [u.firstName, u.lastName].filter(Boolean).join(" ").trim();
-  return name || u.fullName || u.phone || null;
+function personName(user?: { firstName?: string; lastName?: string; phone?: string } | null): string | null {
+  if (!user) return null;
+  const name = [user.firstName, user.lastName].filter(Boolean).join(" ").trim();
+  // Falls back to the phone so a row is never blank in the requester column.
+  return name || user.phone || null;
 }
 
 function matchesParty(party: { name: string | null; phone: string | null } | null, q: string): boolean {

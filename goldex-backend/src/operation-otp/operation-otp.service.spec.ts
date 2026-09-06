@@ -28,8 +28,28 @@ describeRedis("OperationOtpService", () => {
   let service: OperationOtpService;
   let sent: string[];
 
-  beforeAll(() => {
-    client = new Redis({ host: process.env.REDIS_HOST ?? "127.0.0.1", port: Number(process.env.REDIS_PORT ?? 6379) });
+  beforeAll(async () => {
+    client = new Redis({
+      host: process.env.REDIS_HOST ?? "127.0.0.1",
+      port: Number(process.env.REDIS_PORT ?? 6379),
+      // Fail fast. With ioredis' defaults an unreachable Redis makes every
+      // test in this file time out separately — around two minutes to be told,
+      // confusingly, that twenty-one assertions failed.
+      lazyConnect: true,
+      connectTimeout: 2_000,
+      maxRetriesPerRequest: 1,
+      retryStrategy: () => null,
+    });
+    try {
+      await client.connect();
+      await client.ping();
+    } catch {
+      throw new Error(
+        "GOLDEX_REDIS_SPECS=1 is set but Redis is unreachable at " +
+          `${process.env.REDIS_HOST ?? "127.0.0.1"}:${process.env.REDIS_PORT ?? 6379}. ` +
+          "Start one (`redis-server --port 6379`) or unset the variable to skip these.",
+      );
+    }
   });
   afterAll(async () => {
     await client.quit();
