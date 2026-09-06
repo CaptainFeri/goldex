@@ -26,10 +26,25 @@ import { AdminAuthGuard } from "../admin/auth/Guard/admin.guard";
 import { AdminRolesGuard } from "../admin/auth/Guard/admin.role.guard";
 import { AdminRoles } from "../admin/role/admin.role.decorator";
 import { AdminRole } from "../admin/role/admin.roles.enum";
+import { AdminPermissionsGuard } from "../admin-role/guard/admin-permissions.guard";
+import { RequirePermissions } from "../admin-role/guard/require-permissions.decorator";
 
+/**
+ * Admin accounts.
+ *
+ * Gated on `roles_manage`: creating an account now places it in a role, so this
+ * controller can grant permissions and has to be held to the same key as the
+ * roles screen. `@AdminRoles(SUPER_ADMIN)` below is the legacy declaration and
+ * is left where it is, but it enforces nothing — `AdminRolesGuard` reads the
+ * metadata key `"roles"` while `@AdminRoles` writes `"AdminRoles"`, and reads
+ * `request.user` where the middleware sets `request.admin`. Hierarchy is still
+ * checked inside the service, off `admin.role`.
+ */
 @Controller("admin/accounts")
 @ApiTags("Admin-Management")
 @ApiAdminErrorResponses()
+@UseGuards(AdminAuthGuard, AdminPermissionsGuard)
+@RequirePermissions("roles_manage")
 export class AdminManagementController {
   constructor(private readonly adminService: AdminManagementService) {}
 
@@ -58,7 +73,7 @@ export class AdminManagementController {
   @ApiOperation({ summary: "Create an admin account" })
   @ApiEnvelopeResponse(AdminAccountDto, { status: 201 })
   async create(@Body() createAdminDto: CreateAdminDto, @Req() req: any) {
-    const admin = await this.adminService.create(createAdminDto, req.admin?.id);
+    const admin = await this.adminService.create(createAdminDto, req.admin);
     const { hashPassword, ...result } = admin;
     return { data: result };
   }
