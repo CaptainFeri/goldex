@@ -21,6 +21,15 @@ import OrderBookPage from "./pages/OrderBookPage";
 import DiscountsPage from "./pages/DiscountsPage";
 import CreditsPage from "./pages/CreditsPage";
 import FinanceLogsPage from "./pages/FinanceLogsPage";
+import ReportsPage from "./pages/ReportsPage";
+import AccountingPage from "./pages/AccountingPage";
+import AccountingVouchersPage from "./pages/AccountingVouchersPage";
+import RolesPage from "./pages/RolesPage";
+import SettingsPage from "./pages/SettingsPage";
+import InboxPage from "./pages/InboxPage";
+import ShahinPage from "./pages/ShahinPage";
+import WithdrawalEmPage from "./pages/WithdrawalEmPage";
+import ApiPage from "./pages/ApiPage";
 import LevelsPage from "./pages/LevelsPage";
 import DepositsPage from "./pages/DepositsPage";
 import WithdrawsPage from "./pages/WithdrawsPage";
@@ -82,12 +91,21 @@ export default function App() {
         <Route path="/provider-finance" element={<ProviderFinancePage />} />
         <Route path="/cbp" element={<CbpPage />} />
         <Route path="/admins" element={<AdminsPage />} />
+        <Route path="/roles" element={<RolesPage />} />
+        <Route path="/settings" element={<SettingsPage />} />
+        <Route path="/inbox" element={<InboxPage />} />
+        <Route path="/shahin" element={<ShahinPage />} />
+        <Route path="/em" element={<WithdrawalEmPage />} />
+        <Route path="/api" element={<ApiPage />} />
         <Route path="/warehouse" element={<WarehousePage />} />
         <Route path="/orders" element={<OrdersPage />} />
         <Route path="/order-book" element={<OrderBookPage />} />
         <Route path="/discounts" element={<DiscountsPage />} />
         <Route path="/credits" element={<CreditsPage />} />
         <Route path="/finance-logs" element={<FinanceLogsPage />} />
+        <Route path="/reports" element={<ReportsPage />} />
+        <Route path="/accounting" element={<AccountingPage />} />
+        <Route path="/accounting/vouchers" element={<AccountingVouchersPage />} />
         <Route path="/user-levels" element={<LevelsPage />} />
         <Route path="/deposits" element={<DepositsPage />} />
         <Route path="/withdraws" element={<WithdrawsPage />} />

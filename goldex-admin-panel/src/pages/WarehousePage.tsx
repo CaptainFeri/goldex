@@ -4,6 +4,7 @@ import { api, unwrap, apiError } from "../api/client";
 import { Card, Modal, Loading, ErrorState, Empty, Badge } from "../components/ui";
 import { fmtNum, fmtDate } from "../lib/format";
 import type { Warehouse, Packet, WarehouseRequest, AllocationOption } from "../api/types";
+import DateField from "../components/DateField";
 
 function downloadCSV(data: Record<string, any>[], filename: string) {
   if (!data.length) return;
@@ -688,7 +689,7 @@ function RequestProcessModal({
           <>
             <div className="field">
               <label>تاریخ تحویل</label>
-              <input className="input" type="date" value={deliveryDate} onChange={(e) => setDeliveryDate(e.target.value)} />
+              <DateField value={deliveryDate} onChange={setDeliveryDate} />
             </div>
             <div className="field">
               <label>زمان تحویل</label>

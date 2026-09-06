@@ -72,6 +72,14 @@ import { RedisModule } from "../redis/redis.module";
     P2pCronService,
   ],
   // Deposit/Withdraw import these to branch on type === "p2p".
-  exports: [P2pWithdrawService, P2pDepositService, P2pSettingService, P2pLiquidityService],
+  // P2pEscalationService is exported so the EM desk can resolve escalations
+  // through it rather than writing p2p_* rows of its own.
+  exports: [
+    P2pWithdrawService,
+    P2pDepositService,
+    P2pSettingService,
+    P2pLiquidityService,
+    P2pEscalationService,
+  ],
 })
 export class P2pModule {}

@@ -3,6 +3,8 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api, unwrap, apiError } from "../api/client";
 import { Card, Badge, Loading, ErrorState, Empty, Modal } from "../components/ui";
 import { pairLabel } from "../lib/format";
+import { fmtBySymbol, toApiAmount, toFormAmount, unitLabel } from "../lib/money";
+import DateField from "../components/DateField";
 
 const fmtDate = (d: string | null) =>
   d ? new Date(d).toLocaleDateString("fa-IR", { year: "numeric", month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }) : "—";
@@ -39,7 +41,9 @@ function renderFeatureValue(key: string, val: any): string {
     if ("enabled" in val) return val.enabled ? "فعال" : "غیرفعال";
     if ("amount" in val && "currency" in val) {
       if (val.amount === 0) return "نامحدود";
-      return `${val.amount.toLocaleString("fa-IR")} ${val.currency}`;
+      // A limit carries its own currency — "IRR" on every seeded one — so it
+      // is money, and rial money is shown in toman like the rest of the panel.
+      return fmtBySymbol(val.amount, val.currency);
     }
     return JSON.stringify(val);
   }
@@ -361,10 +365,19 @@ function LevelFormModal({ title, initial, onClose, onSave, loading }: {
                       value={form.features[key] ?? 0} onChange={(e) => setForm((f) => ({ ...f, features: { ...f.features, [key]: +e.target.value } }))} />
                   ) : (
                     <div className="row" style={{ gap: 4, alignItems: "center" }}>
+                      {/*
+                        Typed in the same unit the list displays, and converted
+                        back on change — the row above shows toman, so a field
+                        posting raw rial would cut every limit to a tenth.
+                      */}
                       <input className="input mono" type="number" min={0} style={{ width: 120, textAlign: "center" }}
-                        value={form.features[key]?.amount ?? 0}
-                        onChange={(e) => setFeature(key, { amount: +e.target.value })} />
-                      <span style={{ fontSize: "0.72rem", color: "var(--text-faint)", minWidth: 30 }}>{form.features[key]?.currency ?? "IRR"}</span>
+                        value={toFormAmount(form.features[key]?.amount ?? 0, form.features[key]?.currency ?? "IRR") ?? 0}
+                        onChange={(e) =>
+                          setFeature(key, {
+                            amount: toApiAmount(e.target.value, form.features[key]?.currency ?? "IRR") ?? 0,
+                          })
+                        } />
+                      <span style={{ fontSize: "0.72rem", color: "var(--text-faint)", minWidth: 30 }}>{unitLabel(form.features[key]?.currency ?? "IRR")}</span>
                     </div>
                   )}
                 </div>
@@ -585,8 +598,9 @@ function AssignLevelModal({ level, onClose, onSave, loading }: {
   const users = useQuery({
     queryKey: ["users-dropdown"],
     queryFn: async () => {
-      const res = await api.get("/admin/users/users", { params: { pageSize: 999, pageNumber: 1 } });
-      return (res.data?.data?.userList ?? []) as any[];
+      // 100 is the server cap. It used to clamp 999 silently; it now rejects it.
+      const res = await api.get("/admin/users/users", { params: { pageSize: 100, page: 1 } });
+      return (res.data?.data?.items ?? []) as any[];
     },
   });
 
@@ -615,7 +629,7 @@ function AssignLevelModal({ level, onClose, onSave, loading }: {
           </div>
           <div className="field" style={{ gridColumn: "1 / -1" }}>
             <label>تاریخ انقضا (اختیاری)</label>
-            <input className="input" type="datetime-local" value={expiresAt} onChange={(e) => setExpiresAt(e.target.value)} />
+            <DateField mode="datetime" value={expiresAt} onChange={setExpiresAt} />
           </div>
         </div>
         <div className="modal-actions">

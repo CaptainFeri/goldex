@@ -3,8 +3,11 @@ import { useQuery } from "@tanstack/react-query";
 import { Line } from "react-chartjs-2";
 import { api, unwrap, apiError } from "../api/client";
 import { Card, Loading, ErrorState, Empty, Badge } from "../components/ui";
-import { fmtNum, fmtDate, fmtDuration, pairLabel, symbolLabel } from "../lib/format";
+import { fmtNum, fmtDate, fmtDuration, pairLabel, symbolLabel, baseSlug, quoteSlug } from "../lib/format";
+import { fmtBySymbol } from "../lib/money";
 import { gridColor } from "../lib/chart";
+import { fromWireDate } from "../lib/dates";
+import DateField from "../components/DateField";
 
 type Tab = "overview" | "orders" | "transactions" | "ledger" | "providers" | "customers";
 
@@ -166,9 +169,9 @@ function OrdersTab({ range }: { range: Range }) {
               <td className="mono">{o.orderCode ?? o.id?.slice(0, 8)}</td>
               <td>{o.base && o.quote ? `${o.base}/${o.quote}` : pairLabel(o.pricePair)}</td>
               <td>{sideBadge(o.side)}</td>
-              <td className="mono">{fmtNum(o.quantity, 4)}</td>
-              <td className="mono">{fmtNum(o.price, 2)}</td>
-              <td className="mono">{fmtNum(o.totalValue, 0)}</td>
+              <td className="mono">{fmtBySymbol(o.quantity, o.base ?? baseSlug(o.pricePair), { digits: 4 })}</td>
+              <td className="mono">{fmtBySymbol(o.price, o.quote ?? quoteSlug(o.pricePair), { digits: 2 })}</td>
+              <td className="mono">{fmtBySymbol(o.totalValue, o.quote ?? quoteSlug(o.pricePair), { digits: 0 })}</td>
               <td>{statusBadge(o.status)}</td>
               <td>{fmtDate(o.createdAt ?? o.createAt)}</td>
             </tr>
@@ -200,8 +203,8 @@ function TransactionsTab() {
               <td>{t.transactionType ?? "—"}</td>
               <td>{t.user ?? "—"}</td>
               <td>{t.symbol ? <Badge kind="gold">{t.symbol}</Badge> : "—"}</td>
-              <td className="mono" style={{ color: Number(t.amount) < 0 ? "var(--red)" : "var(--green)" }}>{fmtNum(t.amount, 6)}</td>
-              <td className="mono">{fmtNum(t.fee, 6)}</td>
+              <td className="mono" style={{ color: Number(t.amount) < 0 ? "var(--red)" : "var(--green)" }}>{fmtBySymbol(t.amount, t.symbol, { digits: 6 })}</td>
+              <td className="mono">{fmtBySymbol(t.fee, t.symbol, { digits: 6 })}</td>
               <td>{t.status ?? "—"}</td>
               <td>{fmtDate(t.createdAt)}</td>
             </tr>
@@ -232,7 +235,7 @@ function LedgerTab() {
             <tr key={l.id}>
               <td><Badge kind={l.type === "COMMISSION_BUY" || l.type === "COMMISSION_SELL" ? "green" : "gray"}>{l.type}</Badge></td>
               <td>{l.symbol ? <Badge kind="gold">{l.symbol}</Badge> : "—"}</td>
-              <td className="mono" style={{ color: Number(l.amount) < 0 ? "var(--red)" : "var(--green)" }}>{fmtNum(l.amount, 6)}</td>
+              <td className="mono" style={{ color: Number(l.amount) < 0 ? "var(--red)" : "var(--green)" }}>{fmtBySymbol(l.amount, l.symbol, { digits: 6 })}</td>
               <td className="muted" style={{ maxWidth: 280, whiteSpace: "normal" }}>{l.description ?? "—"}</td>
               <td>{fmtDate(l.createdAt)}</td>
             </tr>
@@ -282,9 +285,9 @@ function ProvidersTab() {
                   <td rowSpan={symbols.length} style={{ fontWeight: 600 }}>{p.providerKey ?? p.name ?? "—"}</td>
                 )}
                 <td><Badge kind="gold">{s.symbol ?? s.asset ?? "—"}</Badge></td>
-                <td className="mono">{fmtNum(s.total ?? s.balance, 4)}</td>
-                <td className="mono" style={{ color: "var(--green)" }}>{fmtNum(s.free ?? s.available, 4)}</td>
-                <td className="mono" style={{ color: "var(--red)" }}>{fmtNum(s.locked, 4)}</td>
+                <td className="mono">{fmtBySymbol(s.total ?? s.balance, s.symbol ?? s.asset, { digits: 4 })}</td>
+                <td className="mono" style={{ color: "var(--green)" }}>{fmtBySymbol(s.free ?? s.available, s.symbol ?? s.asset, { digits: 4 })}</td>
+                <td className="mono" style={{ color: "var(--red)" }}>{fmtBySymbol(s.locked, s.symbol ?? s.asset, { digits: 4 })}</td>
                 <td style={{ fontSize: 12 }}>{fmtDate(s.updatedAt ?? p.updatedAt)}</td>
               </tr>
             ));
@@ -331,7 +334,7 @@ function CustomersTab() {
                       <span key={b.symbol} className="row" style={{ gap: 6 }}>
                         <Badge kind="gold">{b.symbol}</Badge>
                         <span className="mono" style={{ fontSize: 12 }}>
-                          {fmtNum(b.free, 4)} / {fmtNum(b.locked, 4)}
+                          {fmtBySymbol(b.free, b.symbol, { digits: 4 })} / {fmtBySymbol(b.locked, b.symbol, { digits: 4 })}
                         </span>
                       </span>
                     ))}
@@ -392,20 +395,20 @@ export default function FinancePage() {
                   {pr.label}
                 </button>
               ))}
-              <input
-                className="input"
-                type="date"
+              <DateField
                 style={{ width: 150 }}
                 value={toInput(range.from)}
-                onChange={(e) => setRange((r) => ({ ...r, from: new Date(e.target.value).getTime() }))}
+                onChange={(v) => setRange((r) => ({ ...r, from: fromWireDate(v)?.getTime() ?? r.from }))}
               />
               <span className="muted">تا</span>
-              <input
-                className="input"
-                type="date"
+              <DateField
                 style={{ width: 150 }}
                 value={toInput(range.to)}
-                onChange={(e) => setRange((r) => ({ ...r, to: new Date(e.target.value).getTime() + DAY - 1 }))}
+                onChange={(v) => {
+                  const picked = fromWireDate(v);
+                  // The upper bound is the end of the chosen day, as before.
+                  if (picked) setRange((r) => ({ ...r, to: picked.getTime() + DAY - 1 }));
+                }}
               />
             </div>
           ) : null

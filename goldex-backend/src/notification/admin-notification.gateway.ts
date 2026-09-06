@@ -67,6 +67,16 @@ export class AdminNotificationGateway implements OnGatewayConnection, OnGatewayD
    * Broadcast a notification to all connected admins.
    */
   sendToAdmins(notification: AdminNotificationPayload) {
-    this.server.to("admins").emit("admin:notification", notification);
+    this.server?.to("admins").emit("admin:notification", notification);
+  }
+
+  /**
+   * How many operators are on the feed right now.
+   *
+   * Reported by the inbox stats so the panel can say whether it is receiving
+   * live updates or just polling, rather than implying live either way.
+   */
+  connectedAdminCount(): number {
+    return this.server?.sockets?.adapter?.rooms?.get("admins")?.size ?? 0;
   }
 }

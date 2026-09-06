@@ -9,7 +9,7 @@ const build = (query: Record<string, unknown>) =>
 describe("PaginationQueryDto", () => {
   it("defaults to page 1 at the default page size", () => {
     const q = build({});
-    expect(q.pageNumber).toBe(1);
+    expect(q.currentPage).toBe(1);
     expect(q.take).toBe(DEFAULT_PAGE_SIZE);
     expect(q.skip).toBe(0);
   });
@@ -17,7 +17,7 @@ describe("PaginationQueryDto", () => {
   it("coerces query-string values, which arrive as strings", async () => {
     const q = build({ page: "3", pageSize: "25" });
     expect(await validate(q)).toHaveLength(0);
-    expect(q.pageNumber).toBe(3);
+    expect(q.currentPage).toBe(3);
     expect(q.take).toBe(25);
     expect(q.skip).toBe(50);
   });

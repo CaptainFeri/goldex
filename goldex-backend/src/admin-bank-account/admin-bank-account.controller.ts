@@ -1,10 +1,6 @@
 import { Body, Controller, Get, Param, Patch, Post, Query, UseGuards } from "@nestjs/common";
 import { ApiBearerAuth, ApiOperation, ApiTags } from "@nestjs/swagger";
-import {
-  ApiAdminErrorResponses,
-  ApiEnvelopeResponse,
-  ApiPaginatedResponse,
-} from "../shared/swagger";
+import { ApiAdminErrorResponses, ApiEnvelopeResponse, ApiPaginatedResponse } from "../shared/swagger";
 import { AdminBankAccountDto } from "./dto/admin-bank-account.dto";
 import { AdminBankAccountService } from "./admin-bank-account.service";
 import { CreateAdminBankAccountDto } from "./dto/create-admin-bank-account.dto";
@@ -43,7 +39,7 @@ export class AdminBankAccountController {
   @Post()
   @AdminRoles(AdminRole.SUPER_ADMIN)
   @ApiOperation({ summary: "Create a company bank account" })
-  @ApiEnvelopeResponse(AdminBankAccountDto)
+  @ApiEnvelopeResponse(AdminBankAccountDto, { status: 201 })
   async create(@Body() dto: CreateAdminBankAccountDto) {
     return { data: await this.service.create(dto) };
   }
@@ -71,5 +67,4 @@ export class AdminBankAccountController {
   async setStatus(@Param("id") id: string, @Body() dto: SetBankAccountStatusDto) {
     return { data: await this.service.setStatus(id, dto.status) };
   }
-
 }

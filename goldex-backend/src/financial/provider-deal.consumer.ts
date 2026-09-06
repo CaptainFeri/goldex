@@ -5,6 +5,7 @@ import { RabbitMQService } from "../rabbitmq/rabbitmq.service";
 import { MessagePatterns, RabbitMQMessage } from "../rabbitmq/interfaces/rabbitmq.interfaces";
 import { ProviderDealSnapshotEntity } from "./entity/provider-deal-snapshot.entity";
 import { ProviderPairMappingService } from "../provider-pair-mapping/provider-pair-mapping.service";
+import { RIAL_SYMBOL_SLUG } from "../shared/constants/currency.constants";
 
 interface DoneDealsAggregate {
   dealCount: number;
@@ -62,7 +63,7 @@ export class ProviderDealConsumer implements OnModuleInit {
       // Resolve the item to its real base/quote pair symbols. Unmapped/legacy
       // messages fall back to XAU/IRR (the historical assumption).
       let baseSymbol: string | null = "XAU";
-      let quoteSymbol: string | null = "IRR";
+      let quoteSymbol: string | null = RIAL_SYMBOL_SLUG;
       if (data.itemId != null) {
         try {
           const pair = await this.mappingService.findPairForProviderItem(

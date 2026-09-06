@@ -4,6 +4,7 @@ import { cbpApi, CbpGatewayHealth, CbpPayment } from "../api/cbp";
 import { apiError } from "../api/client";
 import { Card, Loading, ErrorState, Empty, Badge, Modal } from "../components/ui";
 import { fmtDate, fmtNum, symbolLabel } from "../lib/format";
+import { fmtBySymbol } from "../lib/money";
 
 const STATUS_OPTS = ["pending", "processing", "succeeded", "failed", "rejected", "cancelled", "reversed"];
 const OP_OPTS = ["DEPOSIT", "WITHDRAW"];
@@ -54,6 +55,18 @@ function JsonBlock({ label, value }: { label: string; value?: any }) {
     </div>
   );
 }
+
+/**
+ * The symbol a payment is denominated in.
+ *
+ * Prefer the joined symbol's slug: `currency` is free text, and until this
+ * change the backend filled it with `symbol.name` — "ریال ایران" for rial —
+ * which no consumer can compare against. Falling back to it still helps for
+ * rows written by the gateways, which set "IRR" directly. When neither
+ * identifies the symbol the amount is shown unconverted rather than guessed.
+ */
+const paymentUnit = (p: { symbol?: { slug?: string } | null; currency?: string }) =>
+  p.symbol?.slug ?? p.currency ?? null;
 
 export default function CbpPage() {
   const [page, setPage] = useState(1);
@@ -199,7 +212,7 @@ export default function CbpPage() {
                       <td>{p.operation}</td>
                       <td className="mono" dir="ltr" style={{ fontSize: 12 }}>{p.gatewayCode ?? "—"}</td>
                       <td>{p.type}</td>
-                      <td className="mono">{fmtNum(p.amount)}</td>
+                      <td className="mono">{fmtBySymbol(p.amount, paymentUnit(p))}</td>
                       <td>{symbolLabel(p.symbol)}</td>
                       <td className="mono" dir="ltr" style={{ fontSize: 12 }}>{p.userId?.slice(0, 8)}</td>
                       <td>{paymentBadge(p.status)}</td>
@@ -244,7 +257,7 @@ export default function CbpPage() {
                 <div className="field"><label>عملیات</label><div>{detailQ.data?.operation ?? detail.operation}</div></div>
                 <div className="field"><label>درگاه</label><div className="mono" dir="ltr">{detailQ.data?.gatewayCode ?? detail.gatewayCode ?? "—"}</div></div>
                 <div className="field"><label>نوع</label><div>{detailQ.data?.type ?? detail.type}</div></div>
-                <div className="field"><label>مبلغ</label><div className="mono">{fmtNum(detailQ.data?.amount ?? detail.amount)} {detailQ.data?.currency ?? detail.currency ?? ""}</div></div>
+                <div className="field"><label>مبلغ</label><div className="mono">{fmtBySymbol(detailQ.data?.amount ?? detail.amount, paymentUnit(detailQ.data ?? detail))}</div></div>
                 <div className="field"><label>نماد</label><div>{symbolLabel(detailQ.data?.symbol)}</div></div>
                 <div className="field"><label>کاربر</label><div className="mono" dir="ltr" style={{ fontSize: 12 }}>{detailQ.data?.userId ?? detail.userId}</div></div>
                 <div className="field"><label>مرجع خارجی</label><div className="mono" dir="ltr" style={{ fontSize: 12 }}>{detailQ.data?.externalReference ?? detail.externalReference ?? "—"}</div></div>

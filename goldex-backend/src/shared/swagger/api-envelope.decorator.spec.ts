@@ -2,6 +2,7 @@ import { Controller, Get, INestApplication } from "@nestjs/common";
 import { Test } from "@nestjs/testing";
 import { ApiProperty, DocumentBuilder, SwaggerModule } from "@nestjs/swagger";
 import {
+  ApiEnvelopeNoDataResponse,
   ApiEnvelopePrimitiveResponse,
   ApiEnvelopeResponse,
   ApiPaginatedResponse,
@@ -39,6 +40,12 @@ class WidgetsController {
   count() {
     return { data: 0 };
   }
+
+  @Get("removed")
+  @ApiEnvelopeNoDataResponse()
+  removed() {
+    return { data: null };
+  }
 }
 
 /**
@@ -55,8 +62,7 @@ describe("API envelope decorators", () => {
   const WIDGET = "#/components/schemas/WidgetDto";
   const PAGINATED = "#/components/schemas/PaginatedDto";
 
-  const schemaFor = (path: string) =>
-    doc.paths[path].get.responses["200"].content["application/json"].schema;
+  const schemaFor = (path: string) => doc.paths[path].get.responses["200"].content["application/json"].schema;
 
   beforeAll(async () => {
     const moduleRef = await Test.createTestingModule({
@@ -64,10 +70,7 @@ describe("API envelope decorators", () => {
     }).compile();
     app = moduleRef.createNestApplication();
     await app.init();
-    doc = SwaggerModule.createDocument(
-      app,
-      new DocumentBuilder().setTitle("test").setVersion("1").build()
-    );
+    doc = SwaggerModule.createDocument(app, new DocumentBuilder().setTitle("test").setVersion("1").build());
   });
 
   afterAll(async () => {
@@ -109,12 +112,7 @@ describe("API envelope decorators", () => {
 
   it("documents the pagination fields once, on PaginatedDto", () => {
     const paginated = doc.components.schemas.PaginatedDto;
-    expect(Object.keys(paginated.properties).sort()).toEqual([
-      "page",
-      "pageSize",
-      "total",
-      "totalPages",
-    ]);
+    expect(Object.keys(paginated.properties).sort()).toEqual(["page", "pageSize", "total", "totalPages"]);
   });
 
   it("supports a primitive payload", () => {
@@ -122,10 +120,18 @@ describe("API envelope decorators", () => {
     expect(data.type).toBe("number");
   });
 
+  it("documents an action that returns no payload", () => {
+    const schema = schemaFor("/widgets/removed");
+    expect(schema.allOf[0].$ref).toBe(ENVELOPE);
+    expect(schema.allOf[1].properties.data.nullable).toBe(true);
+  });
+
   it("never leaves `data` untyped", () => {
     for (const path of ["/widgets/one", "/widgets/many", "/widgets/paged", "/widgets/count"]) {
       const data = schemaFor(path).allOf[1].properties.data;
       expect(data.$ref ?? data.type ?? data.allOf).toBeDefined();
     }
+    // The no-data case is typed too — explicitly nullable, not merely absent.
+    expect(schemaFor("/widgets/removed").allOf[1].properties.data.nullable).toBe(true);
   });
 });

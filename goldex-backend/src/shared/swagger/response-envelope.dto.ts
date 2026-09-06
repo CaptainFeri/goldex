@@ -36,8 +36,10 @@ export class ErrorEnvelopeDto {
   })
   message: string;
 
-  @ApiProperty({ example: null, nullable: true })
-  data: null;
+  // Typed `unknown`, not `null`: a bare `null` gives the schema explorer no
+  // type to resolve and it reports the property as a circular reference.
+  @ApiProperty({ example: null, nullable: true, description: "Always null on an error" })
+  data: unknown;
 
   @ApiPropertyOptional({
     example: { amount: "AMOUNT.EXCEEDS_DAILY_LIMIT" },

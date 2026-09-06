@@ -4,6 +4,8 @@ import { api, unwrap, apiError } from "../api/client";
 import { Card, Badge, Loading, ErrorState, Empty, Modal } from "../components/ui";
 import { WITHDRAW_TYPES } from "../lib/enums";
 import type { WithdrawRequest } from "../api/types";
+import { fmtBySymbol } from "../lib/money";
+import type { Paginated } from "../api/types";
 
 const STATUS_LABELS: Record<string, string> = {
   PENDING: "در انتظار",
@@ -23,11 +25,10 @@ const STATUS_KINDS: Record<string, string> = {
 const GATEWAY_TYPES = new Set(["auto"]);
 const gatewayLabel = (code?: string) => code ?? "—";
 
-const fmtNum = (n: any) => (n ?? 0).toLocaleString("fa-IR");
+
 const fmtDate = (d: string | null) =>
   d ? new Date(d).toLocaleDateString("fa-IR", { year: "numeric", month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }) : "—";
 const typeLabel = (t: string) => WITHDRAW_TYPES.find((x) => x.value === t)?.label ?? t;
-const picUrl = (p: string | null | undefined) => p ? `/api/v1/admin/withdraw/picture/${encodeURIComponent(p)}` : "";
 
 export default function WithdrawsPage() {
   const [statusFilter, setStatusFilter] = useState("");
@@ -40,7 +41,7 @@ export default function WithdrawsPage() {
     queryFn: async () => {
       const params: any = {};
       if (statusFilter) params.status = statusFilter;
-      return unwrap<{ items: WithdrawRequest[]; total: number; page: number; limit: number }>((await api.get("/admin/withdraw", { params })).data);
+      return unwrap<Paginated<WithdrawRequest>>((await api.get("/admin/withdraw", { params })).data);
     },
   });
 
@@ -91,7 +92,7 @@ export default function WithdrawsPage() {
                   </td>
                   <td>{w.symbol?.slug || w.symbol?.name || w.symbolId}</td>
                   <td>{typeLabel(w.type)}</td>
-                  <td className="mono">{fmtNum(w.amount)}</td>
+                  <td className="mono">{fmtBySymbol(w.amount, w.symbol?.slug)}</td>
                   <td><Badge kind={(STATUS_KINDS[w.status] as "green" | "red" | "gold" | "gray")}>{STATUS_LABELS[w.status]}</Badge></td>
                   <td>{fmtDate(w.createAt)}</td>
                   <td>
@@ -207,15 +208,15 @@ function ProcessWithdrawModal({
             <div><strong>کد ملی ذینفع:</strong> {withdraw.metadata.beneficiaryId}</div>
           </>
         )}
-        <div><strong>مبلغ:</strong> {fmtNum(withdraw.amount)}</div>
+        <div><strong>مبلغ:</strong> {fmtBySymbol(withdraw.amount, withdraw.symbol?.slug)}</div>
         <div><strong>وضعیت:</strong> {STATUS_LABELS[withdraw.status] ?? withdraw.status}</div>
         {withdraw.notes && <div><strong>توضیحات کاربر:</strong> {withdraw.notes}</div>}
         {withdraw.adminNotes && <div><strong>توضیحات ادمین:</strong> {withdraw.adminNotes}</div>}
 
-        {readOnly && withdraw.picturePath && (
+        {readOnly && withdraw.pictureUrl && (
           <div style={{ marginTop: 8 }}>
             <strong>تصویر رسید:</strong>
-            <div><img src={picUrl(withdraw.picturePath)} alt="receipt" style={{ maxWidth: "100%", maxHeight: 300, borderRadius: 6, marginTop: 4, cursor: "pointer" }} onClick={() => window.open(picUrl(withdraw.picturePath), "_blank")} /></div>
+            <div><img src={withdraw.pictureUrl} alt="receipt" style={{ maxWidth: "100%", maxHeight: 300, borderRadius: 6, marginTop: 4, cursor: "pointer" }} onClick={() => window.open(withdraw.pictureUrl!, "_blank")} /></div>
           </div>
         )}
 
