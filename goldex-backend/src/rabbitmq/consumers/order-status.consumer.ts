@@ -73,7 +73,7 @@ export class OrderStatusConsumer implements OnModuleInit {
   private async handleOrderPlaced(msg: RabbitMQMessage): Promise<void> {
     try {
       const data = msg.data as OrderPlacedData;
-      if (!data.clientOrderId) return;
+      if (!this.isCustomerOrderId(data.clientOrderId)) return;
 
       await this.orderRepo.update(data.clientOrderId, {
         providerOrderId: data.orderId,
@@ -94,6 +94,10 @@ export class OrderStatusConsumer implements OnModuleInit {
         this.logger.warn('ORDER_STATUS_CHANGED missing clientOrderId');
         return;
       }
+      // The provider order stream is shared: arbitrage-bot legs travel on it
+      // with their own `bot:<tradeId>:<leg>` ids and are settled elsewhere.
+      // Passing one to the order repository would fail the uuid cast.
+      if (!this.isCustomerOrderId(data.clientOrderId)) return;
 
       const order = await this.orderRepo.findOne({
         where: { id: data.clientOrderId },
@@ -148,6 +152,14 @@ export class OrderStatusConsumer implements OnModuleInit {
     } catch (err) {
       this.logger.error(`ORDER_STATUS_CHANGED handler failed: ${(err as Error).message}`);
     }
+  }
+
+  /** A customer order id is a UUID; anything else belongs to another owner. */
+  private isCustomerOrderId(clientOrderId?: string): boolean {
+    return (
+      !!clientOrderId &&
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(clientOrderId)
+    );
   }
 
   private async markCreditOrder(

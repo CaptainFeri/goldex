@@ -159,8 +159,18 @@ export class ProviderManageConsumer implements OnApplicationBootstrap {
 
   private async handlePlaceOrder(msg: any): Promise<void> {
     try {
-      const { key, itemId, dealType, count, price } = msg.data || {};
-      await this.orderService.manualPlaceOrder(key, itemId, dealType, count, price);
+      const { key, itemId, dealType, count, price, clientOrderId } = msg.data || {};
+      // The caller's own id is passed through so it comes back on the
+      // ORDER_PLACED / ORDER_STATUS_CHANGED events and the order can be
+      // matched to whatever asked for it — a customer order or a bot leg.
+      await this.orderService.placeOrder({
+        providerKey: key,
+        itemId,
+        dealType,
+        count,
+        price,
+        clientOrderId,
+      });
     } catch (err) {
       this.logger.error(`provider.place-order failed: ${this.err(err)}`);
     }

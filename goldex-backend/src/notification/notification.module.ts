@@ -79,6 +79,8 @@ import { ConfigModule, ConfigService } from "@nestjs/config";
     AdminDepositWithdrawListener,
     P2pEventListener,
   ],
-  exports: [NotificationService],
+  // AdminNotificationGateway is exported so other modules can push to the
+  // operator feed — the arbitrage bots alert their owners through it.
+  exports: [NotificationService, AdminNotificationGateway],
 })
 export class NotificationModule {}
