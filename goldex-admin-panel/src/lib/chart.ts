@@ -31,6 +31,20 @@ ChartJS.register(
   Filler,
 );
 
+/**
+ * Chart.js cannot read CSS variables, so the theme is pushed into it.
+ *
+ * Called once at import and again whenever the theme changes — without the
+ * second call, switching to light leaves the axes and labels drawn for a dark
+ * background and the charts become unreadable.
+ */
+function token(name: string, fallback: string): string {
+  if (typeof document === "undefined") return fallback;
+  return (
+    getComputedStyle(document.documentElement).getPropertyValue(name).trim() ||
+    fallback
+  );
+}
 // Charts read left-to-right even though the panel is RTL. Chart.js leaves its
 // own `rtl` flag off by default, but for text it falls back to whatever
 // direction the canvas inherits from the page — so both are pinned here rather
