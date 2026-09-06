@@ -168,6 +168,7 @@ export interface MappedPairRef {
   useSellPrice: boolean;
 }
 
+/** Every price here is in toman, as the provider quoted it. */
 export interface ProviderSnapshotItem {
   itemId: number;
   /** The provider's own item name. */
@@ -289,6 +290,7 @@ export interface OrderBookDepth {
 }
 
 // ---- Monitoring / charts ----
+/** Prices are in toman, straight from the engine's provider feeds. */
 export interface ComparePoint {
   timestamp: string;
   buyPrice: number;
@@ -765,6 +767,7 @@ export interface WithdrawRequest {
 }
 
 // ---- Telegram monitoring / market maker ----
+/** Prices come off the gold Telegram feed in toman; the panel shows rial. */
 export interface TelegramMarketState {
   deliveryType: string;
   bestBid: number | null;
@@ -781,6 +784,7 @@ export interface TelegramMarketState {
 
 export type TelegramOpportunityType = "PRICE_MOVEMENT" | "BEST_PRICE";
 
+/** Prices are in toman, as the feed quotes them. */
 export interface TelegramOpportunityRecord {
   id: number;
   date: number;
@@ -795,6 +799,7 @@ export interface TelegramOpportunityRecord {
   description?: string;
 }
 
+/** `price` is in toman, as the feed quotes it. */
 export interface TelegramPricePoint {
   date: number;
   messageId: number;
@@ -1028,7 +1033,9 @@ export interface ArbitrageLeg {
   itemId: number;
   /** `buy` = we buy from this provider (their sell side); `sell` = we sell to them. */
   action: "buy" | "sell";
+  /** Toman, as the provider quoted it — shown as rial in the panel. */
   price: number;
+  /** Engine-formatted toman string; the panel formats `price` itself instead. */
   priceStr: string;
   timestamp: string;
 }
@@ -1045,6 +1052,7 @@ export interface ArbitrageSignal {
   buyLeg: ArbitrageLeg;
   sellLeg: ArbitrageLeg;
   legs: ArbitrageLeg[];
+  /** Toman; the panel converts it to rial for display. */
   profitToman: number;
   profitPercent: number;
   /** Profit expressed in grams of gold, using `goldPriceRef`. */
@@ -1065,12 +1073,14 @@ export interface ArbitrageStatus {
   opportunityCount: number;
   totalProviders: number;
   totalItems: number;
+  /** Toman; the panel converts it to rial for display. */
   bestProfitToman: number;
   engineRedisReachable: boolean;
   message?: string;
 }
 
 export interface ArbitrageConfig {
+  /** Toman, as the engine keeps it; the settings form edits it in rial. */
   minProfitToman: number;
   minProfitPercent: number;
   maxSignals: number;
