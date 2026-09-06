@@ -6,11 +6,7 @@ import { P2pDepositIntentEntity } from "../p2p/entity/p2p-deposit-intent.entity"
 import { P2pMatchEntity } from "../p2p/entity/p2p-match.entity";
 import { P2pPaymentProofEntity } from "../p2p/entity/p2p-payment-proof.entity";
 import { P2pEscalationEntity } from "../p2p/entity/p2p-escalation.entity";
-import {
-  P2pEscalationStatusEnum,
-  P2pMatchSourceEnum,
-  P2pResolutionTypeEnum,
-} from "../p2p/enum/p2p.enums";
+import { P2pEscalationStatusEnum, P2pMatchSourceEnum, P2pResolutionTypeEnum } from "../p2p/enum/p2p.enums";
 import { SignedFileUrlService } from "../shared/files";
 import { EmRequestType, EmSearchBy, EmStatus } from "./em.enums";
 import { depositStatus, withdrawStatus } from "./em-status";
@@ -34,7 +30,7 @@ export class P2pEmViewService {
     @InjectRepository(P2pMatchEntity) private readonly matches: Repository<P2pMatchEntity>,
     @InjectRepository(P2pPaymentProofEntity) private readonly proofs: Repository<P2pPaymentProofEntity>,
     @InjectRepository(P2pEscalationEntity) private readonly escalations: Repository<P2pEscalationEntity>,
-    private readonly signedUrls: SignedFileUrlService,
+    private readonly signedUrls: SignedFileUrlService
   ) {}
 
   /**
@@ -90,9 +86,10 @@ export class P2pEmViewService {
       : [];
     const escalation = matches.length
       ? await this.escalations.findOne({
-          where: { matchId: In(matches.map((m) => m.id)), status: In([
-            P2pEscalationStatusEnum.OPEN, P2pEscalationStatusEnum.ASSIGNED,
-          ]) },
+          where: {
+            matchId: In(matches.map((m) => m.id)),
+            status: In([P2pEscalationStatusEnum.OPEN, P2pEscalationStatusEnum.ASSIGNED]),
+          },
         })
       : null;
 
@@ -125,7 +122,7 @@ export class P2pEmViewService {
   private async projectAll(): Promise<EmRequestRowDto[]> {
     const [requests, intents] = await Promise.all([
       this.withdrawRequests.find({ relations: { parts: true, user: true, symbol: true } }),
-      this.intents.find({ relations: { user: true, symbol: true } }),
+      this.intents.find({ relations: { user: true, symbol: true, deposit: true } }),
     ]);
 
     const partIds = requests.flatMap((r) => (r.parts ?? []).map((p) => p.id));
@@ -176,7 +173,10 @@ export class P2pEmViewService {
           : null,
         destinationAccount: snapshot.iban ?? snapshot.accountNumber ?? null,
         assignedAccount: r.destinationBankAccountId ?? null,
-        expiresAt: earliestExpiry(r.expiresAt, parts.map((p) => p.reservedUntil)),
+        expiresAt: earliestExpiry(
+          r.expiresAt,
+          parts.map((p) => p.reservedUntil)
+        ),
         hasEnclosure: (r as any).hasEnclosure ?? false,
         proofCount: mine.reduce((n, m) => n + (proofCounts.get(m.id) ?? 0), 0),
         createAt: r.createAt as Date,
@@ -191,8 +191,11 @@ export class P2pEmViewService {
       symbolSlug: i.symbol?.slug ?? null,
       requester: { userId: i.userId, name: personName(i.user), phone: (i.user as any)?.phone ?? null },
       performer: null,
-      destinationAccount: i.sourceIban ?? null,
-      assignedAccount: i.sourceBankAccountId ?? null,
+      // need to edit
+      // destinationAccount: i.sourceIban ?? null,
+      // assignedAccount: i.sourceBankAccountId ?? null,
+      destinationAccount: null,
+      assignedAccount: null,
       expiresAt: (i as any).expiresAt ?? null,
       hasEnclosure: (i as any).hasEnclosure ?? false,
       proofCount: 0,
@@ -213,8 +216,9 @@ export class P2pEmViewService {
       out = out.filter((r) => {
         if (by === EmSearchBy.REQUESTER) return matchesParty(r.requester, q);
         if (by === EmSearchBy.PERFORMER) return matchesParty(r.performer, q);
-        return (r.destinationAccount ?? "").toLowerCase().includes(q)
-          || (r.assignedAccount ?? "").toLowerCase().includes(q);
+        return (
+          (r.destinationAccount ?? "").toLowerCase().includes(q) || (r.assignedAccount ?? "").toLowerCase().includes(q)
+        );
       });
     }
     return out;
