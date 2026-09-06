@@ -22,7 +22,12 @@ export interface ArbitrageBotThresholds {
   minProfitRial: number;
   /** Percentage profit floor for one trade. */
   minProfitPercent: number;
-  /** Largest position the bot opens at once, in the allocation's asset. */
+  /**
+   * Largest position the bot opens at once, counted in the traded item's own
+   * unit — the same `count` the provider order carries. Zero means the only
+   * limit is the loss budget. The allocation's asset denominates the *budget*,
+   * not the order size, which is why these are different units.
+   */
   maxTradeVolume: number;
   /** How many submitted-but-unsettled trades may exist at once. */
   maxOpenTrades: number;

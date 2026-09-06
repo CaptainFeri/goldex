@@ -65,7 +65,10 @@ export class ArbitrageBotThresholdsDto {
   @IsOptional()
   minProfitPercent?: number;
 
-  @ApiPropertyOptional({ description: "Largest position per trade, in the allocation's asset" })
+  @ApiPropertyOptional({
+    description:
+      "Largest position per trade, in the traded item's own unit (0 = limited only by the loss budget)",
+  })
   @IsNumber()
   @Min(0)
   @IsOptional()

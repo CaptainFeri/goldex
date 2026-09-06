@@ -116,7 +116,10 @@ export class ArbitrageBotEngineService implements OnModuleInit {
     // gone the bot stops itself rather than trading on unbudgeted capital.
     const budget = this.bots.lossBudgetRemaining(bot);
     if (budget.lessThanOrEqualTo(0)) {
-      await this.bots.halt(bot, "حد ضرر تعیین‌شده مصرف شده است؛ ربات به‌صورت خودکار متوقف شد.");
+      await this.bots.haltById(
+        bot.id,
+        "حد ضرر تعیین‌شده مصرف شده است؛ ربات به‌صورت خودکار متوقف شد."
+      );
       this.invalidate();
       return;
     }
@@ -144,9 +147,16 @@ export class ArbitrageBotEngineService implements OnModuleInit {
       })
     );
 
+    // Counters are written as a targeted update, never by saving this cached
+    // entity: its `realizedLoss` may be seconds old, and writing it back would
+    // undo a loss `settle` has since booked — which is what the stop-loss
+    // measures.
     bot.matchedSignals = (bot.matchedSignals ?? 0) + 1;
     bot.lastSignalAt = new Date();
-    await this.botRepo.save(bot);
+    await this.botRepo.update(bot.id, {
+      matchedSignals: bot.matchedSignals,
+      lastSignalAt: bot.lastSignalAt,
+    });
 
     await this.bots.recordEvent(bot, {
       type: ArbitrageBotEventTypeEnum.SIGNAL_MATCHED,
@@ -254,11 +264,12 @@ export class ArbitrageBotEngineService implements OnModuleInit {
   /**
    * How much the bot may trade on this signal.
    *
-   * Two caps apply. The owner's own `maxTradeVolume` is the ceiling, and the
-   * position's cost in Rial may not exceed the loss the bot is still allowed
-   * to take, valued at the live rate for the allocation's asset. The second
-   * cap is what makes "the bot may trade while it is within its stop-loss"
-   * literally true: it can never be holding more than it can afford to lose.
+   * Two caps apply, both in the traded item's own unit. The owner's
+   * `maxTradeVolume` is the ceiling, and the position's cost in Rial may not
+   * exceed the loss the bot is still allowed to take — the remaining budget,
+   * held in the allocation's asset, valued at the live rate. The second cap is
+   * what makes "the bot may trade while it is within its stop-loss" literally
+   * true: it can never hold more than it can afford to lose.
    */
   private async sizeTrade(
     bot: ArbitrageBotEntity,
@@ -380,7 +391,10 @@ export class ArbitrageBotEngineService implements OnModuleInit {
 
     bot.totalTrades = (bot.totalTrades ?? 0) + 1;
     bot.lastTradeAt = new Date();
-    await this.botRepo.save(bot);
+    await this.botRepo.update(bot.id, {
+      totalTrades: bot.totalTrades,
+      lastTradeAt: bot.lastTradeAt,
+    });
 
     await this.bots.recordEvent(bot, {
       type: ArbitrageBotEventTypeEnum.TRADE_SUBMITTED,
@@ -483,6 +497,8 @@ export class ArbitrageBotEngineService implements OnModuleInit {
     if (pnlAsset.isNegative()) {
       bot.realizedLoss = new Decimal(bot.realizedLoss).plus(pnlAsset.negated()).toNumber();
     }
+    // Safe to save the whole row: this bot was loaded fresh at the top of the
+    // settlement, unlike the cached instances the signal path works with.
     await this.botRepo.save(bot);
 
     await this.bots.recordEvent(bot, {
