@@ -1,4 +1,5 @@
 import { Module } from "@nestjs/common";
+import { OperationOtpModule } from "../operation-otp/operation-otp.module";
 import { TypeOrmModule } from "@nestjs/typeorm";
 import { SystemLedgerEntity } from "../financial/entity/system-ledger.entity";
 import { SymbolEntity } from "../admin-symbol/entity/symbol.entity";
@@ -8,7 +9,8 @@ import { AdminAccountingService } from "./admin-accounting.service";
 import { AccountingExportService } from "./accounting-export.service";
 
 @Module({
-  imports: [TypeOrmModule.forFeature([SystemLedgerEntity, AccountingVoucherEntity, SymbolEntity])],
+  imports: [
+    OperationOtpModule,TypeOrmModule.forFeature([SystemLedgerEntity, AccountingVoucherEntity, SymbolEntity])],
   controllers: [AdminAccountingController],
   providers: [AdminAccountingService, AccountingExportService],
   exports: [AdminAccountingService],

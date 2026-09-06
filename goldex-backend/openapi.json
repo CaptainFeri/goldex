@@ -25671,7 +25671,7 @@
     },
     "/api/v1/admin/accounting/vouchers/{id}/finalize": {
       "post": {
-        "description": "Refused for the admin who created it: booking one's own entry removes the only control this workflow has, and a finance lead holding both rights could otherwise do both halves alone. A second factor belongs in operation OTP (§4.3), which is not built yet — this deliberately accepts no otp field it would have to ignore.",
+        "description": "Refused for the admin who created it: booking one's own entry removes the only control this workflow has, and a finance lead holding both rights could otherwise do both halves alone. Also requires an operation OTP (§4.3) bound to this voucher and note — request one from POST /admin/operations/otp with scope `accounting.voucher`.",
         "operationId": "AdminAccountingController_finalizeVoucher_v1",
         "parameters": [
           {
@@ -25688,7 +25688,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/ReviewVoucherDto"
+                "$ref": "#/components/schemas/FinalizeVoucherDto"
               }
             }
           }
@@ -25716,14 +25716,7 @@
             }
           },
           "400": {
-            "description": "Validation failed — see `errors` for per-field messages",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
-                }
-              }
-            }
+            "description": "OTP.EXPIRED, OTP.INVALID, OTP.CHALLENGE_MISMATCH or OTP.PAYLOAD_MISMATCH — the last meaning the confirmed operation is not the one now being submitted."
           },
           "401": {
             "description": "Missing or expired admin token",
@@ -25861,6 +25854,177 @@
         "summary": "Refuse a pending voucher",
         "tags": [
           "Admin-Accounting"
+        ]
+      }
+    },
+    "/api/v1/admin/operations/otp/scopes": {
+      "get": {
+        "description": "The fields each scope hashes, so the panel derives `payloadHash` from the server's own contract instead of a copy that can drift out of step with it.",
+        "operationId": "OperationOtpController_scopes_v1",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/ResponseEnvelopeDto"
+                    },
+                    {
+                      "properties": {
+                        "data": {
+                          "type": "array",
+                          "items": {
+                            "$ref": "#/components/schemas/OtpScopeCatalogDto"
+                          }
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation failed — see `errors` for per-field messages",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or expired admin token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Authenticated, but lacking the required permission",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "The scope catalog",
+        "tags": [
+          "Admin-Operation-OTP"
+        ]
+      }
+    },
+    "/api/v1/admin/operations/otp": {
+      "post": {
+        "description": "Sends a 60-second code to the caller's own phone. One live challenge per (admin, scope, record): while one is alive this answers `OTP.ALREADY_SENT:<seconds>`, so the panel can count down rather than re-texting the operator.",
+        "operationId": "OperationOtpController_issue_v1",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/IssueOtpDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/ResponseEnvelopeDto"
+                    },
+                    {
+                      "properties": {
+                        "data": {
+                          "$ref": "#/components/schemas/OtpChallengeDto"
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation failed — see `errors` for per-field messages",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or expired admin token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Authenticated, but lacking the required permission",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Request a code for one operation",
+        "tags": [
+          "Admin-Operation-OTP"
         ]
       }
     },
@@ -37748,6 +37912,28 @@
           "documentDate"
         ]
       },
+      "FinalizeVoucherDto": {
+        "type": "object",
+        "properties": {
+          "note": {
+            "type": "string",
+            "example": "مدارک ناقص است",
+            "description": "Recorded against the decision"
+          },
+          "challengeId": {
+            "type": "string",
+            "description": "From POST /admin/operations/otp."
+          },
+          "otp": {
+            "type": "string",
+            "description": "The code sent by SMS."
+          }
+        },
+        "required": [
+          "challengeId",
+          "otp"
+        ]
+      },
       "ReviewVoucherDto": {
         "type": "object",
         "properties": {
@@ -37757,6 +37943,120 @@
             "description": "Recorded against the decision"
           }
         }
+      },
+      "OtpScopeRefSourceDto": {
+        "type": "object",
+        "properties": {
+          "source": {
+            "type": "string",
+            "enum": [
+              "param",
+              "body"
+            ]
+          },
+          "key": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "source",
+          "key"
+        ]
+      },
+      "OtpScopeCatalogDto": {
+        "type": "object",
+        "properties": {
+          "scope": {
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          },
+          "fields": {
+            "description": "Hashed into the challenge, in this order.",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "bulk": {
+            "type": "boolean"
+          },
+          "refIdFrom": {
+            "nullable": true,
+            "type": "object",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/OtpScopeRefSourceDto"
+              }
+            ]
+          }
+        },
+        "required": [
+          "scope",
+          "label",
+          "fields",
+          "bulk",
+          "refIdFrom"
+        ]
+      },
+      "OtpChallengeDto": {
+        "type": "object",
+        "properties": {
+          "challengeId": {
+            "type": "string"
+          },
+          "expiresIn": {
+            "type": "number",
+            "example": 60
+          },
+          "maskedPhone": {
+            "type": "string",
+            "example": "0912***0001"
+          }
+        },
+        "required": [
+          "challengeId",
+          "expiresIn",
+          "maskedPhone"
+        ]
+      },
+      "IssueOtpDto": {
+        "type": "object",
+        "properties": {
+          "scope": {
+            "type": "string",
+            "enum": [
+              "wallet.deposit",
+              "wallet.withdraw",
+              "withdraw.approve",
+              "withdraw.reject",
+              "withdraw.bulk",
+              "accounting.voucher",
+              "shahin.transfer",
+              "em.approve"
+            ]
+          },
+          "refId": {
+            "type": "string",
+            "description": "The record being acted on. Required unless the scope is bulk."
+          },
+          "refIds": {
+            "description": "For bulk scopes: one challenge covers this whole set.",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "payloadHash": {
+            "type": "string",
+            "description": "SHA-256 of the canonical payload, binding the code to this exact operation. Derived from the scope's declared fields — see docs/OPERATION-OTP.md."
+          }
+        },
+        "required": [
+          "scope",
+          "payloadHash"
+        ]
       },
       "PermissionDto": {
         "type": "object",
