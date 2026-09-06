@@ -12,6 +12,7 @@ import { AdminInboxModule } from "./admin-inbox/admin-inbox.module";
 import { OperationOtpModule } from "./operation-otp/operation-otp.module";
 import { AdminShahinModule } from "./admin-shahin/admin-shahin.module";
 import { AdminEmModule } from "./admin-em/admin-em.module";
+import { AdminAuditModule } from "./admin-audit/admin-audit.module";
 import { AcceptLanguageResolver, I18nModule } from "nestjs-i18n";
 import { join } from "path";
 import * as path from "path";
@@ -204,6 +205,7 @@ import { ScheduleModule } from "@nestjs/schedule";
     OperationOtpModule,
     AdminShahinModule,
     AdminEmModule,
+    AdminAuditModule,
   ],
   providers: [WinstonLoggerService],
   exports: [WinstonLoggerService],
