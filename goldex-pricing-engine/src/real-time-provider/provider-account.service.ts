@@ -11,6 +11,12 @@ import { ProviderBalanceEntity } from './entity/provider-balance.entity';
 import { RabbitMQService, MessagePatterns } from '../rabbitmq/rabbitmq.module';
 import { ProviderCategory } from './types/enums';
 import {
+  CurrencyUnit,
+  resolvePriceUnit,
+  toRial,
+  unitFromPersianLabel,
+} from '../common/currency-unit';
+import {
   ZaryarDealItem,
   ZaryarDealDatesResponse,
   ZaryarDealListResponse,
@@ -341,7 +347,7 @@ export class ProviderAccountService implements OnApplicationBootstrap {
           if (deals.length === 0) break;
 
           allDeals = allDeals.concat(deals);
-          await this.saveZaryarDeals(provider.key, deals);
+          await this.saveZaryarDeals(provider, deals);
 
           if (!response.data.OrderIndex) break;
           orderIndex = response.data.OrderIndex;
@@ -361,7 +367,18 @@ export class ProviderAccountService implements OnApplicationBootstrap {
     }
   }
 
-  private async saveZaryarDeals(providerKey: string, deals: ZaryarDealItem[]): Promise<void> {
+  /**
+   * Zaryar reports money in whatever unit the shop's own panel uses, so the
+   * deal's value is converted to Rial with the provider's declared unit before
+   * it is stored. Everything reading `provider_deals` — the backend's financial
+   * snapshots included — can then treat the numbers as Rial without asking.
+   */
+  private async saveZaryarDeals(provider: ProviderEntity, deals: ZaryarDealItem[]): Promise<void> {
+    const providerKey = provider.key;
+    const unit = resolvePriceUnit(provider.priceUnit);
+    const rial = (value: number | null | undefined) =>
+      value === null || value === undefined ? value : toRial(Number(value), unit);
+
     for (const deal of deals) {
       try {
         const existing = await this.dealRepo.findOne({
@@ -377,12 +394,12 @@ export class ProviderAccountService implements OnApplicationBootstrap {
           itemName: deal.ItemName,
           itemId: deal.ItemId,
           count: deal.Count,
-          totalPrice: deal.TotalPrice,
+          totalPrice: rial(deal.TotalPrice),
           dealType: deal.DealType,
           dealTypeStr: deal.DealTypeStr,
           dealStatus: deal.DealStatus,
           orderStatusStr: deal.OrderStatusStr,
-          mazane: deal.Mazane,
+          mazane: rial(deal.Mazane),
           mazaneStr: deal.MazaneStr,
           orderDate: new Date(deal.OrderDate),
           orderDateStr: deal.OrderDateStr,
@@ -565,14 +582,19 @@ export class ProviderAccountService implements OnApplicationBootstrap {
         where: { providerKey: provider.key, snapshotDate },
       });
 
+      // The API labels its own cash unit; when it does not, fall back to what
+      // the provider declares. Either way the stored balance is Rial.
+      const cashUnit =
+        unitFromPersianLabel(data.rial?.unit) ?? resolvePriceUnit(provider.priceUnit);
+
       const entity = {
         providerKey: provider.key,
         providerCategory: ProviderCategory.TALAAB,
         goldBalance: parseFloat(data.gold?.balance || '0'),
         goldUnit: data.gold?.unit || 'گرم',
-        rialBalance: parseFloat(data.rial?.balance || '0'),
-        rialUnit: data.rial?.unit || 'ریال',
-        totalTaraz: data.taraz || 0,
+        rialBalance: toRial(parseFloat(data.rial?.balance || '0'), cashUnit),
+        rialUnit: CurrencyUnit.RIAL,
+        totalTaraz: toRial(data.taraz || 0, cashUnit),
         snapshotDate,
         rawData: data as any,
       };
@@ -595,8 +617,8 @@ export class ProviderAccountService implements OnApplicationBootstrap {
           MessagePatterns.PROVIDER_BALANCE_UPDATED,
           {
             providerKey: provider.key,
-            goldBalance: data.gold?.balance,
-            rialBalance: data.rial?.balance,
+            goldBalance: entity.goldBalance,
+            rialBalance: entity.rialBalance,
           },
           provider.key,
         );

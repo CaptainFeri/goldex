@@ -835,6 +835,15 @@ export interface AdminOrder {
   totalValue?: number;
   commission?: number;
   status: string;
+  /** CREDIT = drawn on a credit line, WALLET = spent from a deposited balance. */
+  fundingSource?: "CREDIT" | "WALLET";
+  isCreditLinked?: boolean;
+  credit?: {
+    creditId: string;
+    creditCode: string | null;
+    creditOrderStatus: string;
+    priceAtOrderTime: number | null;
+  } | null;
   notes?: string;
   providerOrderId?: string;
   metadata?: any;
@@ -1052,8 +1061,7 @@ export interface ArbitrageSignal {
   buyLeg: ArbitrageLeg;
   sellLeg: ArbitrageLeg;
   legs: ArbitrageLeg[];
-  /** Toman; the panel converts it to rial for display. */
-  profitToman: number;
+  profitRial: number;
   profitPercent: number;
   /** Profit expressed in grams of gold, using `goldPriceRef`. */
   profitGold: number;
@@ -1073,15 +1081,13 @@ export interface ArbitrageStatus {
   opportunityCount: number;
   totalProviders: number;
   totalItems: number;
-  /** Toman; the panel converts it to rial for display. */
-  bestProfitToman: number;
+  bestProfitRial: number;
   engineRedisReachable: boolean;
   message?: string;
 }
 
 export interface ArbitrageConfig {
-  /** Toman, as the engine keeps it; the settings form edits it in rial. */
-  minProfitToman: number;
+  minProfitRial: number;
   minProfitPercent: number;
   maxSignals: number;
   quoteFreshnessMs: number;

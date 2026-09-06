@@ -12,6 +12,10 @@ import { CreateProviderDto } from './dto/create-provider.dto';
 import { UpdateProviderDto } from './dto/update-provider.dto';
 import { RabbitMQService } from '../rabbitmq/rabbitmq.service';
 import { MessagePatterns } from '../rabbitmq/interfaces/rabbitmq.interfaces';
+import {
+  DEFAULT_PROVIDER_PRICE_UNIT,
+  resolvePriceUnit,
+} from '../shared/currency/currency-unit';
 import { PricingRedisService } from '../admin-monitoring/pricing-redis.service';
 
 @Injectable()
@@ -65,6 +69,7 @@ export class ProviderService {
       verifyCodeUrl: dto.verifyCodeUrl,
       auth: dto.auth ?? {},
       config: dto.config ?? {},
+      priceUnit: resolvePriceUnit(dto.priceUnit),
       active: dto.active ?? false,
       metadataRefreshIntervalMs: dto.metadataRefreshIntervalMs ?? 60000,
       status: 'inactive',
@@ -118,6 +123,7 @@ export class ProviderService {
         verifyCodeUrl: reg.verifyCodeUrl ?? m?.verifyCodeUrl,
         auth: reg.auth ?? m?.auth ?? {},
         config: reg.config ?? m?.config ?? {},
+        priceUnit: resolvePriceUnit(reg.priceUnit ?? m?.priceUnit),
         active: reg.active ?? m?.active ?? false,
         metadataRefreshIntervalMs:
           reg.metadataRefreshIntervalMs ?? m?.metadataRefreshIntervalMs ?? 60000,
@@ -141,6 +147,7 @@ export class ProviderService {
           key,
           category: 'unknown',
           baseUrl: '',
+          priceUnit: DEFAULT_PROVIDER_PRICE_UNIT,
           active: true,
           status: 'connected',
           metadataRefreshIntervalMs: 60000,
@@ -299,6 +306,7 @@ export class ProviderService {
       verifyCodeUrl: payload.verifyCodeUrl ?? existing?.verifyCodeUrl,
       auth: payload.auth ?? existing?.auth ?? {},
       config: payload.config ?? existing?.config ?? {},
+      priceUnit: resolvePriceUnit(payload.priceUnit ?? existing?.priceUnit),
       active: payload.active ?? existing?.active ?? false,
       metadataRefreshIntervalMs:
         payload.metadataRefreshIntervalMs ?? existing?.metadataRefreshIntervalMs ?? 60000,
@@ -320,6 +328,7 @@ export class ProviderService {
       verifyCodeUrl: p.verifyCodeUrl,
       auth: p.auth ?? {},
       config: p.config ?? {},
+      priceUnit: resolvePriceUnit(p.priceUnit),
       active: p.active,
       metadataRefreshIntervalMs: p.metadataRefreshIntervalMs,
     };

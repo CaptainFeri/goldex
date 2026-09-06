@@ -1,6 +1,6 @@
 import { Injectable, NotFoundException, BadRequestException, Logger } from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
-import { Repository, DataSource, ILike, MoreThanOrEqual, LessThanOrEqual, And } from "typeorm";
+import { Repository, DataSource, ILike, In, MoreThanOrEqual, LessThanOrEqual, And } from "typeorm";
 import { OrderEntity } from "../order.entity";
 import { WalletEntity } from "../../wallet/entities/wallet.entity";
 import { TransactionEntity } from "../../wallet/entities/transaction.entity";
@@ -23,6 +23,14 @@ import {
   MarketStatus,
   PairPoolStatusEntity,
 } from "../../market-status/entity/pair-pool-status.entity";
+
+/**
+ * How an order is funded. CREDIT draws on an admin-granted credit line;
+ * WALLET spends the customer's own deposited balance. The distinction decides
+ * which wallet settles the trade, so the panel labels every row with it.
+ */
+const FUNDING_SOURCE = { CREDIT: "CREDIT", WALLET: "WALLET" } as const;
+type OrderFundingSource = (typeof FUNDING_SOURCE)[keyof typeof FUNDING_SOURCE];
 
 @Injectable()
 export class AdminOrderService {
@@ -54,8 +62,11 @@ export class AdminOrderService {
     const { userId, pricePairId, side, orderType, status, search, limit = 10, offset = 0, startDate, endDate } = query;
     const take = Number(limit) || 10;
     const skip = Number(offset) || 0;
+    const fundingSource = this.normalizeFundingSource(query.fundingSource);
 
-    const orderWhere = this.buildOrderWhere({ userId, pricePairId, side, orderType, status, search, startDate, endDate });
+    const orderWhere = this.buildOrderWhere({
+      userId, pricePairId, side, orderType, status, search, startDate, endDate, fundingSource,
+    });
 
     const [orderRows, ordersTotal] = await this.orderRepository.findAndCount({
       where: orderWhere,
@@ -68,7 +79,9 @@ export class AdminOrderService {
     let quotesTotal = 0;
 
     if (!skipQuotes) {
-      const quoteWhere = this.buildQuoteWhere({ userId, pricePairId, side, orderType, status, search, startDate, endDate });
+      const quoteWhere = this.buildQuoteWhere({
+        userId, pricePairId, side, orderType, status, search, startDate, endDate, fundingSource,
+      });
       if (quoteWhere) {
         const result = await this.quoteRequestRepository.findAndCount({
           where: quoteWhere,
@@ -88,12 +101,58 @@ export class AdminOrderService {
     const total = ordersTotal + quotesTotal;
     const paged = allItems.slice(skip, skip + take);
 
-    return { orders: paged, total };
+    return { orders: await this.withFundingSource(paged), total };
+  }
+
+  /** Only the two funding sources exist; anything else means "no filter". */
+  private normalizeFundingSource(value: unknown): OrderFundingSource | undefined {
+    const v = String(value ?? "").toUpperCase();
+    return v === FUNDING_SOURCE.CREDIT || v === FUNDING_SOURCE.WALLET
+      ? (v as OrderFundingSource)
+      : undefined;
+  }
+
+  /**
+   * Tags each row as credit-funded or wallet-funded, and attaches the credit it
+   * draws on. `isCreditLinked` is the same flag settlement uses to pick the
+   * wallet, so the panel and the ledger can never disagree about a row.
+   */
+  private async withFundingSource(rows: any[]): Promise<any[]> {
+    const creditOrderIds = rows.filter((r) => r.isCreditLinked && r.orderType !== "QUOTE").map((r) => r.id);
+
+    const creditByOrderId = new Map<string, CreditOrderEntity>();
+    if (creditOrderIds.length) {
+      const links = await this.creditOrderRepo.find({
+        where: { orderId: In(creditOrderIds) },
+        relations: { credit: true },
+      });
+      for (const link of links) creditByOrderId.set(link.orderId, link);
+    }
+
+    return rows.map((r) => {
+      const link = creditByOrderId.get(r.id);
+      return {
+        ...r,
+        fundingSource: r.isCreditLinked ? FUNDING_SOURCE.CREDIT : FUNDING_SOURCE.WALLET,
+        // Which wallet the funds actually move through, so an operator reading
+        // the row does not have to infer it from the funding source.
+        walletType: r.isCreditLinked ? WalletTypeEnum.CREDIT : WalletTypeEnum.DEPOSIT,
+        credit: link
+          ? {
+              creditId: link.creditId,
+              creditCode: link.credit?.creditCode ?? null,
+              creditOrderStatus: link.status,
+              priceAtOrderTime: link.priceAtOrderTime != null ? Number(link.priceAtOrderTime) : null,
+            }
+          : null,
+      };
+    });
   }
 
   private buildOrderWhere(filters: {
     userId?: string; pricePairId?: string; side?: string; orderType?: string;
     status?: string; search?: string; startDate?: string; endDate?: string;
+    fundingSource?: OrderFundingSource;
   }): any {
     const base: any = {};
     if (filters.userId) base.userId = filters.userId;
@@ -101,6 +160,7 @@ export class AdminOrderService {
     if (filters.side) base.side = filters.side;
     if (filters.orderType && filters.orderType !== "QUOTE") base.orderType = filters.orderType;
     if (filters.status) base.status = filters.status;
+    if (filters.fundingSource) base.isCreditLinked = filters.fundingSource === FUNDING_SOURCE.CREDIT;
     if (filters.startDate && filters.endDate) {
       base.createAt = And(MoreThanOrEqual(new Date(filters.startDate)), LessThanOrEqual(new Date(filters.endDate)));
     } else if (filters.startDate) {
@@ -121,11 +181,13 @@ export class AdminOrderService {
   private buildQuoteWhere(filters: {
     userId?: string; pricePairId?: string; side?: string; orderType?: string;
     status?: string; search?: string; startDate?: string; endDate?: string;
+    fundingSource?: OrderFundingSource;
   }): any {
     const base: any = {};
     if (filters.userId) base.userId = filters.userId;
     if (filters.pricePairId) base.pricePairId = filters.pricePairId;
     if (filters.side) base.side = filters.side;
+    if (filters.fundingSource) base.isCreditLinked = filters.fundingSource === FUNDING_SOURCE.CREDIT;
     if (filters.startDate && filters.endDate) {
       base.createAt = And(MoreThanOrEqual(new Date(filters.startDate)), LessThanOrEqual(new Date(filters.endDate)));
     } else if (filters.startDate) {
@@ -172,6 +234,7 @@ export class AdminOrderService {
       pricePairId: qr.pricePairId,
       side: qr.side,
       orderType: "QUOTE",
+      isCreditLinked: qr.isCreditLinked,
       quantity: qr.quantity,
       price: qr.price,
       executedQuantity: qr.status === QuoteRequestStatus.MATCHED ? qr.quantity : 0,
@@ -629,6 +692,21 @@ export class AdminOrderService {
     });
     if (!order) throw new NotFoundException("Order not found");
     return order;
+  }
+
+  /**
+   * A single order for the detail view, tagged with its funding source. The
+   * list route cannot answer this — `getAllOrders` has no id filter, so asking
+   * it for one order returns the whole page.
+   */
+  async getOrderDetail(orderId: string): Promise<any> {
+    const order = await this.orderRepository.findOne({
+      where: { id: orderId },
+      relations: { user: true, pricePair: { baseSymbol: true, quoteSymbol: true }, transactions: true },
+    });
+    if (!order) throw new NotFoundException("Order not found");
+    const [detail] = await this.withFundingSource([order]);
+    return detail;
   }
 
   /**

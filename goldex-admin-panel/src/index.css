@@ -476,6 +476,10 @@ tbody tr:hover {
   background: #232a36;
   color: var(--text-dim);
 }
+.badge.blue {
+  background: rgba(76, 141, 255, 0.15);
+  color: #4c8dff;
+}
 
 /* A fourth colour, so statuses that mean different things do not look alike.
    FinanceLogsPage already asked for this kind; until now it rendered unstyled. */

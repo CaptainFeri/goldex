@@ -25,7 +25,7 @@ export interface ArbitrageSignal {
   sellLeg: ArbitrageLeg;
   /** [buyLeg, sellLeg] — ordered execution path. */
   legs: ArbitrageLeg[];
-  profitToman: number;
+  profitRial: number;
   profitPercent: number;
   /** Profit expressed in grams of gold using `goldPriceRef`. */
   profitGold: number;
@@ -43,12 +43,12 @@ export interface ArbitrageScanResult {
   totalProviders: number;
   totalItems: number;
   opportunityCount: number;
-  bestProfitToman: number;
+  bestProfitRial: number;
 }
 
 export interface ArbitrageConfig {
-  /** Minimum absolute profit (toman) for a signal to be emitted. */
-  minProfitToman: number;
+  /** Minimum absolute profit (rial) for a signal to be emitted. */
+  minProfitRial: number;
   /** Minimum profit percentage (relative to buy price) for a signal. */
   minProfitPercent: number;
   /** Cap on the number of signals returned/persisted per scan. */

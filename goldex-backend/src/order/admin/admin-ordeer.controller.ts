@@ -27,7 +27,7 @@ export class AdminOrderController {
   @ApiParam({ name: "id", description: "Order ID" })
   @ApiResponse({ status: HttpStatus.OK, description: "Returns order details" })
   async getOrderById(@Param("id") id: string) {
-    return { data: await this.adminOrderService.getAllOrders({ id }) };
+    return { data: await this.adminOrderService.getOrderDetail(id) };
   }
 
   @Put(":id")
