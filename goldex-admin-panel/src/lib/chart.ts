@@ -31,6 +31,15 @@ ChartJS.register(
   Filler,
 );
 
+// Charts read left-to-right even though the panel is RTL. Chart.js leaves its
+// own `rtl` flag off by default, but for text it falls back to whatever
+// direction the canvas inherits from the page — so both are pinned here rather
+// than left to the surrounding layout.
+ChartJS.defaults.plugins.legend.rtl = false;
+ChartJS.defaults.plugins.legend.textDirection = "ltr";
+ChartJS.defaults.plugins.tooltip.rtl = false;
+ChartJS.defaults.plugins.tooltip.textDirection = "ltr";
+
 /**
  * Chart.js cannot read CSS variables, so the theme is pushed into it.
  *

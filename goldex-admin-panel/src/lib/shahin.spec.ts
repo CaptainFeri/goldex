@@ -3,37 +3,36 @@ import { toApiAmount, toFormAmount, fmtToman } from "./money";
 import { canonicalPayload, hashPayload } from "./operation-otp";
 
 /**
- * The transfer form takes toman and the wire carries rial. Getting that
- * direction wrong moves ten times the intended amount, and the OTP would
- * happily confirm it — the code is bound to whatever the panel computed, so
- * the conversion has to be right *before* the hash is taken.
+ * The transfer form and the wire both carry rial, so the amount must reach the
+ * hash unrescaled: the OTP is bound to whatever the panel computed, and a
+ * figure altered after the fact would still confirm.
  */
 describe("shahin transfer amounts", () => {
-  it("sends rial for an amount typed in toman", () => {
-    expect(toApiAmount("1500000", "IRR")).toBe(15_000_000);
+  it("sends the typed rial amount as-is", () => {
+    expect(toApiAmount("1500000", "IRR")).toBe(1_500_000);
   });
 
-  it("round-trips a rial figure back into the toman the operator sees", () => {
-    expect(toFormAmount("18500000000", "IRR")).toBe(1_850_000_000);
-    expect(fmtToman("18500000000")).toContain("۱٬۸۵۰٬۰۰۰٬۰۰۰");
+  it("round-trips a rial figure back into the form the operator sees", () => {
+    expect(toFormAmount("18500000000", "IRR")).toBe(18_500_000_000);
+    expect(fmtToman("18500000000")).toContain("۱۸٬۵۰۰٬۰۰۰٬۰۰۰");
   });
 
   it("hashes the rial amount, which is what the server will recompute", async () => {
     const fields = ["sourceAccount", "destinationAccount", "amount"];
-    const typedInToman = "1500000";
+    const typed = "1500000";
     const payload = {
       sourceAccount: "0201234567001",
       destinationAccount: "5892101234567890",
-      amount: String(toApiAmount(typedInToman, "IRR")),
+      amount: String(toApiAmount(typed, "IRR")),
     };
     expect(canonicalPayload("shahin.transfer", payload.destinationAccount, fields, payload))
-      .toContain("amount=15000000");
+      .toContain("amount=1500000");
 
-    // And the hash for the toman figure is a different one — confirming the
-    // wrong unit could not accidentally verify.
-    const wrongUnit = { ...payload, amount: typedInToman };
+    // A different figure hashes differently, so an amount changed after the
+    // code was issued cannot verify.
+    const tampered = { ...payload, amount: "15000000" };
     await expect(hashPayload("shahin.transfer", payload.destinationAccount, fields, payload))
-      .resolves.not.toBe(await hashPayload("shahin.transfer", payload.destinationAccount, fields, wrongUnit));
+      .resolves.not.toBe(await hashPayload("shahin.transfer", payload.destinationAccount, fields, tampered));
   });
 
   it("binds the destination, so retyping the account invalidates the code", async () => {
@@ -44,8 +43,7 @@ describe("shahin transfer amounts", () => {
       .resolves.not.toBe(await hashPayload("shahin.transfer", b.destinationAccount, fields, b));
   });
 
-  it("filters a statement by the rial equivalent of a toman bound", () => {
-    // The operator types 100,000 toman; the bank filter must see 1,000,000 rial.
-    expect(String(toApiAmount("100000", "IRR"))).toBe("1000000");
+  it("filters a statement by the rial bound the operator typed", () => {
+    expect(String(toApiAmount("100000", "IRR"))).toBe("100000");
   });
 });
