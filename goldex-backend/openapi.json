@@ -29546,6 +29546,833 @@
           "Admin-Shahin"
         ]
       }
+    },
+    "/api/v1/admin/em/stats": {
+      "get": {
+        "description": "Counted off the projection, not stored.",
+        "operationId": "AdminEmController_stats_v1",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/ResponseEnvelopeDto"
+                    },
+                    {
+                      "properties": {
+                        "data": {
+                          "$ref": "#/components/schemas/EmStatsDto"
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation failed — see `errors` for per-field messages",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or expired admin token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Authenticated, but lacking the required permission",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "The desk's counters",
+        "tags": [
+          "Admin-EM"
+        ]
+      }
+    },
+    "/api/v1/admin/em/receipts/{id}": {
+      "get": {
+        "description": "`receiptUrl` is a short-lived signed URL; receipts share a bucket with KYC documents.",
+        "operationId": "AdminEmController_receipt_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/ResponseEnvelopeDto"
+                    },
+                    {
+                      "properties": {
+                        "data": {
+                          "$ref": "#/components/schemas/EmProofDto"
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation failed — see `errors` for per-field messages",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or expired admin token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Authenticated, but lacking the required permission",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "One receipt, for the print view",
+        "tags": [
+          "Admin-EM"
+        ]
+      }
+    },
+    "/api/v1/admin/em/requests": {
+      "get": {
+        "description": "`expiresAt` is a timestamp; the countdown is the client's to render.",
+        "operationId": "AdminEmController_list_v1",
+        "parameters": [
+          {
+            "name": "page",
+            "required": false,
+            "in": "query",
+            "description": "1-based page number",
+            "schema": {
+              "minimum": 1,
+              "default": 1,
+              "type": "number"
+            }
+          },
+          {
+            "name": "pageSize",
+            "required": false,
+            "in": "query",
+            "description": "Rows per page. Clamped to 100.",
+            "schema": {
+              "minimum": 1,
+              "maximum": 100,
+              "default": 20,
+              "type": "number"
+            }
+          },
+          {
+            "name": "sort",
+            "required": false,
+            "in": "query",
+            "description": "Column to sort by",
+            "schema": {
+              "example": "createdAt",
+              "type": "string"
+            }
+          },
+          {
+            "name": "order",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "default": "desc",
+              "type": "string",
+              "enum": [
+                "asc",
+                "desc"
+              ]
+            }
+          },
+          {
+            "name": "status",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "awaiting_account",
+                "awaiting_receipt",
+                "receipt_paid",
+                "rejected",
+                "closed"
+              ]
+            }
+          },
+          {
+            "name": "type",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "withdraw",
+                "deposit",
+                "settlement",
+                "transfer"
+              ]
+            }
+          },
+          {
+            "name": "searchBy",
+            "required": false,
+            "in": "query",
+            "description": "Which field `q` searches.",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "requester",
+                "performer",
+                "account"
+              ]
+            }
+          },
+          {
+            "name": "q",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/ResponseEnvelopeDto"
+                    },
+                    {
+                      "properties": {
+                        "data": {
+                          "allOf": [
+                            {
+                              "$ref": "#/components/schemas/PaginatedDto"
+                            },
+                            {
+                              "properties": {
+                                "items": {
+                                  "type": "array",
+                                  "items": {
+                                    "$ref": "#/components/schemas/EmRequestRowDto"
+                                  }
+                                }
+                              }
+                            }
+                          ]
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation failed — see `errors` for per-field messages",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or expired admin token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Authenticated, but lacking the required permission",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Withdraw requests and deposit intents, as one list",
+        "tags": [
+          "Admin-EM"
+        ]
+      }
+    },
+    "/api/v1/admin/em/requests/{id}": {
+      "get": {
+        "operationId": "AdminEmController_findOne_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/ResponseEnvelopeDto"
+                    },
+                    {
+                      "properties": {
+                        "data": {
+                          "$ref": "#/components/schemas/EmRequestDetailDto"
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation failed — see `errors` for per-field messages",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or expired admin token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Authenticated, but lacking the required permission",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "One request with its parts, matches and receipts",
+        "tags": [
+          "Admin-EM"
+        ]
+      }
+    },
+    "/api/v1/admin/em/requests/{id}/account": {
+      "post": {
+        "description": "Validated through AdminBankAccountService, so a wrong-symbol account is refused now.",
+        "operationId": "AdminEmController_assignAccount_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AssignAccountDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Succeeded; the envelope's data is null",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/ResponseEnvelopeDto"
+                    },
+                    {
+                      "properties": {
+                        "data": {
+                          "nullable": true,
+                          "example": null
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation failed — see `errors` for per-field messages",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or expired admin token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Authenticated, but lacking the required permission",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Assign the company account this request settles from",
+        "tags": [
+          "Admin-EM"
+        ]
+      }
+    },
+    "/api/v1/admin/em/requests/{id}/enclosure": {
+      "patch": {
+        "description": "Display only; no settlement logic reads it.",
+        "operationId": "AdminEmController_setEnclosure_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SetEnclosureDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Succeeded; the envelope's data is null",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/ResponseEnvelopeDto"
+                    },
+                    {
+                      "properties": {
+                        "data": {
+                          "nullable": true,
+                          "example": null
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation failed — see `errors` for per-field messages",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or expired admin token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Authenticated, but lacking the required permission",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Set دارای لف",
+        "tags": [
+          "Admin-EM"
+        ]
+      }
+    },
+    "/api/v1/admin/em/requests/{id}/approve": {
+      "post": {
+        "description": "Resolves the request's open escalation as CONFIRM_PAYMENT through P2pEscalationService — which may stage the decision for a second admin when the amount is above the two-person threshold. Refused when there is no open escalation to resolve.",
+        "operationId": "AdminEmController_approve_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EmDecisionDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Succeeded; the envelope's data is null",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/ResponseEnvelopeDto"
+                    },
+                    {
+                      "properties": {
+                        "data": {
+                          "nullable": true,
+                          "example": null
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "OTP.EXPIRED, OTP.INVALID, OTP.CHALLENGE_MISMATCH or OTP.PAYLOAD_MISMATCH — the last meaning the confirmed operation is not the one now being submitted."
+          },
+          "401": {
+            "description": "Missing or expired admin token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Authenticated, but lacking the required permission",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Confirm the payment",
+        "tags": [
+          "Admin-EM"
+        ]
+      }
+    },
+    "/api/v1/admin/em/requests/{id}/reject": {
+      "post": {
+        "description": "Resolves the escalation as REJECT_PAYMENT.",
+        "operationId": "AdminEmController_reject_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EmDecisionDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Succeeded; the envelope's data is null",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/ResponseEnvelopeDto"
+                    },
+                    {
+                      "properties": {
+                        "data": {
+                          "nullable": true,
+                          "example": null
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "OTP.EXPIRED, OTP.INVALID, OTP.CHALLENGE_MISMATCH or OTP.PAYLOAD_MISMATCH — the last meaning the confirmed operation is not the one now being submitted."
+          },
+          "401": {
+            "description": "Missing or expired admin token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Authenticated, but lacking the required permission",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Refuse the payment",
+        "tags": [
+          "Admin-EM"
+        ]
+      }
     }
   },
   "info": {
@@ -40112,6 +40939,373 @@
           "sourceAccount",
           "items",
           "refIds",
+          "challengeId",
+          "otp"
+        ]
+      },
+      "EmStatsDto": {
+        "type": "object",
+        "properties": {
+          "total": {
+            "type": "number"
+          },
+          "awaitingAccount": {
+            "type": "number",
+            "description": "در انتظار دریافت حساب"
+          },
+          "awaitingReceipt": {
+            "type": "number",
+            "description": "در انتظار دریافت فیش"
+          },
+          "receiptPaid": {
+            "type": "number",
+            "description": "فیش پرداخت‌شده"
+          },
+          "rejected": {
+            "type": "number",
+            "description": "رد شده"
+          }
+        },
+        "required": [
+          "total",
+          "awaitingAccount",
+          "awaitingReceipt",
+          "receiptPaid",
+          "rejected"
+        ]
+      },
+      "EmProofDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "matchId": {
+            "type": "string"
+          },
+          "amount": {
+            "type": "string",
+            "description": "Rial."
+          },
+          "sourceAccount": {
+            "type": "string",
+            "nullable": true
+          },
+          "destinationAccount": {
+            "type": "string",
+            "nullable": true
+          },
+          "trackingCode": {
+            "type": "string",
+            "nullable": true
+          },
+          "paidAt": {
+            "format": "date-time",
+            "type": "string",
+            "nullable": true
+          },
+          "receiptUrl": {
+            "type": "string",
+            "nullable": true,
+            "description": "Short-lived signed URL; null when no receipt was uploaded."
+          },
+          "ocrMismatch": {
+            "type": "boolean",
+            "description": "The OCR disagreed with what was entered."
+          },
+          "createAt": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "matchId",
+          "amount",
+          "sourceAccount",
+          "destinationAccount",
+          "trackingCode",
+          "paidAt",
+          "receiptUrl",
+          "ocrMismatch",
+          "createAt"
+        ]
+      },
+      "EmPartyDto": {
+        "type": "object",
+        "properties": {
+          "userId": {
+            "type": "string",
+            "nullable": true
+          },
+          "name": {
+            "type": "string",
+            "nullable": true
+          },
+          "phone": {
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "required": [
+          "userId",
+          "name",
+          "phone"
+        ]
+      },
+      "EmRequestRowDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "withdraw",
+              "deposit",
+              "settlement",
+              "transfer"
+            ]
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "awaiting_account",
+              "awaiting_receipt",
+              "receipt_paid",
+              "rejected",
+              "closed"
+            ]
+          },
+          "amount": {
+            "type": "string",
+            "description": "Rial."
+          },
+          "symbolSlug": {
+            "type": "string",
+            "nullable": true
+          },
+          "requester": {
+            "description": "کاربر درخواست‌کننده",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/EmPartyDto"
+              }
+            ]
+          },
+          "performer": {
+            "nullable": true,
+            "description": "کاربر انجام‌دهنده — the depositor, or the acting admin on a company settlement.",
+            "type": "object",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/EmPartyDto"
+              }
+            ]
+          },
+          "destinationAccount": {
+            "type": "string",
+            "nullable": true,
+            "description": "حساب مقصد"
+          },
+          "assignedAccount": {
+            "type": "string",
+            "nullable": true,
+            "description": "«حساب داده شده» — the admin account assigned to settle."
+          },
+          "expiresAt": {
+            "format": "date-time",
+            "type": "string",
+            "nullable": true,
+            "description": "A timestamp, not a rendered duration — the countdown belongs on the client."
+          },
+          "hasEnclosure": {
+            "type": "boolean",
+            "description": "دارای لف. Operator-set; nothing in P2P implies it."
+          },
+          "proofCount": {
+            "type": "number"
+          },
+          "createAt": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "type",
+          "status",
+          "amount",
+          "symbolSlug",
+          "requester",
+          "performer",
+          "destinationAccount",
+          "assignedAccount",
+          "expiresAt",
+          "hasEnclosure",
+          "proofCount",
+          "createAt"
+        ]
+      },
+      "EmRequestDetailDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "withdraw",
+              "deposit",
+              "settlement",
+              "transfer"
+            ]
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "awaiting_account",
+              "awaiting_receipt",
+              "receipt_paid",
+              "rejected",
+              "closed"
+            ]
+          },
+          "amount": {
+            "type": "string",
+            "description": "Rial."
+          },
+          "symbolSlug": {
+            "type": "string",
+            "nullable": true
+          },
+          "requester": {
+            "description": "کاربر درخواست‌کننده",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/EmPartyDto"
+              }
+            ]
+          },
+          "performer": {
+            "nullable": true,
+            "description": "کاربر انجام‌دهنده — the depositor, or the acting admin on a company settlement.",
+            "type": "object",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/EmPartyDto"
+              }
+            ]
+          },
+          "destinationAccount": {
+            "type": "string",
+            "nullable": true,
+            "description": "حساب مقصد"
+          },
+          "assignedAccount": {
+            "type": "string",
+            "nullable": true,
+            "description": "«حساب داده شده» — the admin account assigned to settle."
+          },
+          "expiresAt": {
+            "format": "date-time",
+            "type": "string",
+            "nullable": true,
+            "description": "A timestamp, not a rendered duration — the countdown belongs on the client."
+          },
+          "hasEnclosure": {
+            "type": "boolean",
+            "description": "دارای لف. Operator-set; nothing in P2P implies it."
+          },
+          "proofCount": {
+            "type": "number"
+          },
+          "createAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "proofs": {
+            "description": "One per match; a request fans out to N.",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/EmProofDto"
+            }
+          },
+          "parts": {
+            "description": "Parts and their matches, for the stacked cells.",
+            "type": "array",
+            "items": {
+              "type": "object"
+            }
+          },
+          "escalationId": {
+            "type": "string",
+            "nullable": true,
+            "description": "The open escalation, when one exists."
+          }
+        },
+        "required": [
+          "id",
+          "type",
+          "status",
+          "amount",
+          "symbolSlug",
+          "requester",
+          "performer",
+          "destinationAccount",
+          "assignedAccount",
+          "expiresAt",
+          "hasEnclosure",
+          "proofCount",
+          "createAt",
+          "proofs",
+          "parts",
+          "escalationId"
+        ]
+      },
+      "AssignAccountDto": {
+        "type": "object",
+        "properties": {
+          "bankAccountId": {
+            "type": "string",
+            "description": "An `admin_bank_account` id."
+          }
+        },
+        "required": [
+          "bankAccountId"
+        ]
+      },
+      "SetEnclosureDto": {
+        "type": "object",
+        "properties": {
+          "hasEnclosure": {
+            "type": "boolean",
+            "description": "دارای لف"
+          }
+        },
+        "required": [
+          "hasEnclosure"
+        ]
+      },
+      "EmDecisionDto": {
+        "type": "object",
+        "properties": {
+          "note": {
+            "type": "string",
+            "description": "Written to the P2P audit log; required."
+          },
+          "challengeId": {
+            "type": "string",
+            "description": "From POST /admin/operations/otp, scope `em.approve`."
+          },
+          "otp": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "note",
           "challengeId",
           "otp"
         ]
