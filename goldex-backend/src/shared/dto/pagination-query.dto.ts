@@ -55,7 +55,7 @@ export class PaginationQueryDto {
 
   /** Rows to skip, for `.skip()` / `OFFSET`. */
   get skip(): number {
-    return (this.pageNumber - 1) * this.take;
+    return (this.currentPage - 1) * this.take;
   }
 
   /** Rows to fetch, clamped. Use instead of reading `pageSize` directly. */
@@ -64,8 +64,14 @@ export class PaginationQueryDto {
     return Math.min(Math.max(size, 1), MAX_PAGE_SIZE);
   }
 
-  /** `page`, floored at 1. */
-  get pageNumber(): number {
+  /**
+   * `page`, floored at 1.
+   *
+   * Named `currentPage` rather than `pageNumber` so a subclass can expose
+   * `pageNumber` as a deprecated wire alias without shadowing this getter —
+   * which would silently break `skip`.
+   */
+  get currentPage(): number {
     const page = Number(this.page) || 1;
     return Math.max(page, 1);
   }

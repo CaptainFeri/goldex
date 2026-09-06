@@ -21,6 +21,8 @@ import { UserAuthGuard } from "../user/auth/Guard/user.guard";
 import { UserExpressRequest } from "../user/auth/types/user-express-request";
 import { MinioService } from "../minio/minio.service";
 import { OcrService } from "../ocr/ocr.service";
+import { SignedFileUrlService } from "../shared/files/signed-file-url.service";
+import { withPictureUrl, withPictureUrlPage } from "../shared/files/picture-url.mapper";
 
 @ApiTags("Deposit")
 @ApiBearerAuth()
@@ -30,21 +32,23 @@ export class DepositController {
   constructor(
     private readonly depositService: DepositService,
     private readonly minioService: MinioService,
-    private readonly ocrService: OcrService
+    private readonly ocrService: OcrService,
+    private readonly signedFileUrlService: SignedFileUrlService
   ) {}
 
   @Post()
   @ApiOperation({ summary: "Create a deposit request" })
   async create(@Req() req: UserExpressRequest, @Body() dto: CreateDepositDto) {
     const userId = req.user["id"];
-    return { data: await this.depositService.create(userId, dto) };
+    return { data: withPictureUrl(this.signedFileUrlService, await this.depositService.create(userId, dto)) };
   }
 
   @Get()
   @ApiOperation({ summary: "List user deposits" })
   async findAll(@Req() req: UserExpressRequest, @Query() query: DepositQueryDto) {
     const userId = req.user["id"];
-    return { data: await this.depositService.findByUser(userId, query) };
+    const page = await this.depositService.findByUser(userId, query);
+    return { data: withPictureUrlPage(this.signedFileUrlService, page) };
   }
 
   @Post("upload-picture")
@@ -72,14 +76,14 @@ export class DepositController {
   @ApiOperation({ summary: "Get deposit details" })
   async findOne(@Req() req: UserExpressRequest, @Param("id") id: string) {
     const userId = req.user["id"];
-    return { data: await this.depositService.findUserDepositById(userId, id) };
+    return { data: withPictureUrl(this.signedFileUrlService, await this.depositService.findUserDepositById(userId, id)) };
   }
 
   @Post(":id/cancel")
   @ApiOperation({ summary: "Cancel a pending deposit" })
   async cancel(@Req() req: UserExpressRequest, @Param("id") id: string) {
     const userId = req.user["id"];
-    return { data: await this.depositService.cancel(userId, id) };
+    return { data: withPictureUrl(this.signedFileUrlService, await this.depositService.cancel(userId, id)) };
   }
 
   // deposit.controller.ts (updated upload-and-ocr endpoint)

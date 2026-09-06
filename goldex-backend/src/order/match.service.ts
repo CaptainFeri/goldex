@@ -15,6 +15,7 @@ import { SystemLedgerEntity } from "../financial/entity/system-ledger.entity";
 import { SystemLedgerType } from "../financial/enum/system-ledger-type.enum";
 import * as crypto from "crypto";
 import { OrderEvents } from "../shared/constants/events.constants";
+import { RIAL_SYMBOL_SLUG } from "../shared/constants/currency.constants";
 
 interface MatchResult {
   message: string;
@@ -93,7 +94,7 @@ export class MatchService {
         const totalCost = Number((qty * price).toFixed(8));
         if (ownerIrWallet.lockedBalance < totalCost) {
           await queryRunner.rollbackTransaction();
-          return { message: `❌ موجودی مسدود شده ${pair.quoteSymbol?.slug || "IRR"} طرف مقابل کافی نیست`, showAlert: true };
+          return { message: `❌ موجودی مسدود شده ${pair.quoteSymbol?.slug || RIAL_SYMBOL_SLUG} طرف مقابل کافی نیست`, showAlert: true };
         }
 
         // Execute: owner's locked IRR → consumed, owner gets XAU net of commission
@@ -157,7 +158,7 @@ export class MatchService {
 
         if (requesterIrWallet.freeBalance < totalCost) {
           await queryRunner.rollbackTransaction();
-          return { message: `❌ موجودی ${pair.quoteSymbol?.slug || "IRR"} کافی نیست`, showAlert: true };
+          return { message: `❌ موجودی ${pair.quoteSymbol?.slug || RIAL_SYMBOL_SLUG} کافی نیست`, showAlert: true };
         }
 
         // Freeze requester's IRR

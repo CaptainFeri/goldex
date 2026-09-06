@@ -7,12 +7,10 @@ import {
   ParseUUIDPipe,
   Post,
   Req,
-  Res,
   UploadedFile,
   UseGuards,
   UseInterceptors,
 } from "@nestjs/common";
-import { Response } from "express";
 import { UserKycService } from "../service/user-kyc.service";
 import { VerifyLevel1Dto } from "../dto/verifyLevel1.dto";
 import { VerifyBankAccountDto } from "../dto/verifyBankAccount.dto";
@@ -22,14 +20,15 @@ import { UserExpressRequest } from "../auth/types/user-express-request";
 import { FileInterceptor } from "@nestjs/platform-express";
 import { memoryStorage } from "multer";
 import { UploadKycDocumentDto } from "../dto/upload-kyc-document.dto";
-import { MinioService } from "../../minio/minio.service";
+import { SignedFileUrlService } from "../../shared/files/signed-file-url.service";
+import { withDocumentUrl, withDocumentUrls } from "../../shared/files/picture-url.mapper";
 
 @ApiTags("User-Kyc")
 @Controller("kyc")
 export class UserKycController {
   constructor(
     private readonly kycService: UserKycService,
-    private readonly minioService: MinioService
+    private readonly signedFileUrlService: SignedFileUrlService
   ) {}
 
   @Post("upload")
@@ -42,7 +41,7 @@ export class UserKycController {
     if (!file) {
       throw new Error("No file uploaded");
     }
-    return { data: await this.kycService.uploadDocument(req.user.id, file, dto) };
+    return { data: withDocumentUrl(this.signedFileUrlService, await this.kycService.uploadDocument(req.user.id, file, dto)) };
   }
 
   @Get("documents")
@@ -50,7 +49,7 @@ export class UserKycController {
   @ApiBearerAuth()
   @ApiOperation({ summary: "Get all user KYC documents" })
   async getUserDocuments(@Req() req) {
-    return { data: await this.kycService.getUserDocuments(req.user.id) };
+    return { data: withDocumentUrls(this.signedFileUrlService, await this.kycService.getUserDocuments(req.user.id)) };
   }
 
   @Get("documents/status/:status")
@@ -58,7 +57,7 @@ export class UserKycController {
   @ApiBearerAuth()
   @ApiOperation({ summary: "Get user documents by status" })
   async getUserDocumentsByStatus(@Req() req, @Param("status") status: string) {
-    return { data: await this.kycService.getUserDocumentsByStatus(req.user.id, status as any) };
+    return { data: withDocumentUrls(this.signedFileUrlService, await this.kycService.getUserDocumentsByStatus(req.user.id, status as any)) };
   }
 
   @Get("stats")
@@ -74,7 +73,7 @@ export class UserKycController {
   @ApiBearerAuth()
   @ApiOperation({ summary: "Get specific document by ID" })
   async getDocumentById(@Req() req, @Param("documentId", ParseUUIDPipe) documentId: string) {
-    return { data: await this.kycService.getDocumentById(documentId, req.user.id) };
+    return { data: withDocumentUrl(this.signedFileUrlService, await this.kycService.getDocumentById(documentId, req.user.id)) };
   }
 
   @Delete("documents/:documentId")
@@ -84,16 +83,6 @@ export class UserKycController {
   async deleteDocument(@Req() req, @Param("documentId", ParseUUIDPipe) documentId: string) {
     await this.kycService.deleteDocument(req.user.id, documentId);
     return { data: "Document deleted successfully" };
-  }
-
-  @Get("document/:objectName")
-  @ApiOperation({ summary: "Get KYC document content" })
-  async getDocument(@Param("objectName") objectName: string, @Res() res: Response) {
-    const bucket = process.env.MINIO_BUCKET || "default";
-    const stat = await this.minioService.getFileStat(bucket, objectName);
-    res.set({ "Content-Type": stat.contentType, "Content-Length": stat.size.toString() });
-    const stream = await this.minioService.getFileStream(bucket, objectName);
-    stream.pipe(res);
   }
 
   @Post("level-1")

@@ -3,6 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import { api, unwrap, apiError } from "../api/client";
 import { Card, Badge, Loading, ErrorState, Empty } from "../components/ui";
 import type { FinanceLog, FinanceAction } from "../api/types";
+import DateField from "../components/DateField";
 
 const ACTION_LABELS: Record<string, string> = {
   CREDIT_CREATED: "ایجاد اعتبار",
@@ -86,9 +87,9 @@ export default function FinanceLogsPage() {
       title="گزارشات مالی"
       action={
         <div className="row" style={{ gap: 8, flexWrap: "wrap" }}>
-          <input type="date" className="input" style={{ width: 140 }} value={startDate} onChange={(e) => setStartDate(e.target.value)} />
+          <DateField value={startDate} onChange={setStartDate} style={{ width: 140 }} placeholder="از تاریخ" />
           <span>تا</span>
-          <input type="date" className="input" style={{ width: 140 }} value={endDate} onChange={(e) => setEndDate(e.target.value)} />
+          <DateField value={endDate} onChange={setEndDate} style={{ width: 140 }} placeholder="تا تاریخ" />
           <select className="select" value={actionFilter} onChange={(e) => setActionFilter(e.target.value)}>
             <option value="">همه اقدامات</option>
             {Object.entries(ACTION_LABELS).map(([k, v]) => (
@@ -118,7 +119,7 @@ export default function FinanceLogsPage() {
                 <tr key={l.id}>
                   <td>{fmtDate(l.actionTime)}</td>
                   <td>
-                    <Badge kind={(ACTION_KINDS[l.actionType] ?? "gray") as "green" | "red" | "gold" | "gray"}>
+                    <Badge kind={(ACTION_KINDS[l.actionType] ?? "gray") as "green" | "red" | "gold" | "blue" | "gray"}>
                       {ACTION_LABELS[l.actionType] ?? l.actionType}
                     </Badge>
                   </td>

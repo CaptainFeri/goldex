@@ -1,28 +1,32 @@
 /**
- * The platform's rial-family unit.
+ * The rial-family symbol, as stored.
  *
- * Everything above the bank adapters — wallets, orders, credits, vouchers, the
- * whole admin API — is denominated in **toman (IRT)**. The `IRR` symbol row was
- * replaced by `IRT` and every stored balance converted once, by migration.
+ * **The backend works in rial (IRR), end to end.** Balances, orders, credits,
+ * vouchers, the bank rails and the wire format are all rial — one unit, no
+ * conversion anywhere in the platform, and no factor-of-ten hazard in the data.
  *
- * Never write the literal "IRR" or "IRT" in application code; import from here
- * so the next unit change is one edit rather than a grep.
+ * Toman is a **display** convention and belongs to the panels: they divide by
+ * `RIAL_PER_TOMAN` when rendering and multiply when accepting input. Nothing in
+ * this codebase should convert.
+ *
+ * Never write the literal "IRR" in application code; import from here so the
+ * next unit change is one edit rather than a grep.
  *
  * @see docs/PARSZARGAR-ADMIN-API-PLAN.md §3.1
  */
-export const RIAL_SYMBOL_SLUG = "IRT" as const;
+export const RIAL_SYMBOL_SLUG = "IRR" as const;
 
-/** Human-readable unit for the API's money metadata (`{ amount, currency, unit }`). */
-export const RIAL_SYMBOL_UNIT = "تومان" as const;
+/** The unit the API reports in its money metadata (`{ amount, currency }`). */
+export const RIAL_SYMBOL_UNIT = "ریال" as const;
 
 /**
- * What the bank rails speak. SATNA, PAYA, Shahin and the CBP gateways all
- * settle in rial, and that is not ours to change — so adapters convert at their
- * own edge and nowhere else.
+ * How the panels present rial amounts.
  *
- * @see docs/PARSZARGAR-ADMIN-API-PLAN.md §3.2
+ * Served to clients (see the platform settings endpoint) so both panels format
+ * identically instead of each hardcoding a divisor.
  */
-export const BANK_SYMBOL_SLUG = "IRR" as const;
+export const DISPLAY_CURRENCY = "IRT" as const;
+export const DISPLAY_CURRENCY_UNIT = "تومان" as const;
 
-/** 1 toman = 10 rial. */
+/** 1 toman = 10 rial. Display-side only. */
 export const RIAL_PER_TOMAN = 10 as const;

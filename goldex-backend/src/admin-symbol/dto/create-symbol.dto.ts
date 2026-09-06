@@ -5,7 +5,7 @@ import { SymbolTypeEnum } from "../enum/symbol.type.enum";
 import { UnitTypeEnum } from "../enum/unit.type.enum";
 import { DepositTypeEnum } from "../enum/deposit-type.enum";
 import { WithdrawTypeEnum } from "../enum/withdraw-type.enum";
-import { ApiProperty } from "@nestjs/swagger";
+import { ApiProperty, ApiPropertyOptional } from "@nestjs/swagger";
 
 export class CreateSymbolDto {
   @IsString()
@@ -83,4 +83,33 @@ export class CreateSymbolDto {
   @IsString()
   @ApiProperty({ required: false })
   defaultWithdrawGateway?: string;
+
+  @ApiPropertyOptional({
+    nullable: true,
+    example: "usdToman",
+    description:
+      "The camelCase key a panel keys its ticker off. Unique across symbols where set.",
+  })
+  @IsOptional()
+  @IsString()
+  tickerKey?: string;
+
+  @ApiPropertyOptional({ example: false, description: "Show this symbol in the market ticker" })
+  @IsOptional()
+  @IsBoolean()
+  isTicker?: boolean;
+
+  @ApiPropertyOptional({ example: 20, description: "Ascending order within the ticker" })
+  @IsOptional()
+  @IsNumber()
+  displayOrder?: number;
+
+  @ApiPropertyOptional({
+    nullable: true,
+    example: "ارز",
+    description: "Grouping for the price screen: طلا / سکه / نقره / ارز / کریپتو / کالا",
+  })
+  @IsOptional()
+  @IsString()
+  category?: string;
 }

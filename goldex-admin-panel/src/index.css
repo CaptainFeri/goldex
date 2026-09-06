@@ -77,6 +77,10 @@ select {
 .app-shell {
   display: grid;
   grid-template-columns: 248px 1fr;
+  /* Ticker across the top, then the sidebar and main pane beneath it. The
+     rows keep the shell at exactly the viewport height, so only .main
+     scrolls — the strip must not scroll away with the content. */
+  grid-template-rows: auto 1fr;
   height: 100vh;
 }
 
@@ -378,6 +382,13 @@ tbody tr:hover {
   color: var(--text-dim);
 }
 
+/* A fourth colour, so statuses that mean different things do not look alike.
+   FinanceLogsPage already asked for this kind; until now it rendered unstyled. */
+.badge.blue {
+  background: rgba(76, 141, 255, 0.15);
+  color: #7aa9ff;
+}
+
 /* ---------- Buttons ---------- */
 .btn {
   display: inline-flex;
@@ -497,6 +508,14 @@ tbody tr:hover {
 }
 .error-text {
   color: #f0857d;
+  font-size: 13px;
+  margin-top: 8px;
+  min-height: 18px;
+}
+
+/* The success counterpart to .error-text. */
+.ok-text {
+  color: #5bd08a;
   font-size: 13px;
   margin-top: 8px;
   min-height: 18px;
@@ -1027,4 +1046,277 @@ tbody tr:hover {
 @keyframes fadeUp {
   from { opacity: 0; transform: translateY(8px); }
   to { opacity: 1; transform: translateY(0); }
+}
+
+
+/* ---- Market ticker ------------------------------------------------------ */
+
+.market-ticker {
+  grid-column: 1 / -1;
+  height: 38px;
+  display: flex;
+  align-items: center;
+  background: linear-gradient(90deg, #0b0e14, #11151c);
+  border-bottom: 1px solid var(--border);
+  font-size: 12.5px;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.ticker-live {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  flex-shrink: 0;
+  padding: 0 18px;
+  color: var(--text-dim);
+  /* RTL panel: the divider belongs on the side the marquee runs from. */
+  border-left: 1px solid var(--border);
+  background: inherit;
+  z-index: 1;
+}
+
+.ticker-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--green);
+  box-shadow: 0 0 0 3px var(--green-soft);
+}
+
+.ticker-dot.off {
+  background: var(--text-faint);
+  box-shadow: none;
+}
+
+.ticker-marquee {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  direction: rtl;
+  /* Fade the leading edge so items enter rather than pop into view. */
+  mask-image: linear-gradient(to right, transparent, #000 48px);
+  -webkit-mask-image: linear-gradient(to right, transparent, #000 48px);
+}
+
+.ticker-track {
+  display: flex;
+  width: max-content;
+  /* Stated rather than inherited from <html dir="rtl">: the scroll direction
+     and the entry-edge fade below are both chosen for RTL, so a future change
+     to the document direction must not silently reverse them. */
+  direction: rtl;
+  will-change: transform;
+  animation: ticker-scroll var(--ticker-duration, 40s) linear infinite;
+}
+
+/* Pause on hover so an operator can actually read a rate they spotted. */
+.market-ticker:hover .ticker-track {
+  animation-play-state: paused;
+}
+
+.ticker-set {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+  gap: 32px;
+  padding-inline: 16px;
+}
+
+@keyframes ticker-scroll {
+  from {
+    transform: translateX(0);
+  }
+  to {
+    /* Half the track is one full set, so the loop is seamless. */
+    transform: translateX(50%);
+  }
+}
+
+.ticker-item {
+  color: var(--text-dim);
+}
+
+.ticker-value {
+  color: var(--text);
+  transition: color 0.25s ease;
+}
+
+.ticker-gold {
+  color: var(--gold-soft);
+  transition: color 0.25s ease;
+}
+
+.ticker-up {
+  color: var(--green);
+}
+
+.ticker-down {
+  color: var(--red);
+}
+
+.ticker-change {
+  font-size: 11px;
+}
+
+.ticker-stale {
+  color: var(--text-faint);
+}
+
+.ticker-stale-mark {
+  color: var(--text-faint);
+  font-size: 11px;
+}
+
+/* Respect a reader who has asked for less motion: show the strip static
+   rather than animating a marquee they did not ask for. */
+@media (prefers-reduced-motion: reduce) {
+  .ticker-track {
+    animation: none;
+  }
+  .ticker-marquee {
+    overflow-x: auto;
+  }
+}
+
+/* ---- Jalali date field ---------------------------------------------------
+   react-multi-date-picker ships its own light theme, so the calendar is
+   restyled onto the panel's tokens rather than left as a white card on a dark
+   page. Only colour and border are touched — layout stays the library's. */
+
+.datefield,
+.datefield > div:first-child {
+  display: inline-block;
+}
+
+.rmdp-container .input {
+  width: 100%;
+}
+
+/* `:root` only to out-specify the library's own `.rmdp-wrapper` rule, which
+   the bundler emits after this file. One class each would tie, and the tie
+   goes to whichever lands last — which is not ours. */
+:root .rmdp-wrapper,
+:root .rmdp-wrapper.rmdp-shadow,
+.rmdp-container .rmdp-calendar {
+  background: var(--bg-elev);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow);
+}
+
+.rmdp-top-class,
+.rmdp-header,
+.rmdp-panel-body,
+.rmdp-time-picker {
+  background: transparent;
+  color: var(--text);
+}
+
+.rmdp-header-values,
+.rmdp-week-day,
+.rmdp-day span,
+.rmdp-time-picker div input {
+  color: var(--text);
+}
+
+.rmdp-week-day {
+  color: var(--text-dim);
+}
+
+.rmdp-arrow {
+  border-color: var(--text-dim);
+}
+
+.rmdp-arrow-container:hover {
+  background: var(--bg-elev-2);
+  box-shadow: none;
+}
+
+.rmdp-arrow-container:hover .rmdp-arrow {
+  border-color: var(--gold);
+}
+
+.rmdp-day:not(.rmdp-disabled):not(.rmdp-day-hidden) span:hover {
+  background: var(--bg-elev-2);
+  color: var(--text);
+}
+
+.rmdp-day.rmdp-selected span:not(.highlight) {
+  background: var(--gold);
+  color: #14161c;
+  box-shadow: none;
+}
+
+/* Today is a hint, not a selection — outline it rather than filling it. */
+.rmdp-day.rmdp-today span {
+  background: transparent;
+  color: var(--gold-soft);
+  border: 1px solid var(--gold-dim);
+}
+
+.rmdp-day.rmdp-deactive span,
+.rmdp-day.rmdp-disabled span {
+  color: var(--text-faint);
+}
+
+.rmdp-time-picker div .rmdp-am,
+.rmdp-time-picker div input {
+  background: transparent;
+}
+
+.rmdp-time-picker {
+  border-top: 1px solid var(--border);
+}
+
+/* Settings toggles */
+.toggle {
+  position: relative;
+  width: 42px;
+  height: 24px;
+  flex: 0 0 auto;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--bg-soft, rgba(255, 255, 255, 0.06));
+  cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+.toggle.on {
+  background: var(--gold);
+  border-color: var(--gold);
+}
+.toggle:disabled {
+  opacity: 0.5;
+  cursor: progress;
+}
+.toggle-knob {
+  position: absolute;
+  top: 2px;
+  /* RTL: the knob rests on the right and travels left when on. */
+  right: 2px;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: #fff;
+  transition: transform 0.15s ease;
+}
+.toggle.on .toggle-knob {
+  transform: translateX(-18px);
+}
+.settings-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--border);
+}
+.settings-row:last-child {
+  border-bottom: 0;
+}
+.settings-row-desc {
+  font-size: 12px;
+  color: var(--text-faint);
+  margin-top: 2px;
 }

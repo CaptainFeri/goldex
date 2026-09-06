@@ -1,6 +1,7 @@
 import { Entity, Column, ManyToOne, JoinColumn, OneToMany } from "typeorm";
 import { myBaseEntity } from "../../shared/entity/base.entity";
 import { UserEntity } from "../../user/entity/user.entity";
+import { SymbolEntity } from "../../admin-symbol/entity/symbol.entity";
 import { CreditStatusEnum } from "../enum/credit-status.enum";
 import { SettlementStateEnum } from "../enum/settlement-state.enum";
 import { RiskStateEnum } from "../enum/risk-state.enum";
@@ -86,6 +87,12 @@ export class CreditEntity extends myBaseEntity {
   @Column({ type: "decimal", precision: 20, scale: 8, default: 0, name: "used_credit" })
   usedCredit: number;
 
+  // The symbol collateralAmount is a quantity in. Nullable and not cascaded:
+  // a legacy (v1) facility has none, and symbols outlive facilities.
+  @ManyToOne(() => SymbolEntity, { nullable: true })
+  @JoinColumn({ name: "collateral_symbol_id" })
+  collateralSymbol: SymbolEntity;
+
   @Column({ name: "collateral_symbol_id", type: "uuid", nullable: true })
   collateralSymbolId: string;
 
@@ -104,6 +111,11 @@ export class CreditEntity extends myBaseEntity {
 
   @Column({ type: "decimal", precision: 5, scale: 2, default: 0, name: "last_drawdown_percent" })
   lastDrawdownPercent: number;
+
+  // The symbol creditLimit, usedCredit and every *Value field are money in.
+  @ManyToOne(() => SymbolEntity, { nullable: true })
+  @JoinColumn({ name: "credit_base_symbol_id" })
+  creditBaseSymbol: SymbolEntity;
 
   @Column({ name: "credit_base_symbol_id", type: "uuid", nullable: true })
   creditBaseSymbolId: string;

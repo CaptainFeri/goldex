@@ -1,5 +1,12 @@
 import { Controller, Get, Patch, Post, Body, Param, Query, UseGuards, Req, Logger, UseInterceptors, UploadedFile, BadRequestException } from "@nestjs/common";
 import { ApiTags, ApiOperation, ApiBearerAuth, ApiConsumes } from "@nestjs/swagger";
+import {
+  ApiAdminErrorResponses,
+  ApiEnvelopeResponse,
+  ApiPaginatedResponse,
+} from "../shared/swagger";
+import { WithdrawDto } from "./dto/withdraw.dto";
+import { WithdrawReceiptOcrDto } from "./dto/withdraw-receipt-ocr.dto";
 import { FileInterceptor } from "@nestjs/platform-express";
 import { memoryStorage } from "multer";
 import { WithdrawService } from "./withdraw.service";
@@ -11,9 +18,12 @@ import { AdminRoles } from "../admin/role/admin.role.decorator";
 import { AdminExpressRequest } from "../admin/auth/types/adminExpressRequest";
 import { MinioService } from "../minio/minio.service";
 import { OcrService } from "../ocr/ocr.service";
+import { SignedFileUrlService } from "../shared/files/signed-file-url.service";
+import { withPictureUrl, withPictureUrlPage } from "../shared/files/picture-url.mapper";
 
 @ApiTags("Admin-Withdraw")
 @ApiBearerAuth()
+@ApiAdminErrorResponses()
 @UseGuards(AdminAuthGuard)
 @Controller("admin/withdraw")
 export class WithdrawAdminController {
@@ -23,25 +33,30 @@ export class WithdrawAdminController {
     private readonly withdrawService: WithdrawService,
     private readonly minioService: MinioService,
     private readonly ocrService: OcrService,
+    private readonly signedFileUrlService: SignedFileUrlService,
   ) {}
 
   @Get()
   @AdminRoles(AdminRole.ADMIN, AdminRole.SUPER_ADMIN, AdminRole.FINANCE)
   @ApiOperation({ summary: "List all withdrawals (admin)" })
+  @ApiPaginatedResponse(WithdrawDto)
   async findAll(@Query() query: WithdrawQueryDto) {
-    return { data: await this.withdrawService.findAll(query) };
+    const page = await this.withdrawService.findAll(query);
+    return { data: withPictureUrlPage(this.signedFileUrlService, page) };
   }
 
   @Get(":id")
   @AdminRoles(AdminRole.ADMIN, AdminRole.SUPER_ADMIN, AdminRole.FINANCE)
   @ApiOperation({ summary: "Get withdrawal details (admin)" })
+  @ApiEnvelopeResponse(WithdrawDto)
   async findOne(@Param("id") id: string) {
-    return { data: await this.withdrawService.findById(id) };
+    return { data: withPictureUrl(this.signedFileUrlService, await this.withdrawService.findById(id)) };
   }
 
   @Post("upload-and-ocr")
   @AdminRoles(AdminRole.ADMIN, AdminRole.SUPER_ADMIN, AdminRole.FINANCE)
   @ApiOperation({ summary: "Upload withdrawal receipt image and run OCR (admin)" })
+  @ApiEnvelopeResponse(WithdrawReceiptOcrDto, { status: 201 })
   @ApiConsumes("multipart/form-data")
   @UseInterceptors(FileInterceptor("file", { storage: memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } }))
   async uploadAndOcr(@Req() req: AdminExpressRequest, @UploadedFile() file: Express.Multer.File) {
@@ -83,15 +98,17 @@ export class WithdrawAdminController {
   @Post(":id/approve")
   @AdminRoles(AdminRole.ADMIN, AdminRole.SUPER_ADMIN, AdminRole.FINANCE)
   @ApiOperation({ summary: "Approve a gateway-bound withdrawal (executed by goldex-cbp)" })
+  @ApiEnvelopeResponse(WithdrawDto, { status: 201 })
   async approve(@Req() req: AdminExpressRequest, @Param("id") id: string) {
     const adminId = req.admin?.id || "system";
     const result = await this.withdrawService.approveGatewayWithdraw(adminId, id);
-    return { data: result };
+    return { data: withPictureUrl(this.signedFileUrlService, result) };
   }
 
   @Patch(":id/process")
   @AdminRoles(AdminRole.ADMIN, AdminRole.SUPER_ADMIN, AdminRole.FINANCE)
   @ApiOperation({ summary: "Approve or reject a withdrawal" })
+  @ApiEnvelopeResponse(WithdrawDto)
   async process(@Req() req: AdminExpressRequest, @Param("id") id: string, @Body() dto: ProcessWithdrawDto) {
     const adminId = req.admin?.id || "system";
 
@@ -116,7 +133,7 @@ export class WithdrawAdminController {
       }
     }
 
-    return { data: result };
+    return { data: withPictureUrl(this.signedFileUrlService, result) };
   }
 
   private async sendOcrFeedback(

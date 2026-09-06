@@ -39,6 +39,27 @@ export class SymbolEntity extends myBaseEntity {
   @Column({ type: "decimal", precision: 20, scale: 8, nullable: true })
   gain: number;
 
+  /**
+   * The camelCase key the panels use for this instrument (`gold18`,
+   * `emamiCoin`, `usdToman`, …). Carried here so the ticker and the price
+   * instrument catalogue are served from the database rather than duplicated
+   * in each panel's constants file.
+   */
+  @Column({ name: "ticker_key", type: "varchar", length: 64, nullable: true })
+  tickerKey?: string;
+
+  /** Shown in the market ticker marquee. */
+  @Column({ name: "is_ticker", type: "boolean", default: false })
+  isTicker: boolean;
+
+  /** Ordering within the ticker and the instrument picker. */
+  @Column({ name: "display_order", type: "int", default: 0 })
+  displayOrder: number;
+
+  /** Grouping for the price screen: طلا / سکه / نقره / ارز / کریپتو / کالا. */
+  @Column({ name: "category", type: "varchar", length: 64, nullable: true })
+  category?: string;
+
   @Column({
     nullable: false,
     default: GainTypeEnum.NUMBER,

@@ -16,6 +16,7 @@ import { PricePairEntity } from "../admin-pair/entity/price.pair.entity";
 import { CreditService } from "../credit/credit.service";
 import { computePendDeadlines, initialPendDeadlineState } from "../credit/util/pend-deadline.util";
 import * as crypto from "crypto";
+import { RIAL_SYMBOL_SLUG } from "../shared/constants/currency.constants";
 
 interface CreateQuoteRequestResult {
   request: QuoteRequestEntity;
@@ -415,7 +416,7 @@ export class QuoteRequestService {
       const wallet = await this.getWallet(queryRunner, userId, pair.quoteSymbol?.id, walletType);
       const required = quantity * (price || 0);
       if (wallet.freeBalance < required) {
-        throw new Error(`موجودی ${pair.quoteSymbol?.slug || "IRR"} کافی نیست (نیاز: ${required})`);
+        throw new Error(`موجودی ${pair.quoteSymbol?.slug || RIAL_SYMBOL_SLUG} کافی نیست (نیاز: ${required})`);
       }
       wallet.freeBalance = Number((wallet.freeBalance - required).toFixed(8));
       wallet.lockedBalance = Number((wallet.lockedBalance + required).toFixed(8));

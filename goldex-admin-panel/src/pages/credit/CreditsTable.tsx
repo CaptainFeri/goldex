@@ -6,6 +6,7 @@ import {
   RISK_STATE_LABELS, RISK_STATE_KINDS,
   fmtNum, fmtDate, isMarginCalled,
 } from "./labels";
+import { fmtBySymbol } from "../../lib/money";
 
 export type CreditModalKind = "detail" | "user" | "settle" | "liquidate" | "extend" | "adjust" | "cancel";
 
@@ -59,15 +60,23 @@ export function CreditsTable({
               <td>
                 {c.user ? `${c.user.firstName ?? ""} ${c.user.lastName ?? ""}`.trim() || c.user.phone || c.user.email || c.userId : c.userId}
               </td>
-              <td>{fmtNum(c.amount)}</td>
+              {/*
+                Two units sit side by side on a credit and mixing them is the
+                easy mistake: creditLimit, usedCredit and every *Value are money
+                in creditBaseSymbol, while collateral is a quantity in
+                collateralSymbol (grams of gold, say). Leverage is neither.
+              */}
+              <td>{fmtBySymbol(c.amount, c.creditBaseSymbol?.slug)}</td>
               <td className="mono">{c.leverage != null ? `${c.leverage}x` : "—"}</td>
-              <td className="mono">{fmtNum(c.creditLimit)}</td>
-              <td className="mono">{fmtNum(c.usedCredit)}</td>
-              <td className="mono">{fmtNum(c.availableCredit ?? Math.max(0, (c.creditLimit ?? 0) - (c.usedCredit ?? 0)))}</td>
+              <td className="mono">{fmtBySymbol(c.creditLimit, c.creditBaseSymbol?.slug)}</td>
+              <td className="mono">{fmtBySymbol(c.usedCredit, c.creditBaseSymbol?.slug)}</td>
+              <td className="mono">{fmtBySymbol(c.availableCredit ?? Math.max(0, (c.creditLimit ?? 0) - (c.usedCredit ?? 0)), c.creditBaseSymbol?.slug)}</td>
               <td>
                 {c.collateralLocked != null ? (
                   <span className="mono" style={{ fontSize: 12 }}>
-                    {fmtNum(c.collateralLocked)} / {fmtNum(c.collateralAmount ?? 0)}
+                    {fmtBySymbol(c.collateralLocked, c.collateralSymbol?.slug)}
+                    {" / "}
+                    {fmtBySymbol(c.collateralAmount ?? 0, c.collateralSymbol?.slug)}
                   </span>
                 ) : "—"}
               </td>
@@ -77,7 +86,7 @@ export function CreditsTable({
                     {[
                       c.maxConcurrentOrders != null ? `موازی ${c.maxConcurrentOrders}` : null,
                       c.maxTradeChainDepth != null ? `عمق ${c.maxTradeChainDepth}` : null,
-                      c.maxCreditNotional != null ? `حد ${fmtNum(c.maxCreditNotional)}` : null,
+                      c.maxCreditNotional != null ? `حد ${fmtBySymbol(c.maxCreditNotional, c.creditBaseSymbol?.slug)}` : null,
                     ].filter(Boolean).join(" | ")}
                   </span>
                 ) : "—"}

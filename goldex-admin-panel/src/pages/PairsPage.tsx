@@ -2,15 +2,14 @@ import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, unwrap, apiError } from "../api/client";
 import { Card, Loading, ErrorState, Empty, Badge, Modal } from "../components/ui";
-import { fmtNum, pairLabel } from "../lib/format";
+import { fmtNum, pairLabel, baseSlug, quoteSlug } from "../lib/format";
+import { fmtBySymbol } from "../lib/money";
 import RoutingModal from "../components/RoutingModal";
 import type { PricePair, PairRoutes } from "../api/types";
 
 function toArray(x: any): any[] {
   return Array.isArray(x) ? x : x?.data ?? x?.items ?? [];
 }
-const baseSlug = (p: any) => p.baseSymbol?.slug ?? p.baseCode ?? "—";
-const quoteSlug = (p: any) => p.quoteSymbol?.slug ?? p.quoteCode ?? "—";
 
 const EMPTY = {
   baseCode: "",
@@ -41,8 +40,8 @@ function PairForm({ initial, symbols, onClose }: { initial?: any; symbols: any[]
     ...EMPTY,
     ...(initial
       ? {
-          baseCode: baseSlug(initial),
-          quoteCode: quoteSlug(initial),
+          baseCode: baseSlug(initial) ?? "",
+          quoteCode: quoteSlug(initial) ?? "",
           price: Number(initial.price ?? initial.bestBuyPrice ?? 0),
           isValid: !!initial.isValid,
           buyCommission: Number(initial.buyCommission ?? 0.01),
@@ -236,13 +235,13 @@ function DetailsModal({ id, onClose }: { id: string; onClose: () => void }) {
           <span className="k">شناسه</span>
           <span className="mono" style={{ fontSize: 12 }}>{p.id}</span>
           <span className="k">پایه</span>
-          <span><Badge kind="gold">{baseSlug(p)}</Badge></span>
+          <span><Badge kind="gold">{baseSlug(p) ?? "—"}</Badge></span>
           <span className="k">مظنه</span>
-          <span>{quoteSlug(p)}</span>
+          <span>{quoteSlug(p) ?? "—"}</span>
           <span className="k">قیمت خرید</span>
-          <span className="mono">{fmtNum(p.bestBuyPrice ?? p.price, 2)}</span>
+          <span className="mono">{fmtBySymbol(p.bestBuyPrice ?? p.price, quoteSlug(p), { digits: 2 })}</span>
           <span className="k">قیمت فروش</span>
-          <span className="mono">{fmtNum(p.bestSellPrice ?? p.price, 2)}</span>
+          <span className="mono">{fmtBySymbol(p.bestSellPrice ?? p.price, quoteSlug(p), { digits: 2 })}</span>
           <span className="k">کارمزد خرید</span>
           <span className="mono">{fmtNum(p.buyCommission, 4)}</span>
           <span className="k">کارمزد فروش</span>
@@ -252,13 +251,13 @@ function DetailsModal({ id, onClose }: { id: string; onClose: () => void }) {
           <span className="k">اعشار</span>
           <span className="mono">{fmtNum(p.decimals)}</span>
           <span className="k">حداقل خرید</span>
-          <span className="mono">{fmtNum(p.minBuy, 4)}</span>
+          <span className="mono">{fmtBySymbol(p.minBuy, baseSlug(p), { digits: 4 })}</span>
           <span className="k">حداکثر خرید</span>
-          <span className="mono">{fmtNum(p.maxBuy, 4)}</span>
+          <span className="mono">{fmtBySymbol(p.maxBuy, baseSlug(p), { digits: 4 })}</span>
           <span className="k">حداقل فروش</span>
-          <span className="mono">{fmtNum(p.minSell, 4)}</span>
+          <span className="mono">{fmtBySymbol(p.minSell, baseSlug(p), { digits: 4 })}</span>
           <span className="k">حداکثر فروش</span>
-          <span className="mono">{fmtNum(p.maxSell, 4)}</span>
+          <span className="mono">{fmtBySymbol(p.maxSell, baseSlug(p), { digits: 4 })}</span>
           <span className="k">نماد تریدینگ‌ویو</span>
           <span className="mono">{p.tradingViewSymbol || "—"}</span>
         </div>
@@ -385,7 +384,11 @@ export default function PairsPage() {
   if (filterBase) pairs = pairs.filter((p) => baseSlug(p) === filterBase);
   if (filterQuote) pairs = pairs.filter((p) => quoteSlug(p) === filterQuote);
 
-  const allSlugs = Array.from(new Set(pairs.map((p) => baseSlug(p))));
+  const notNull = (v: string | null): v is string => v !== null;
+  const baseSlugs = Array.from(new Set(pairs.map(baseSlug).filter(notNull)));
+  // The quote filter was previously offering base slugs, so picking a quote
+  // that only ever appears as a quote matched nothing.
+  const quoteSlugs = Array.from(new Set(pairs.map(quoteSlug).filter(notNull)));
 
   return (
     <Card
@@ -394,11 +397,11 @@ export default function PairsPage() {
         <div className="row" style={{ gap: 8 }}>
           <select className="select" value={filterBase} onChange={(e) => setFilterBase(e.target.value)} style={{ minWidth: 120 }}>
             <option value="">همه پایه‌ها</option>
-            {allSlugs.map((s) => <option key={s} value={s}>{s}</option>)}
+            {baseSlugs.map((s) => <option key={s} value={s}>{s}</option>)}
           </select>
           <select className="select" value={filterQuote} onChange={(e) => setFilterQuote(e.target.value)} style={{ minWidth: 120 }}>
             <option value="">همه مظنه‌ها</option>
-            {allSlugs.map((s) => <option key={s} value={s}>{s}</option>)}
+            {quoteSlugs.map((s) => <option key={s} value={s}>{s}</option>)}
           </select>
           <button className="btn primary sm" onClick={() => setForm({ open: true })}>+ افزودن جفت‌ارز</button>
         </div>
@@ -428,10 +431,10 @@ export default function PairsPage() {
             <tbody>
               {pairs.map((p: any) => (
                 <tr key={p.id}>
-                  <td><Badge kind="gold">{baseSlug(p)}</Badge></td>
+                  <td><Badge kind="gold">{baseSlug(p) ?? "—"}</Badge></td>
                   <td>{quoteSlug(p)}</td>
-                  <td className="mono">{fmtNum(p.bestBuyPrice ?? p.price, 2)}</td>
-                  <td className="mono">{fmtNum(p.bestSellPrice ?? p.price, 2)}</td>
+                  <td className="mono">{fmtBySymbol(p.bestBuyPrice ?? p.price, quoteSlug(p), { digits: 2 })}</td>
+                  <td className="mono">{fmtBySymbol(p.bestSellPrice ?? p.price, quoteSlug(p), { digits: 2 })}</td>
                   <td><RouteCell route={routeByPair.get(p.id)} /></td>
                   <td>{p.isValid ? <Badge kind="green">معتبر</Badge> : <Badge kind="gray">نامعتبر</Badge>}</td>
                   <td>

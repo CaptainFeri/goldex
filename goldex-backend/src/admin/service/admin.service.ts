@@ -120,9 +120,20 @@ export class AdminService {
     return true;
   }
 
+  /**
+   * The admin behind a token, with the role their permissions come from.
+   *
+   * `roleRef` is loaded here because this is what the auth middleware attaches
+   * to the request, and the permissions guard reads it on every guarded route.
+   * Without the relation the guard would see an admin holding nothing and
+   * refuse every call — failing closed, but for the wrong reason.
+   */
   public async findAdmin(userId: string, role: UserRoleEnum) {
     if (role == UserRoleEnum.ADMIN) {
-      const admin = await this.adminRepo.findOne({ where: { id: userId } });
+      const admin = await this.adminRepo.findOne({
+        where: { id: userId },
+        relations: { roleRef: true },
+      });
       if (admin) return admin;
       return null;
     }

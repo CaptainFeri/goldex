@@ -3,7 +3,8 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Line } from "react-chartjs-2";
 import { api, unwrap, apiError } from "../api/client";
 import { Card, Loading, ErrorState, Empty, Badge, Modal } from "../components/ui";
-import { fmtNum, fmtDate, symbolLabel } from "../lib/format";
+import { fmtDate, symbolLabel } from "../lib/format";
+import { fmtBySymbol, toApiAmount, unitLabel } from "../lib/money";
 import { gridColor } from "../lib/chart";
 
 function toArray(x: any): any[] {
@@ -44,6 +45,10 @@ const walletTypeMeta = (w: any) =>
   WALLET_TYPE_META[w.walletType] ?? { label: w.walletType || "—", kind: "gray" as const };
 
 function AdjustModal({ wallet, onClose }: { wallet: any; onClose: () => void }) {
+  // Balances and the amount field are shown in the wallet's display unit —
+  // toman for rial wallets — so the submit has to convert back or the operator
+  // posts a tenth of what they typed.
+  const slug = wallet.symbol?.slug;
   const qc = useQueryClient();
   const [adjustType, setAdjustType] = useState("INCREASE_FREE");
   const [amount, setAmount] = useState("");
@@ -59,8 +64,8 @@ function AdjustModal({ wallet, onClose }: { wallet: any; onClose: () => void }) 
 
   function submit(e: React.FormEvent) {
     e.preventDefault();
-    const n = Number(amount);
-    if (Number.isNaN(n) || n <= 0) return;
+    const n = toApiAmount(amount, slug);
+    if (n === null || n <= 0) return;
     adjust.mutate({
       walletId: wallet.id,
       adjustType,
@@ -78,7 +83,11 @@ function AdjustModal({ wallet, onClose }: { wallet: any; onClose: () => void }) 
           <span className="k">دارایی</span>
           <span>{symbolLabel(wallet.symbol)}</span>
           <span className="k">موجودی فعلی</span>
-          <span className="mono">{fmtNum(num(wallet.freeBalance, wallet.free), 6)} / {fmtNum(num(wallet.lockedBalance, wallet.locked), 6)}</span>
+          <span className="mono">
+            {fmtBySymbol(num(wallet.freeBalance, wallet.free), slug, { digits: 6 })}
+            {" / "}
+            {fmtBySymbol(num(wallet.lockedBalance, wallet.locked), slug, { digits: 6 })}
+          </span>
         </div>
         <div className="field">
           <label>نوع تعدیل</label>
@@ -87,7 +96,7 @@ function AdjustModal({ wallet, onClose }: { wallet: any; onClose: () => void }) 
           </select>
         </div>
         <div className="field">
-          <label>مقدار</label>
+          <label>مقدار ({unitLabel(slug)})</label>
           <input className="input mono" dir="ltr" type="number" step="0.00000001" value={amount} onChange={(e) => setAmount(e.target.value)} required />
         </div>
         <div className="field">
@@ -106,6 +115,7 @@ function AdjustModal({ wallet, onClose }: { wallet: any; onClose: () => void }) 
 
 function FreezeModal({ wallet, onClose }: { wallet: any; onClose: () => void }) {
   const qc = useQueryClient();
+  const slug = wallet.symbol?.slug;
   const [action, setAction] = useState("FREEZE_ENTIRE");
   const [amount, setAmount] = useState("");
   const [reason, setReason] = useState("");
@@ -121,7 +131,7 @@ function FreezeModal({ wallet, onClose }: { wallet: any; onClose: () => void }) 
   function submit(e: React.FormEvent) {
     e.preventDefault();
     const payload: any = { walletId: wallet.id, action };
-    if (amount) payload.amount = Number(amount);
+    if (amount) payload.amount = toApiAmount(amount, slug);
     if (reason) payload.reason = reason;
     freeze.mutate(payload);
   }
@@ -142,7 +152,7 @@ function FreezeModal({ wallet, onClose }: { wallet: any; onClose: () => void }) 
           </select>
         </div>
         <div className="field">
-          <label>مقدار (اختیاری — برای فریز جزئی)</label>
+          <label>مقدار ({unitLabel(slug)}) — اختیاری، برای فریز جزئی</label>
           <input className="input mono" dir="ltr" type="number" step="0.00000001" value={amount} onChange={(e) => setAmount(e.target.value)} />
         </div>
         <div className="field">
@@ -174,6 +184,9 @@ function TxModal({ walletId, onClose }: { walletId: string; onClose: () => void 
 
   const txns: any[] = details.data?.recentTransactions ?? [];
   const stats = details.data?.stats ?? {};
+  // Every figure in this modal belongs to one wallet, so one symbol governs
+  // all of them.
+  const slug = details.data?.wallet?.symbol?.slug;
   const histPoints: any[] = Array.isArray(history.data) ? history.data : history.data?.points ?? history.data?.history ?? [];
 
   return (
@@ -186,11 +199,11 @@ function TxModal({ walletId, onClose }: { walletId: string; onClose: () => void 
         <>
           <div className="kv" style={{ marginBottom: 16 }}>
             <span className="k">موجودی کل</span>
-            <span className="mono">{fmtNum(stats.totalBalance, 6)}</span>
+            <span className="mono">{fmtBySymbol(stats.totalBalance, slug, { digits: 6 })}</span>
             <span className="k">قابل برداشت</span>
-            <span className="mono">{fmtNum(stats.availableBalance, 6)}</span>
+            <span className="mono">{fmtBySymbol(stats.availableBalance, slug, { digits: 6 })}</span>
             <span className="k">قفل‌شده</span>
-            <span className="mono">{fmtNum(stats.lockedBalance, 6)}</span>
+            <span className="mono">{fmtBySymbol(stats.lockedBalance, slug, { digits: 6 })}</span>
           </div>
 
           <div className="row spread" style={{ marginBottom: 8 }}>
@@ -249,7 +262,7 @@ function TxModal({ walletId, onClose }: { walletId: string; onClose: () => void 
                     <tr key={t.id}>
                       <td>{t.transactionType ?? "—"}</td>
                       <td className="mono" style={{ color: num(t.amount) < 0 ? "var(--red)" : "var(--green)" }}>
-                        {fmtNum(t.amount, 6)}
+                        {fmtBySymbol(t.amount, slug, { digits: 6 })}
                       </td>
                       <td>{t.status ?? "—"}</td>
                       <td className="muted" style={{ maxWidth: 220, whiteSpace: "normal" }}>{t.description ?? "—"}</td>
@@ -304,13 +317,16 @@ export default function WalletsPage() {
     wallets = wallets.filter((w) => JSON.stringify(w).toLowerCase().includes(s));
   }
 
-  function onAdjustLegacy(walletId: string, increase: boolean) {
-    const raw = window.prompt(`${increase ? "افزایش" : "کاهش"} موجودی — مقدار:`);
+  function onAdjustLegacy(wallet: any, increase: boolean) {
+    // The prompt names the unit because it is the only label the operator gets,
+    // and the value is converted back before it goes to the API.
+    const slug = wallet.symbol?.slug;
+    const raw = window.prompt(`${increase ? "افزایش" : "کاهش"} موجودی — مقدار (${unitLabel(slug)}):`);
     if (raw === null) return;
-    const amount = Number(raw);
-    if (Number.isNaN(amount) || amount <= 0) return;
+    const amount = toApiAmount(raw, slug);
+    if (amount === null || amount <= 0) return;
     const description = window.prompt("توضیحات:") || undefined;
-    adjustLegacy.mutate({ walletId, actionType: increase ? "CREDIT" : "DEBIT", amount, description });
+    adjustLegacy.mutate({ walletId: wallet.id, actionType: increase ? "CREDIT" : "DEBIT", amount, description });
   }
 
   function isFrozen(w: any) {
@@ -371,11 +387,11 @@ export default function WalletsPage() {
                     <td>
                       <Badge kind="gold">{symbolLabel(w.symbol)}</Badge>
                     </td>
-                    <td className="mono">{fmtNum(num(w.calculatedStats?.availableBalance, w.freeBalance - w.frozenFreeBalance, w.freeBalance, w.free), 6)}</td>
-                    <td className="mono" style={{ color: "var(--danger)" }}>{fmtNum(num(w.frozenFreeBalance, 0), 6)}</td>
-                    <td className="mono">{fmtNum(num(w.lockedBalance, w.locked), 6)}</td>
+                    <td className="mono">{fmtBySymbol(num(w.calculatedStats?.availableBalance, w.freeBalance - w.frozenFreeBalance, w.freeBalance, w.free), w.symbol?.slug, { digits: 6 })}</td>
+                    <td className="mono" style={{ color: "var(--danger)" }}>{fmtBySymbol(num(w.frozenFreeBalance, 0), w.symbol?.slug, { digits: 6 })}</td>
+                    <td className="mono">{fmtBySymbol(num(w.lockedBalance, w.locked), w.symbol?.slug, { digits: 6 })}</td>
                     <td className="mono" style={used !== null && used < 0 ? { color: "var(--danger)", fontWeight: 700 } : undefined}>
-                      {used === null ? "—" : fmtNum(used, 6)}
+                      {used === null ? "—" : fmtBySymbol(used, w.symbol?.slug, { digits: 6 })}
                     </td>
                     <td>{frozen ? <Badge kind="red">{w.status}</Badge> : <Badge kind="green">فعال</Badge>}</td>
                     <td>
@@ -386,10 +402,10 @@ export default function WalletsPage() {
                         <button className="btn sm" onClick={() => setAdjustWallet(w)}>
                           تعدیل دقیق
                         </button>
-                        <button className="btn sm" disabled={adjustLegacy.isPending} onClick={() => onAdjustLegacy(w.id, true)}>
+                        <button className="btn sm" disabled={adjustLegacy.isPending} onClick={() => onAdjustLegacy(w, true)}>
                           + افزایش سریع
                         </button>
-                        <button className="btn sm" disabled={adjustLegacy.isPending} onClick={() => onAdjustLegacy(w.id, false)}>
+                        <button className="btn sm" disabled={adjustLegacy.isPending} onClick={() => onAdjustLegacy(w, false)}>
                           − کاهش سریع
                         </button>
                         <button
