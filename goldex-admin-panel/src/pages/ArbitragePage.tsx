@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, unwrap, apiError } from "../api/client";
 import { Card, Loading, ErrorState, Empty, Badge, Stat, Modal } from "../components/ui";
 import { fmtNum, fmtDuration, fmtTime, colorFor } from "../lib/format";
+import ArbitrageBotsPanel from "./arbitrage/ArbitrageBotsPanel";
 import type {
   ArbitrageSignal,
   ArbitrageStatus,
@@ -12,13 +13,14 @@ import type {
 
 const REFRESH_MS = 5000;
 
-type Tab = "live" | "alerts" | "history";
+type Tab = "live" | "alerts" | "history" | "bots";
 type SortKey = "profitRial" | "profitPercent" | "itemName" | "deadline";
 
 const TABS: { key: Tab; label: string }[] = [
   { key: "live", label: "فرصت‌های فعال" },
   { key: "alerts", label: "هشدارهای جدید" },
   { key: "history", label: "تاریخچه" },
+  { key: "bots", label: "ربات‌ها" },
 ];
 
 const toArray = <T,>(x: unknown): T[] => (Array.isArray(x) ? (x as T[]) : []);
@@ -490,7 +492,9 @@ export default function ArbitragePage() {
           </div>
         )}
 
-        {loading ? (
+        {tab === "bots" ? (
+          <ArbitrageBotsPanel />
+        ) : loading ? (
           <Loading label="در حال دریافت فرصت‌های آربیتراژ…" />
         ) : error ? (
           <ErrorState message={apiError(error)} />

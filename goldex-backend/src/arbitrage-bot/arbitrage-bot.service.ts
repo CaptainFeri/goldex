@@ -300,9 +300,24 @@ export class ArbitrageBotService {
   }
 
   /**
+   * Halts a bot by id, re-reading it first. Callers on the signal path hold
+   * cached entities whose realized figures may be seconds old, and halting is
+   * exactly the moment those figures must be current.
+   */
+  async haltById(id: string, reason: string): Promise<ArbitrageBotEntity | null> {
+    const bot = await this.botRepo.findOne({ where: { id } });
+    if (!bot) return null;
+    if (bot.status === ArbitrageBotStatusEnum.HALTED) return bot;
+    return this.halt(bot, reason);
+  }
+
+  /**
    * Stops a bot because its risk rules said so, not because a person did.
    * Capital stays frozen: a halted bot's allocation is the evidence of what
    * it was risking, and releasing it should be a deliberate decision.
+   *
+   * The caller must pass a freshly loaded bot — saving a stale one would write
+   * back stale realized figures.
    */
   async halt(bot: ArbitrageBotEntity, reason: string): Promise<ArbitrageBotEntity> {
     bot.status = ArbitrageBotStatusEnum.HALTED;

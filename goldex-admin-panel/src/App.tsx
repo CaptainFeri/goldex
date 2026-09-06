@@ -13,6 +13,7 @@ import MappingsPage from "./pages/MappingsPage";
 import AdminsPage from "./pages/AdminsPage";
 import FinancePage from "./pages/FinancePage";
 import AccountingPage from "./pages/AccountingPage";
+import ManagerAccountsPage from "./pages/ManagerAccountsPage";
 import ProviderFinancePage from "./pages/ProviderFinancePage";
 import CbpPage from "./pages/CbpPage";
 import UsersPage from "./pages/UsersPage";
@@ -80,6 +81,7 @@ export default function App() {
         <Route path="/mappings" element={<MappingsPage />} />
         <Route path="/finance" element={<FinancePage />} />
         <Route path="/accounting" element={<AccountingPage />} />
+        <Route path="/manager-accounts" element={<ManagerAccountsPage />} />
         <Route path="/provider-finance" element={<ProviderFinancePage />} />
         <Route path="/cbp" element={<CbpPage />} />
         <Route path="/admins" element={<AdminsPage />} />
