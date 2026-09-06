@@ -505,6 +505,14 @@ tbody tr:hover {
   margin-top: 8px;
   min-height: 18px;
 }
+
+/* The success counterpart to .error-text. */
+.ok-text {
+  color: #5bd08a;
+  font-size: 13px;
+  margin-top: 8px;
+  min-height: 18px;
+}
 .toolbar {
   display: flex;
   align-items: center;
