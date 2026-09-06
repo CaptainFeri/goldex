@@ -21,6 +21,8 @@ import {
   ApiEnvelopeResponse,
   ApiPaginatedResponse,
 } from "../shared/swagger";
+import { OtpScope } from "../operation-otp/operation-otp.enums";
+import { RequireOperationOtp } from "../operation-otp/guard/require-otp.decorator";
 import { AdminAccountingService } from "./admin-accounting.service";
 import { AccountingExportService } from "./accounting-export.service";
 import {
@@ -30,6 +32,7 @@ import {
   AccountingSeriesQueryDto,
   AccountingStatsDto,
   CreateVoucherDto,
+  FinalizeVoucherDto,
   ReviewVoucherDto,
   VoucherCatalogsDto,
   VoucherDto,
@@ -156,19 +159,20 @@ export class AdminAccountingController {
   }
 
   @Post("vouchers/:id/finalize")
+  @RequireOperationOtp(OtpScope.ACCOUNTING_VOUCHER)
   @ApiOperation({
     summary: "Book a pending voucher",
     description:
       "Refused for the admin who created it: booking one's own entry removes the only control " +
       "this workflow has, and a finance lead holding both rights could otherwise do both halves " +
-      "alone. A second factor belongs in operation OTP (§4.3), which is not built yet — this " +
-      "deliberately accepts no otp field it would have to ignore.",
+      "alone. Also requires an operation OTP (§4.3) bound to this voucher and note — request one " +
+      "from POST /admin/operations/otp with scope `accounting.voucher`.",
   })
   @ApiEnvelopeResponse(VoucherDto, { status: 201 })
   async finalizeVoucher(
     @Req() req: AdminExpressRequest,
     @Param("id", ParseUUIDPipe) id: string,
-    @Body() dto: ReviewVoucherDto,
+    @Body() dto: FinalizeVoucherDto,
   ) {
     return { data: await this.accounting.finalizeVoucher(this.adminId(req), id, dto) };
   }

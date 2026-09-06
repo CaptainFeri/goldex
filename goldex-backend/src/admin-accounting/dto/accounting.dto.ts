@@ -289,6 +289,23 @@ export class ReviewVoucherDto {
   note?: string;
 }
 
+/**
+ * Finalising books the money, so it carries a second factor. Rejecting does
+ * not: it moves the voucher to a dead end and can be undone by raising a new
+ * one, so an extra SMS per rejection would be friction without a safety gain.
+ */
+export class FinalizeVoucherDto extends ReviewVoucherDto {
+  @ApiProperty({ description: "From POST /admin/operations/otp." })
+  @IsString()
+  @Length(1, 64)
+  challengeId: string;
+
+  @ApiProperty({ description: "The code sent by SMS." })
+  @IsString()
+  @Length(4, 8)
+  otp: string;
+}
+
 export class VoucherDto {
   @ApiProperty({ format: "uuid" })
   id: string;

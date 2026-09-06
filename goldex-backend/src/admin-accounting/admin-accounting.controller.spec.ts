@@ -1,4 +1,4 @@
-import { INestApplication, VersioningType } from "@nestjs/common";
+import { BadRequestException, INestApplication, VersioningType } from "@nestjs/common";
 import { Test } from "@nestjs/testing";
 import request from "supertest";
 import { AdminAuthGuard } from "../admin/auth/Guard/admin.guard";
@@ -6,6 +6,7 @@ import { AdminRole } from "../admin/role/admin.roles.enum";
 import { AdminAccountingController } from "./admin-accounting.controller";
 import { AdminAccountingService } from "./admin-accounting.service";
 import { AccountingExportService } from "./accounting-export.service";
+import { OperationOtpService } from "../operation-otp/operation-otp.service";
 
 /**
  * Route ordering over the real pipeline.
@@ -32,6 +33,7 @@ describe("AdminAccountingController routing", () => {
     finalizeVoucher: jest.fn().mockResolvedValue({}),
     rejectVoucher: jest.fn().mockResolvedValue({}),
   };
+  const otp = { consume: jest.fn().mockResolvedValue(undefined) };
   const exporter = {
     streamLedger: jest.fn(async (_rows: unknown, res: any) => res.end("x")),
     streamVouchers: jest.fn(async (_rows: unknown, res: any) => res.end("x")),
@@ -43,6 +45,9 @@ describe("AdminAccountingController routing", () => {
       providers: [
         { provide: AdminAccountingService, useValue: service },
         { provide: AccountingExportService, useValue: exporter },
+        // Finalising books money and is gated by an operation OTP; the guard
+        // is left real so these routes exercise the confirmation they now need.
+        { provide: OperationOtpService, useValue: otp },
       ],
     })
       .overrideGuard(AdminAuthGuard)
@@ -95,7 +100,10 @@ describe("AdminAccountingController routing", () => {
   it("routes a real id to detail, finalize and reject", async () => {
     const id = "11111111-1111-1111-1111-111111111111";
     await request(app.getHttpServer()).get(`${base}/vouchers/${id}`).expect(200);
-    await request(app.getHttpServer()).post(`${base}/vouchers/${id}/finalize`).send({}).expect(201);
+    await request(app.getHttpServer())
+      .post(`${base}/vouchers/${id}/finalize`)
+      .send({ challengeId: "c1", otp: "12345" })
+      .expect(201);
     await request(app.getHttpServer()).post(`${base}/vouchers/${id}/reject`).send({}).expect(201);
     expect(service.finalizeVoucher).toHaveBeenCalledWith("admin-1", id, expect.anything());
     expect(service.rejectVoucher).toHaveBeenCalledWith("admin-1", id, expect.anything());
@@ -119,5 +127,48 @@ describe("AdminAccountingController routing", () => {
       })
       .expect(201);
     expect(service.createVoucher).toHaveBeenCalledWith("admin-1", expect.anything());
+  });
+
+  describe("finalize requires a second factor", () => {
+    const id = "11111111-1111-1111-1111-111111111111";
+
+    // The suite above shares these mocks and does not reset them; without this
+    // a "was not called" assertion here would read calls from earlier tests.
+    beforeEach(() => jest.clearAllMocks());
+
+    it("refuses a finalize with no confirmation in the body", async () => {
+      await request(app.getHttpServer()).post(`${base}/vouchers/${id}/finalize`).send({}).expect(400);
+      expect(service.finalizeVoucher).not.toHaveBeenCalled();
+    });
+
+    it("spends the challenge against this voucher, with the body as the payload", async () => {
+      await request(app.getHttpServer())
+        .post(`${base}/vouchers/${id}/finalize`)
+        .send({ challengeId: "c1", otp: "12345", note: "تایید شد" })
+        .expect(201);
+      expect(otp.consume).toHaveBeenCalledWith(
+        expect.anything(),
+        "accounting.voucher",
+        id,          // taken from the path, not from anything the client claims
+        null,
+        "c1",
+        "12345",
+        expect.objectContaining({ note: "تایید شد" }),
+      );
+    });
+
+    it("does not run the handler when the challenge is refused", async () => {
+      otp.consume.mockRejectedValueOnce(new BadRequestException("OTP.PAYLOAD_MISMATCH"));
+      await request(app.getHttpServer())
+        .post(`${base}/vouchers/${id}/finalize`)
+        .send({ challengeId: "c1", otp: "99999" })
+        .expect(400);
+      expect(service.finalizeVoucher).not.toHaveBeenCalled();
+    });
+
+    it("leaves reject ungated — it books nothing", async () => {
+      await request(app.getHttpServer()).post(`${base}/vouchers/${id}/reject`).send({}).expect(201);
+      expect(service.rejectVoucher).toHaveBeenCalled();
+    });
   });
 });
