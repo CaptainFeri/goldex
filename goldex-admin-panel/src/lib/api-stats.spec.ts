@@ -27,15 +27,15 @@ describe("orDash", () => {
 });
 
 /**
- * The withdrawal floor is entered in toman and stored in rial. Getting the
- * direction wrong by a factor of ten silently moves the platform's minimum
- * withdrawal by an order of magnitude.
+ * The withdrawal floor is entered and stored in rial. It still goes through the
+ * money helpers so the unit stays decided in one place, and a round trip must
+ * come back with the figure the operator saw.
  */
 describe("platform minWithdrawal conversion", () => {
-  it("round-trips a rial amount through the toman form field", () => {
+  it("round-trips a rial amount through the form field", () => {
     const fromServerRial = "50000000";
     const shownInForm = toFormAmount(fromServerRial, "IRR");
-    expect(shownInForm).toBe(5_000_000);
+    expect(shownInForm).toBe(50_000_000);
     expect(toApiAmount(String(shownInForm), "IRR")).toBe(50_000_000);
   });
 

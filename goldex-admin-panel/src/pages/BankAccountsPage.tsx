@@ -6,7 +6,7 @@ import type { BankAccountDirection } from "../api/p2p";
 import { Card, Badge, Loading, ErrorState, Empty, Modal } from "../components/ui";
 import { BANK_ACCOUNT_STATUS } from "../lib/enums";
 import type { AdminBankAccount, SymbolItem } from "../api/types";
-import { fmtBySymbol, rialToToman, tomanToRial } from "../lib/money";
+import { DISPLAY_UNIT, fmtBySymbol, rialToToman, tomanToRial } from "../lib/money";
 
 const fmtNum = (n: any) => (n === null || n === undefined ? "—" : Number(n).toLocaleString("fa-IR"));
 const fmtDate = (d?: string | null) =>
@@ -400,22 +400,22 @@ function BankAccountModal({
 
         <div className="form-grid" style={{ marginTop: 16 }}>
           <div className="field">
-            <label>سقف روزانه واریز (تومان)</label>
+            <label>سقف روزانه واریز ({DISPLAY_UNIT})</label>
             <input className="input" type="number" min="0" value={form.depositDailyLimit as any}
               onChange={(e) => set("depositDailyLimit", e.target.value)} placeholder="خالی = نامحدود" />
           </div>
           <div className="field">
-            <label>سقف هر تراکنش واریز (تومان)</label>
+            <label>سقف هر تراکنش واریز ({DISPLAY_UNIT})</label>
             <input className="input" type="number" min="0" value={form.depositPerTxLimit as any}
               onChange={(e) => set("depositPerTxLimit", e.target.value)} placeholder="خالی = نامحدود" />
           </div>
           <div className="field">
-            <label>سقف روزانه برداشت (تومان)</label>
+            <label>سقف روزانه برداشت ({DISPLAY_UNIT})</label>
             <input className="input" type="number" min="0" value={form.withdrawDailyLimit as any}
               onChange={(e) => set("withdrawDailyLimit", e.target.value)} placeholder="خالی = نامحدود" />
           </div>
           <div className="field">
-            <label>سقف هر تراکنش برداشت (تومان)</label>
+            <label>سقف هر تراکنش برداشت ({DISPLAY_UNIT})</label>
             <input className="input" type="number" min="0" value={form.withdrawPerTxLimit as any}
               onChange={(e) => set("withdrawPerTxLimit", e.target.value)} placeholder="خالی = نامحدود" />
           </div>
