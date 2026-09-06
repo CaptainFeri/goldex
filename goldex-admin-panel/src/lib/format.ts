@@ -56,3 +56,29 @@ export function colorFor(key: string): string {
   for (let i = 0; i < key.length; i++) h = (h * 31 + key.charCodeAt(i)) >>> 0;
   return PALETTE[h % PALETTE.length];
 }
+
+// ─── Rial (IRR) ──────────────────────────────────────────────
+// The Iranian market feeds behind the panel — the gold Telegram channels and
+// the pricing engine's providers — quote in toman. The panel speaks rial
+// everywhere, so those figures are converted on the way in and on the way back
+// out to the engine.
+export const IRR_PER_TOMAN = 10;
+
+export function tomanToIrr(v: number | string | null | undefined): number | null {
+  if (v === null || v === undefined || v === "") return null;
+  const n = typeof v === "string" ? Number(v) : v;
+  if (!Number.isFinite(n)) return null;
+  return n * IRR_PER_TOMAN;
+}
+
+export function irrToToman(v: number | string | null | undefined): number | null {
+  if (v === null || v === undefined || v === "") return null;
+  const n = typeof v === "string" ? Number(v) : v;
+  if (!Number.isFinite(n)) return null;
+  return n / IRR_PER_TOMAN;
+}
+
+/** A toman figure from an upstream feed, rendered as a rial amount. */
+export function fmtIrrFromToman(v: number | string | null | undefined, digits = 0): string {
+  return fmtNum(tomanToIrr(v), digits);
+}

@@ -524,6 +524,12 @@ tbody tr:hover {
 .chart-box {
   height: 360px;
 }
+/* Charts read left-to-right regardless of the panel's RTL layout, so the
+   canvas opts out of the inherited direction. */
+.chart-box,
+canvas {
+  direction: ltr;
+}
 
 /* ---------- Modal ---------- */
 .modal-overlay {

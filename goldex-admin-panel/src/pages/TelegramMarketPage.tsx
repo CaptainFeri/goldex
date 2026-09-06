@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import { Line } from "react-chartjs-2";
 import { telegramApi } from "../api/telegram";
 import { Card, Loading, ErrorState, Empty } from "../components/ui";
-import { fmtNum } from "../lib/format";
+import { fmtNum, fmtIrrFromToman, IRR_PER_TOMAN } from "../lib/format";
 import { gridColor } from "../lib/chart";
 
 const DIRECTION_ICON: Record<string, string> = { UP: "📈", DOWN: "📉", FLAT: "➡️" };
@@ -72,8 +72,12 @@ export default function TelegramMarketPage() {
 
   const formatChartData = () => {
     const points = prices.data ?? [];
-    const buy = points.filter((p) => p.ourAction === "WE_BUY").map((p) => ({ x: p.date * 1000, y: p.price }));
-    const sell = points.filter((p) => p.ourAction === "WE_SELL").map((p) => ({ x: p.date * 1000, y: p.price }));
+    const buy = points
+      .filter((p) => p.ourAction === "WE_BUY")
+      .map((p) => ({ x: p.date * 1000, y: p.price * IRR_PER_TOMAN }));
+    const sell = points
+      .filter((p) => p.ourAction === "WE_SELL")
+      .map((p) => ({ x: p.date * 1000, y: p.price * IRR_PER_TOMAN }));
     return {
       datasets: [
         { label: "خرید ما", data: buy, borderColor: "#2ea861", backgroundColor: "#2ea861", pointRadius: 2, borderWidth: 1.5, tension: 0.15 },
@@ -109,6 +113,7 @@ export default function TelegramMarketPage() {
               <span>بازار</span>
               <div className="row">
                 {market.isFetching && <span className="spin" style={{ width: 14, height: 14, borderWidth: 2 }} />}
+                <span style={{ fontSize: 11, opacity: 0.6 }}>قیمت‌ها به ریال</span>
                 <span style={{ fontSize: 11, opacity: 0.6 }}>{market.data?.length ?? 0} نوع</span>
               </div>
             </div>
@@ -128,20 +133,20 @@ export default function TelegramMarketPage() {
                     </div>
                     <div className="market-card-row">
                       <span>بهترین خرید ما</span>
-                      <span className="mono green">{m.bestBid !== null ? fmtNum(m.bestBid) : "—"}</span>
+                      <span className="mono green">{m.bestBid !== null ? fmtIrrFromToman(m.bestBid) : "—"}</span>
                     </div>
                     <div className="market-card-row">
                       <span>بهترین فروش ما</span>
-                      <span className="mono red">{m.bestAsk !== null ? fmtNum(m.bestAsk) : "—"}</span>
+                      <span className="mono red">{m.bestAsk !== null ? fmtIrrFromToman(m.bestAsk) : "—"}</span>
                     </div>
                     <div className="market-card-row">
                       <span>اسپرد</span>
-                      <span className="mono">{m.spread !== null ? fmtNum(m.spread) : "—"}</span>
+                      <span className="mono">{m.spread !== null ? fmtIrrFromToman(m.spread) : "—"}</span>
                     </div>
                     <div className="market-card-row">
                       <span>آخرین قیمت</span>
                       <span className={`mono ${DIRECTION_CLASS[m.direction]}`}>
-                        {fmtNum(m.lastPrice)}
+                        {fmtIrrFromToman(m.lastPrice)}
                       </span>
                     </div>
                     <div className="market-card-row">
@@ -160,7 +165,7 @@ export default function TelegramMarketPage() {
             )}
           </div>
 
-          <Card title="فرصت‌ها" action={<span style={{ fontSize: 11, opacity: 0.6 }}>{opportunities.data?.length ?? 0} فرصت</span>}>
+          <Card title="فرصت‌ها" action={<span style={{ fontSize: 11, opacity: 0.6 }}>قیمت‌ها به ریال • {opportunities.data?.length ?? 0} فرصت</span>}>
             {opportunities.isLoading ? (
               <Loading />
             ) : opportunities.isError ? (
@@ -181,7 +186,7 @@ export default function TelegramMarketPage() {
                       <span className="opp-time">{epochToFa(o.date)}</span>
                     </div>
                     <div className="opp-row-detail">
-                      قیمت: {fmtNum(o.price)} | قبلی: {fmtNum(o.previousPrice)} | تغییر: {priceChangeText(o.changePercent)} | تعداد: {o.quantity}
+                      قیمت: {fmtIrrFromToman(o.price)} | قبلی: {fmtIrrFromToman(o.previousPrice)} | تغییر: {priceChangeText(o.changePercent)} | تعداد: {o.quantity}
                     </div>
                   </div>
                 ))}
@@ -192,7 +197,7 @@ export default function TelegramMarketPage() {
       )}
 
       {tab === "chart" && (
-        <Card title="نمودار قیمت">
+        <Card title="نمودار قیمت (ریال)">
           <div className="chart-filters">
             <div className="field">
               <label>دسته</label>
@@ -259,7 +264,7 @@ export default function TelegramMarketPage() {
                     tooltip: {
                       callbacks: {
                         title: (items) => new Date(items[0].parsed.x as number).toLocaleString("fa-IR"),
-                        label: (item) => `${item.dataset.label}: ${fmtNum(item.parsed.y as number)}`,
+                        label: (item) => `${item.dataset.label}: ${fmtNum(item.parsed.y as number)} ریال`,
                       },
                     },
                   },
