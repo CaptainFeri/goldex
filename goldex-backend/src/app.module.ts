@@ -6,6 +6,8 @@ import { ReportsModule } from "./reports/reports.module";
 import { AdminDashboardModule } from "./admin-dashboard/admin-dashboard.module";
 import { AdminAccountingModule } from "./admin-accounting/admin-accounting.module";
 import { AdminRoleModule } from "./admin-role/admin-role.module";
+import { AdminSettingsModule } from "./admin-settings/admin-settings.module";
+import { ApiKeyModule } from "./api-keys/api-key.module";
 import { AcceptLanguageResolver, I18nModule } from "nestjs-i18n";
 import { join } from "path";
 import * as path from "path";
@@ -192,6 +194,8 @@ import { ScheduleModule } from "@nestjs/schedule";
     AdminDashboardModule,
     AdminAccountingModule,
     AdminRoleModule,
+    AdminSettingsModule,
+    ApiKeyModule,
   ],
   providers: [WinstonLoggerService],
   exports: [WinstonLoggerService],

@@ -26819,6 +26819,1190 @@
           "Admin-Roles"
         ]
       }
+    },
+    "/api/v1/admin/settings/profile": {
+      "get": {
+        "operationId": "AdminSettingsController_profile_v1",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/ResponseEnvelopeDto"
+                    },
+                    {
+                      "properties": {
+                        "data": {
+                          "$ref": "#/components/schemas/AdminProfileDto"
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation failed — see `errors` for per-field messages",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or expired admin token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Authenticated, but lacking the required permission",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "The signed-in admin's profile",
+        "tags": [
+          "Admin-Settings"
+        ]
+      },
+      "patch": {
+        "operationId": "AdminSettingsController_updateProfile_v1",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateProfileDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/ResponseEnvelopeDto"
+                    },
+                    {
+                      "properties": {
+                        "data": {
+                          "$ref": "#/components/schemas/AdminProfileDto"
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation failed — see `errors` for per-field messages",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or expired admin token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Authenticated, but lacking the required permission",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Update the signed-in admin's profile",
+        "tags": [
+          "Admin-Settings"
+        ]
+      }
+    },
+    "/api/v1/admin/settings/security": {
+      "get": {
+        "operationId": "AdminSettingsController_security_v1",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/ResponseEnvelopeDto"
+                    },
+                    {
+                      "properties": {
+                        "data": {
+                          "$ref": "#/components/schemas/SecuritySettingsDto"
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation failed — see `errors` for per-field messages",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or expired admin token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Authenticated, but lacking the required permission",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "The caller's own security preferences",
+        "tags": [
+          "Admin-Settings"
+        ]
+      },
+      "patch": {
+        "operationId": "AdminSettingsController_updateSecurity_v1",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateSecuritySettingsDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/ResponseEnvelopeDto"
+                    },
+                    {
+                      "properties": {
+                        "data": {
+                          "$ref": "#/components/schemas/SecuritySettingsDto"
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation failed — see `errors` for per-field messages",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or expired admin token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Authenticated, but lacking the required permission",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Update the caller's own security preferences",
+        "tags": [
+          "Admin-Settings"
+        ]
+      }
+    },
+    "/api/v1/admin/settings/notifications": {
+      "get": {
+        "operationId": "AdminSettingsController_notifications_v1",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/ResponseEnvelopeDto"
+                    },
+                    {
+                      "properties": {
+                        "data": {
+                          "$ref": "#/components/schemas/NotificationSettingsDto"
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation failed — see `errors` for per-field messages",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or expired admin token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Authenticated, but lacking the required permission",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "The caller's own notification preferences",
+        "tags": [
+          "Admin-Settings"
+        ]
+      },
+      "patch": {
+        "operationId": "AdminSettingsController_updateNotifications_v1",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateNotificationSettingsDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/ResponseEnvelopeDto"
+                    },
+                    {
+                      "properties": {
+                        "data": {
+                          "$ref": "#/components/schemas/NotificationSettingsDto"
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation failed — see `errors` for per-field messages",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or expired admin token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Authenticated, but lacking the required permission",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Update the caller's own notification preferences",
+        "tags": [
+          "Admin-Settings"
+        ]
+      }
+    },
+    "/api/v1/admin/settings/platform": {
+      "get": {
+        "description": "Global, not per-admin — gated behind `settings`, which only the root role holds by default.",
+        "operationId": "AdminSettingsController_platform_v1",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/ResponseEnvelopeDto"
+                    },
+                    {
+                      "properties": {
+                        "data": {
+                          "$ref": "#/components/schemas/PlatformSettingsDto"
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation failed — see `errors` for per-field messages",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or expired admin token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Authenticated, but lacking the required permission",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Install-wide settings",
+        "tags": [
+          "Admin-Settings"
+        ]
+      },
+      "patch": {
+        "description": "`minWithdrawal` is rial, like every other amount on the wire.",
+        "operationId": "AdminSettingsController_updatePlatform_v1",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdatePlatformSettingsDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/ResponseEnvelopeDto"
+                    },
+                    {
+                      "properties": {
+                        "data": {
+                          "$ref": "#/components/schemas/PlatformSettingsDto"
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation failed — see `errors` for per-field messages",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or expired admin token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Authenticated, but lacking the required permission",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Update install-wide settings",
+        "tags": [
+          "Admin-Settings"
+        ]
+      }
+    },
+    "/api/v1/admin/api/stats": {
+      "get": {
+        "description": "Averages and rates are null when there was no traffic — a 100% success rate over zero requests would read as healthy. `keyedRouteCount` says whether any route accepts a key at all.",
+        "operationId": "ApiKeyController_stats_v1",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/ResponseEnvelopeDto"
+                    },
+                    {
+                      "properties": {
+                        "data": {
+                          "$ref": "#/components/schemas/ApiStatsDto"
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation failed — see `errors` for per-field messages",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or expired admin token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Authenticated, but lacking the required permission",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "API traffic headline figures, for today",
+        "tags": [
+          "Admin-API-Keys"
+        ]
+      }
+    },
+    "/api/v1/admin/api/traffic": {
+      "get": {
+        "description": "Every hour in the window is returned, including empty ones.",
+        "operationId": "ApiKeyController_traffic_v1",
+        "parameters": [
+          {
+            "name": "window",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "default": "24h",
+              "type": "string",
+              "enum": [
+                "24h",
+                "7d"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/ResponseEnvelopeDto"
+                    },
+                    {
+                      "properties": {
+                        "data": {
+                          "$ref": "#/components/schemas/TrafficDto"
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation failed — see `errors` for per-field messages",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or expired admin token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Authenticated, but lacking the required permission",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Hourly traffic series",
+        "tags": [
+          "Admin-API-Keys"
+        ]
+      }
+    },
+    "/api/v1/admin/api-keys": {
+      "get": {
+        "operationId": "ApiKeyController_list_v1",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/ResponseEnvelopeDto"
+                    },
+                    {
+                      "properties": {
+                        "data": {
+                          "type": "array",
+                          "items": {
+                            "$ref": "#/components/schemas/ApiKeyDto"
+                          }
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation failed — see `errors` for per-field messages",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or expired admin token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Authenticated, but lacking the required permission",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Every API key, masked",
+        "tags": [
+          "Admin-API-Keys"
+        ]
+      },
+      "post": {
+        "description": "The response carries the plaintext key. It is not stored and cannot be retrieved again — only a hash is kept, so the panel must show it once and say so.",
+        "operationId": "ApiKeyController_create_v1",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateApiKeyDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/ResponseEnvelopeDto"
+                    },
+                    {
+                      "properties": {
+                        "data": {
+                          "$ref": "#/components/schemas/CreatedApiKeyDto"
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation failed — see `errors` for per-field messages",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or expired admin token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Authenticated, but lacking the required permission",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Issue an API key",
+        "tags": [
+          "Admin-API-Keys"
+        ]
+      }
+    },
+    "/api/v1/admin/api-keys/{id}/status": {
+      "patch": {
+        "operationId": "ApiKeyController_updateStatus_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateApiKeyStatusDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/ResponseEnvelopeDto"
+                    },
+                    {
+                      "properties": {
+                        "data": {
+                          "$ref": "#/components/schemas/ApiKeyDto"
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation failed — see `errors` for per-field messages",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or expired admin token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Authenticated, but lacking the required permission",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Activate, limit, or revoke a key",
+        "tags": [
+          "Admin-API-Keys"
+        ]
+      }
+    },
+    "/api/v1/admin/api-keys/{id}": {
+      "delete": {
+        "description": "Soft delete: the traffic it already generated stays in the history.",
+        "operationId": "ApiKeyController_remove_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Succeeded; the envelope's data is null",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/ResponseEnvelopeDto"
+                    },
+                    {
+                      "properties": {
+                        "data": {
+                          "nullable": true,
+                          "example": null
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation failed — see `errors` for per-field messages",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or expired admin token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Authenticated, but lacking the required permission",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Delete a key",
+        "tags": [
+          "Admin-API-Keys"
+        ]
+      }
     }
   },
   "info": {
@@ -27130,30 +28314,11 @@
       "UpdateProfileDto": {
         "type": "object",
         "properties": {
-          "countryId": {
-            "type": "number",
-            "description": "country",
-            "example": "number"
+          "fullName": {
+            "type": "string"
           },
-          "gender": {
-            "type": "number",
-            "description": "Gender",
-            "example": "Male/Female"
-          },
-          "address": {
-            "type": "string",
-            "description": "address",
-            "example": ""
-          },
-          "postalCode": {
-            "type": "string",
-            "description": "postal_code",
-            "example": ""
-          },
-          "phone": {
-            "type": "string",
-            "description": "phone",
-            "example": "09..."
+          "email": {
+            "type": "string"
           }
         }
       },
@@ -36420,6 +37585,422 @@
             }
           }
         }
+      },
+      "AdminProfileDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "fullName": {
+            "type": "string",
+            "nullable": true
+          },
+          "phone": {
+            "type": "string",
+            "nullable": true
+          },
+          "email": {
+            "type": "string",
+            "nullable": true
+          },
+          "roleName": {
+            "type": "string",
+            "nullable": true,
+            "description": "The admin's role name, for display."
+          },
+          "permissions": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "lastLoginAt": {
+            "format": "date-time",
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "required": [
+          "id",
+          "fullName",
+          "phone",
+          "email",
+          "roleName",
+          "permissions",
+          "lastLoginAt"
+        ]
+      },
+      "SecuritySettingsDto": {
+        "type": "object",
+        "properties": {
+          "twoFactor": {
+            "type": "boolean"
+          },
+          "biometric": {
+            "type": "boolean"
+          },
+          "unknownLoginAlert": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "twoFactor",
+          "biometric",
+          "unknownLoginAlert"
+        ]
+      },
+      "UpdateSecuritySettingsDto": {
+        "type": "object",
+        "properties": {
+          "twoFactor": {
+            "type": "boolean"
+          },
+          "biometric": {
+            "type": "boolean"
+          },
+          "unknownLoginAlert": {
+            "type": "boolean"
+          }
+        }
+      },
+      "NotificationSettingsDto": {
+        "type": "object",
+        "properties": {
+          "tradeAlerts": {
+            "type": "boolean"
+          },
+          "dailyEmailReport": {
+            "type": "boolean"
+          },
+          "systemAlerts": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "tradeAlerts",
+          "dailyEmailReport",
+          "systemAlerts"
+        ]
+      },
+      "UpdateNotificationSettingsDto": {
+        "type": "object",
+        "properties": {
+          "tradeAlerts": {
+            "type": "boolean"
+          },
+          "dailyEmailReport": {
+            "type": "boolean"
+          },
+          "systemAlerts": {
+            "type": "boolean"
+          }
+        }
+      },
+      "PlatformSettingsDto": {
+        "type": "object",
+        "properties": {
+          "displayCurrency": {
+            "type": "string",
+            "enum": [
+              "TOMAN",
+              "IRR"
+            ]
+          },
+          "language": {
+            "type": "string",
+            "enum": [
+              "fa",
+              "en"
+            ]
+          },
+          "timezone": {
+            "type": "string"
+          },
+          "calendar": {
+            "type": "string",
+            "enum": [
+              "jalali",
+              "gregorian"
+            ]
+          },
+          "minWithdrawal": {
+            "type": "string",
+            "description": "Rial."
+          },
+          "defaultProfitPercent": {
+            "type": "string"
+          },
+          "updateAt": {
+            "format": "date-time",
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "required": [
+          "displayCurrency",
+          "language",
+          "timezone",
+          "calendar",
+          "minWithdrawal",
+          "defaultProfitPercent",
+          "updateAt"
+        ]
+      },
+      "UpdatePlatformSettingsDto": {
+        "type": "object",
+        "properties": {
+          "displayCurrency": {
+            "type": "string",
+            "enum": [
+              "TOMAN",
+              "IRR"
+            ]
+          },
+          "language": {
+            "type": "string",
+            "enum": [
+              "fa",
+              "en"
+            ]
+          },
+          "timezone": {
+            "type": "string",
+            "description": "An IANA zone name, validated against the runtime's own list."
+          },
+          "calendar": {
+            "type": "string",
+            "enum": [
+              "jalali",
+              "gregorian"
+            ]
+          },
+          "minWithdrawal": {
+            "type": "number",
+            "description": "Rial."
+          },
+          "defaultProfitPercent": {
+            "type": "number"
+          }
+        }
+      },
+      "ApiStatsDto": {
+        "type": "object",
+        "properties": {
+          "requestsToday": {
+            "type": "number"
+          },
+          "avgResponseMs": {
+            "type": "number",
+            "nullable": true,
+            "description": "Null when there was no traffic to average."
+          },
+          "successPercent": {
+            "type": "number",
+            "nullable": true
+          },
+          "errorPercent": {
+            "type": "number",
+            "nullable": true
+          },
+          "activeKeys": {
+            "type": "number",
+            "description": "Active, non-revoked keys."
+          },
+          "keyedRouteCount": {
+            "type": "number",
+            "description": "How many routes currently accept API-key authentication. Zero means the figures above are genuinely zero rather than broken — no endpoint accepts a key yet."
+          }
+        },
+        "required": [
+          "requestsToday",
+          "avgResponseMs",
+          "successPercent",
+          "errorPercent",
+          "activeKeys",
+          "keyedRouteCount"
+        ]
+      },
+      "TrafficPointDto": {
+        "type": "object",
+        "properties": {
+          "bucket": {
+            "format": "date-time",
+            "type": "string",
+            "description": "Start of the bucket, UTC."
+          },
+          "requests": {
+            "type": "number"
+          },
+          "errors": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "bucket",
+          "requests",
+          "errors"
+        ]
+      },
+      "TrafficDto": {
+        "type": "object",
+        "properties": {
+          "points": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/TrafficPointDto"
+            }
+          },
+          "keyedRouteCount": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "points",
+          "keyedRouteCount"
+        ]
+      },
+      "ApiKeyDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "maskedKey": {
+            "type": "string",
+            "example": "gx_live_••••8f3a"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "active",
+              "limited",
+              "revoked"
+            ]
+          },
+          "monthlyQuota": {
+            "type": "number",
+            "nullable": true
+          },
+          "monthlyRequests": {
+            "type": "number",
+            "description": "Requests in the current calendar month."
+          },
+          "lastUsedAt": {
+            "format": "date-time",
+            "type": "string",
+            "nullable": true
+          },
+          "createAt": {
+            "format": "date-time",
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "maskedKey",
+          "status",
+          "monthlyQuota",
+          "monthlyRequests",
+          "lastUsedAt",
+          "createAt"
+        ]
+      },
+      "CreatedApiKeyDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "maskedKey": {
+            "type": "string",
+            "example": "gx_live_••••8f3a"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "active",
+              "limited",
+              "revoked"
+            ]
+          },
+          "monthlyQuota": {
+            "type": "number",
+            "nullable": true
+          },
+          "monthlyRequests": {
+            "type": "number",
+            "description": "Requests in the current calendar month."
+          },
+          "lastUsedAt": {
+            "format": "date-time",
+            "type": "string",
+            "nullable": true
+          },
+          "createAt": {
+            "format": "date-time",
+            "type": "string",
+            "nullable": true
+          },
+          "plaintextKey": {
+            "type": "string",
+            "description": "The plaintext key. Returned by this one response and never again — only its hash is stored."
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "maskedKey",
+          "status",
+          "monthlyQuota",
+          "monthlyRequests",
+          "lastUsedAt",
+          "createAt",
+          "plaintextKey"
+        ]
+      },
+      "CreateApiKeyDto": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "monthlyQuota": {
+            "type": "number",
+            "description": "Required if the key is later set to `limited`."
+          }
+        },
+        "required": [
+          "name"
+        ]
+      },
+      "UpdateApiKeyStatusDto": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "active",
+              "limited",
+              "revoked"
+            ]
+          },
+          "monthlyQuota": {
+            "type": "number",
+            "description": "Required when moving to `limited`; a cap is what `limited` means."
+          }
+        },
+        "required": [
+          "status"
+        ]
       }
     }
   }
