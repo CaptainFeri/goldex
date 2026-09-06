@@ -16,10 +16,10 @@ export default function CrmUsersPage() {
     setLoading(true);
     setError("");
     try {
-      const res = await api.get("/admin/users/users", { params: { pageNumber: page, pageSize: 50, searchKey: search || undefined } });
+      const res = await api.get("/admin/users/users", { params: { page, pageSize: 50, q: search || undefined } });
       const data: any = unwrap(res.data);
-      setUsers(data.userList || []);
-      setTotal(data.totalItems || 0);
+      setUsers(data.items || []);
+      setTotal(data.total || 0);
     } catch (err: any) {
       setError(apiError(err));
     } finally {

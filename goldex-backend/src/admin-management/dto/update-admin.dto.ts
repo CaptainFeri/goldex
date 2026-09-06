@@ -1,5 +1,5 @@
 import { ApiPropertyOptional, PartialType } from "@nestjs/swagger";
-import { IsEmail, IsOptional, MinLength, IsEnum } from "class-validator";
+import { IsEmail, IsOptional, MinLength, IsEnum, IsUUID } from "class-validator";
 import { CreateAdminDto } from "./create-admin.dto";
 import { AdminRole } from "../../admin/role/admin.roles.enum";
 
@@ -16,6 +16,14 @@ export class UpdateAdminDto extends PartialType(CreateAdminDto) {
 
   @IsEnum(AdminRole)
   @IsOptional()
-  @ApiPropertyOptional()
+  @ApiPropertyOptional({ enum: AdminRole, description: "Ignored when `roleId` is given" })
   role?: AdminRole;
+
+  @IsOptional()
+  @IsUUID()
+  @ApiPropertyOptional({
+    format: "uuid",
+    description: "Move the admin into this role. The only way to reach a custom role.",
+  })
+  roleId?: string;
 }

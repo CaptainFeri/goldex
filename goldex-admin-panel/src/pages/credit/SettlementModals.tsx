@@ -3,7 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import { api, unwrap } from "../../api/client";
 import { Modal } from "../../components/ui";
 import type { SettlementEligibility } from "../../api/types";
-import { fmtNum } from "./labels";
+import { fmtBySymbol } from "../../lib/money";
 
 export const SETTLEMENT_PROMPT_META: Record<
   "reject" | "method" | "fund" | "receive" | "fail",
@@ -174,12 +174,12 @@ export function ForceClearLiabilityModal({
     <Modal title="تسویه بدهی با وجود کسری" onClose={onClose}>
       <div style={{ background: "var(--red-bg, #3a1414)", color: "var(--red)", padding: "10px 12px", borderRadius: 8, marginBottom: 16, fontSize: 13, lineHeight: 1.6 }}>
         <div style={{ fontWeight: 600, marginBottom: 4 }}>
-          موجودی کاربر پس از احتساب وثیقه هنوز منفی است{elig?.shortfall ? ` — کسری ${fmtNum(elig.shortfall)} ریال` : ""}.
+          موجودی کاربر پس از احتساب وثیقه هنوز منفی است{elig?.shortfall ? ` — کسری ${fmtBySymbol(elig.shortfall, elig.creditBaseSymbolSlug)}` : ""}.
         </div>
         {negativePositions.length > 0 && (
           <ul style={{ margin: "4px 0 8px", paddingInlineStart: 18 }}>
             {negativePositions.map((p) => (
-              <li key={p.symbolId}>بدهکار {fmtNum(Math.abs(Number(p.netXau)))} {p.baseSymbolSlug}</li>
+              <li key={p.symbolId}>بدهکار {fmtBySymbol(Math.abs(Number(p.netXau)), p.baseSymbolSlug)}</li>
             ))}
           </ul>
         )}

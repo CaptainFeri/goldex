@@ -1,7 +1,6 @@
 import { Injectable, Logger } from "@nestjs/common";
 import { OnEvent } from "@nestjs/event-emitter";
 import { NotificationService } from "../notification.service";
-import { AdminNotificationGateway } from "../admin-notification.gateway";
 import { NotificationTypeEnum } from "../enum/notification-type.enum";
 import { NotificationCategoryEnum } from "../enum/notification-category.enum";
 import { NotificationChannelEnum } from "../enum/notification-channel.enum";
@@ -31,7 +30,6 @@ export class P2pEventListener {
 
   constructor(
     private readonly notificationService: NotificationService,
-    private readonly adminGateway: AdminNotificationGateway,
   ) {}
 
   /** Skips cleanly when a side is absent — an admin-funded match has no peer. */
@@ -234,19 +232,8 @@ export class P2pEventListener {
     withdrawUserId?: string;
   }) {
     const reason = REASON_LABELS[p.reason] ?? p.reason;
-    this.adminGateway.sendToAdmins({
-      event: "p2p.escalated",
-      title: "پرونده همتا به همتا نیازمند تعیین‌تکلیف",
-      body: `${reason} — مبلغ ${fmt(p.amount)} ریال`,
-      type: "warning",
-      metadata: {
-        escalationId: p.escalationId,
-        matchId: p.matchId,
-        reason: p.reason,
-        amount: p.amount,
-        link: `/p2p?escalation=${p.escalationId}`,
-      },
-    });
+    // The admin-facing announcement is raised by AdminInboxListener, which
+    // stores it as an inbox item and broadcasts it from there.
     this.logger.warn(`p2p escalation ${p.escalationId} announced to admins (${p.reason})`);
   }
 

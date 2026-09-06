@@ -1,6 +1,19 @@
 import { Module } from "@nestjs/common";
 import { EventEmitterModule } from "@nestjs/event-emitter";
-import { PublicFileController } from "./shared/controller/public-file.controller";
+import { FilesModule } from "./shared/files/files.module";
+import { AdminMarketModule } from "./admin-market/admin-market.module";
+import { AdminPriceModule } from "./admin-price/admin-price.module";
+import { ReportsModule } from "./reports/reports.module";
+import { AdminDashboardModule } from "./admin-dashboard/admin-dashboard.module";
+import { AdminAccountingModule } from "./admin-accounting/admin-accounting.module";
+import { AdminRoleModule } from "./admin-role/admin-role.module";
+import { AdminSettingsModule } from "./admin-settings/admin-settings.module";
+import { ApiKeyModule } from "./api-keys/api-key.module";
+import { AdminInboxModule } from "./admin-inbox/admin-inbox.module";
+import { OperationOtpModule } from "./operation-otp/operation-otp.module";
+import { AdminShahinModule } from "./admin-shahin/admin-shahin.module";
+import { AdminEmModule } from "./admin-em/admin-em.module";
+import { AdminAuditModule } from "./admin-audit/admin-audit.module";
 import { AcceptLanguageResolver, I18nModule } from "nestjs-i18n";
 import { join } from "path";
 import * as path from "path";
@@ -181,9 +194,22 @@ import { ScheduleModule } from "@nestjs/schedule";
     ProviderModule,
     MarketStatusModule,
     AdminArbitrageModule,
+    FilesModule,
+    AdminMarketModule,
+    AdminPriceModule,
+    ReportsModule,
+    AdminDashboardModule,
+    AdminAccountingModule,
+    AdminRoleModule,
+    AdminSettingsModule,
+    ApiKeyModule,
+    AdminInboxModule,
+    OperationOtpModule,
+    AdminShahinModule,
+    AdminEmModule,
+    AdminAuditModule,
   ],
   providers: [WinstonLoggerService],
-  controllers: [PublicFileController],
   exports: [WinstonLoggerService],
 })
 export class AppModule {}

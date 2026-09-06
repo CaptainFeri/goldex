@@ -1,5 +1,15 @@
 import { Controller, Post, Body, Get, Param, Query, UseGuards, Req } from "@nestjs/common";
-import { ApiTags, ApiOperation, ApiBearerAuth, ApiResponse } from "@nestjs/swagger";
+import { ApiTags, ApiOperation, ApiBearerAuth, ApiQuery } from "@nestjs/swagger";
+import {
+  ApiAdminErrorResponses,
+  ApiEnvelopeResponse,
+} from "../shared/swagger";
+import {
+  AdminWalletDetailsDto,
+  AdminWalletListDto,
+  AdminWalletMutationDto,
+  WalletBalanceHistoryEntryDto,
+} from "./dtos/admin-wallet-response.dto";
 import { AdminWalletService } from "./admin-wallet.service";
 import { AdminAuthGuard } from "../admin/auth/Guard/admin.guard";
 import { UpdateBalanceDto } from "./dtos/update-balance.dto";
@@ -14,13 +24,14 @@ import { AdminExpressRequest } from "../admin/auth/types/adminExpressRequest";
 @Controller("admin/wallets")
 @UseGuards(AdminAuthGuard)
 @ApiBearerAuth()
+@ApiAdminErrorResponses()
 export class AdminWalletController {
   constructor(private readonly adminWalletService: AdminWalletService) {}
 
   @Post("update-balance")
   @AdminRoles(AdminRole.SUPER_ADMIN)
   @ApiOperation({ summary: "Update wallet balance (credit/debit)" })
-  @ApiResponse({ status: 200, description: "Balance updated successfully" })
+  @ApiEnvelopeResponse(AdminWalletMutationDto, { status: 201, description: "Balance updated; includes the wallet and the transaction written" })
   async updateBalance(@Req() req: AdminExpressRequest, @Body() updateBalanceDto: UpdateBalanceDto) {
     return { data: await this.adminWalletService.updateBalance(req.admin.id, updateBalanceDto) };
   }
@@ -28,7 +39,7 @@ export class AdminWalletController {
   @Get("all-wallets")
   @AdminRoles(AdminRole.ADMIN, AdminRole.SUPER_ADMIN)
   @ApiOperation({ summary: "Get all wallets with filters" })
-  @ApiResponse({ status: 200, description: "Wallets retrieved" })
+  @ApiEnvelopeResponse(AdminWalletListDto)
   async getAllWallets() {
     return { data: await this.adminWalletService.getAllWallets() };
   }
@@ -36,7 +47,7 @@ export class AdminWalletController {
   @Post("adjust-balance")
   @AdminRoles(AdminRole.SUPER_ADMIN)
   @ApiOperation({ summary: "Adjust wallet balance (increase/decrease free/locked)" })
-  @ApiResponse({ status: 200, description: "Balance adjusted successfully" })
+  @ApiEnvelopeResponse(AdminWalletMutationDto, { status: 201 })
   async adjustBalance(@Req() req: AdminExpressRequest, @Body() adjustBalanceDto: AdjustBalanceDto) {
     return { data: await this.adminWalletService.adjustBalance(req.admin.id, adjustBalanceDto) };
   }
@@ -44,7 +55,7 @@ export class AdminWalletController {
   @Post("freeze")
   @AdminRoles(AdminRole.SUPER_ADMIN)
   @ApiOperation({ summary: "Freeze/unfreeze wallet balances" })
-  @ApiResponse({ status: 200, description: "Wallet freeze action completed" })
+  @ApiEnvelopeResponse(AdminWalletMutationDto, { status: 201, description: "Freeze applied; `details` carries the frozen balances" })
   async freezeWallet(@Req() req: AdminExpressRequest, @Body() freezeWalletDto: FreezeWalletDto) {
     return { data: await this.adminWalletService.freezeWallet(req.admin.id, freezeWalletDto) };
   }
@@ -52,7 +63,7 @@ export class AdminWalletController {
   @Post("update-status")
   @AdminRoles(AdminRole.SUPER_ADMIN)
   @ApiOperation({ summary: "Update wallet status" })
-  @ApiResponse({ status: 200, description: "Wallet status updated" })
+  @ApiEnvelopeResponse(AdminWalletMutationDto, { status: 201, description: "Status changed; no transaction is written" })
   async updateWalletStatus(@Req() req: AdminExpressRequest, @Body() walletActionDto: WalletActionDto) {
     return { data: await this.adminWalletService.updateWalletStatus(req.admin.id, walletActionDto) };
   }
@@ -60,7 +71,7 @@ export class AdminWalletController {
   @Get(":walletId")
   @AdminRoles(AdminRole.ADMIN, AdminRole.SUPER_ADMIN)
   @ApiOperation({ summary: "Get wallet details with history" })
-  @ApiResponse({ status: 200, description: "Wallet details retrieved" })
+  @ApiEnvelopeResponse(AdminWalletDetailsDto)
   async getWalletDetails(@Param("walletId") walletId: string) {
     return { data: await this.adminWalletService.getWalletDetails(walletId) };
   }
@@ -68,7 +79,9 @@ export class AdminWalletController {
   @Get(":walletId/history")
   @AdminRoles(AdminRole.ADMIN, AdminRole.SUPER_ADMIN)
   @ApiOperation({ summary: "Get wallet balance history" })
-  @ApiResponse({ status: 200, description: "Balance history retrieved" })
+  @ApiQuery({ name: "startDate", required: false, description: "ISO date; inclusive lower bound" })
+  @ApiQuery({ name: "endDate", required: false, description: "ISO date; inclusive upper bound" })
+  @ApiEnvelopeResponse(WalletBalanceHistoryEntryDto, { isArray: true, description: "Balance-affecting admin actions, oldest first" })
   async getWalletHistory(
     @Param("walletId") walletId: string,
     @Query("startDate") startDate?: string,

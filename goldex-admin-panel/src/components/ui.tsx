@@ -42,7 +42,7 @@ export function Stat({
   );
 }
 
-export function Badge({ kind, children }: { kind: "green" | "red" | "gold" | "gray"; children: ReactNode }) {
+export function Badge({ kind, children }: { kind: "green" | "red" | "gold" | "blue" | "gray"; children: ReactNode }) {
   // Defensive: several backend payloads nest symbol as an object — never let an
   // object child crash the whole page, coerce to a readable label.
   const safe =
@@ -91,5 +91,32 @@ export function Modal({
         <div className="modal-body">{children}</div>
       </div>
     </div>
+  );
+}
+
+/** A labelled on/off switch. Disabled while its mutation is in flight. */
+export function Toggle({
+  on,
+  onChange,
+  disabled,
+  label,
+}: {
+  on: boolean;
+  onChange: (next: boolean) => void;
+  disabled?: boolean;
+  label: string;
+}) {
+  return (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={on}
+      aria-label={label}
+      disabled={disabled}
+      className={"toggle" + (on ? " on" : "")}
+      onClick={() => onChange(!on)}
+    >
+      <span className="toggle-knob" />
+    </button>
   );
 }

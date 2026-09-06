@@ -1,8 +1,23 @@
+import { DISPLAY_LOCALE } from "./money";
+
+/**
+ * A number for display.
+ *
+ * Persian digits and the `٬` group separator, matching ui-parszargar — which
+ * renders every number through `toFa`, counts included — and matching the
+ * dates this module already formats as `fa-IR` and the amounts `lib/money`
+ * formats. `toLocaleString("fa-IR")` produces exactly the same string as
+ * ui-parszargar's own `fmt`.
+ *
+ * Display only. Never feed the result back into an `<input>` or `Number()`:
+ * Persian digits do not survive that round trip. Use `toFormAmount` from
+ * `lib/money` to seed a field.
+ */
 export function fmtNum(v: number | string | null | undefined, digits = 0): string {
   if (v === null || v === undefined || v === "") return "—";
   const n = typeof v === "string" ? Number(v) : v;
   if (Number.isNaN(n)) return "—";
-  return n.toLocaleString("en-US", { maximumFractionDigits: digits });
+  return n.toLocaleString(DISPLAY_LOCALE, { maximumFractionDigits: digits });
 }
 
 export function fmtDate(v: string | null | undefined): string {
@@ -55,6 +70,34 @@ export function colorFor(key: string): string {
   let h = 0;
   for (let i = 0; i < key.length; i++) h = (h * 31 + key.charCodeAt(i)) >>> 0;
   return PALETTE[h % PALETTE.length];
+}
+
+/**
+ * Base and quote slugs off a price pair.
+ *
+ * Orders carry amounts in two different units — quantity in the base symbol,
+ * price and value in the quote — so a screen showing both needs each one
+ * separately to format correctly.
+ */
+export function baseSlug(pair: any): string | null {
+  return pair?.baseSymbol?.slug ?? pair?.baseSymbol?.name ?? pair?.baseCode ?? null;
+}
+
+export function quoteSlug(pair: any): string | null {
+  return pair?.quoteSymbol?.slug ?? pair?.quoteSymbol?.name ?? pair?.quoteCode ?? null;
+}
+
+
+/**
+ * A Jalali year, ungrouped.
+ *
+ * `fmtNum` renders 1405 as ۱٬۴۰۵ — correct for a quantity, wrong for a year.
+ * Shared because two screens got it wrong independently.
+ */
+export function fmtYear(year: number | string | null | undefined): string {
+  const n = typeof year === "string" ? Number(year) : year;
+  if (n === null || n === undefined || !Number.isFinite(n)) return "—";
+  return n.toLocaleString(DISPLAY_LOCALE, { useGrouping: false });
 }
 
 // ─── Rial (IRR) ──────────────────────────────────────────────

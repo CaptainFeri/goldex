@@ -23,6 +23,7 @@ import { KycStatusEnum } from "../baseinfo/enum/kycStatus.enum";
 import { WithdrawTypeEnum } from "../admin-symbol/enum/withdraw-type.enum";
 import { P2pWithdrawService } from "../p2p/services/p2p-withdraw.service";
 import { P2pAuditActorEnum } from "../p2p/enum/p2p.enums";
+import { PaginatedDto, paginate } from "../shared/dto/paginated.dto";
 
 @Injectable()
 export class WithdrawService {
@@ -142,7 +143,11 @@ export class WithdrawService {
         symbolType: symbol.symbolType,
         type: saved.type,
         amount: saved.amount,
-        currency: symbol.name,
+        // The slug, not symbol.name: this is a machine field on a payments
+        // rail, and the rial symbol's name is "ریال ایران" — a localized label
+        // no consumer can compare against. The gateway integrations already
+        // send "IRR", and symbolSlug above carries the same value.
+        currency: symbol.slug,
         gatewayCode,
         picturePath: saved.picturePath,
         notes: saved.notes,
@@ -227,8 +232,8 @@ export class WithdrawService {
     return saved;
   }
 
-  async findAll(query: WithdrawQueryDto) {
-    const { status, page = 1, limit = 20 } = query;
+  async findAll(query: WithdrawQueryDto): Promise<PaginatedDto<WithdrawEntity>> {
+    const { status } = query;
     const where: any = {};
     if (status) where.status = status;
 
@@ -236,11 +241,11 @@ export class WithdrawService {
       where,
       relations: { symbol: true, user: true },
       order: { createAt: "DESC" },
-      skip: (page - 1) * limit,
-      take: limit,
+      skip: query.skip,
+      take: query.take,
     });
 
-    return { items, total, page, limit };
+    return paginate(items, total, query);
   }
 
   async process(adminId: string, id: string, dto: ProcessWithdrawDto): Promise<WithdrawEntity> {

@@ -254,10 +254,10 @@ export default function TelegramMarketPage() {
                   scales: {
                     x: {
                       type: "linear",
-                      ticks: { callback: (v: any) => new Date(Number(v)).toLocaleTimeString("fa-IR"), color: "#9aa4b2" },
-                      grid: { color: gridColor },
+                      ticks: { callback: (v: any) => new Date(Number(v)).toLocaleTimeString("fa-IR"), color: "var(--gx-dim)" },
+                      grid: { color: gridColor() },
                     },
-                    y: { ticks: { callback: (v: any) => fmtNum(Number(v)), color: "#9aa4b2" }, grid: { color: gridColor } },
+                    y: { ticks: { callback: (v: any) => fmtNum(Number(v)), color: "var(--gx-dim)" }, grid: { color: gridColor() } },
                   },
                   plugins: {
                     legend: { labels: { color: "#e6e9ef" } },

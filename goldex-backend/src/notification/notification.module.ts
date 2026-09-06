@@ -24,7 +24,6 @@ import { DepositEventListener } from "./listeners/deposit-event.listener";
 import { WithdrawEventListener } from "./listeners/withdraw-event.listener";
 import { AdminNotificationGateway } from "./admin-notification.gateway";
 import { NotificationGateway } from "./notification.gateway";
-import { AdminDepositWithdrawListener } from "./listeners/admin-deposit-withdraw.listener";
 import { P2pEventListener } from "./listeners/p2p-event.listener";
 import { SmsModule } from "../sms/sms.module";
 import { MailModule } from "../mail/mail.module";
@@ -76,9 +75,8 @@ import { ConfigModule, ConfigService } from "@nestjs/config";
     WithdrawEventListener,
     NotificationGateway,
     AdminNotificationGateway,
-    AdminDepositWithdrawListener,
     P2pEventListener,
   ],
-  exports: [NotificationService],
+  exports: [NotificationService, AdminNotificationGateway],
 })
 export class NotificationModule {}

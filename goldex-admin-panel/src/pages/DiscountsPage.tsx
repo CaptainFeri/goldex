@@ -4,6 +4,7 @@ import { api, unwrap, apiError } from "../api/client";
 import { Card, Loading, ErrorState, Empty, Badge, Modal } from "../components/ui";
 import { fmtNum, fmtDate } from "../lib/format";
 import type { DiscountCoupon, DiscountOverview, DiscountList } from "../api/types";
+import DateField from "../components/DateField";
 
 const COUPON_TYPES = [
   { value: "FIXED", label: "مبلغ ثابت" },
@@ -103,11 +104,10 @@ function DiscountForm({
           </div>
           <div className="field">
             <label>تاریخ انقضا</label>
-            <input
-              className="input"
-              type="datetime-local"
+            <DateField
+              mode="datetime"
               value={form.expiredAt}
-              onChange={(e) => set("expiredAt", e.target.value)}
+              onChange={(v) => set("expiredAt", v)}
               required
             />
           </div>

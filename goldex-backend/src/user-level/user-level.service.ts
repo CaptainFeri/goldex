@@ -9,6 +9,7 @@ import { UpdateLevelDto } from "./dto/update-level.dto";
 import { AssignLevelDto } from "./dto/assign-level.dto";
 import { UserEvents } from "../shared/constants/events.constants";
 import { PricePairEntity } from "../admin-pair/entity/price.pair.entity";
+import { RIAL_SYMBOL_SLUG } from "../shared/constants/currency.constants";
 
 @Injectable()
 export class UserLevelService {
@@ -192,7 +193,7 @@ export class UserLevelService {
     }
     if (featureKey === "CREDIT_MAX_AMOUNT") {
       if (level.creditMaxAmount !== null && level.creditMaxAmount !== undefined) {
-        return { amount: Number(level.creditMaxAmount) || 0, currency: "IRR" };
+        return { amount: Number(level.creditMaxAmount) || 0, currency: RIAL_SYMBOL_SLUG };
       }
       return level.features?.[featureKey] ?? null;
     }
