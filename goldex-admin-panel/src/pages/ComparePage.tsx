@@ -3,7 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Line } from "react-chartjs-2";
 import { api, unwrap, apiError } from "../api/client";
 import { Card, Loading, ErrorState, Empty, Badge } from "../components/ui";
-import { colorFor, fmtNum, fmtTime, pairLabel } from "../lib/format";
+import { colorFor, fmtNum, fmtIrrFromToman, fmtTime, pairLabel, IRR_PER_TOMAN } from "../lib/format";
 import { gridColor } from "../lib/chart";
 import type { CompareResponse, PricePair, HistoryResponse, ProviderSnapshot, ProviderSnapshotItem } from "../api/types";
 
@@ -20,9 +20,9 @@ const RANGES: { key: string; label: string; ms?: number }[] = [
 
 type Metric = "buyPrice" | "sellPrice" | "spread";
 const METRIC_LABEL: Record<Metric, string> = {
-  buyPrice: "قیمت خرید",
-  sellPrice: "قیمت فروش",
-  spread: "اسپرد",
+  buyPrice: "قیمت خرید (ریال)",
+  sellPrice: "قیمت فروش (ریال)",
+  spread: "اسپرد (ریال)",
 };
 
 const TABS = [
@@ -120,7 +120,7 @@ function CompareTab() {
       const c = colorFor(s.providerKey);
       return {
         label: `${s.providerKey} (#${s.providerItemId})`,
-        data: allTs.map((t) => (map.has(t) ? Number(map.get(t)) : null)),
+        data: allTs.map((t) => (map.has(t) ? Number(map.get(t)) * IRR_PER_TOMAN : null)),
         borderColor: c,
         backgroundColor: c + "20",
         spanGaps: true,
@@ -157,9 +157,9 @@ function CompareTab() {
         <div className="field" style={{ margin: 0, minWidth: 150 }}>
           <label>شاخص</label>
           <select className="select" value={metric} onChange={(e) => setMetric(e.target.value as Metric)}>
-            <option value="buyPrice">قیمت خرید</option>
-            <option value="sellPrice">قیمت فروش</option>
-            <option value="spread">اسپرد</option>
+            <option value="buyPrice">قیمت خرید (ریال)</option>
+            <option value="sellPrice">قیمت فروش (ریال)</option>
+            <option value="spread">اسپرد (ریال)</option>
           </select>
         </div>
         <div className="field" style={{ margin: 0, minWidth: 140 }}>
@@ -237,9 +237,9 @@ function CompareTab() {
                 <tr>
                   <th>تأمین‌کننده</th>
                   <th>آیتم</th>
-                  <th>آخرین خرید</th>
-                  <th>آخرین فروش</th>
-                  <th>اسپرد</th>
+                  <th>آخرین خرید (ریال)</th>
+                  <th>آخرین فروش (ریال)</th>
+                  <th>اسپرد (ریال)</th>
                   <th>نقاط</th>
                 </tr>
               </thead>
@@ -253,9 +253,9 @@ function CompareTab() {
                         {s.providerKey}
                       </td>
                       <td className="mono">{s.providerItemId}</td>
-                      <td className="mono">{last ? fmtNum(last.buyPrice) : "—"}</td>
-                      <td className="mono">{last ? fmtNum(last.sellPrice) : "—"}</td>
-                      <td className="mono">{last ? fmtNum(last.spread) : "—"}</td>
+                      <td className="mono">{last ? fmtIrrFromToman(last.buyPrice) : "—"}</td>
+                      <td className="mono">{last ? fmtIrrFromToman(last.sellPrice) : "—"}</td>
+                      <td className="mono">{last ? fmtIrrFromToman(last.spread) : "—"}</td>
                       <td className="mono">{s.points.length}</td>
                     </tr>
                   );
@@ -304,8 +304,8 @@ function HistoryTab() {
     const points = history.data?.points ?? [];
     const labels = points.map((p) => new Date(p.timestamp));
     const datasets = [
-      { label: "خرید", data: points.map((p) => p.buyPrice), borderColor: "#2ea861", backgroundColor: "transparent", tension: 0.25, pointRadius: 0 },
-      { label: "فروش", data: points.map((p) => p.sellPrice), borderColor: "#e5544b", backgroundColor: "transparent", tension: 0.25, pointRadius: 0 },
+      { label: "خرید (ریال)", data: points.map((p) => p.buyPrice * IRR_PER_TOMAN), borderColor: "#2ea861", backgroundColor: "transparent", tension: 0.25, pointRadius: 0 },
+      { label: "فروش (ریال)", data: points.map((p) => p.sellPrice * IRR_PER_TOMAN), borderColor: "#e5544b", backgroundColor: "transparent", tension: 0.25, pointRadius: 0 },
     ];
     return { labels, datasets, n: points.length };
   }, [history.data]);
@@ -489,9 +489,9 @@ function CurrentTab() {
                 <th>نام آیتم</th>
                 <th>گروه</th>
                 <th>جفت‌ارز نگاشت‌شده</th>
-                <th>خرید</th>
-                <th>فروش</th>
-                <th>اسپرد</th>
+                <th>خرید (ریال)</th>
+                <th>فروش (ریال)</th>
+                <th>اسپرد (ریال)</th>
                 <th>واحد</th>
                 <th>وضعیت</th>
               </tr>
@@ -512,12 +512,12 @@ function CurrentTab() {
                     )}
                   </td>
                   <td className="mono" style={{ color: it.canBuy ? undefined : "var(--text-faint)" }}>
-                    {it.buyPrice == null ? "—" : fmtNum(it.buyPrice, 2)}
+                    {it.buyPrice == null ? "—" : fmtIrrFromToman(it.buyPrice, 2)}
                   </td>
                   <td className="mono" style={{ color: it.canSell ? undefined : "var(--text-faint)" }}>
-                    {it.sellPrice == null ? "—" : fmtNum(it.sellPrice, 2)}
+                    {it.sellPrice == null ? "—" : fmtIrrFromToman(it.sellPrice, 2)}
                   </td>
-                  <td className="mono">{it.spread == null ? "—" : fmtNum(it.spread, 2)}</td>
+                  <td className="mono">{it.spread == null ? "—" : fmtIrrFromToman(it.spread, 2)}</td>
                   <td>{it.unit ?? "—"}</td>
                   <td>
                     {it.stale ? (
