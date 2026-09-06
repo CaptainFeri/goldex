@@ -2,7 +2,8 @@ import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, unwrap, apiError } from "../api/client";
 import { Card, Loading, ErrorState, Empty, Badge, Modal } from "../components/ui";
-import { fmtNum, fmtDate, pairLabel } from "../lib/format";
+import { fmtNum, fmtDate, pairLabel, baseSlug, quoteSlug } from "../lib/format";
+import { fmtBySymbol, toApiAmount, toFormAmount, unitLabel } from "../lib/money";
 import type { AdminOrder } from "../api/types";
 
 function sideBadge(side: string) {
@@ -24,8 +25,11 @@ function statusBadge(s: string) {
 
 function AdminEditModal({ orderId, order, onClose }: { orderId: string; order: any; onClose: () => void }) {
   const qc = useQueryClient();
+  // Price is per unit of base, denominated in the quote symbol — so a rial
+  // quote is typed and shown in toman and converted back on submit.
+  const quote = quoteSlug(order?.pricePair);
   const [status, setStatus] = useState(order?.status ?? "");
-  const [price, setPrice] = useState(String(order?.price ?? ""));
+  const [price, setPrice] = useState(String(toFormAmount(order?.price, quote) ?? ""));
   const [notes, setNotes] = useState(order?.notes ?? "");
 
   const save = useMutation({
@@ -40,7 +44,7 @@ function AdminEditModal({ orderId, order, onClose }: { orderId: string; order: a
     e.preventDefault();
     const payload: any = {};
     if (status) payload.status = status;
-    if (price) payload.price = Number(price);
+    if (price) payload.price = toApiAmount(price, quote);
     if (notes) payload.notes = notes;
     save.mutate(payload);
   }
@@ -63,7 +67,7 @@ function AdminEditModal({ orderId, order, onClose }: { orderId: string; order: a
           </select>
         </div>
         <div className="field">
-          <label>قیمت جدید (اختیاری)</label>
+          <label>قیمت جدید ({unitLabel(quote)}) — اختیاری</label>
           <input className="input mono" dir="ltr" type="number" step="0.0001" value={price} onChange={(e) => setPrice(e.target.value)} />
         </div>
         <div className="field">
@@ -129,22 +133,28 @@ function OrderDetailsModal({ orderId, onClose }: { orderId: string; onClose: () 
             </div>
             <div className="field">
               <label>مقدار</label>
-              <div className="mono">{fmtNum(order.quantity, 4)}</div>
+              <div className="mono">{fmtBySymbol(order.quantity, baseSlug(order.pricePair), { digits: 4 })}</div>
             </div>
             <div className="field">
               <label>قیمت</label>
-              <div className="mono">{fmtNum(order.price ?? order.averagePrice, 2)}</div>
+              <div className="mono">{fmtBySymbol(order.price ?? order.averagePrice, quoteSlug(order.pricePair), { digits: 2 })}</div>
             </div>
             <div className="field">
               <label>اجرا شده</label>
-              <div className="mono">{fmtNum(order.executedQuantity, 4)}</div>
+              <div className="mono">{fmtBySymbol(order.executedQuantity, baseSlug(order.pricePair), { digits: 4 })}</div>
             </div>
             <div className="field">
               <label>ارزش کل</label>
-              <div className="mono">{fmtNum(order.totalValue, 0)}</div>
+              <div className="mono">{fmtBySymbol(order.totalValue, quoteSlug(order.pricePair), { digits: 0 })}</div>
             </div>
             <div className="field">
               <label>کارمزد</label>
+              {/*
+                Left unconverted: `commission` is decimal(10,2) on the entity with
+                no unit recorded, too narrow to hold a rial order total, and
+                guessing wrong here would reintroduce the ten-fold error this
+                pass exists to remove.
+              */}
               <div className="mono">{fmtNum(order.commission, 2)}</div>
             </div>
             <div className="field">
@@ -318,10 +328,10 @@ export default function OrdersPage() {
                     <td>{o.pricePair ? pairLabel(o.pricePair) : "—"}</td>
                     <td>{sideBadge(o.side)}</td>
                     <td style={{ fontSize: 13 }}>{typeLabel(o.orderType)}</td>
-                    <td className="mono">{fmtNum(o.quantity, 4)}</td>
-                    <td className="mono">{fmtNum(o.price ?? o.averagePrice, 2)}</td>
-                    <td className="mono">{fmtNum(o.executedQuantity, 4)}</td>
-                    <td className="mono">{fmtNum(o.totalValue, 0)}</td>
+                    <td className="mono">{fmtBySymbol(o.quantity, baseSlug(o.pricePair), { digits: 4 })}</td>
+                    <td className="mono">{fmtBySymbol(o.price ?? o.averagePrice, quoteSlug(o.pricePair), { digits: 2 })}</td>
+                    <td className="mono">{fmtBySymbol(o.executedQuantity, baseSlug(o.pricePair), { digits: 4 })}</td>
+                    <td className="mono">{fmtBySymbol(o.totalValue, quoteSlug(o.pricePair), { digits: 0 })}</td>
                     <td>{statusBadge(o.status)}</td>
                     <td style={{ fontSize: 12, whiteSpace: "nowrap" }}>{fmtDate(o.createdAt ?? o.createAt)}</td>
                       <td>

@@ -251,7 +251,7 @@ export default function NotificationsPage() {
             </div>
             {bcError && <div style={{ color: "var(--danger)", padding: "0.5rem 0" }}>{bcError}</div>}
             {bcResult && (
-              <div style={{ padding: "0.75rem", borderRadius: "0.5rem", background: "var(--surface-alt, rgba(0,0,0,0.04))", fontSize: "0.9rem", lineHeight: "1.8" }}>
+              <div style={{ padding: "0.75rem", borderRadius: "0.5rem", background: "var(--bg-soft)", fontSize: "0.9rem", lineHeight: "1.8" }}>
                 <div><strong>تعداد هدف:</strong> {bcResult.targetCount}</div>
                 <div><strong>ارسال‌شده:</strong> {bcResult.createdCount}</div>
                 <div><strong>ردشده:</strong> {bcResult.skippedCount}</div>

@@ -217,10 +217,10 @@ function CompareTab() {
                     time: {
                       tooltipFormat: range === "7d" || range === "all" ? "MM/dd HH:mm" : "HH:mm:ss",
                     },
-                    grid: { color: gridColor },
+                    grid: { color: gridColor() },
                     ticks: { maxRotation: 0, autoSkip: true, maxTicksLimit: 10 },
                   },
-                  y: { grid: { color: gridColor }, ticks: { callback: (v) => fmtNum(v as number) } },
+                  y: { grid: { color: gridColor() }, ticks: { callback: (v) => fmtNum(v as number) } },
                 },
                 plugins: { legend: { position: "bottom" } },
               }}
@@ -388,8 +388,8 @@ function HistoryTab() {
               maintainAspectRatio: false,
               interaction: { mode: "index", intersect: false },
               scales: {
-                x: { type: "time", grid: { color: gridColor } },
-                y: { grid: { color: gridColor }, ticks: { callback: (v) => fmtNum(v as number) } },
+                x: { type: "time", grid: { color: gridColor() } },
+                y: { grid: { color: gridColor() }, ticks: { callback: (v) => fmtNum(v as number) } },
               },
               plugins: { legend: { position: "bottom" } },
             }}

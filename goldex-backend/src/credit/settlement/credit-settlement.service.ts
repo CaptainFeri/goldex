@@ -8,6 +8,7 @@ import { InjectRepository } from "@nestjs/typeorm";
 import { DataSource, Repository } from "typeorm";
 import Decimal from "decimal.js";
 import { EventEmitter2 } from "@nestjs/event-emitter";
+import { SymbolEntity } from "../../admin-symbol/entity/symbol.entity";
 import { CreditEntity } from "../entity/credit.entity";
 import { CreditOrderEntity } from "../entity/credit-order.entity";
 import { CreditNotificationEntity } from "../entity/credit-notification.entity";
@@ -63,6 +64,16 @@ export interface SettlementEligibility {
   deficit: number;
   shortfall: number;
   collateralValue: number;
+  /**
+   * Slug of the symbol the money figures are denominated in.
+   *
+   * Without it a client has to guess the unit of `shortfall`, `netEquity`,
+   * `deficit` and `collateralValue` — and a panel that guesses rial where the
+   * facility is in something else, or renders rial under a toman label, is out
+   * by a factor of ten on the number an operator acts on. `positions` already
+   * names its own symbol per row; this is the same courtesy for the totals.
+   */
+  creditBaseSymbolSlug: string | null;
 }
 
 export interface BaseSymbolPosition {
@@ -181,6 +192,7 @@ export class CreditSettlementService {
         deficit: 0,
         shortfall: 0,
         collateralValue: 0,
+        creditBaseSymbolSlug: null,
       };
     }
 
@@ -197,6 +209,11 @@ export class CreditSettlementService {
     const markPrices = await this.resolveBaseMarkPrices(manager, credit, creditOrders, markPrice);
     const result = this.computeFromOrders(credit, creditOrders, markPrice, markPrices);
 
+    const creditBaseSymbol = await manager.findOne(SymbolEntity, {
+      where: { id: credit.creditBaseSymbolId },
+      select: { id: true, slug: true },
+    });
+
     return {
       eligible: result.shortfall <= 0,
       legacy: false,
@@ -206,6 +223,7 @@ export class CreditSettlementService {
       deficit: result.deficit,
       shortfall: result.shortfall,
       collateralValue: result.collateralValue,
+      creditBaseSymbolSlug: creditBaseSymbol?.slug ?? null,
     };
   }
 

@@ -3,6 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import { api, unwrap, apiError } from "../api/client";
 import { Card, Loading, ErrorState, Empty, Badge, Stat } from "../components/ui";
 import { fmtNum } from "../lib/format";
+import { fmtBySymbol } from "../lib/money";
 import type { OrderBookDepth, OrderBookDepthLevel, OrderBookOverview, OrderBookStatus } from "../api/types";
 
 const REFRESH_MS = 5000;
@@ -34,10 +35,16 @@ function DepthTable({
   levels,
   side,
   maxSize,
+  baseSlug,
+  quoteSlug,
 }: {
   levels: OrderBookDepthLevel[];
   side: "bid" | "ask";
   maxSize: number;
+  // A ladder row mixes units: the price is in the quote symbol, the size in
+  // the base. One formatter for both would be wrong on one of them.
+  baseSlug?: string | null;
+  quoteSlug?: string | null;
 }) {
   const isAsk = side === "ask";
   const colorClass = isAsk ? "ask" : "bid";
@@ -64,8 +71,8 @@ function DepthTable({
                   [isAsk ? "right" : "left"]: 0,
                 }}
               />
-              <span className={`ob-price ${colorClass}`}>{fmtNum(l.price, 4)}</span>
-              <span className="ob-size">{fmtNum(l.size, 4)}</span>
+              <span className={`ob-price ${colorClass}`}>{fmtBySymbol(l.price, quoteSlug, { digits: 4 })}</span>
+              <span className="ob-size">{fmtBySymbol(l.size, baseSlug, { digits: 4 })}</span>
               <span className="ob-src">{l.orderCount}</span>
             </div>
           ))
@@ -154,16 +161,18 @@ function OverviewTable({
                   {s.bidLevels} / {s.askLevels}
                 </td>
                 <td className="mono" style={{ fontSize: 12 }}>
-                  {fmtNum(s.totalBidSize, 2)} / {fmtNum(s.totalAskSize, 2)}
+                  {fmtBySymbol(s.totalBidSize, s.baseSlug, { digits: 2 })}
+                  {" / "}
+                  {fmtBySymbol(s.totalAskSize, s.baseSlug, { digits: 2 })}
                 </td>
                 <td className="mono" style={{ color: "var(--green)" }}>
-                  {s.bestBid == null ? "—" : fmtNum(s.bestBid, 4)}
+                  {s.bestBid == null ? "—" : fmtBySymbol(s.bestBid, s.quoteSlug, { digits: 4 })}
                 </td>
                 <td className="mono" style={{ color: "var(--red)" }}>
-                  {s.bestAsk == null ? "—" : fmtNum(s.bestAsk, 4)}
+                  {s.bestAsk == null ? "—" : fmtBySymbol(s.bestAsk, s.quoteSlug, { digits: 4 })}
                 </td>
                 <td className="mono" style={{ color: s.crossed ? "var(--red)" : undefined }}>
-                  {s.spread == null ? "—" : `${fmtNum(s.spread, 4)} (${fmtNum(s.spreadPercent, 2)}٪)`}
+                  {s.spread == null ? "—" : `${fmtBySymbol(s.spread, s.quoteSlug, { digits: 4 })} (${fmtNum(s.spreadPercent, 2)}٪)`}
                 </td>
               </tr>
             );
@@ -320,22 +329,22 @@ export default function OrderBookPage() {
             <div className="grid grid-4" style={{ marginBottom: 20 }}>
               <div className="stat">
                 <div className="stat-label">بهترین خرید (Bid)</div>
-                <div className="stat-value" style={{ color: "var(--green)" }}>{fmtNum(bestBid, 4)}</div>
+                <div className="stat-value" style={{ color: "var(--green)" }}>{fmtBySymbol(bestBid, selected?.quoteSlug, { digits: 4 })}</div>
               </div>
               <div className="stat">
                 <div className="stat-label">بهترین فروش (Ask)</div>
-                <div className="stat-value" style={{ color: "var(--red)" }}>{fmtNum(bestAsk, 4)}</div>
+                <div className="stat-value" style={{ color: "var(--red)" }}>{fmtBySymbol(bestAsk, selected?.quoteSlug, { digits: 4 })}</div>
               </div>
               <div className="stat">
                 <div className="stat-label">اسپرد</div>
                 <div className="stat-value">
-                  {fmtNum(spread, 4)} ({fmtNum(spreadPercent, 2)}٪)
+                  {fmtBySymbol(spread, selected?.quoteSlug, { digits: 4 })} ({fmtNum(spreadPercent, 2)}٪)
                 </div>
               </div>
               <div className="stat">
                 <div className="stat-label">عمق سفارشات</div>
                 <div className="stat-value" style={{ fontSize: 14 }}>
-                  خرید {fmtNum(totalBidSize, 2)}g / فروش {fmtNum(totalAskSize, 2)}g
+                  خرید {fmtBySymbol(totalBidSize, selected?.baseSlug, { digits: 2 })} / فروش {fmtBySymbol(totalAskSize, selected?.baseSlug, { digits: 2 })}
                 </div>
               </div>
             </div>
@@ -345,13 +354,13 @@ export default function OrderBookPage() {
                 <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 8, color: "var(--red)" }}>
                   فروش (Asks)
                 </div>
-                <DepthTable levels={asks} side="ask" maxSize={maxAskSize} />
+                <DepthTable levels={asks} side="ask" maxSize={maxAskSize} baseSlug={selected?.baseSlug} quoteSlug={selected?.quoteSlug} />
               </div>
               <div>
                 <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 8, color: "var(--green)" }}>
                   خرید (Bids)
                 </div>
-                <DepthTable levels={bids} side="bid" maxSize={maxBidSize} />
+                <DepthTable levels={bids} side="bid" maxSize={maxBidSize} baseSlug={selected?.baseSlug} quoteSlug={selected?.quoteSlug} />
               </div>
             </div>
 

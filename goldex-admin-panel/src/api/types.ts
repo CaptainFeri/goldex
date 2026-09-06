@@ -13,7 +13,10 @@ export interface Admin {
   id: string;
   phone: string | null;
   email: string | null;
+  /** Legacy enum, still written by the server for its hierarchy checks. */
   role: AdminRole;
+  /** The role row permissions actually come from. Read this, not `role`. */
+  roleId: string | null;
   isSuspended: boolean;
   lastLoginAt: string | null;
   createAt: string;
@@ -506,6 +509,13 @@ export interface CashoutOptions {
   creditCode: string;
   markPrice: number;
   creditBaseSymbolId: string | null;
+  /**
+   * The symbol creditLimit, usedCredit and every *Value field are money in.
+   * Format by it — a credit is not necessarily denominated in rial.
+   */
+  creditBaseSymbol?: { id?: string; slug?: string; name?: string } | null;
+  /** The symbol collateralAmount is a quantity in — often gold, not money. */
+  collateralSymbol?: { id?: string; slug?: string; name?: string } | null;
   collateralSymbolId: string | null;
   depositBalance: number;
   collateralAvailable: number;
@@ -582,6 +592,11 @@ export interface SettlementEligibility {
   deficit: number;
   shortfall: number;
   collateralValue: number;
+  /**
+   * Symbol the money figures above are denominated in. Null for a legacy
+   * facility. Format by it — do not assume rial.
+   */
+  creditBaseSymbolSlug: string | null;
 }
 
 export type FinanceAction =
@@ -645,6 +660,12 @@ export interface DepositRequest {
   adminId: string | null;
   notes: string | null;
   picturePath: string | null;
+  /**
+   * Short-lived URL serving the receipt. Bearer-free, so it can go straight
+   * into an <img> tag, and it expires a few minutes after the response was
+   * issued -- render it, never store it. `picturePath` alone is not fetchable.
+   */
+  pictureUrl: string | null;
   gatewayCode?: string | null;
   metadata: any;
   completedAt: string | null;
@@ -664,6 +685,12 @@ export interface WithdrawRequest {
   adminId: string | null;
   notes: string | null;
   picturePath: string | null;
+  /**
+   * Short-lived URL serving the receipt. Bearer-free, so it can go straight
+   * into an <img> tag, and it expires a few minutes after the response was
+   * issued -- render it, never store it. `picturePath` alone is not fetchable.
+   */
+  pictureUrl: string | null;
   metadata: any;
   completedAt: string | null;
   createAt: string;
@@ -1114,4 +1141,667 @@ export interface PairRoutes {
   sell: PriceRoute;
   usesBridge: boolean;
   unpriceable: boolean;
+}
+
+/**
+ * The standard paginated payload, as returned inside the response envelope by
+ * every endpoint migrated to the contract in
+ * `goldex/docs/PARSZARGAR-ADMIN-API-PLAN.md` §3.
+ *
+ * Endpoints still on the legacy `{ items, total, page, limit }` shape use the
+ * local `Page<T>` in `api/p2p.ts`; that alias disappears as they migrate.
+ */
+export interface Paginated<T> {
+  items: T[];
+  total: number;
+  page: number;
+  pageSize: number;
+  totalPages: number;
+}
+
+/** Query params every migrated list endpoint accepts. */
+export interface PaginationParams {
+  page?: number;
+  pageSize?: number;
+  sort?: string;
+  order?: "asc" | "desc";
+}
+
+
+/** One instrument in the market ticker. */
+export interface MarketTickerItem {
+  symbolId: string;
+  slug: string;
+  /** The camelCase key the panels' own constants file used, where one exists. */
+  tickerKey: string | null;
+  label: string;
+  category: string | null;
+  displayOrder: number;
+  /**
+   * Prices in the unit `quoteSlug` names — rial today. Format through
+   * `fmtBySymbol`; the API never converts. Null when there is no live quote.
+   */
+  buyPrice: number | null;
+  sellPrice: number | null;
+  buyGramPrice: number | null;
+  sellGramPrice: number | null;
+  quoteSlug: string | null;
+  lastUpdated: string | null;
+  /** The quote is older than the freshness window, or missing entirely. */
+  stale: boolean;
+}
+
+export interface MarketTicker {
+  items: MarketTickerItem[];
+  generatedAt: string;
+  freshnessWindowSeconds: number;
+}
+
+
+// ── Reports ────────────────────────────────────────────────────────────────
+
+/**
+ * What a report covers. There is no `arbitrage`: those signals are never
+ * persisted, so a date-ranged export of them would be fabricated.
+ */
+export type ReportType = "trades" | "users" | "financial" | "withdrawals";
+
+/**
+ * Output formats. There is no `pdf` — printing stays client-side, where the
+ * print CSS already lives.
+ */
+export type ReportFormat = "xlsx" | "csv";
+
+export type ReportStatus = "pending" | "running" | "completed" | "failed";
+
+export interface ReportJob {
+  id: string;
+  type: ReportType;
+  format: ReportFormat;
+  status: ReportStatus;
+  fromDate: string | null;
+  toDate: string | null;
+  createdBy: string;
+  rowCount: number | null;
+  fileSize: string | null;
+  durationMs: number | null;
+  artifactExpiresAt: string | null;
+  /** The file was purged at 90 days; the row remains as the audit record. */
+  artifactExpired: boolean;
+  downloadCount: number;
+  error: string | null;
+  scheduleId: string | null;
+  createAt: string;
+  completedAt: string | null;
+}
+
+export interface ReportStats {
+  generated: number;
+  activeSchedules: number;
+  downloadsThisMonth: number;
+  averageDurationMs: number | null;
+}
+
+export interface ReportDownload {
+  /** Short-lived and bearer-free — follow it on click, never store it. */
+  url: string;
+  fileName: string;
+}
+
+export interface ReportSchedule {
+  id: string;
+  ownerId: string;
+  name: string;
+  type: ReportType;
+  format: ReportFormat;
+  cronExpression: string;
+  windowDays: number;
+  isActive: boolean;
+  lastRunAt: string | null;
+  nextRunAt: string | null;
+  createAt: string;
+}
+
+
+// ── Dashboard ──────────────────────────────────────────────────────────────
+
+/** The four cards, which act as one global filter over every panel. */
+export type DashboardMetric = "users" | "volume" | "profit" | "withdrawals";
+export type DashboardSeverity = "good" | "warn" | "bad" | "info";
+
+export interface DashboardKpi {
+  metric: DashboardMetric;
+  label: string;
+  /** Decimal string in `unit`'s own terms — format with `fmtBySymbol`. */
+  value: string;
+  unit: string | null;
+  /** Null when the previous period was empty; a rise from nothing has no percentage. */
+  deltaPercent: number | null;
+  sub: string;
+  /** A figure for the sub-line, kept out of `sub` so it can be formatted. */
+  subValue: string | null;
+  subUnit: string | null;
+}
+
+export interface DashboardKpis {
+  cards: DashboardKpi[];
+  generatedAt: string;
+}
+
+export interface DashboardSeriesPoint {
+  /** Jalali month, 1–12. */
+  month: number;
+  label: string;
+  primary: string;
+  secondary: string;
+}
+
+export interface DashboardSeries {
+  year: number;
+  primaryLabel: string;
+  secondaryLabel: string;
+  unit: string | null;
+  /** Always twelve, in Jalali order; empty months are zero, not absent. */
+  points: DashboardSeriesPoint[];
+}
+
+export interface DashboardSlice {
+  label: string;
+  value: string;
+  percent: number;
+}
+
+export interface DashboardDistribution {
+  title: string;
+  slices: DashboardSlice[];
+}
+
+export interface DashboardActivityItem {
+  id: string;
+  title: string;
+  description: string;
+  severity: DashboardSeverity;
+  at: string;
+}
+
+export interface DashboardHealthRow {
+  label: string;
+  percent: number;
+  variant: DashboardSeverity;
+  count: number;
+}
+
+export interface DashboardHealth {
+  title: string;
+  windowDays: number;
+  rows: DashboardHealthRow[];
+}
+
+export interface DashboardRecentRow {
+  id: string;
+  /** In the same order as `columns`. */
+  cells: string[];
+  status: string | null;
+}
+
+/** What a column holds, so each cell is formatted correctly. */
+export type DashboardColumnKind = "text" | "money" | "quantity" | "date";
+
+export interface DashboardRecent {
+  title: string;
+  columns: string[];
+  /** One per column, in the same order. */
+  columnKinds: DashboardColumnKind[];
+  rows: DashboardRecentRow[];
+  unit: string | null;
+}
+
+
+// ── Accounting (§5.21) ─────────────────────────────────────────────────────
+
+export type AccountingMetric = "income" | "expense" | "profit" | "margin";
+export type AccountingGranularity = "month" | "day" | "hour";
+
+export interface AccountingStats {
+  income: string;
+  expense: string;
+  netProfit: string;
+  /** Null when there was no income — a margin on nothing is not a ratio. */
+  marginPercent: number | null;
+  unit: string;
+}
+
+export interface AccountingSeriesPoint {
+  key: string;
+  label: string;
+  value: string;
+}
+
+export interface AccountingSeries {
+  metric: AccountingMetric;
+  granularity: AccountingGranularity;
+  /** Null for the margin metric, which is a percentage rather than money. */
+  unit: string | null;
+  points: AccountingSeriesPoint[];
+}
+
+export interface AccountingLedgerRow {
+  id: string;
+  type: string;
+  description: string;
+  /** Signed: negative is money out. */
+  amount: string;
+  unit: string | null;
+  providerKey: string | null;
+  date: string;
+}
+
+// ── Vouchers (§5.22) ───────────────────────────────────────────────────────
+
+export type VoucherMovement = "deposit" | "withdraw";
+export type VoucherSide = "debtor" | "creditor";
+export type VoucherStatus = "draft" | "pending" | "finalized" | "rejected";
+export type CustomerType = "formal" | "informal";
+export type WalletSubset = "cash" | "credit" | "frozen";
+
+export interface Voucher {
+  id: string;
+  voucherCode: string;
+  customerId: string | null;
+  customerName: string;
+  customerType: CustomerType;
+  category: string;
+  categoryLabel: string;
+  movement: VoucherMovement;
+  /** Derived server-side from `movement`; never sent by the client. */
+  side: VoucherSide;
+  sideLabel: string;
+  symbolId: string;
+  unit: string | null;
+  /** Always positive; direction is `side`. */
+  amount: string;
+  walletType: string;
+  walletSubset: WalletSubset;
+  walletSubsetLabel: string;
+  description: string;
+  extraDescription: string | null;
+  documentDate: string;
+  status: VoucherStatus;
+  statusLabel: string;
+  createdBy: string;
+  createdByName: string | null;
+  reviewedBy: string | null;
+  reviewedAt: string | null;
+  reviewNote: string | null;
+  createAt: string;
+}
+
+export interface CatalogOption {
+  value: string;
+  label: string;
+}
+
+export interface VoucherCatalogs {
+  categories: CatalogOption[];
+  walletTypes: CatalogOption[];
+  walletSubsets: CatalogOption[];
+  symbols: CatalogOption[];
+  customerTypes: CatalogOption[];
+  movements: CatalogOption[];
+}
+
+export interface Permission {
+  key: string;
+  label: string;
+}
+
+/** What the server would actually allow the caller to do to this role. */
+export interface RoleCapabilities {
+  canDelete: boolean;
+  canRename: boolean;
+  canEditPermissions: boolean;
+  canEditConfig: boolean;
+}
+
+export interface RoleWalletConfig {
+  buyFee?: string;
+  sellFee?: string;
+  hasCredit?: "yes" | "no";
+  creditAmount?: string;
+  dailyWithdrawal?: string;
+  roleType?: string;
+}
+
+export interface AdminRoleItem {
+  id: string;
+  slug: string;
+  roleName: string;
+  isFixed: boolean;
+  wallets: string[];
+  pairs: string[];
+  configs: Record<string, RoleWalletConfig>;
+  maxCredit: string | null;
+  permissions: string[];
+  memberCount: number;
+  capabilities: RoleCapabilities;
+  createAt: string;
+}
+
+export interface RoleStats {
+  total: number;
+  totalMembers: number;
+  fixed: number;
+  empty: number;
+}
+
+export interface RoleMember {
+  id: string;
+  phone: string | null;
+  email: string | null;
+  isSuspended: boolean;
+  lastLoginAt: string | null;
+}
+
+export interface AdminProfile {
+  id: string;
+  fullName: string | null;
+  phone: string | null;
+  email: string | null;
+  roleName: string | null;
+  permissions: string[];
+  lastLoginAt: string | null;
+}
+
+export interface SecuritySettings {
+  twoFactor: boolean;
+  biometric: boolean;
+  unknownLoginAlert: boolean;
+}
+
+export interface NotificationSettings {
+  tradeAlerts: boolean;
+  dailyEmailReport: boolean;
+  systemAlerts: boolean;
+}
+
+export interface PlatformSettings {
+  displayCurrency: string;
+  language: string;
+  timezone: string;
+  calendar: string;
+  /** Rial, like every amount on the wire. */
+  minWithdrawal: string;
+  defaultProfitPercent: string;
+  updateAt: string | null;
+}
+
+export type ApiKeyStatus = "active" | "limited" | "revoked";
+
+export interface ApiKey {
+  id: string;
+  name: string;
+  maskedKey: string;
+  status: ApiKeyStatus;
+  monthlyQuota: number | null;
+  monthlyRequests: number;
+  lastUsedAt: string | null;
+  createAt: string | null;
+}
+
+export interface CreatedApiKey extends ApiKey {
+  /** Present on the create response only, and never again. */
+  plaintextKey: string;
+}
+
+export interface ApiStats {
+  requestsToday: number;
+  /** Null when there was no traffic to average — not zero, and not 100%. */
+  avgResponseMs: number | null;
+  successPercent: number | null;
+  errorPercent: number | null;
+  activeKeys: number;
+  keyedRouteCount: number;
+}
+
+export interface TrafficPoint {
+  bucket: string;
+  requests: number;
+  errors: number;
+}
+
+export interface ApiTraffic {
+  points: TrafficPoint[];
+  keyedRouteCount: number;
+}
+
+export type InboxCategory = "withdrawal" | "deposit" | "kyc" | "arbitrage" | "user" | "system";
+export type InboxSeverity = "info" | "warning" | "urgent";
+
+export interface InboxItem {
+  id: string;
+  event: string;
+  category: InboxCategory;
+  severity: InboxSeverity;
+  title: string;
+  body: string;
+  /** Ids to link to, and amounts in rial for the client to format. */
+  metadata: Record<string, unknown> | null;
+  /** Read by the calling admin, not by anyone. */
+  isRead: boolean;
+  readAt: string | null;
+  createAt: string;
+}
+
+export interface InboxStats {
+  unread: number;
+  urgent: number;
+  today: number;
+  /** False means the panel is polling, not receiving live pushes. */
+  realtimeEnabled: boolean;
+  connectedAdmins: number;
+}
+
+export interface UnreadCount {
+  unread: number;
+}
+
+export interface ShahinAccount {
+  id: number;
+  accountNumber: string;
+  iban: string | null;
+  ownerName: string | null;
+  bankName: string | null;
+  bankCode: string;
+  /** Rial. Last known — refresh via the balance endpoint. */
+  balance: string | null;
+  accountStatus: string;
+  lastAccessedAt: string | null;
+}
+
+export interface ShahinBalance {
+  accountNumber: string;
+  availableBalance: string | null;
+  effectiveBalance: string | null;
+  fetchedAt: string;
+}
+
+export interface ShahinStatementRow {
+  date: string | null;
+  description: string | null;
+  /** Rial. */
+  amount: string | null;
+  balance: string | null;
+  trackNo: string | null;
+  direction: "credit" | "debit" | null;
+}
+
+export interface ShahinInquiry {
+  ownerName: string | null;
+  accountNumber: string;
+  bankName: string | null;
+}
+
+export interface ShahinConnection {
+  accountId: number;
+  accountNumber: string;
+  bankName: string | null;
+  connected: boolean;
+  lastSyncAt: string | null;
+  accessScope: string | null;
+  consentExpiresAt: string | null;
+  lastError: string | null;
+}
+
+export type ShahinTransferMethod = "satna" | "paya" | "pol" | "account";
+
+export type EmRequestType = "withdraw" | "deposit" | "settlement" | "transfer";
+export type EmStatus = "awaiting_account" | "awaiting_receipt" | "receipt_paid" | "rejected" | "closed";
+export type EmSearchBy = "requester" | "performer" | "account";
+
+export interface EmParty {
+  userId: string | null;
+  name: string | null;
+  phone: string | null;
+}
+
+export interface EmProof {
+  id: string;
+  matchId: string;
+  /** Rial. */
+  amount: string;
+  sourceAccount: string | null;
+  destinationAccount: string | null;
+  trackingCode: string | null;
+  paidAt: string | null;
+  /** Short-lived signed URL; null when no receipt was uploaded. */
+  receiptUrl: string | null;
+  ocrMismatch: boolean;
+  createAt: string;
+}
+
+export interface EmRequestRow {
+  id: string;
+  type: EmRequestType;
+  status: EmStatus;
+  /** Rial. */
+  amount: string;
+  symbolSlug: string | null;
+  requester: EmParty;
+  performer: EmParty | null;
+  destinationAccount: string | null;
+  assignedAccount: string | null;
+  /** A timestamp — the countdown is rendered on the client. */
+  expiresAt: string | null;
+  hasEnclosure: boolean;
+  proofCount: number;
+  createAt: string;
+}
+
+export interface EmRequestDetail extends EmRequestRow {
+  proofs: EmProof[];
+  parts: unknown[];
+  escalationId: string | null;
+}
+
+export interface EmStats {
+  total: number;
+  awaitingAccount: number;
+  awaitingReceipt: number;
+  receiptPaid: number;
+  rejected: number;
+}
+
+// ── Price engine ────────────────────────────────────────────────────────────
+
+export interface PriceInstrument {
+  id: string;
+  slug: string;
+  tickerKey: string | null;
+  name: string;
+  category: string | null;
+  /** Chart stroke. Derived from the slug when the desk configured none. */
+  color: string;
+  colorConfigured: boolean;
+  /** In `quoteSlug`'s units — rial, so render through `fmtBySymbol`. */
+  buy: number | null;
+  sell: number | null;
+  buyGram: number | null;
+  sellGram: number | null;
+  quoteSlug: string | null;
+  pairId: string | null;
+  /** Null when the pair has never been reconciled — not the same as closed. */
+  marketOpen: boolean | null;
+  marketStatusReason: string | null;
+  marketOverridden: boolean;
+  lastUpdated: string | null;
+  stale: boolean;
+}
+
+export interface PriceInstrumentGroup {
+  category: string;
+  items: PriceInstrument[];
+}
+
+export interface PriceInstruments {
+  groups: PriceInstrumentGroup[];
+  total: number;
+  quoteSlug: string;
+  generatedAt: string;
+  freshnessWindowSeconds: number;
+}
+
+export interface PriceHistorySeries {
+  symbolId: string;
+  slug: string;
+  name: string;
+  color: string;
+  /** Read the key names off here rather than building `${slug}_buy` by hand. */
+  buyKey: string;
+  sellKey: string;
+  filledPoints: number;
+}
+
+export interface PriceHistoryMissing {
+  slug: string;
+  reason: "unknown-symbol" | "no-pair" | string;
+}
+
+/** `{ i, at, "<slug>_buy": number | null, … }` — null is a gap, never a zero. */
+export type PriceHistoryRow = Record<string, number | string | null>;
+
+export interface PriceHistory {
+  series: PriceHistorySeries[];
+  missing: PriceHistoryMissing[];
+  rows: PriceHistoryRow[];
+  from: string;
+  to: string;
+  points: number;
+  bucketSeconds: number;
+  quoteSlug: string;
+}
+
+export interface PriceEngineSource {
+  id: string;
+  key: string;
+  label: string | null;
+  category: string;
+  active: boolean;
+  status: string;
+  lastStatusChangeAt: string | null;
+}
+
+/** Derived server-side; `writable` is always false. Render it as state. */
+export interface AutoSpread {
+  enabled: boolean;
+  pairsWithCommission: number;
+  symbolsWithGain: number;
+  writable: boolean;
+}
+
+export interface PriceEngineConfig {
+  sources: PriceEngineSource[];
+  autoSpread: AutoSpread;
+  /** Seconds. The cadence this client should poll at. */
+  refreshIntervalSec: number;
+  updateAt: string | null;
 }

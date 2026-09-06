@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, unwrap, apiError } from "../api/client";
 import { Card, Loading, ErrorState, Empty, Badge } from "../components/ui";
 import { fmtNum, fmtDate } from "../lib/format";
+import { fmtBySymbol, toApiAmount, unitLabel } from "../lib/money";
 
 interface SymBalance {
   symbol: string;
@@ -24,24 +25,24 @@ function signedDelta(direction: "RECEIVE" | "PAY", amount: number) {
   return direction === "RECEIVE" ? -amount : amount;
 }
 
-function BalanceBadge({ value, decimals }: { value: number; decimals: number }) {
+function BalanceBadge({ value, symbol, decimals }: { value: number; symbol: string; decimals: number }) {
   if (value > 0)
     return (
       <span>
-        <Badge kind="green">بدهکار</Badge> <span className="mono">{fmtNum(value, decimals)}</span>
+        <Badge kind="green">بدهکار</Badge> <span className="mono">{fmtBySymbol(value, symbol, { digits: decimals })}</span>
       </span>
     );
   if (value < 0)
     return (
       <span>
-        <Badge kind="red">بستانکار</Badge> <span className="mono">{fmtNum(-value, decimals)}</span>
+        <Badge kind="red">بستانکار</Badge> <span className="mono">{fmtBySymbol(-value, symbol, { digits: decimals })}</span>
       </span>
     );
   return <Badge kind="gray">تسویه</Badge>;
 }
 
 function balanceCell(s: SymBalance) {
-  return <BalanceBadge value={s.outstanding} decimals={s.symbol === "XAU" ? 4 : 0} />;
+  return <BalanceBadge value={s.outstanding} symbol={s.symbol} decimals={s.symbol === "XAU" ? 4 : 0} />;
 }
 
 export default function ProviderFinancePage() {
@@ -87,7 +88,11 @@ export default function ProviderFinancePage() {
     return p?.symbols.find((s) => s.symbol === form.symbol) ?? null;
   }, [overview.data, form.providerKey, form.symbol]);
 
-  const amount = Number(form.amount);
+  // The field is typed in the symbol's display unit — toman for a rial symbol
+  // — so it is converted once, here, and every downstream use (the preview
+  // arithmetic and the submit) works in the symbol's own units, matching the
+  // balances the API returns.
+  const amount = toApiAmount(form.amount, form.symbol) ?? NaN;
   const currentOut = currentCell?.outstanding ?? 0;
   const delta = Number.isFinite(amount) && amount > 0 ? signedDelta(form.direction, amount) : 0;
   const afterOut = Number((currentOut + delta).toFixed(8));
@@ -139,7 +144,7 @@ export default function ProviderFinancePage() {
             </select>
           </div>
           <div className="field" style={{ margin: 0, minWidth: 150 }}>
-            <label>مقدار ({form.symbol})</label>
+            <label>مقدار ({unitLabel(form.symbol)})</label>
             <input className="input mono" dir="ltr" value={form.amount} onChange={(e) => set("amount", e.target.value)} placeholder="0" />
           </div>
           <div className="field" style={{ margin: 0, minWidth: 160 }}>
@@ -159,10 +164,10 @@ export default function ProviderFinancePage() {
           </div>
           <div className="row" style={{ gap: 8, alignItems: "center" }}>
             <span className="muted" style={{ fontSize: 12 }}>مانده فعلی:</span>
-            <BalanceBadge value={currentOut} decimals={decimals} />
+            <BalanceBadge value={currentOut} symbol={form.symbol} decimals={decimals} />
             <span style={{ color: "var(--text-faint)" }}>←</span>
             <span className="muted" style={{ fontSize: 12 }}>مانده پس از ثبت:</span>
-            <BalanceBadge value={afterOut} decimals={decimals} />
+            <BalanceBadge value={afterOut} symbol={form.symbol} decimals={decimals} />
             {amount > 0 && (
               <span className="muted" style={{ fontSize: 12 }}>
                 ({signedDelta(form.direction, amount) < 0 ? "کاهش" : "افزایش"} با مقدار واردشده)
@@ -207,8 +212,8 @@ export default function ProviderFinancePage() {
                         <td rowSpan={rows.length} style={{ fontWeight: 600 }}>{p.providerKey}</td>
                       ) : null}
                       <td>{s ? <Badge kind="gold">{s.symbol}</Badge> : "—"}</td>
-                      <td className="mono">{s ? fmtNum(s.traded, s.symbol === "XAU" ? 4 : 0) : "—"}</td>
-                      <td className="mono">{s ? fmtNum(s.settled, s.symbol === "XAU" ? 4 : 0) : "—"}</td>
+                      <td className="mono">{s ? fmtBySymbol(s.traded, s.symbol, { digits: s.symbol === "XAU" ? 4 : 0 }) : "—"}</td>
+                      <td className="mono">{s ? fmtBySymbol(s.settled, s.symbol, { digits: s.symbol === "XAU" ? 4 : 0 }) : "—"}</td>
                       <td>{s ? balanceCell(s) : "—"}</td>
                       {i === 0 ? (
                         <td rowSpan={rows.length} className="mono" style={{ color: "var(--gold-soft)", fontWeight: 700 }}>
@@ -254,7 +259,7 @@ export default function ProviderFinancePage() {
                         <Badge kind="red">آنها دریافت کردند</Badge>
                       )}
                     </td>
-                    <td className="mono">{fmtNum(s.amount, s.symbol === "XAU" ? 4 : 0)}</td>
+                    <td className="mono">{fmtBySymbol(s.amount, s.symbol, { digits: s.symbol === "XAU" ? 4 : 0 })}</td>
                     <td className="muted">{s.note ?? "—"}</td>
                     <td>{fmtDate(s.createdAt)}</td>
                   </tr>

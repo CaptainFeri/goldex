@@ -1,10 +1,19 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, unwrap, apiError } from "../api/client";
 import { Card, Loading, ErrorState, Empty, Badge, Modal } from "../components/ui";
 import { fmtDate } from "../lib/format";
 import { useAuth } from "../auth/auth";
-import type { Admin, AdminRole, ScheduleEntry } from "../api/types";
+import type { Admin, AdminRoleItem, ScheduleEntry } from "../api/types";
+import { defaultRoleId, isRootRole, needsSchedule, roleLabelFor, roleOf } from "../lib/admin-roles";
+
+/** The roles an admin can be placed in — rows, not the four legacy enum values. */
+function useRoles() {
+  return useQuery({
+    queryKey: ["roles"],
+    queryFn: async () => unwrap<AdminRoleItem[]>((await api.get("/admin/roles")).data),
+  });
+}
 
 const DAYS: { value: number; label: string }[] = [
   { value: 6, label: "شنبه" },
@@ -19,13 +28,6 @@ function dayLabel(d: number) {
   return DAYS.find((x) => x.value === d)?.label ?? String(d);
 }
 
-const ROLES: { value: AdminRole; label: string }[] = [
-  { value: "admin", label: "مدیر" },
-  { value: "finance", label: "مالی" },
-  { value: "warehouse", label: "انبار" },
-  { value: "superAdmin", label: "مدیر ارشد" },
-];
-const roleLabel = (r: string) => ROLES.find((x) => x.value === r)?.label ?? r;
 
 function EditForm({
   initial,
@@ -37,7 +39,11 @@ function EditForm({
   const qc = useQueryClient();
   const [email, setEmail] = useState(initial.email ?? "");
   const [password, setPassword] = useState("");
-  const [role, setRole] = useState<AdminRole>(initial.role);
+  const roles = useRoles();
+  // The row, not the legacy enum: a custom role has no enum value, and sending
+  // one would move the admin back into a fixed role behind their back.
+  const [roleId, setRoleId] = useState<string>(initial.roleId ?? "");
+  const selectedRole = (roles.data ?? []).find((r) => r.id === roleId) ?? null;
   const [schedules, setSchedules] = useState<ScheduleEntry[]>(
     initial.schedules ?? [],
   );
@@ -46,7 +52,7 @@ function EditForm({
     queryKey: ["admin-schedules", initial.id],
     queryFn: async () =>
       unwrap<ScheduleEntry[]>((await api.get(`/admin/schedules/${initial.id}`)).data),
-    enabled: initial.role === "finance" || initial.role === "warehouse",
+    enabled: needsSchedule(roleOf(roles.data, initial)),
   });
 
   const save = useMutation({
@@ -80,7 +86,8 @@ function EditForm({
 
   function submit(e: React.FormEvent) {
     e.preventDefault();
-    const payload: any = { role };
+    const payload: any = {};
+    if (roleId) payload.roleId = roleId;
     if (email) payload.email = email;
     if (password) payload.password = password;
     save.mutate(payload);
@@ -150,16 +157,17 @@ function EditForm({
         </div>
         <div className="field">
           <label>نقش</label>
-          <select className="select" value={role} onChange={(e) => setRole(e.target.value as AdminRole)}>
-            {ROLES.map((r) => (
-              <option key={r.value} value={r.value}>
-                {r.label}
+          <select className="select" value={roleId} onChange={(e) => setRoleId(e.target.value)}>
+            {roles.data?.map((r) => (
+              <option key={r.id} value={r.id}>
+                {r.roleName}
               </option>
             ))}
           </select>
+          {roles.isError && <div className="error-text">{apiError(roles.error)}</div>}
         </div>
 
-        {(role === "finance" || role === "warehouse") && (
+        {needsSchedule(selectedRole) && (
           <div className="field" style={{ marginTop: 12 }}>
             <label>ساعت کاری</label>
             {schedulesQ.isLoading && <Loading />}
@@ -232,6 +240,7 @@ function EditForm({
 }
 
 function DetailsModal({ id, onClose }: { id: string; onClose: () => void }) {
+  const roles = useRoles();
   const q = useQuery({
     queryKey: ["admin-detail", id],
     queryFn: async () => unwrap<Admin>((await api.get(`/admin/accounts/${id}`)).data),
@@ -240,7 +249,7 @@ function DetailsModal({ id, onClose }: { id: string; onClose: () => void }) {
     queryKey: ["admin-schedules", id],
     queryFn: async () =>
       unwrap<ScheduleEntry[]>((await api.get(`/admin/schedules/${id}`)).data),
-    enabled: q.data?.role === "finance" || q.data?.role === "warehouse",
+    enabled: !!q.data && needsSchedule(roleOf(roles.data, q.data)),
   });
   const a = q.data;
   return (
@@ -260,7 +269,9 @@ function DetailsModal({ id, onClose }: { id: string; onClose: () => void }) {
             <span className="mono">{a.email ?? "—"}</span>
             <span className="k">نقش</span>
             <span>
-              <Badge kind={a.role === "superAdmin" ? "gold" : "gray"}>{roleLabel(a.role)}</Badge>
+              <Badge kind={isRootRole(roleOf(roles.data, a)) ? "gold" : "gray"}>
+                {roleLabelFor(roles.data, a)}
+              </Badge>
             </span>
             <span className="k">وضعیت</span>
             <span>{a.isSuspended ? <Badge kind="red">معلق</Badge> : <Badge kind="green">فعال</Badge>}</span>
@@ -269,7 +280,7 @@ function DetailsModal({ id, onClose }: { id: string; onClose: () => void }) {
             <span className="k">آخرین ورود</span>
             <span>{fmtDate(a.lastLoginAt)}</span>
           </div>
-          {(a.role === "finance" || a.role === "warehouse") && (
+          {needsSchedule(roleOf(roles.data, a)) && (
             <div style={{ marginTop: 16 }}>
               <h4 style={{ margin: "0 0 8px" }}>ساعت کاری</h4>
               {schedulesQ.isLoading ? (
@@ -309,12 +320,23 @@ function DetailsModal({ id, onClose }: { id: string; onClose: () => void }) {
 export default function AdminsPage() {
   const qc = useQueryClient();
   const { admin: me } = useAuth();
+  const roles = useRoles();
   const [form, setForm] = useState<{
     phone: string;
     password: string;
-    role: AdminRole;
+    roleId: string;
     schedules: ScheduleEntry[];
-  }>({ phone: "", password: "", role: "admin", schedules: [] });
+  }>({ phone: "", password: "", roleId: "", schedules: [] });
+  const selectedRole = (roles.data ?? []).find((r) => r.id === form.roleId) ?? null;
+
+  // Seeded once the roles arrive. Never defaulted to the first row — the list
+  // is fixed-roles-first and the first fixed role is the root one, which would
+  // make every mis-click a super admin.
+  useEffect(() => {
+    if (!form.roleId && roles.data?.length) {
+      setForm((prev) => (prev.roleId ? prev : { ...prev, roleId: defaultRoleId(roles.data) }));
+    }
+  }, [roles.data, form.roleId]);
   const [editing, setEditing] = useState<Admin | null>(null);
   const [detailId, setDetailId] = useState<string | null>(null);
 
@@ -324,11 +346,15 @@ export default function AdminsPage() {
   });
 
   const create = useMutation({
-    mutationFn: (p: { phone: string; password: string; role: AdminRole; schedules: ScheduleEntry[] }) =>
+    mutationFn: (p: { phone: string; password: string; roleId: string; schedules: ScheduleEntry[] }) =>
       api.post("/admin/accounts", p),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["admins"] });
-      setForm({ phone: "", password: "", role: "admin", schedules: [] });
+      // The role screens count members, so they are stale the moment an
+      // account is created into a role.
+      qc.invalidateQueries({ queryKey: ["roles"] });
+      qc.invalidateQueries({ queryKey: ["role-stats"] });
+      setForm({ phone: "", password: "", roleId: defaultRoleId(roles.data), schedules: [] });
     },
   });
   const suspend = useMutation({
@@ -372,6 +398,7 @@ export default function AdminsPage() {
     e.preventDefault();
     if (!/^09[0-9]{9}$/.test(form.phone)) return;
     if (form.password.length < 6) return;
+    if (!form.roleId) return;
     create.mutate(form);
   }
 
@@ -404,12 +431,12 @@ export default function AdminsPage() {
             <label>نقش</label>
             <select
               className="select"
-              value={form.role}
-              onChange={(e) => setForm({ ...form, role: e.target.value as AdminRole, schedules: [] })}
+              value={form.roleId}
+              onChange={(e) => setForm({ ...form, roleId: e.target.value, schedules: [] })}
             >
-              {ROLES.map((r) => (
-                <option key={r.value} value={r.value}>
-                  {r.label}
+              {roles.data?.map((r) => (
+                <option key={r.id} value={r.id}>
+                  {r.roleName}
                 </option>
               ))}
             </select>
@@ -419,7 +446,7 @@ export default function AdminsPage() {
           </button>
         </form>
 
-        {(form.role === "finance" || form.role === "warehouse") && (
+        {needsSchedule(selectedRole) && (
           <div style={{ marginTop: 12 }}>
             <label style={{ fontWeight: 600, fontSize: 13, display: "block", marginBottom: 6 }}>ساعت کاری</label>
             <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
@@ -501,7 +528,9 @@ export default function AdminsPage() {
                       </td>
                       <td className="mono" style={{ fontSize: 12 }}>{a.email ?? "—"}</td>
                       <td>
-                        <Badge kind={a.role === "superAdmin" ? "gold" : "gray"}>{roleLabel(a.role)}</Badge>
+                        <Badge kind={isRootRole(roleOf(roles.data, a)) ? "gold" : "gray"}>
+                          {roleLabelFor(roles.data, a)}
+                        </Badge>
                       </td>
                       <td>
                         {a.isSuspended ? <Badge kind="red">معلق</Badge> : <Badge kind="green">فعال</Badge>}

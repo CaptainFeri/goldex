@@ -96,6 +96,16 @@ export class P2pWithdrawRequestEntity extends myBaseEntity {
   })
   state: P2pWithdrawStateEnum;
 
+  /**
+   * دارای لف — displayed by the EM desk as بله/خیر.
+   *
+   * Nothing in the P2P model implies it, so it is an explicit operator-set
+   * flag rather than something derived. Display only: no settlement logic
+   * reads it.
+   */
+  @Column({ name: "has_enclosure", type: "boolean", default: false })
+  hasEnclosure: boolean;
+
   @Column({ name: "expires_at", type: "timestamptz", nullable: true })
   expiresAt?: Date;
 

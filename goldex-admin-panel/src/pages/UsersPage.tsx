@@ -4,6 +4,7 @@ import { api, unwrap, apiError } from "../api/client";
 import { Card, Stat, Loading, ErrorState, Empty, Badge, Modal } from "../components/ui";
 import { fmtNum, fmtDate } from "../lib/format";
 import { MARKET_TYPES_ENUM, MARKET_KINDS_ENUM } from "../lib/enums";
+import DateField from "../components/DateField";
 
 const ROLE_LABEL: Record<number, string> = { 0: "مشتری", 1: "ادمین", 2: "کاربر جدید", 3: "شریک" };
 function roleBadge(r: number) {
@@ -72,7 +73,7 @@ function CreatePartner({ onDone }: { onDone: () => void }) {
         </div>
         <div className="field" style={{ margin: 0, minWidth: 160 }}>
           <label>فعال تا (اختیاری)</label>
-          <input className="input" type="date" value={form.activeUntil} onChange={(e) => set("activeUntil", e.target.value)} />
+          <DateField value={form.activeUntil} onChange={(v) => set("activeUntil", v)} />
         </div>
         <div className="field" style={{ margin: 0, minWidth: 240 }}>
           <label>نوع بازار (رسمی / غیررسمی)</label>
@@ -225,7 +226,7 @@ export default function UsersPage() {
   const list = useQuery({
     queryKey: ["users", search],
     queryFn: async () =>
-      unwrap<any>((await api.get("/admin/users/users", { params: { pageSize: 100, pageNumber: 1, searchKey: search || undefined } })).data),
+      unwrap<any>((await api.get("/admin/users/users", { params: { pageSize: 100, page: 1, q: search || undefined } })).data),
   });
 
   const toggleBlock = useMutation({
@@ -246,7 +247,7 @@ export default function UsersPage() {
 
   const s = stats.data;
   const onlineSet = new Set(online.data ?? []);
-  const users: any[] = list.data?.userList ?? [];
+  const users: any[] = list.data?.items ?? [];
 
   return (
     <>
@@ -264,7 +265,7 @@ export default function UsersPage() {
       <CreatePartner onDone={() => {}} />
 
       <Card
-        title={`کاربران${list.data ? ` (${list.data.totalItems})` : ""}`}
+        title={`کاربران${list.data ? ` (${list.data.total})` : ""}`}
         action={
           <input className="input" style={{ width: 220 }} placeholder="جستجو (نام/ایمیل)…" value={search} onChange={(e) => setSearch(e.target.value)} />
         }
@@ -297,11 +298,11 @@ export default function UsersPage() {
                     <td style={{ padding: "2px 6px", textAlign: "center" }}>
                       {(() => {
                         const path = u.profile?.avatarImgPath;
-                        const src = path
-                          ? path.startsWith("edited-")
-                            ? `/uploads/${path}`
-                            : `/api/v1/profile/avatar/${path}`
-                          : null;
+                        // The API mints avatarUrl per response and it expires in
+                        // minutes. It is null for legacy on-disk avatars, which
+                        // are still served from /uploads by name.
+                        const src = u.profile?.avatarUrl
+                          ?? (path?.startsWith("edited-") ? `/uploads/${path}` : null);
                         return src
                           ? <img src={src} alt="" style={{ width: 32, height: 32, borderRadius: "50%", objectFit: "cover" }} />
                           : <span className="muted" style={{ fontSize: 11 }}>—</span>;

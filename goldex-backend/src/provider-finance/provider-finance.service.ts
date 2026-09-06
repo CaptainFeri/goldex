@@ -6,6 +6,7 @@ import { SystemLedgerEntity } from "../financial/entity/system-ledger.entity";
 import { SymbolEntity } from "../admin-symbol/entity/symbol.entity";
 import { ProviderSettlementEntity, SettlementDirection } from "./entity/provider-settlement.entity";
 import { SettleDto } from "./dto/settle.dto";
+import { RIAL_SYMBOL_SLUG } from "../shared/constants/currency.constants";
 
 // Signed contribution of a settlement to the running balance:
 //  RECEIVE (we take the asset from the provider) reduces what they owe us → negative.
@@ -75,7 +76,7 @@ export class ProviderFinanceService {
       // Each snapshot row is per (provider, item) with its resolved pair
       // symbols; unmapped/legacy rows fall back to XAU/IRR.
       const base = d.baseSymbol ?? "XAU";
-      const quote = d.quoteSymbol ?? "IRR";
+      const quote = d.quoteSymbol ?? RIAL_SYMBOL_SLUG;
       cell(d.providerKey, base).traded += Number(d.netVolume);
       cell(d.providerKey, quote).traded += Number(d.netValue);
     }

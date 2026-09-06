@@ -1,6 +1,8 @@
 import { api, unwrap } from "./client";
 import type {
   AdminBankAccount,
+  Paginated,
+  PaginationParams,
   P2pDashboard,
   P2pEscalation,
   P2pMatch,
@@ -8,6 +10,11 @@ import type {
   P2pSettings,
 } from "./types";
 
+/**
+ * Legacy paginated shape, for the endpoints not yet migrated to the standard
+ * contract. Replace each use with `Paginated<T>` as its endpoint moves over;
+ * this alias goes away with the last one.
+ */
 type Page<T> = { items: T[]; total: number; page: number; limit: number };
 
 // ─── Company bank accounts ───────────────────────────────────
@@ -17,8 +24,13 @@ type Page<T> = { items: T[]; total: number; page: number; limit: number };
 export type BankAccountDirection = "deposit" | "withdraw";
 
 export const bankAccountsApi = {
-  list: async (params: { direction?: BankAccountDirection; symbolId?: string; status?: string } = {}) =>
-    unwrap<Page<AdminBankAccount>>((await api.get("/admin/bank-accounts", { params })).data),
+  list: async (
+    params: {
+      direction?: BankAccountDirection;
+      symbolId?: string;
+      status?: string;
+    } & PaginationParams = {}
+  ) => unwrap<Paginated<AdminBankAccount>>((await api.get("/admin/bank-accounts", { params })).data),
 
   get: async (id: string) =>
     unwrap<AdminBankAccount>((await api.get(`/admin/bank-accounts/${id}`)).data),
