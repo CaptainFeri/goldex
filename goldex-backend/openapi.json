@@ -20876,48 +20876,6 @@
         ]
       }
     },
-    "/api/v1/api/shahin/request-transfer": {
-      "post": {
-        "operationId": "ShahinProxyController_requestTransfer_v1",
-        "parameters": [],
-        "responses": {
-          "201": {
-            "description": ""
-          }
-        },
-        "tags": [
-          "ShahinProxy"
-        ]
-      }
-    },
-    "/api/v1/api/shahin/transfer": {
-      "post": {
-        "operationId": "ShahinProxyController_transfer_v1",
-        "parameters": [],
-        "responses": {
-          "201": {
-            "description": ""
-          }
-        },
-        "tags": [
-          "ShahinProxy"
-        ]
-      }
-    },
-    "/api/v1/api/shahin/batch-transfer": {
-      "post": {
-        "operationId": "ShahinProxyController_batchTransfer_v1",
-        "parameters": [],
-        "responses": {
-          "201": {
-            "description": ""
-          }
-        },
-        "tags": [
-          "ShahinProxy"
-        ]
-      }
-    },
     "/api/v1/api/shahin/accounts": {
       "post": {
         "operationId": "ShahinProxyController_createAccount_v1",
@@ -28668,6 +28626,924 @@
         "summary": "Mark one item read",
         "tags": [
           "Admin-Inbox"
+        ]
+      }
+    },
+    "/api/v1/admin/shahin/accounts": {
+      "get": {
+        "operationId": "AdminShahinController_accounts_v1",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/ResponseEnvelopeDto"
+                    },
+                    {
+                      "properties": {
+                        "data": {
+                          "type": "array",
+                          "items": {
+                            "$ref": "#/components/schemas/ShahinAccountDto"
+                          }
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation failed — see `errors` for per-field messages",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or expired admin token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Authenticated, but lacking the required permission",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "The company's bank accounts",
+        "tags": [
+          "Admin-Shahin"
+        ]
+      }
+    },
+    "/api/v1/admin/shahin/open-banking": {
+      "get": {
+        "description": "Derived from the last call actually made to each account. Scope and consent expiry are null unless the bank supplies them — this does not infer either.",
+        "operationId": "AdminShahinController_openBanking_v1",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/ResponseEnvelopeDto"
+                    },
+                    {
+                      "properties": {
+                        "data": {
+                          "type": "array",
+                          "items": {
+                            "$ref": "#/components/schemas/OpenBankingConnectionDto"
+                          }
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation failed — see `errors` for per-field messages",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or expired admin token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Authenticated, but lacking the required permission",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Connection state per account",
+        "tags": [
+          "Admin-Shahin"
+        ]
+      }
+    },
+    "/api/v1/admin/shahin/open-banking/{id}/sync": {
+      "post": {
+        "description": "Refreshes the balance and the timestamp.",
+        "operationId": "AdminShahinController_sync_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "number"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/ResponseEnvelopeDto"
+                    },
+                    {
+                      "properties": {
+                        "data": {
+                          "$ref": "#/components/schemas/OpenBankingConnectionDto"
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation failed — see `errors` for per-field messages",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or expired admin token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Authenticated, but lacking the required permission",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Re-ask the bank for this account",
+        "tags": [
+          "Admin-Shahin"
+        ]
+      }
+    },
+    "/api/v1/admin/shahin/statement/export": {
+      "get": {
+        "description": "One sheet per account.",
+        "operationId": "AdminShahinController_exportStatements_v1",
+        "parameters": [
+          {
+            "name": "accountIds",
+            "required": true,
+            "in": "query",
+            "description": "Comma-separated stored account ids.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "from",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "to",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The workbook",
+            "content": {
+              "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation failed — see `errors` for per-field messages",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or expired admin token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Authenticated, but lacking the required permission",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Statements for a date range, as a workbook",
+        "tags": [
+          "Admin-Shahin"
+        ]
+      }
+    },
+    "/api/v1/admin/shahin/accounts/{id}": {
+      "get": {
+        "operationId": "AdminShahinController_account_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "number"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/ResponseEnvelopeDto"
+                    },
+                    {
+                      "properties": {
+                        "data": {
+                          "$ref": "#/components/schemas/ShahinAccountDto"
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation failed — see `errors` for per-field messages",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or expired admin token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Authenticated, but lacking the required permission",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "One stored account",
+        "tags": [
+          "Admin-Shahin"
+        ]
+      }
+    },
+    "/api/v1/admin/shahin/accounts/{id}/balance": {
+      "get": {
+        "description": "Not the stored figure — `fetchedAt` says when the bank was asked.",
+        "operationId": "AdminShahinController_balance_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "number"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/ResponseEnvelopeDto"
+                    },
+                    {
+                      "properties": {
+                        "data": {
+                          "$ref": "#/components/schemas/AccountBalanceDto"
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation failed — see `errors` for per-field messages",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or expired admin token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Authenticated, but lacking the required permission",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Ask the bank for the balance now",
+        "tags": [
+          "Admin-Shahin"
+        ]
+      }
+    },
+    "/api/v1/admin/shahin/accounts/{id}/statement": {
+      "get": {
+        "description": "`trackNo`, `minAmount` and `maxAmount` are applied here; the bank filters only by date.",
+        "operationId": "AdminShahinController_statement_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "number"
+            }
+          },
+          {
+            "name": "from",
+            "required": false,
+            "in": "query",
+            "description": "ISO date; inclusive.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "to",
+            "required": false,
+            "in": "query",
+            "description": "ISO date; inclusive.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "minAmount",
+            "required": false,
+            "in": "query",
+            "description": "Rial.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "maxAmount",
+            "required": false,
+            "in": "query",
+            "description": "Rial.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "trackNo",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "page",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "default": 1,
+              "type": "number"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/ResponseEnvelopeDto"
+                    },
+                    {
+                      "properties": {
+                        "data": {
+                          "type": "array",
+                          "items": {
+                            "$ref": "#/components/schemas/StatementRowDto"
+                          }
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation failed — see `errors` for per-field messages",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or expired admin token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Authenticated, but lacking the required permission",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Statement rows",
+        "tags": [
+          "Admin-Shahin"
+        ]
+      }
+    },
+    "/api/v1/admin/shahin/accounts/inquiry": {
+      "post": {
+        "description": "The «استعلام» step. Refused rather than answered blank when the bank names no owner.",
+        "operationId": "AdminShahinController_inquiry_v1",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/InquiryDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/ResponseEnvelopeDto"
+                    },
+                    {
+                      "properties": {
+                        "data": {
+                          "$ref": "#/components/schemas/InquiryResultDto"
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation failed — see `errors` for per-field messages",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or expired admin token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Authenticated, but lacking the required permission",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Who owns this destination account",
+        "tags": [
+          "Admin-Shahin"
+        ]
+      }
+    },
+    "/api/v1/admin/shahin/transfer": {
+      "post": {
+        "description": "Requires an operation OTP bound to the source, destination and amount — a code issued for one amount cannot be spent on another.",
+        "operationId": "AdminShahinController_transfer_v1",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TransferDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/ResponseEnvelopeDto"
+                    },
+                    {
+                      "properties": {
+                        "data": {
+                          "$ref": "#/components/schemas/Object"
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "OTP.EXPIRED, OTP.INVALID, OTP.CHALLENGE_MISMATCH or OTP.PAYLOAD_MISMATCH — the last meaning the confirmed operation is not the one now being submitted."
+          },
+          "401": {
+            "description": "Missing or expired admin token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Authenticated, but lacking the required permission",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Move money",
+        "tags": [
+          "Admin-Shahin"
+        ]
+      }
+    },
+    "/api/v1/admin/shahin/batch-transfer": {
+      "post": {
+        "description": "One code covers the whole batch, bound to the set of destination accounts in `refIds`.",
+        "operationId": "AdminShahinController_batchTransfer_v1",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BatchTransferDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/ResponseEnvelopeDto"
+                    },
+                    {
+                      "properties": {
+                        "data": {
+                          "$ref": "#/components/schemas/Object"
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "OTP.EXPIRED, OTP.INVALID, OTP.CHALLENGE_MISMATCH or OTP.PAYLOAD_MISMATCH — the last meaning the confirmed operation is not the one now being submitted."
+          },
+          "401": {
+            "description": "Missing or expired admin token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Authenticated, but lacking the required permission",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Move money to several destinations",
+        "tags": [
+          "Admin-Shahin"
         ]
       }
     }
@@ -38924,6 +39800,320 @@
           "isRead",
           "readAt",
           "createAt"
+        ]
+      },
+      "ShahinAccountDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "number"
+          },
+          "accountNumber": {
+            "type": "string"
+          },
+          "iban": {
+            "type": "string",
+            "nullable": true
+          },
+          "ownerName": {
+            "type": "string",
+            "nullable": true
+          },
+          "bankName": {
+            "type": "string",
+            "nullable": true
+          },
+          "bankCode": {
+            "type": "string"
+          },
+          "balance": {
+            "type": "string",
+            "nullable": true,
+            "description": "Rial. Last known — refresh with /balance."
+          },
+          "accountStatus": {
+            "type": "string"
+          },
+          "lastAccessedAt": {
+            "format": "date-time",
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "required": [
+          "id",
+          "accountNumber",
+          "iban",
+          "ownerName",
+          "bankName",
+          "bankCode",
+          "balance",
+          "accountStatus",
+          "lastAccessedAt"
+        ]
+      },
+      "OpenBankingConnectionDto": {
+        "type": "object",
+        "properties": {
+          "accountId": {
+            "type": "number"
+          },
+          "accountNumber": {
+            "type": "string"
+          },
+          "bankName": {
+            "type": "string",
+            "nullable": true
+          },
+          "connected": {
+            "type": "boolean",
+            "description": "Whether the last call to the bank for this account succeeded."
+          },
+          "lastSyncAt": {
+            "format": "date-time",
+            "type": "string",
+            "nullable": true,
+            "description": "When the bank last answered for this account."
+          },
+          "accessScope": {
+            "type": "string",
+            "nullable": true,
+            "description": "Reported by the bank when it tells us. Null means it did not — not that access is unlimited."
+          },
+          "consentExpiresAt": {
+            "format": "date-time",
+            "type": "string",
+            "nullable": true,
+            "description": "Null unless the upstream supplies it; this service does not infer an expiry."
+          },
+          "lastError": {
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "required": [
+          "accountId",
+          "accountNumber",
+          "bankName",
+          "connected",
+          "lastSyncAt",
+          "accessScope",
+          "consentExpiresAt",
+          "lastError"
+        ]
+      },
+      "AccountBalanceDto": {
+        "type": "object",
+        "properties": {
+          "accountNumber": {
+            "type": "string"
+          },
+          "availableBalance": {
+            "type": "string",
+            "nullable": true,
+            "description": "Rial."
+          },
+          "effectiveBalance": {
+            "type": "string",
+            "nullable": true,
+            "description": "Rial."
+          },
+          "fetchedAt": {
+            "format": "date-time",
+            "type": "string",
+            "description": "When the bank was actually asked."
+          }
+        },
+        "required": [
+          "accountNumber",
+          "availableBalance",
+          "effectiveBalance",
+          "fetchedAt"
+        ]
+      },
+      "StatementRowDto": {
+        "type": "object",
+        "properties": {
+          "date": {
+            "type": "string",
+            "nullable": true
+          },
+          "description": {
+            "type": "string",
+            "nullable": true
+          },
+          "amount": {
+            "type": "string",
+            "nullable": true,
+            "description": "Rial."
+          },
+          "balance": {
+            "type": "string",
+            "nullable": true,
+            "description": "Rial."
+          },
+          "trackNo": {
+            "type": "string",
+            "nullable": true
+          },
+          "direction": {
+            "type": "string",
+            "enum": [
+              "credit",
+              "debit"
+            ],
+            "nullable": true
+          }
+        },
+        "required": [
+          "date",
+          "description",
+          "amount",
+          "balance",
+          "trackNo",
+          "direction"
+        ]
+      },
+      "InquiryResultDto": {
+        "type": "object",
+        "properties": {
+          "ownerName": {
+            "type": "string",
+            "nullable": true
+          },
+          "accountNumber": {
+            "type": "string"
+          },
+          "bankName": {
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "required": [
+          "ownerName",
+          "accountNumber",
+          "bankName"
+        ]
+      },
+      "InquiryDto": {
+        "type": "object",
+        "properties": {
+          "destAccount": {
+            "type": "string",
+            "description": "The destination account number or IBAN to look up."
+          }
+        },
+        "required": [
+          "destAccount"
+        ]
+      },
+      "Object": {
+        "type": "object",
+        "properties": {}
+      },
+      "TransferDto": {
+        "type": "object",
+        "properties": {
+          "method": {
+            "type": "string",
+            "enum": [
+              "satna",
+              "paya",
+              "pol",
+              "account"
+            ]
+          },
+          "sourceAccount": {
+            "type": "string"
+          },
+          "destinationAccount": {
+            "type": "string"
+          },
+          "amount": {
+            "type": "string",
+            "description": "Rial."
+          },
+          "description": {
+            "type": "string"
+          },
+          "challengeId": {
+            "type": "string",
+            "description": "From POST /admin/operations/otp, scope `shahin.transfer`."
+          },
+          "otp": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "method",
+          "sourceAccount",
+          "destinationAccount",
+          "amount",
+          "challengeId",
+          "otp"
+        ]
+      },
+      "BatchTransferItemDto": {
+        "type": "object",
+        "properties": {
+          "destinationAccount": {
+            "type": "string"
+          },
+          "amount": {
+            "type": "string",
+            "description": "Rial."
+          },
+          "description": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "destinationAccount",
+          "amount"
+        ]
+      },
+      "BatchTransferDto": {
+        "type": "object",
+        "properties": {
+          "method": {
+            "type": "string",
+            "enum": [
+              "satna",
+              "paya",
+              "pol",
+              "account"
+            ]
+          },
+          "sourceAccount": {
+            "type": "string"
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/BatchTransferItemDto"
+            }
+          },
+          "refIds": {
+            "description": "The destination accounts, so one code covers the whole batch.",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "challengeId": {
+            "type": "string"
+          },
+          "otp": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "method",
+          "sourceAccount",
+          "items",
+          "refIds",
+          "challengeId",
+          "otp"
         ]
       }
     }
