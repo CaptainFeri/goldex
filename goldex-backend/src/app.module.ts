@@ -8,6 +8,7 @@ import { AdminAccountingModule } from "./admin-accounting/admin-accounting.modul
 import { AdminRoleModule } from "./admin-role/admin-role.module";
 import { AdminSettingsModule } from "./admin-settings/admin-settings.module";
 import { ApiKeyModule } from "./api-keys/api-key.module";
+import { AdminInboxModule } from "./admin-inbox/admin-inbox.module";
 import { AcceptLanguageResolver, I18nModule } from "nestjs-i18n";
 import { join } from "path";
 import * as path from "path";
@@ -196,6 +197,7 @@ import { ScheduleModule } from "@nestjs/schedule";
     AdminRoleModule,
     AdminSettingsModule,
     ApiKeyModule,
+    AdminInboxModule,
   ],
   providers: [WinstonLoggerService],
   exports: [WinstonLoggerService],
