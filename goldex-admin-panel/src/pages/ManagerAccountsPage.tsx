@@ -47,6 +47,26 @@ const DIRECTION_LABEL: Record<string, string> = {
   DEBIT: "برداشت از حساب",
 };
 
+/** Server codes from the funding rules, as something an operator can act on. */
+const ERRORS: Record<string, string> = {
+  "MANAGER_FUNDING.SELF_APPROVAL_FORBIDDEN":
+    "تأیید درخواستی که خودتان ثبت کرده‌اید مجاز نیست. یا مدیر ارشد دیگری آن را تأیید کند، " +
+    "یا دسترسی «تأیید درخواست شارژ ثبت‌شده توسط خود» به نقش شما داده شود.",
+  "MANAGER_ACCOUNT.SENIOR_APPROVAL_REQUIRED": "تأیید درخواست شارژ فقط از مدیر ارشد پذیرفته می‌شود.",
+  "MANAGER_FUNDING.ALREADY_REVIEWED": "این درخواست قبلاً بررسی شده است.",
+  "MANAGER_FUNDING.NOT_REQUESTER": "فقط ثبت‌کننده درخواست می‌تواند آن را لغو کند.",
+  "MANAGER_ACCOUNT.INSUFFICIENT_AVAILABLE": "موجودی آزاد حساب برای این مبلغ کافی نیست.",
+  "MANAGER_ACCOUNT.SUSPENDED": "این حساب مدیریتی معلق است.",
+};
+
+function fundingError(e: unknown): string {
+  const raw = apiError(e);
+  for (const [code, message] of Object.entries(ERRORS)) {
+    if (raw.includes(code)) return message;
+  }
+  return raw;
+}
+
 function FundingRequestModal({ onClose }: { onClose: () => void }) {
   const qc = useQueryClient();
   const [adminId, setAdminId] = useState("");
@@ -126,7 +146,7 @@ function FundingRequestModal({ onClose }: { onClose: () => void }) {
         <label>توضیح</label>
         <textarea className="input" rows={2} value={reason} onChange={(e) => setReason(e.target.value)} />
       </div>
-      {create.isError && <div className="error-text">{apiError(create.error)}</div>}
+      {create.isError && <div className="error-text">{fundingError(create.error)}</div>}
       <div className="row" style={{ justifyContent: "flex-end", gap: 10 }}>
         <button className="btn ghost" onClick={onClose}>انصراف</button>
         <button
@@ -290,7 +310,7 @@ export default function ManagerAccountsPage() {
           pending.length > 0 ? <Badge kind="gold">{pending.length} در انتظار</Badge> : null
         }
       >
-        {review.isError && <div className="error-text">{apiError(review.error)}</div>}
+        {review.isError && <div className="error-text">{fundingError(review.error)}</div>}
         {funding.isLoading ? (
           <Loading />
         ) : funding.isError ? (
