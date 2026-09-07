@@ -123,10 +123,17 @@ export function fmtYear(year: number | string | null | undefined): string {
 }
 
 // ─── Rial (IRR) ──────────────────────────────────────────────
-// The Iranian market feeds behind the panel — the gold Telegram channels and
-// the pricing engine's providers — quote in toman. The panel speaks rial
-// everywhere, so those figures are converted on the way in and on the way back
-// out to the engine.
+// The panel speaks rial everywhere, but not every feed behind it does.
+//
+// The gold Telegram channels still quote toman, so anything read from
+// `admin/telegram-monitoring` is converted here on the way in and back on the
+// way out.
+//
+// The pricing engine does NOT: it converts each provider's quote to rial at
+// ingest, using the unit that provider declares, so everything from
+// `admin/monitoring` and the arbitrage endpoints is already rial. Converting
+// those again multiplies them by ten — which is exactly what these helpers did
+// on the compare and arbitrage pages until it was caught.
 export const IRR_PER_TOMAN = 10;
 
 export function tomanToIrr(
