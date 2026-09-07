@@ -56,6 +56,10 @@ export function Picker({
   const allVisibleSelected =
     visible.length > 0 && visible.every((o) => selected.includes(o.value));
 
+  // Selections this list can actually render, versus ones it cannot.
+  const known = selected.filter((v) => options.some((o) => o.value === v)).length;
+  const offList = selected.length - known;
+
   return (
     <div className="picker">
       <div className="picker-head">
@@ -114,7 +118,17 @@ export function Picker({
             ? emptyMeansAll
               ? "بدون محدودیت — همه موارد رصد می‌شوند"
               : "چیزی انتخاب نشده"
-            : `${selected.length} مورد انتخاب شده از ${options.length}`}
+            : `${known} مورد انتخاب شده از ${options.length}`}
+          {offList > 0 && (
+            // A selection this list cannot show is still a selection. Saying so
+            // is what stops the count from quietly contradicting the checkboxes
+            // — it happens whenever a saved bot is edited while browsing a
+            // different provider's items.
+            <span style={{ color: "var(--gold-soft)" }}>
+              {" "}
+              + {offList} مورد خارج از این فهرست
+            </span>
+          )}
         </span>
       </div>
     </div>

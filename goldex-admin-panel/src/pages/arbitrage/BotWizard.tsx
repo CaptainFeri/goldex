@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import { useMutation, useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, unwrap, apiError } from "../../api/client";
-import { Badge, Modal } from "../../components/ui";
+import { Badge, Modal, Stat } from "../../components/ui";
 import { fmtNum, pairLabel, symbolLabel } from "../../lib/format";
 import { useAuth } from "../../auth/auth";
 import type { ProviderSnapshot } from "../../api/types";
@@ -130,7 +130,10 @@ export default function BotWizard({
   const editing = !!initial?.id;
 
   const [step, setStep] = useState<StepKey>("basics");
-  const [furthest, setFurthest] = useState(0);
+  // A new bot unlocks steps as it goes, so nothing is skipped by accident.
+  // An existing one is already complete, so every step is reachable at once —
+  // editing is usually about one field, not a walk through all six.
+  const [furthest, setFurthest] = useState(initial?.id ? STEPS.length - 1 : 0);
 
   // ── Basics ───────────────────────────────────────────────────────────────
   const [name, setName] = useState(initial?.name ?? "");
@@ -248,6 +251,15 @@ export default function BotWizard({
   const amount = num(allocatedAmount);
   const stopLossAmount = (amount * num(stopLossPercent, 100)) / 100;
 
+  // Editing a funded bot re-derives its loss budget from the capital it already
+  // holds. Dropping the percentage below what it has already lost halts it the
+  // moment the change is saved, so that is said before it is saved.
+  const currentLoss = Number(initial?.realizedLoss ?? 0);
+  const editedStopLossAmount =
+    (Number(initial?.allocatedAmount ?? 0) * num(stopLossPercent, 100)) / 100;
+  const stopLossWouldHalt =
+    editing && Number(initial?.allocatedAmount ?? 0) > 0 && editedStopLossAmount <= currentLoss;
+
   // ── Validation, per step ─────────────────────────────────────────────────
   const stepError: Record<StepKey, string | null> = {
     basics: name.trim() ? null : "نام ربات را وارد کنید.",
@@ -343,6 +355,8 @@ export default function BotWizard({
   }
 
   const labelOfPair = (id: string) => pairOptions.find((o) => o.value === id)?.label ?? id;
+  /** Falls back to the bare id for an item the browsed provider does not list. */
+  const labelOfItem = (id: string) => itemOptions.find((o) => o.value === id)?.label ?? `#${id}`;
   const labelOfProvider = (key: string) => providerOptions.find((o) => o.value === key)?.label ?? key;
 
   return (
@@ -499,6 +513,14 @@ export default function BotWizard({
                 loading={itemsLoading}
                 emptyLabel="این تأمین‌کننده قیمتی منتشر نکرده است"
               />
+              {/* Items are the one scope list whose options change as you browse
+                  providers, so the chips are what keep a selection made under
+                  one provider visible — and removable — under another. */}
+              <Chips
+                values={itemIds}
+                labelOf={labelOfItem}
+                onRemove={(v) => setItemIds(itemIds.filter((k) => k !== v))}
+              />
               <span className="muted" style={{ fontSize: 11 }}>
                 اقلام با شناسه انتخاب می‌شوند و بین تأمین‌کنندگان مشترک‌اند؛ می‌توانید از چند
                 تأمین‌کننده انتخاب کنید.
@@ -596,10 +618,26 @@ export default function BotWizard({
             </div>
 
             {editing ? (
-              <div className="ok-text" style={{ marginBottom: 12 }}>
-                برای تغییر سرمایه از دکمه «تخصیص سرمایه» در فهرست ربات‌ها استفاده کنید تا جابه‌جایی
-                در دفتر حساب مدیریتی ثبت شود. در این صفحه فقط درصد حد ضرر قابل ویرایش است.
-              </div>
+              <>
+                <div className="grid grid-3" style={{ marginBottom: 12 }}>
+                  <Stat
+                    label={`سرمایه فریزشده (${initial?.symbol?.slug ?? ""})`}
+                    value={fmtNum(initial?.allocatedAmount ?? 0, 4)}
+                  />
+                  <Stat
+                    label="زیان محقق‌شده تاکنون"
+                    value={fmtNum(initial?.realizedLoss ?? 0, 4)}
+                  />
+                  <Stat
+                    label="بودجه باقی‌مانده حد ضرر"
+                    value={fmtNum(Math.max(0, editedStopLossAmount - currentLoss), 4)}
+                  />
+                </div>
+                <div className="ok-text" style={{ marginBottom: 12 }}>
+                  برای تغییر سرمایه از دکمه «تخصیص سرمایه» در فهرست ربات‌ها استفاده کنید تا جابه‌جایی
+                  در دفتر حساب مدیریتی ثبت شود. در این صفحه فقط درصد حد ضرر قابل ویرایش است.
+                </div>
+              </>
             ) : (
               <div className="grid grid-2" style={{ gap: 14 }}>
                 <div className="field">
@@ -667,11 +705,17 @@ export default function BotWizard({
               />
               <span className="muted" style={{ fontSize: 11 }}>
                 {editing
-                  ? `بر مبنای سرمایه فعلی: ${fmtNum((Number(initial?.allocatedAmount ?? 0) * num(stopLossPercent, 100)) / 100, 4)}`
+                  ? `بر مبنای سرمایه فعلی: ${fmtNum(editedStopLossAmount, 4)}`
                   : amount > 0
                     ? `یعنی ربات تا ${fmtNum(stopLossAmount, 4)} ${chosenSymbol?.slug ?? ""} زیان اجازه معامله دارد.`
                     : "پس از تخصیص سرمایه، مبلغ حد ضرر از همین درصد حساب می‌شود."}
               </span>
+              {editing && stopLossWouldHalt && (
+                <div className="error-text">
+                  ⚠ با این درصد، بودجه حد ضرر ({fmtNum(editedStopLossAmount, 4)}) از زیان محقق‌شده (
+                  {fmtNum(currentLoss, 4)}) کمتر است و ربات بلافاصله پس از ذخیره متوقف می‌شود.
+                </div>
+              )}
             </div>
           </>
         )}
@@ -851,8 +895,11 @@ export default function BotWizard({
 
             {executionMode === "AUTO" && (
               <div className="error-text" style={{ marginTop: 12 }}>
-                ⚠ این ربات با پول واقعی معامله می‌کند. پس از ثبت، تا زمانی که آن را «شروع» نکنید
-                اجرا نمی‌شود.
+                {/* A running bot picks the change up straight away; telling its
+                    operator it needs starting would be plainly wrong. */}
+                {initial?.status === "RUNNING"
+                  ? "⚠ این ربات با پول واقعی معامله می‌کند و هم‌اکنون در حال اجراست؛ تغییرات بلافاصله پس از ذخیره اعمال می‌شود."
+                  : "⚠ این ربات با پول واقعی معامله می‌کند. پس از ثبت، تا زمانی که آن را «شروع» نکنید اجرا نمی‌شود."}
               </div>
             )}
           </>
