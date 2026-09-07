@@ -3,7 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, unwrap, apiError } from "../../api/client";
 import { Loading, ErrorState, Empty, Badge, Modal } from "../../components/ui";
 import { fmtNum, fmtDate, symbolLabel } from "../../lib/format";
-import BotFormModal from "./BotFormModal";
+import BotWizard from "./BotWizard";
 import {
   ArbitrageBot,
   BOT_STATUS_KIND,
@@ -376,7 +376,7 @@ export default function ArbitrageBotsPanel() {
         </div>
       )}
 
-      {form.open && <BotFormModal initial={form.initial} onClose={() => setForm({ open: false })} />}
+      {form.open && <BotWizard initial={form.initial} onClose={() => setForm({ open: false })} />}
       {allocateFor && <AllocateModal bot={allocateFor} onClose={() => setAllocateFor(null)} />}
       {detailFor && <BotDetailModal bot={detailFor} onClose={() => setDetailFor(null)} />}
     </>
