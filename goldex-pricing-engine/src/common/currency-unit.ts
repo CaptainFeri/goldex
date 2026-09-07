@@ -39,6 +39,18 @@ export function toRial(amount: number, unit: CurrencyUnit): number {
   return amount * rialFactor(unit);
 }
 
+/**
+ * Converts a Rial amount back into `unit`.
+ *
+ * The inverse of `toRial`, for the one direction that leaves the engine: an
+ * order sent to a provider must be denominated in the unit that provider's own
+ * API expects, not in the Rial everything is normalized to internally.
+ */
+export function fromRial(amount: number, unit: CurrencyUnit): number {
+  if (!Number.isFinite(amount)) return amount;
+  return amount / rialFactor(unit);
+}
+
 /** Formats a Rial amount the way the panels and logs display it. */
 export function formatRial(amount: number): string {
   return `${Math.round(amount).toLocaleString('fa-IR')} ریال`;

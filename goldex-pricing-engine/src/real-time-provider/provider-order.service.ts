@@ -9,6 +9,7 @@ import { ProviderEntity } from './entity/provider.entity';
 import { ProviderDealEntity } from './entity/provider-deal.entity';
 import { ProviderAccountService } from './provider-account.service';
 import { ProviderCategory } from './types/enums';
+import { CurrencyUnit, fromRial } from '../common/currency-unit';
 import { RabbitMQService, MessagePatterns, RabbitMQMessage } from '../rabbitmq/rabbitmq.module';
 import {
   ZaryarDealViewData,
@@ -47,6 +48,30 @@ interface TrackedOrder {
   lastStatus: number;
   interval: NodeJS.Timeout;
   clientOrderId?: string;
+}
+
+/**
+ * The Talaab trade request, as that API expects it.
+ *
+ * Prices inside the engine are Rial — every provider quote is converted on
+ * ingest — but this request declares its own unit, and Talaab is spoken to in
+ * Toman. The value is converted to match the declaration it is sent with;
+ * sending a Rial figure labelled Toman would submit the order at ten times the
+ * intended price.
+ *
+ * Exported so the conversion can be tested without an HTTP client or a
+ * provider: it is the one place a unit mistake reaches real money.
+ */
+export function buildTalaabTradeBody(data: OrderPlaceRequestData): TalaabTradeRequest {
+  return {
+    current_price: String(fromRial(Number(data.price), CurrencyUnit.TOMAN)),
+    trade_type: data.dealType === 0 ? '1' : '0',
+    description: '',
+    weight: String(data.count),
+    calculate_type: data.itemId,
+    trade_id: 1,
+    price_unit: 'toman',
+  };
 }
 
 @Injectable()
@@ -196,16 +221,7 @@ export class ProviderOrderService implements OnModuleInit {
       throw new Error('Talaab order requires a price field');
     }
 
-    const tradeType = data.dealType === 0 ? '1' : '0';
-    const body: TalaabTradeRequest = {
-      current_price: String(data.price),
-      trade_type: tradeType,
-      description: '',
-      weight: String(data.count),
-      calculate_type: data.itemId,
-      trade_id: 1,
-      price_unit: 'toman',
-    };
+    const body = buildTalaabTradeBody(data);
 
     const response = await firstValueFrom(
       this.httpService.post<TalaabTradeResponse>(
