@@ -12,6 +12,21 @@ import { PERMISSION_KEYS, ROOT_ROLE_SLUG, isPermissionKey } from "./permission.c
  * refused. Written as a subset check rather than an equality one, so the
  * catalog can still grow without dragging this migration with it.
  */
+/**
+ * Catalog keys introduced after migration 097 was written.
+ *
+ * The migration is history and does not change, so a key added later is simply
+ * absent from its seed — that is correct, not a gap. Listing them here keeps
+ * the `admin` assertion meaningful (a key silently dropped from the seed still
+ * fails) while letting the catalog grow.
+ *
+ * Adding a key here is a decision, not bookkeeping: it says existing installs
+ * will not have it until someone grants it. `funding_self_approve` is
+ * deliberately not seeded to `admin` — it lifts the four-eyes rule on manager
+ * funding, and approval is a senior-admin action in any case.
+ */
+const ADDED_AFTER_097: string[] = ["funding_self_approve"];
+
 describe("migration 097 seed", () => {
   it.each(SEED_ROLES.map((r) => [r.slug, r] as const))("%s seeds only real catalog keys", (_slug, role) => {
     const unknown = role.permissions.filter((p) => !isPermissionKey(p));
@@ -41,10 +56,12 @@ describe("migration 097 seed", () => {
     }
   });
 
-  it("gives `admin` everything except those two", () => {
+  it("gives `admin` everything the catalog held at 097, except those two", () => {
     const admin = SEED_ROLES.find((r) => r.slug === "admin")!;
     expect([...admin.permissions].sort()).toEqual(
-      PERMISSION_KEYS.filter((k) => k !== "settings" && k !== "api").sort(),
+      PERMISSION_KEYS.filter(
+        (k) => k !== "settings" && k !== "api" && !ADDED_AFTER_097.includes(k),
+      ).sort(),
     );
   });
 

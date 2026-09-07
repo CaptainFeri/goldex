@@ -30,7 +30,7 @@ import { ReviewFundingRequestDto } from "./dto/review-funding-request.dto";
 import { UpdateAccountStatusDto } from "./dto/update-account-status.dto";
 import { ManagerFundingStatusEnum } from "./enum/manager-account.enums";
 import { AdminAuthGuard } from "../admin/auth/Guard/admin.guard";
-import { AdminPermissionsGuard } from "../admin-role/guard/admin-permissions.guard";
+import { AdminPermissionsGuard, permissionsOf } from "../admin-role/guard/admin-permissions.guard";
 import { RequirePermissions } from "../admin-role/guard/require-permissions.decorator";
 import { AdminExpressRequest } from "../admin/auth/types/adminExpressRequest";
 
@@ -73,9 +73,17 @@ export class ManagerAccountController {
     @Req() req: AdminExpressRequest
   ) {
     // The senior-admin check lives in the service, not only in the route
-    // decorator, so approval cannot be reached through any other caller.
+    // decorator, so approval cannot be reached through any other caller. The
+    // caller's permissions go with it: `funding_self_approve` is what decides
+    // whether they may sign off a request they raised themselves.
     const admin = this.admin(req);
-    return { data: await this.service.reviewFunding(id, dto, { id: admin.id, role: admin.role }) };
+    return {
+      data: await this.service.reviewFunding(id, dto, {
+        id: admin.id,
+        role: admin.role,
+        permissions: permissionsOf(admin),
+      }),
+    };
   }
 
   @Patch("funding/:id/cancel")

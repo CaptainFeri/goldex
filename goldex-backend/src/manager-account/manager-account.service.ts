@@ -20,6 +20,7 @@ import {
 import { SymbolEntity } from "../admin-symbol/entity/symbol.entity";
 import { AdminEntity } from "../admin/entity/admin.entity";
 import { AdminRole } from "../admin/role/admin.roles.enum";
+import { SELF_APPROVE_PERMISSION } from "./manager-account.constants";
 import { paginate } from "../shared/dto/paginated.dto";
 import { pageOf } from "../shared/dto/page-of";
 import { CreateFundingRequestDto } from "./dto/create-funding-request.dto";
@@ -161,18 +162,27 @@ export class ManagerAccountService {
   }
 
   /**
-   * Senior-admin approval. The reviewer must be a different person from the
-   * requester: an admin approving their own charge would make the approval
-   * step meaningless.
+   * Senior-admin approval.
+   *
+   * By default the reviewer must be a different person from the requester —
+   * an admin approving their own charge would make the approval step
+   * meaningless. The `funding_self_approve` permission lifts that, because a
+   * lone senior admin has nobody else to approve them and would otherwise be
+   * unable to fund anything at all.
+   *
+   * Either way the outcome is recorded: the request keeps both the requester
+   * and the reviewer, so a self-approval is visible rather than indistinguishable
+   * from a second person signing off.
    */
   async reviewFunding(
     fundingId: string,
     dto: ReviewFundingRequestDto,
-    reviewer: { id: string; role: AdminRole }
+    reviewer: { id: string; role: AdminRole; permissions?: string[] }
   ) {
     if (reviewer.role !== AdminRole.SUPER_ADMIN) {
       throw new ForbiddenException("MANAGER_ACCOUNT.SENIOR_APPROVAL_REQUIRED");
     }
+    const maySelfApprove = (reviewer.permissions ?? []).includes(SELF_APPROVE_PERMISSION);
 
     return this.dataSource.transaction(async (manager) => {
       const funding = await manager.findOne(ManagerAccountFundingEntity, {
@@ -183,7 +193,8 @@ export class ManagerAccountService {
       if (funding.status !== ManagerFundingStatusEnum.PENDING) {
         throw new BadRequestException("MANAGER_FUNDING.ALREADY_REVIEWED");
       }
-      if (funding.requestedByAdminId === reviewer.id) {
+      const isSelfApproval = funding.requestedByAdminId === reviewer.id;
+      if (isSelfApproval && !maySelfApprove) {
         throw new ForbiddenException("MANAGER_FUNDING.SELF_APPROVAL_FORBIDDEN");
       }
 
@@ -206,7 +217,7 @@ export class ManagerAccountService {
           allocatedDelta: new Decimal(0),
           fundingId: funding.id,
           actorAdminId: reviewer.id,
-          description: funding.reason ?? "funding approved",
+          description: this.fundingDescription(funding.reason, "funding approved", isSelfApproval),
         });
       } else {
         if (amount.greaterThan(account.availableBalance)) {
@@ -218,7 +229,11 @@ export class ManagerAccountService {
           allocatedDelta: new Decimal(0),
           fundingId: funding.id,
           actorAdminId: reviewer.id,
-          description: funding.reason ?? "funding withdrawal approved",
+          description: this.fundingDescription(
+            funding.reason,
+            "funding withdrawal approved",
+            isSelfApproval
+          ),
         });
       }
 
@@ -368,6 +383,20 @@ export class ManagerAccountService {
   }
 
   // ── Internals ────────────────────────────────────────────────────────────
+
+  /**
+   * The ledger line for an approved funding, marked when the approver was also
+   * the requester — the balance should explain itself without a reader having
+   * to cross-check who raised the request.
+   */
+  private fundingDescription(
+    reason: string | null,
+    fallback: string,
+    isSelfApproval: boolean
+  ): string {
+    const base = reason ?? fallback;
+    return isSelfApproval ? `${base} (self-approved)` : base;
+  }
 
   /**
    * Reads the account under a row lock. Allocation and settlement both read
