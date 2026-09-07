@@ -14,6 +14,7 @@ import { CollateralLockEntity } from '../../credit/entity/collateral-lock.entity
 import { CollateralLockStatusEnum } from '../../credit/enum/collateral-lock-status.enum';
 import { WalletOrderService } from '../../wallet/services/wallet-order.service';
 import { OrderStatusEnum } from '../../order/enum/order.status.enum';
+import { PricePairEntity } from '../../admin-pair/entity/price.pair.entity';
 
 interface OrderPlacedData {
   providerKey: string;
@@ -57,6 +58,8 @@ export class OrderStatusConsumer implements OnModuleInit {
     private readonly creditRepo: Repository<CreditEntity>,
     @InjectRepository(CollateralLockEntity)
     private readonly collateralLockRepo: Repository<CollateralLockEntity>,
+    @InjectRepository(PricePairEntity)
+    private readonly pricePairRepo: Repository<PricePairEntity>,
   ) {}
 
   async onModuleInit() {
@@ -125,8 +128,24 @@ export class OrderStatusConsumer implements OnModuleInit {
         await this.orderRepo.save(order);
       }
 
-      if (!order.pricePair) {
-        this.logger.warn(`PricePair not found for order ${order.orderCode}`);
+      // The pair is only needed to settle the wallets, so a join that came back
+      // empty must not end the story: returning here leaves the order PENDING
+      // with the customer's balance locked and nothing to release it later.
+      // A soft-deleted pair is the common cause, hence `withDeleted` — the
+      // order was placed while it was live and still has to be settled.
+      const pricePair =
+        order.pricePair ??
+        (await this.pricePairRepo.findOne({
+          where: { id: order.pricePairId },
+          relations: { baseSymbol: true, quoteSymbol: true },
+          withDeleted: true,
+        }));
+
+      if (!pricePair) {
+        this.logger.error(
+          `Order ${order.orderCode} cannot be settled: price pair ${order.pricePairId} is gone. ` +
+            `The order stays ${order.status} and its balance locked until an admin resolves it.`,
+        );
         return;
       }
 
@@ -134,7 +153,7 @@ export class OrderStatusConsumer implements OnModuleInit {
       const isFailed = data.status !== 1;
 
       if (isConfirmed) {
-        await this.walletOrderService.confirmOrderExecution(order, order.pricePair);
+        await this.walletOrderService.confirmOrderExecution(order, pricePair);
         // A confirmed credit order is a completed hop — only completed orders
         // count toward the execution/hops limits.
         if (order.isCreditLinked) {
@@ -142,7 +161,7 @@ export class OrderStatusConsumer implements OnModuleInit {
         }
         this.logger.log(`Order ${order.orderCode} confirmed, wallets updated`);
       } else if (isFailed) {
-        await this.walletOrderService.rejectOrder(order, order.pricePair);
+        await this.walletOrderService.rejectOrder(order, pricePair);
         // A failed order never completes — release its credit link.
         if (order.isCreditLinked) {
           await this.markCreditOrder(order, CreditOrderStatusEnum.CANCELLED);
@@ -150,7 +169,13 @@ export class OrderStatusConsumer implements OnModuleInit {
         this.logger.log(`Order ${order.orderCode} failed, balance unlocked`);
       }
     } catch (err) {
-      this.logger.error(`ORDER_STATUS_CHANGED handler failed: ${(err as Error).message}`);
+      // Naming the order matters: whatever failed here, that order is still
+      // PENDING with its balance locked and needs a person to look at it.
+      const clientOrderId = (msg.data as OrderStatusChangedData)?.clientOrderId ?? "unknown";
+      this.logger.error(
+        `ORDER_STATUS_CHANGED handler failed for order ${clientOrderId}; ` +
+          `it remains unsettled: ${(err as Error).message}`,
+      );
     }
   }
 
