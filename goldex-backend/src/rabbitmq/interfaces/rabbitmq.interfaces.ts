@@ -48,6 +48,8 @@ export enum MessagePatterns {
   PROVIDER_COMMAND_FETCH_ORDERS = 'provider.command.fetch-orders',
   PROVIDER_COMMAND_FETCH_BALANCE = 'provider.command.fetch-balance',
   PROVIDER_COMMAND_PLACE_ORDER = 'provider.command.place-order',
+  /** Ask the engine what became of an order we never heard back about. */
+  PROVIDER_COMMAND_ORDER_STATUS = 'provider.command.order-status',
 
   // Arbitrage (published by the pricing-engine)
   ARBITRAGE_SCAN = 'arbitrage.scan',

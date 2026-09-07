@@ -3,6 +3,7 @@ import { TypeOrmModule } from "@nestjs/typeorm";
 import { OrderController } from "./order.controller";
 import { OrderService } from "./order.service";
 import { MatchService } from "./match.service";
+import { StuckOrderReconciler } from "./stuck-order-reconciler.service";
 import { TelegramWebhookController } from "../telegram-notifier/telegram-webhook.controller";
 import { OrderEntity } from "./order.entity";
 import { UserEntity } from "../user/entity/user.entity";
@@ -45,7 +46,7 @@ import { UserKycEntity } from "../user/entity/user.kyc.entity";
     CreditModule,
   ],
   controllers: [OrderController, TelegramWebhookController],
-  providers: [OrderService, MatchService],
+  providers: [OrderService, MatchService, StuckOrderReconciler],
   exports: [OrderService, MatchService],
 })
 export class OrderModule {}

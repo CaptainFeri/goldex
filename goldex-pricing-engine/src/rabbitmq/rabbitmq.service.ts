@@ -143,10 +143,18 @@ export class RabbitMQService implements OnModuleInit, OnApplicationBootstrap, On
     }
   }
 
-  async publish<T>(pattern: MessagePattern, data: T, providerKey?: string): Promise<void> {
+  /**
+   * Hands a message to the broker.
+   *
+   * Returns whether it was actually handed over. Callers that only fire and
+   * forget can ignore it, but anything whose message is the *only* notice of a
+   * state change has to know — a dropped publish there is a lost event, not a
+   * delayed one.
+   */
+  async publish<T>(pattern: MessagePattern, data: T, providerKey?: string): Promise<boolean> {
     if (!this.channel) {
       this.hintUnavailable();
-      return;
+      return false;
     }
 
     const message: RabbitMQMessage<T> = {
@@ -164,11 +172,13 @@ export class RabbitMQService implements OnModuleInit, OnApplicationBootstrap, On
         persistent: true,
         contentType: 'application/json',
       });
+      return true;
     } catch (error) {
       // The channel may have closed between the null-check and here (e.g. broker
       // shutdown). Degrade quietly: drop the channel and hint once — don't throw.
       this.channel = null;
       this.hintUnavailable((error as Error).message);
+      return false;
     }
   }
 
