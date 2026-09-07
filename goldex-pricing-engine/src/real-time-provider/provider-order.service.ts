@@ -95,7 +95,72 @@ export class ProviderOrderService implements OnModuleInit {
         MessagePatterns.ORDER_PLACE_REQUEST,
         this.handleOrderPlaceRequest.bind(this),
       );
+      await this.rabbitMQService.subscribeCommand(
+        MessagePatterns.PROVIDER_COMMAND_ORDER_STATUS,
+        (msg) => void this.handleOrderStatusQuery(msg),
+      );
       this.formatter.log('ProviderOrder', 'Subscribed to order place requests');
+    }
+  }
+
+  /**
+   * Answers "what happened to this order?" from the deal we already recorded.
+   *
+   * The backend asks when an order has sat pending too long. The deal row is
+   * the engine's own durable record of the provider's answer, so it survives
+   * the restart or the dropped message that lost the original notification.
+   * A deal still in progress is left alone — there is nothing to report yet.
+   */
+  private async handleOrderStatusQuery(msg: RabbitMQMessage): Promise<void> {
+    const query = msg.data as {
+      providerKey?: string;
+      orderId?: string;
+      clientOrderId?: string;
+    };
+    if (!query?.providerKey || !query.orderId || !query.clientOrderId) return;
+
+    try {
+      const deal = await this.dealRepo.findOne({
+        where: { providerKey: query.providerKey, orderId: query.orderId },
+      });
+
+      if (!deal) {
+        this.formatter.warn(
+          'ProviderOrder',
+          `Status query for unknown deal ${query.orderId} (${query.providerKey})`,
+        );
+        return;
+      }
+
+      if (deal.dealStatus !== 1 && deal.dealStatus !== 2) {
+        this.formatter.log(
+          'ProviderOrder',
+          `Status query for ${query.orderId}: still in progress (${deal.dealStatus})`,
+        );
+        return;
+      }
+
+      await this.rabbitMQService?.publish(
+        MessagePatterns.ORDER_STATUS_CHANGED,
+        {
+          providerKey: deal.providerKey,
+          orderId: deal.orderId,
+          itemId: deal.itemId,
+          dealType: deal.dealType,
+          count: Number(deal.count),
+          clientOrderId: query.clientOrderId,
+          status: deal.dealStatus,
+          statusStr: deal.orderStatusStr ?? '',
+        },
+        deal.providerKey,
+      );
+      this.formatter.log(
+        'ProviderOrder',
+        `Re-reported order ${query.orderId} as status ${deal.dealStatus}`,
+      );
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : String(error);
+      this.formatter.error('ProviderOrder', `Status query failed: ${message}`);
     }
   }
 
@@ -480,32 +545,12 @@ export class ProviderOrderService implements OnModuleInit {
         if (!tracked) return;
 
         if (status !== tracked.lastStatus) {
-          tracked.lastStatus = status;
           const statusStr = status === 1 ? 'انجام شده' : status === 2 ? 'لغو شده' : 'در انتظار';
           this.formatter.log(
             'ProviderOrder',
             `Order ${orderId} status changed to ${status} (${statusStr})`,
           );
-
-          await this.updateDealStatus(data.providerKey, orderId, status, statusStr);
-          this.stopTracking(orderId);
-
-          if (this.rabbitMQService) {
-            await this.rabbitMQService.publish(
-              MessagePatterns.ORDER_STATUS_CHANGED,
-              {
-                providerKey: data.providerKey,
-                orderId,
-                itemId: data.itemId,
-                dealType: data.dealType,
-                count: data.count,
-                clientOrderId,
-                status,
-                statusStr,
-              },
-              data.providerKey,
-            );
-          }
+          await this.settleTrackedOrder(orderId, status, statusStr, data, clientOrderId);
         }
       } catch (error: unknown) {
         const message = error instanceof Error ? error.message : String(error);
@@ -525,6 +570,64 @@ export class ProviderOrderService implements OnModuleInit {
     });
 
     this.formatter.log('ProviderOrder', `Started tracking order ${orderId}`);
+  }
+
+  /**
+   * Reports a provider's terminal status and only then stops watching it.
+   *
+   * This message is the sole notice the backend gets that the deal resolved —
+   * it is what releases the customer's locked balance and completes or rejects
+   * their order. Recording the status and stopping the tracker *before*
+   * publishing meant a dropped publish lost the event for good: the deal row
+   * showed the new status, the tracker never looked again, and the order sat
+   * pending with the money held.
+   *
+   * So nothing is considered handled until the broker has taken the message.
+   * `lastStatus` is only advanced on success, which is what lets the next tick
+   * try again.
+   */
+  private async settleTrackedOrder(
+    orderId: string,
+    status: number,
+    statusStr: string,
+    data: OrderPlaceRequestData,
+    clientOrderId?: string,
+  ): Promise<void> {
+    // Safe to repeat: it writes the same row to the same values.
+    await this.updateDealStatus(data.providerKey, orderId, status, statusStr);
+
+    if (!this.rabbitMQService) {
+      // Nothing to notify, so retrying would spin forever.
+      this.stopTracking(orderId);
+      return;
+    }
+
+    const notified = await this.rabbitMQService.publish(
+      MessagePatterns.ORDER_STATUS_CHANGED,
+      {
+        providerKey: data.providerKey,
+        orderId,
+        itemId: data.itemId,
+        dealType: data.dealType,
+        count: data.count,
+        clientOrderId,
+        status,
+        statusStr,
+      },
+      data.providerKey,
+    );
+
+    if (!notified) {
+      this.formatter.warn(
+        'ProviderOrder',
+        `Could not report order ${orderId} status ${status}; still tracking so it is retried`,
+      );
+      return;
+    }
+
+    const tracked = this.trackedOrders.get(orderId);
+    if (tracked) tracked.lastStatus = status;
+    this.stopTracking(orderId);
   }
 
   private stopTracking(orderId: string): void {
@@ -551,32 +654,18 @@ export class ProviderOrderService implements OnModuleInit {
         if (!tracked) return;
 
         if (status !== tracked.lastStatus) {
-          tracked.lastStatus = status;
           const statusStr = status === 1 ? 'تایید شده' : status === 2 ? 'رد شده' : 'در انتظار';
           this.formatter.log(
             'ProviderOrder',
             `Talaab order ${requestId} status changed to ${status} (${statusStr})`,
           );
-
-          await this.updateDealStatus(data.providerKey, requestId, status, statusStr);
-          this.stopTracking(requestId);
-
-          if (this.rabbitMQService) {
-            await this.rabbitMQService.publish(
-              MessagePatterns.ORDER_STATUS_CHANGED,
-              {
-                providerKey: data.providerKey,
-                orderId: requestId,
-                itemId: data.itemId,
-                dealType: data.dealType,
-                count: data.count,
-                clientOrderId: data.clientOrderId,
-                status,
-                statusStr,
-              },
-              data.providerKey,
-            );
-          }
+          await this.settleTrackedOrder(
+            requestId,
+            status,
+            statusStr,
+            data,
+            data.clientOrderId,
+          );
         }
       } catch (error: unknown) {
         const message = error instanceof Error ? error.message : String(error);

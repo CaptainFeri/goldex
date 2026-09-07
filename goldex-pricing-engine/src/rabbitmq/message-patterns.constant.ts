@@ -47,6 +47,14 @@ export const MessagePatterns = {
   PROVIDER_COMMAND_FETCH_ORDERS: 'provider.command.fetch-orders',
   PROVIDER_COMMAND_FETCH_BALANCE: 'provider.command.fetch-balance',
   PROVIDER_COMMAND_PLACE_ORDER: 'provider.command.place-order',
+  /**
+   * Backend asking what became of an order it never heard back about.
+   *
+   * Tracking lives in memory, so an engine restart forgets it; and a status
+   * message can be dropped. Either way the backend is left holding a pending
+   * order, and this is how it asks again.
+   */
+  PROVIDER_COMMAND_ORDER_STATUS: 'provider.command.order-status',
 
   // Backend -> engine arbitrage commands (consumed on the command queue)
   ARBITRAGE_COMMAND_CONFIG: 'arbitrage.command.config',
