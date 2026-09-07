@@ -90,17 +90,20 @@ export function Modal({
   onClose,
   children,
   wide,
+  width,
 }: {
   title: ReactNode;
   onClose: () => void;
   children: ReactNode;
   wide?: boolean;
+  /** Explicit width, for dialogs that need more room than `wide` gives. */
+  width?: number;
 }) {
   return (
     <div className="modal-overlay" onClick={onClose}>
       <div
         className="modal"
-        style={{ width: wide ? 760 : 520 }}
+        style={{ width: width ?? (wide ? 760 : 520) }}
         onClick={(e) => e.stopPropagation()}
       >
         <div className="modal-head">
