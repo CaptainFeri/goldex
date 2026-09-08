@@ -68,6 +68,44 @@ export interface ArbitrageBot {
   lastTradeAt: string | null;
   matchedSignals: number;
   totalTrades: number;
+  /** Provider orders placed — two per completed cycle. */
+  totalTransactions: number;
+}
+
+/** Which leg a bot's own capital pays for first. */
+export type BotFundingDirection = "BUY_FIRST" | "SELL_FIRST";
+
+export const DIRECTION_LABEL: Record<BotFundingDirection, string> = {
+  BUY_FIRST: "خرید سپس فروش",
+  SELL_FIRST: "فروش سپس خرید",
+};
+
+/** Section-wide KPIs, as returned by /admin/arbitrage/bots/summary. */
+export interface ArbitrageBotSummary {
+  totalBots: number;
+  running: number;
+  paused: number;
+  halted: number;
+  stopped: number;
+  draft: number;
+  autoExecuting: number;
+  allocatedRial: number;
+  allocations: { symbol: string; amount: number; valueRial: number | null }[];
+  unpricedAssets: string[];
+  lossBudgetRemaining: number;
+  matchedSignals: number;
+  totalTrades: number;
+  totalTransactions: number;
+  openTrades: number;
+  tradesLastDay: number;
+  transactionsLastDay: number;
+  settledLastDay: number;
+  filledLastDay: number;
+  failedLastDay: number;
+  fillRateLastDay: number | null;
+  profitLastDayRial: number;
+  totalProfitRial: number;
+  lastSignalAt: string | null;
 }
 
 export interface ManagerAccount {

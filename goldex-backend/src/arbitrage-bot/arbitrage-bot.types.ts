@@ -99,3 +99,37 @@ export const DEFAULT_BOT_NOTIFICATIONS: ArbitrageBotNotificationConfig = {
   telegramChatId: null,
   smsPhone: null,
 };
+
+/** Section-wide KPIs for the arbitrage bots page. */
+export interface ArbitrageBotSummary {
+  totalBots: number;
+  running: number;
+  paused: number;
+  halted: number;
+  stopped: number;
+  draft: number;
+  /** Running bots that actually place orders, as opposed to signal-only ones. */
+  autoExecuting: number;
+  /** Frozen capital across all bots, valued in Rial at live rates. */
+  allocatedRial: number;
+  allocations: { symbol: string; amount: number; valueRial: number | null }[];
+  /** Allocation assets with no usable live rate, so excluded from the Rial total. */
+  unpricedAssets: string[];
+  /** How much the running bots may still lose before halting themselves. */
+  lossBudgetRemaining: number;
+  matchedSignals: number;
+  totalTrades: number;
+  /** Provider orders placed — two per completed cycle. */
+  totalTransactions: number;
+  openTrades: number;
+  tradesLastDay: number;
+  transactionsLastDay: number;
+  settledLastDay: number;
+  filledLastDay: number;
+  failedLastDay: number;
+  /** Null when nothing settled in the window, rather than a misleading zero. */
+  fillRateLastDay: number | null;
+  profitLastDayRial: number;
+  totalProfitRial: number;
+  lastSignalAt: Date | null;
+}

@@ -25,6 +25,7 @@ import {
 } from "../shared/swagger";
 import {
   ArbitrageBotDto,
+  ArbitrageBotSummaryDto,
   ArbitrageBotEventDto,
   ArbitrageBotTradeDto,
 } from "./dto/arbitrage-bot-response.dto";
@@ -59,6 +60,13 @@ export class ArbitrageBotController {
     @Query("status") status?: ArbitrageBotStatusEnum
   ) {
     return { data: await this.bots.list({ ownerAdminId, status }) };
+  }
+
+  @Get("summary")
+  @ApiOperation({ summary: "Section-wide KPIs for managing the arbitrage bots" })
+  @ApiEnvelopeResponse(ArbitrageBotSummaryDto)
+  async summary() {
+    return { data: await this.bots.summary() };
   }
 
   @Post()

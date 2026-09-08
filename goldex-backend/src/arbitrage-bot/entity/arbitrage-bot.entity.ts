@@ -138,6 +138,15 @@ export class ArbitrageBotEntity extends myBaseEntity {
   @Column({ type: "int", default: 0, name: "matched_signals" })
   matchedSignals: number;
 
+  /** Completed arbitrage cycles — one opportunity acted on. */
   @Column({ type: "int", default: 0, name: "total_trades" })
   totalTrades: number;
+
+  /**
+   * Provider orders placed. A cycle is never one order: it is a buy and a
+   * sell, so this runs at twice `totalTrades` and is the number that matches
+   * what the providers actually saw.
+   */
+  @Column({ type: "int", default: 0, name: "total_transactions" })
+  totalTransactions: number;
 }
