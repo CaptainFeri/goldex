@@ -13,7 +13,16 @@ export class RabbitMQService implements OnModuleDestroy {
   private channel: amqp.Channel | null = null;
   private exchange: string;
   private queue: string;
-  private subscribers: Map<string, (msg: RabbitMQMessage) => void> = new Map();
+  /**
+   * Handlers per pattern — a list, not one each.
+   *
+   * More than one module legitimately cares about the same message: a provider
+   * order status settles a customer's order *and* an arbitrage bot's leg.
+   * Keeping a single callback per pattern silently replaced one with the other
+   * depending on module init order, and the loser's messages vanished without
+   * a trace.
+   */
+  private subscribers: Map<string, ((msg: RabbitMQMessage) => void)[]> = new Map();
   private consuming = false;
   private connecting = false;
   private consumerTag: string | null = null;
@@ -187,7 +196,8 @@ export class RabbitMQService implements OnModuleDestroy {
     pattern: string,
     callback: (msg: RabbitMQMessage) => void,
   ): Promise<void> {
-    this.subscribers.set(pattern, callback);
+    const existing = this.subscribers.get(pattern) ?? [];
+    this.subscribers.set(pattern, [...existing, callback]);
 
     if (this.consuming && this.channel) {
       await this.bindPattern(pattern);
@@ -246,9 +256,23 @@ export class RabbitMQService implements OnModuleDestroy {
             `Consumed message | pattern: ${content.pattern} | providerKey: ${content.providerKey || 'N/A'} | timestamp: ${content.timestamp}`,
           );
 
-          for (const [pattern, callback] of this.subscribers) {
-            if (content.pattern === pattern) {
+          const handlers = this.subscribers.get(content.pattern) ?? [];
+          if (handlers.length === 0) {
+            // Nothing is listening. Worth saying: a consumed message with no
+            // handler looks identical to a handled one in the log, which is
+            // what let a lost order settlement go unnoticed.
+            this.logger.warn(
+              `No handler registered for pattern ${content.pattern}; message dropped`,
+            );
+          }
+          for (const callback of handlers) {
+            try {
               callback(content);
+            } catch (err) {
+              // One handler failing must not rob the others of the message.
+              this.logger.error(
+                `Handler for ${content.pattern} threw: ${(err as Error).message}`,
+              );
             }
           }
 
