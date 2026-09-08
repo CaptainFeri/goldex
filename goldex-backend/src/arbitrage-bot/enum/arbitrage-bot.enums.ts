@@ -14,6 +14,22 @@ export enum ArbitrageBotStatusEnum {
   HALTED = "HALTED",
 }
 
+/**
+ * Which leg the bot's own capital can fund, and therefore which way round it
+ * runs the cycle.
+ *
+ * An arbitrage needs one side paid for before the other pays out. Cash buys
+ * the cheap leg first and sells it on; the asset itself sells the dear leg
+ * first and buys back. A bot holding one of them simply cannot open the other
+ * direction — that is not a threshold to tune, it is what it owns.
+ */
+export enum ArbitrageBotFundingDirectionEnum {
+  /** Funded with the quote asset (cash): buy cheap, then sell dear. */
+  BUY_FIRST = "BUY_FIRST",
+  /** Funded with the base asset (e.g. gold): sell dear, then buy back cheap. */
+  SELL_FIRST = "SELL_FIRST",
+}
+
 /** What the bot is allowed to do when an opportunity matches. */
 export enum ArbitrageBotExecutionModeEnum {
   /** Record the opportunity and notify. Nothing is ordered. */

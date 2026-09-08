@@ -1,7 +1,10 @@
 import { Column, Entity, Index, JoinColumn, ManyToOne } from "typeorm";
 import { myBaseEntity } from "../../shared/entity/base.entity";
 import { ArbitrageBotEntity } from "./arbitrage-bot.entity";
-import { ArbitrageBotTradeStatusEnum } from "../enum/arbitrage-bot.enums";
+import {
+  ArbitrageBotFundingDirectionEnum,
+  ArbitrageBotTradeStatusEnum,
+} from "../enum/arbitrage-bot.enums";
 
 /**
  * One opportunity a bot acted on, from the signal that triggered it to the
@@ -72,6 +75,17 @@ export class ArbitrageBotTradeEntity extends myBaseEntity {
     default: ArbitrageBotTradeStatusEnum.PLANNED,
   })
   status: ArbitrageBotTradeStatusEnum;
+
+  /**
+   * Which leg was funded first, decided by the asset the bot holds. Recorded
+   * because it changes the order the provider saw the two legs in.
+   */
+  @Column({
+    type: "varchar",
+    length: 12,
+    default: ArbitrageBotFundingDirectionEnum.BUY_FIRST,
+  })
+  direction: ArbitrageBotFundingDirectionEnum;
 
   /** Per-leg execution state, keyed by the client order id sent to the engine. */
   @Column({ type: "jsonb", nullable: true })

@@ -1688,3 +1688,40 @@ canvas {
   background: var(--text-faint);
   cursor: default;
 }
+
+/* ── Arbitrage section KPIs ────────────────────────────────────────────── */
+.kpi-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
+  gap: 10px;
+}
+.kpi-tile {
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 12px 14px;
+}
+.kpi-label {
+  font-size: 12px;
+  color: var(--text-dim);
+}
+.kpi-value {
+  font-size: 19px;
+  font-weight: 600;
+  margin-top: 4px;
+  direction: ltr;
+  text-align: right;
+}
+.kpi-hint {
+  font-size: 11px;
+  color: var(--text-dim);
+  margin-top: 4px;
+  /* Caveats can be long (an asset breakdown, a list of unpriced symbols), so
+     they wrap to two lines rather than clipping a number in half. The full
+     text is on the tile's title attribute. */
+  line-height: 1.5;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}

@@ -693,6 +693,14 @@ export default function BotWizard({
               </div>
             )}
 
+            {!editing && symbolId && (
+              <div className="ok-text" style={{ marginTop: 10, marginBottom: 4, fontSize: 12 }}>
+                {chosenSymbol?.symbolType === "rial"
+                  ? `با تخصیص ${chosenSymbol?.slug ?? "ریال"}، ربات سیگنال‌هایی را اجرا می‌کند که اول خرید و سپس فروش دارند. برای اجرای سیگنال‌های «فروش سپس خرید» باید دارایی پایه (مثلاً طلا) به ربات تخصیص یابد، چون فروش بدون در اختیار داشتن دارایی ممکن نیست.`
+                  : `با تخصیص ${chosenSymbol?.slug ?? "این دارایی"}، ربات روی جفت‌ارزهایی که پایه‌شان همین دارایی است اول می‌فروشد و سپس بازخرید می‌کند. برای سیگنال‌های «خرید سپس فروش» تخصیص ریال لازم است.`}
+              </div>
+            )}
+
             <div className="field" style={{ marginTop: 6 }}>
               <label>حد ضرر — {stopLossPercent}٪ از سرمایه فریزشده</label>
               <input

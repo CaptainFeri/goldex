@@ -6,13 +6,138 @@ import { fmtNum, fmtDate, symbolLabel } from "../../lib/format";
 import BotWizard from "./BotWizard";
 import {
   ArbitrageBot,
+  ArbitrageBotSummary,
   BOT_STATUS_KIND,
   BOT_STATUS_LABEL,
   CHANNEL_LABEL,
   EVENT_LABEL,
+  DIRECTION_LABEL,
   EXECUTION_MODE_LABEL,
   ManagerAccount,
 } from "./bot-types";
+
+/** One KPI tile. `hint` carries the number's caveat, not decoration. */
+function Kpi({
+  label,
+  value,
+  hint,
+  tone,
+}: {
+  label: string;
+  value: string;
+  hint?: string;
+  tone?: "green" | "red" | "gold";
+}) {
+  const color =
+    tone === "green" ? "var(--green)" : tone === "red" ? "var(--red)" : tone === "gold" ? "var(--gold)" : undefined;
+  return (
+    <div className="kpi-tile" title={hint}>
+      <div className="kpi-label">{label}</div>
+      <div className="kpi-value mono" style={color ? { color } : undefined}>{value}</div>
+      <div className="kpi-hint">{hint ?? "\u00a0"}</div>
+    </div>
+  );
+}
+
+/**
+ * Section KPIs.
+ *
+ * Trades and transactions are shown side by side on purpose: one opportunity
+ * is one cycle but two provider orders, and reading the cycle count as the
+ * number of orders understates what the providers actually saw.
+ */
+function BotKpis() {
+  const summary = useQuery({
+    queryKey: ["arbitrage-bots-summary"],
+    queryFn: async () =>
+      unwrap<ArbitrageBotSummary>((await api.get("/admin/arbitrage/bots/summary")).data),
+    refetchInterval: 30_000,
+  });
+
+  if (summary.isLoading) return <Loading />;
+  if (summary.isError) return <ErrorState message={apiError(summary.error)} />;
+
+  const s = summary.data;
+  if (!s) return null;
+
+  const pnlTone = s.totalProfitRial > 0 ? "green" : s.totalProfitRial < 0 ? "red" : undefined;
+  const dayTone = s.profitLastDayRial > 0 ? "green" : s.profitLastDayRial < 0 ? "red" : undefined;
+
+  return (
+    <div className="kpi-grid" style={{ marginBottom: 16 }}>
+      <Kpi
+        label="ربات‌های فعال"
+        value={`${s.running} / ${s.totalBots}`}
+        hint={`${s.autoExecuting} اجرای خودکار · ${s.paused} موقتاً متوقف`}
+        tone={s.running > 0 ? "green" : undefined}
+      />
+      <Kpi
+        label="توقف اضطراری (حد ضرر)"
+        value={String(s.halted)}
+        hint={s.halted > 0 ? "نیازمند بررسی مدیر" : "بدون مورد"}
+        tone={s.halted > 0 ? "red" : undefined}
+      />
+      <Kpi
+        label="سرمایه فریزشده (ریال)"
+        value={fmtNum(s.allocatedRial, 0)}
+        hint={
+          s.unpricedAssets.length > 0
+            ? `بدون نرخ زنده: ${s.unpricedAssets.join("، ")}`
+            : s.allocations.map((a) => `${fmtNum(a.amount, 4)} ${a.symbol}`).join(" · ") || "بدون تخصیص"
+        }
+      />
+      <Kpi
+        label="ظرفیت باقی‌مانده حد ضرر"
+        value={fmtNum(s.lossBudgetRemaining, 4)}
+        hint="مجموع ربات‌های در حال اجرا، به واحد دارایی هر ربات"
+        tone={s.lossBudgetRemaining <= 0 ? "red" : undefined}
+      />
+      <Kpi
+        label="سود/زیان محقق‌شده (ریال)"
+        value={fmtNum(s.totalProfitRial, 0)}
+        hint={`۲۴ ساعت اخیر: ${fmtNum(s.profitLastDayRial, 0)}`}
+        tone={pnlTone}
+      />
+      <Kpi
+        label="میانگین سود هر معامله (ریال)"
+        value={s.settledLastDay > 0 ? fmtNum(s.profitLastDayRial / s.settledLastDay, 0) : "—"}
+        hint={
+          s.settledLastDay > 0
+            ? `بر پایه ${s.settledLastDay} معامله تسویه‌شده در ۲۴ ساعت`
+            : "معامله‌ای در ۲۴ ساعت اخیر تسویه نشده"
+        }
+        tone={dayTone}
+      />
+      <Kpi
+        label="معامله / تراکنش"
+        value={`${fmtNum(s.totalTrades, 0)} / ${fmtNum(s.totalTransactions, 0)}`}
+        hint="هر معامله دو سفارش نزد تأمین‌کننده دارد"
+      />
+      <Kpi
+        label="۲۴ ساعت اخیر"
+        value={`${s.tradesLastDay} / ${s.transactionsLastDay}`}
+        hint={`${s.openTrades} معامله باز`}
+      />
+      <Kpi
+        label="نرخ موفقیت ۲۴ ساعت"
+        value={s.fillRateLastDay === null ? "—" : `${s.fillRateLastDay.toFixed(0)}٪`}
+        hint={
+          s.fillRateLastDay === null
+            ? "معامله‌ای تسویه نشده است"
+            : `${s.filledLastDay} موفق · ${s.failedLastDay} ناموفق`
+        }
+        tone={
+          s.fillRateLastDay === null ? undefined : s.fillRateLastDay >= 80 ? "green" : s.fillRateLastDay >= 50 ? "gold" : "red"
+        }
+      />
+      <Kpi
+        label="فرصت‌های منطبق"
+        value={fmtNum(s.matchedSignals, 0)}
+        hint={s.lastSignalAt ? `آخرین: ${fmtDate(s.lastSignalAt)}` : "سیگنالی دریافت نشده"}
+      />
+    </div>
+  );
+}
 
 /** How much of the stop-loss budget a bot has spent, as a bar. */
 function LossBudgetBar({ bot }: { bot: ArbitrageBot }) {
@@ -54,6 +179,7 @@ function AllocateModal({ bot, onClose }: { bot: ArbitrageBot; onClose: () => voi
       }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["arbitrage-bots"] });
+      qc.invalidateQueries({ queryKey: ["arbitrage-bots-summary"] });
       qc.invalidateQueries({ queryKey: ["manager-accounts"] });
       onClose();
     },
@@ -143,6 +269,20 @@ function BotDetailModal({ bot, onClose }: { bot: ArbitrageBot; onClose: () => vo
           <label>سود/زیان محقق‌شده</label>
           <div className="mono">{fmtNum(bot.realizedPnl, 4)}</div>
         </div>
+        <div className="field">
+          <label>معامله / تراکنش</label>
+          <div className="mono">
+            {fmtNum(bot.totalTrades, 0)} / {fmtNum(bot.totalTransactions ?? 0, 0)}
+          </div>
+        </div>
+        <div className="field">
+          <label>فرصت‌های منطبق</label>
+          <div className="mono">{fmtNum(bot.matchedSignals, 0)}</div>
+        </div>
+        <div className="field">
+          <label>آخرین معامله</label>
+          <div style={{ fontSize: 12 }}>{bot.lastTradeAt ? fmtDate(bot.lastTradeAt) : "—"}</div>
+        </div>
       </div>
       {bot.haltReason && (
         <div className="error-text" style={{ marginBottom: 12 }}>{bot.haltReason}</div>
@@ -183,6 +323,7 @@ function BotDetailModal({ bot, onClose }: { bot: ArbitrageBot; onClose: () => vo
             <thead>
               <tr>
                 <th>قلم</th>
+                <th>جهت</th>
                 <th>خرید از</th>
                 <th>فروش به</th>
                 <th>حجم</th>
@@ -196,6 +337,9 @@ function BotDetailModal({ bot, onClose }: { bot: ArbitrageBot; onClose: () => vo
               {rows.map((t) => (
                 <tr key={t.id}>
                   <td>{t.itemName ?? t.itemId ?? "—"}</td>
+                  <td style={{ fontSize: 12, whiteSpace: "nowrap" }}>
+                    {DIRECTION_LABEL[t.direction as keyof typeof DIRECTION_LABEL] ?? "—"}
+                  </td>
                   <td className="mono">{t.buyProviderKey}</td>
                   <td className="mono">{t.sellProviderKey}</td>
                   <td className="mono">{fmtNum(t.volume, 4)}</td>
@@ -275,13 +419,18 @@ export default function ArbitrageBotsPanel() {
 
   const remove = useMutation({
     mutationFn: (id: string) => api.delete(`/admin/arbitrage/bots/${id}`),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["arbitrage-bots"] }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["arbitrage-bots"] });
+      qc.invalidateQueries({ queryKey: ["arbitrage-bots-summary"] });
+    },
   });
 
   const list = Array.isArray(bots.data) ? bots.data : [];
 
   return (
     <>
+      <BotKpis />
+
       <div className="row spread" style={{ marginBottom: 14, flexWrap: "wrap", gap: 10 }}>
         <span className="muted" style={{ fontSize: 12 }}>
           هر ربات روی جفت‌ارزها، بازارها و تأمین‌کنندگان دلخواه تنظیم می‌شود و با سرمایه فریزشده از حساب
@@ -313,7 +462,7 @@ export default function ArbitrageBotsPanel() {
                 <th>سرمایه فریزشده</th>
                 <th>مصرف حد ضرر</th>
                 <th>سود/زیان</th>
-                <th>سیگنال / معامله</th>
+                <th>سیگنال / معامله / تراکنش</th>
                 <th>عملیات</th>
               </tr>
             </thead>
@@ -333,7 +482,9 @@ export default function ArbitrageBotsPanel() {
                   </td>
                   <td><LossBudgetBar bot={b} /></td>
                   <td className="mono">{fmtNum(b.realizedPnl, 4)}</td>
-                  <td className="mono">{b.matchedSignals} / {b.totalTrades}</td>
+                  <td className="mono" title="فرصت منطبق / معامله / سفارش نزد تأمین‌کننده">
+                    {b.matchedSignals} / {b.totalTrades} / {b.totalTransactions ?? 0}
+                  </td>
                   <td>
                     <div className="row" style={{ gap: 4, flexWrap: "wrap" }}>
                       <button className="btn ghost sm" onClick={() => setDetailFor(b)}>جزئیات</button>

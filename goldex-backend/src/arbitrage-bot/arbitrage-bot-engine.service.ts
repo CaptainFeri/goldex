@@ -10,6 +10,7 @@ import {
   ArbitrageBotEventSeverityEnum,
   ArbitrageBotEventTypeEnum,
   ArbitrageBotExecutionModeEnum,
+  ArbitrageBotFundingDirectionEnum,
   ArbitrageBotStatusEnum,
   ArbitrageBotTradeStatusEnum,
 } from "./enum/arbitrage-bot.enums";
@@ -124,7 +125,16 @@ export class ArbitrageBotEngineService implements OnModuleInit {
       return;
     }
 
-    const volume = await this.sizeTrade(bot, signal, thresholds, budget);
+    const direction = await this.resolveFundingDirection(bot, signal);
+    if (!direction) {
+      // The bot holds neither side of this pair, so it cannot open either leg.
+      this.logger.debug(
+        `bot ${bot.id} skipped ${signal.key}: its asset funds neither leg of this pair`
+      );
+      return;
+    }
+
+    const volume = await this.sizeTrade(bot, signal, thresholds, budget, direction);
     if (volume.lessThanOrEqualTo(0)) return;
 
     const expectedProfit = new Decimal(signal.profitRial ?? 0).times(volume);
@@ -143,6 +153,7 @@ export class ArbitrageBotEngineService implements OnModuleInit {
         volume: volume.toNumber(),
         expectedProfitRial: expectedProfit.toNumber(),
         status: ArbitrageBotTradeStatusEnum.PLANNED,
+        direction,
         signal: signal as unknown as Record<string, any>,
       })
     );
@@ -164,19 +175,48 @@ export class ArbitrageBotEngineService implements OnModuleInit {
       title: `فرصت آربیتراژ برای ربات ${bot.name}`,
       message:
         `${signal.itemName ?? signal.itemId}: خرید از ${signal.buyLeg.providerKey} و فروش به ` +
-        `${signal.sellLeg.providerKey} — سود تخمینی ${expectedProfit.toFixed(0)} ریال`,
+        `${signal.sellLeg.providerKey} — سود تخمینی ${expectedProfit.toFixed(0)} ریال — ` +
+        `${
+          direction === ArbitrageBotFundingDirectionEnum.BUY_FIRST
+            ? "ابتدا خرید سپس فروش"
+            : "ابتدا فروش سپس بازخرید"
+        } (۲ تراکنش)`,
       metadata: {
         signalKey: signal.key,
         volume: volume.toNumber(),
         expectedProfitRial: expectedProfit.toNumber(),
         profitPercent: signal.profitPercent,
+        direction,
       },
       tradeId: trade.id,
     });
 
     if (bot.executionMode === ArbitrageBotExecutionModeEnum.AUTO) {
-      await this.submit(bot, trade, signal);
+      await this.submit(bot, trade, signal, direction);
     }
+  }
+
+  /**
+   * Which leg this bot's capital can pay for on this signal.
+   *
+   * An arbitrage needs one side settled before the other pays out, so what the
+   * bot holds decides the direction: the pair's quote asset (cash) buys first,
+   * the base asset (the metal itself) sells first. Holding neither means the
+   * opportunity is real but not one this bot can take — which is a skip, not a
+   * threshold failure.
+   */
+  private async resolveFundingDirection(
+    bot: ArbitrageBotEntity,
+    signal: ArbitrageSignal
+  ): Promise<ArbitrageBotFundingDirectionEnum | null> {
+    if (!bot.symbolId) return null;
+
+    const pairs = await this.pairsForSignal(signal);
+    for (const pair of pairs) {
+      if (pair.quoteId === bot.symbolId) return ArbitrageBotFundingDirectionEnum.BUY_FIRST;
+      if (pair.baseId === bot.symbolId) return ArbitrageBotFundingDirectionEnum.SELL_FIRST;
+    }
+    return null;
   }
 
   // ── Filters ──────────────────────────────────────────────────────────────
@@ -275,15 +315,22 @@ export class ArbitrageBotEngineService implements OnModuleInit {
     bot: ArbitrageBotEntity,
     signal: ArbitrageSignal,
     thresholds: typeof DEFAULT_BOT_THRESHOLDS,
-    budgetInAsset: Decimal
+    budgetInAsset: Decimal,
+    direction: ArbitrageBotFundingDirectionEnum
   ): Promise<Decimal> {
-    const buyPrice = new Decimal(signal.buyLeg?.price ?? 0);
-    if (buyPrice.lessThanOrEqualTo(0)) return new Decimal(0);
+    // The leg the bot pays for first is the one its capital has to cover, so
+    // that is the price the budget is measured against.
+    const legPrice = new Decimal(
+      (direction === ArbitrageBotFundingDirectionEnum.BUY_FIRST
+        ? signal.buyLeg?.price
+        : signal.sellLeg?.price) ?? 0
+    );
+    if (legPrice.lessThanOrEqualTo(0)) return new Decimal(0);
 
     const budgetRial = await this.toRial(bot, budgetInAsset);
     if (budgetRial.lessThanOrEqualTo(0)) return new Decimal(0);
 
-    const affordable = budgetRial.dividedBy(buyPrice);
+    const affordable = budgetRial.dividedBy(legPrice);
     const ceiling =
       thresholds.maxTradeVolume > 0 ? new Decimal(thresholds.maxTradeVolume) : affordable;
 
@@ -336,38 +383,46 @@ export class ArbitrageBotEngineService implements OnModuleInit {
   private async submit(
     bot: ArbitrageBotEntity,
     trade: ArbitrageBotTradeEntity,
-    signal: ArbitrageSignal
+    signal: ArbitrageSignal,
+    direction: ArbitrageBotFundingDirectionEnum
   ): Promise<void> {
     const legs = {
       buy: { clientOrderId: `bot:${trade.id}:buy`, status: "SUBMITTED" as string },
       sell: { clientOrderId: `bot:${trade.id}:sell`, status: "SUBMITTED" as string },
     };
 
+    const buyOrder = {
+      key: signal.buyLeg.providerKey,
+      itemId: signal.itemId,
+      dealType: DEAL_TYPE.BUY,
+      count: Number(trade.volume),
+      price: Number(trade.buyPrice),
+      clientOrderId: legs.buy.clientOrderId,
+    };
+    const sellOrder = {
+      key: signal.sellLeg.providerKey,
+      itemId: signal.itemId,
+      dealType: DEAL_TYPE.SELL,
+      count: Number(trade.volume),
+      price: Number(trade.sellPrice),
+      clientOrderId: legs.sell.clientOrderId,
+    };
+
+    // The funded leg goes first: it is the one the bot can actually pay for,
+    // and the other is settled out of what it returns.
+    const ordered =
+      direction === ArbitrageBotFundingDirectionEnum.BUY_FIRST
+        ? [buyOrder, sellOrder]
+        : [sellOrder, buyOrder];
+
     try {
-      await this.rmq.publishCommand(
-        MessagePatterns.PROVIDER_COMMAND_PLACE_ORDER,
-        {
-          key: signal.buyLeg.providerKey,
-          itemId: signal.itemId,
-          dealType: DEAL_TYPE.BUY,
-          count: Number(trade.volume),
-          price: Number(trade.buyPrice),
-          clientOrderId: legs.buy.clientOrderId,
-        },
-        signal.buyLeg.providerKey
-      );
-      await this.rmq.publishCommand(
-        MessagePatterns.PROVIDER_COMMAND_PLACE_ORDER,
-        {
-          key: signal.sellLeg.providerKey,
-          itemId: signal.itemId,
-          dealType: DEAL_TYPE.SELL,
-          count: Number(trade.volume),
-          price: Number(trade.sellPrice),
-          clientOrderId: legs.sell.clientOrderId,
-        },
-        signal.sellLeg.providerKey
-      );
+      for (const order of ordered) {
+        await this.rmq.publishCommand(
+          MessagePatterns.PROVIDER_COMMAND_PLACE_ORDER,
+          order,
+          order.key
+        );
+      }
     } catch (err) {
       trade.status = ArbitrageBotTradeStatusEnum.FAILED;
       trade.failureReason = (err as Error).message;
@@ -389,10 +444,14 @@ export class ArbitrageBotEngineService implements OnModuleInit {
     trade.legs = legs;
     await this.tradeRepo.save(trade);
 
+    // One opportunity is one cycle but two provider orders, and the second
+    // number is the one that matches what the providers saw.
     bot.totalTrades = (bot.totalTrades ?? 0) + 1;
+    bot.totalTransactions = (bot.totalTransactions ?? 0) + ordered.length;
     bot.lastTradeAt = new Date();
     await this.botRepo.update(bot.id, {
       totalTrades: bot.totalTrades,
+      totalTransactions: bot.totalTransactions,
       lastTradeAt: bot.lastTradeAt,
     });
 
@@ -401,8 +460,14 @@ export class ArbitrageBotEngineService implements OnModuleInit {
       severity: ArbitrageBotEventSeverityEnum.INFO,
       title: `ربات ${bot.name} سفارش ثبت کرد`,
       message:
-        `حجم ${trade.volume} — خرید از ${trade.buyProviderKey} و فروش به ${trade.sellProviderKey}`,
-      metadata: { expectedProfitRial: Number(trade.expectedProfitRial) },
+        `حجم ${trade.volume} — ${ordered.length} تراکنش: خرید از ${trade.buyProviderKey} و ` +
+        `فروش به ${trade.sellProviderKey}` +
+        (direction === ArbitrageBotFundingDirectionEnum.SELL_FIRST ? " (ابتدا فروش)" : ""),
+      metadata: {
+        expectedProfitRial: Number(trade.expectedProfitRial),
+        direction,
+        transactions: ordered.length,
+      },
       tradeId: trade.id,
     });
   }

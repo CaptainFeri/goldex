@@ -3,6 +3,7 @@ import {
   ArbitrageBotEventSeverityEnum,
   ArbitrageBotEventTypeEnum,
   ArbitrageBotExecutionModeEnum,
+  ArbitrageBotFundingDirectionEnum,
   ArbitrageBotNotifyChannelEnum,
   ArbitrageBotStatusEnum,
   ArbitrageBotTradeStatusEnum,
@@ -176,8 +177,13 @@ export class ArbitrageBotDto {
   @ApiProperty()
   matchedSignals: number;
 
-  @ApiProperty()
+  @ApiProperty({ description: "Completed arbitrage cycles" })
   totalTrades: number;
+
+  @ApiProperty({
+    description: "Provider orders placed — two per cycle, one for each leg",
+  })
+  totalTransactions: number;
 
   @ApiProperty({ format: "date-time", nullable: true })
   createdAt: Date | null;
@@ -232,6 +238,12 @@ export class ArbitrageBotTradeDto {
   @ApiProperty({ enum: ArbitrageBotTradeStatusEnum })
   status: ArbitrageBotTradeStatusEnum;
 
+  @ApiProperty({
+    enum: ArbitrageBotFundingDirectionEnum,
+    description: "Which leg the bot's capital paid for first",
+  })
+  direction: ArbitrageBotFundingDirectionEnum;
+
   @ApiProperty({ type: Object, nullable: true, description: "Per-leg execution state" })
   legs: Record<string, any> | null;
 
@@ -275,4 +287,90 @@ export class ArbitrageBotEventDto {
 
   @ApiProperty({ format: "uuid", nullable: true })
   tradeId: string | null;
+}
+
+export class ArbitrageBotAllocationDto {
+  @ApiProperty({ description: "Allocation asset" })
+  symbol: string;
+
+  @ApiProperty({ description: "Frozen amount in the asset's own unit" })
+  amount: number;
+
+  @ApiProperty({ nullable: true, description: "Null when the asset has no live rate" })
+  valueRial: number | null;
+}
+
+/** Management KPIs for the arbitrage section as a whole. */
+export class ArbitrageBotSummaryDto {
+  @ApiProperty()
+  totalBots: number;
+
+  @ApiProperty()
+  running: number;
+
+  @ApiProperty()
+  paused: number;
+
+  @ApiProperty()
+  halted: number;
+
+  @ApiProperty()
+  stopped: number;
+
+  @ApiProperty()
+  draft: number;
+
+  @ApiProperty({ description: "Running bots that place orders, not signal-only" })
+  autoExecuting: number;
+
+  @ApiProperty({ description: "Frozen capital across all bots, valued in Rial" })
+  allocatedRial: number;
+
+  @ApiProperty({ type: ArbitrageBotAllocationDto, isArray: true })
+  allocations: ArbitrageBotAllocationDto[];
+
+  @ApiProperty({ type: String, isArray: true, description: "Assets excluded from the Rial total" })
+  unpricedAssets: string[];
+
+  @ApiProperty({ description: "What the running bots may still lose before halting" })
+  lossBudgetRemaining: number;
+
+  @ApiProperty()
+  matchedSignals: number;
+
+  @ApiProperty({ description: "Completed arbitrage cycles" })
+  totalTrades: number;
+
+  @ApiProperty({ description: "Provider orders placed — two per cycle" })
+  totalTransactions: number;
+
+  @ApiProperty()
+  openTrades: number;
+
+  @ApiProperty()
+  tradesLastDay: number;
+
+  @ApiProperty()
+  transactionsLastDay: number;
+
+  @ApiProperty()
+  settledLastDay: number;
+
+  @ApiProperty()
+  filledLastDay: number;
+
+  @ApiProperty()
+  failedLastDay: number;
+
+  @ApiProperty({ nullable: true, description: "Null when nothing settled in the window" })
+  fillRateLastDay: number | null;
+
+  @ApiProperty()
+  profitLastDayRial: number;
+
+  @ApiProperty()
+  totalProfitRial: number;
+
+  @ApiProperty({ format: "date-time", nullable: true })
+  lastSignalAt: Date | null;
 }

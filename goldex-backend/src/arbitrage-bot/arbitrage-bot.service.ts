@@ -6,7 +6,7 @@ import {
   NotFoundException,
 } from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
-import { DataSource, In, Repository } from "typeorm";
+import { DataSource, In, MoreThan, Repository } from "typeorm";
 import Decimal from "decimal.js";
 import { ArbitrageBotEntity } from "./entity/arbitrage-bot.entity";
 import { ArbitrageBotTradeEntity } from "./entity/arbitrage-bot-trade.entity";
@@ -19,6 +19,7 @@ import {
   ArbitrageBotTradeStatusEnum,
 } from "./enum/arbitrage-bot.enums";
 import {
+  ArbitrageBotSummary,
   ArbitrageBotNotificationConfig,
   ArbitrageBotScope,
   ArbitrageBotThresholds,
@@ -34,6 +35,10 @@ import { pageOf } from "../shared/dto/page-of";
 import { ManagerAccountService } from "../manager-account/manager-account.service";
 import { AdminRole } from "../admin/role/admin.roles.enum";
 import { ArbitrageBotNotifierService } from "./arbitrage-bot-notifier.service";
+import { ValuationService } from "../accounting/valuation.service";
+import { ValuationBasisEnum } from "../accounting/enum/valuation-basis.enum";
+import { SymbolEntity } from "../admin-symbol/entity/symbol.entity";
+import { SymbolTypeEnum } from "../admin-symbol/enum/symbol.type.enum";
 
 Decimal.set({ precision: 30, rounding: Decimal.ROUND_HALF_UP });
 
@@ -53,6 +58,7 @@ export interface BotActor {
 @Injectable()
 export class ArbitrageBotService {
   private readonly logger = new Logger(ArbitrageBotService.name);
+  private rialId: string | null | undefined;
 
   constructor(
     @InjectRepository(ArbitrageBotEntity)
@@ -62,7 +68,10 @@ export class ArbitrageBotService {
     @InjectRepository(ArbitrageBotEventEntity)
     private readonly eventRepo: Repository<ArbitrageBotEventEntity>,
     private readonly managerAccounts: ManagerAccountService,
+    @InjectRepository(SymbolEntity)
+    private readonly symbolRepo: Repository<SymbolEntity>,
     private readonly notifier: ArbitrageBotNotifierService,
+    private readonly valuation: ValuationService,
     private readonly dataSource: DataSource
   ) {}
 
@@ -351,6 +360,146 @@ export class ArbitrageBotService {
     });
   }
 
+  // ── Section KPIs ─────────────────────────────────────────────────────────
+
+  /**
+   * A management view of the whole arbitrage section.
+   *
+   * Money is reported in Rial, and where it can be it comes from the trades
+   * themselves (`realizedProfitRial` was written at settlement, at the rates
+   * that actually applied) rather than from re-valuing today. Only the frozen
+   * capital has to be valued live, because it is a holding, not a past event;
+   * assets with no usable rate are reported separately instead of being
+   * silently counted as zero.
+   */
+  async summary(): Promise<ArbitrageBotSummary> {
+    const bots = await this.botRepo.find({ relations: { symbol: true } });
+    const now = Date.now();
+    const dayAgo = new Date(now - 24 * 3600_000);
+
+    const byStatus = (status: ArbitrageBotStatusEnum) =>
+      bots.filter((bot) => bot.status === status).length;
+
+    // Allocations are per-asset; group first, then value each asset once.
+    const perAsset = new Map<string, { symbolId: string; symbol: string; amount: Decimal }>();
+    for (const bot of bots) {
+      if (!bot.symbolId) continue;
+      const amount = new Decimal(bot.allocatedAmount ?? 0);
+      if (amount.lessThanOrEqualTo(0)) continue;
+      const row = perAsset.get(bot.symbolId) ?? {
+        symbolId: bot.symbolId,
+        symbol: bot.symbol?.name ?? bot.symbolId,
+        amount: new Decimal(0),
+      };
+      row.amount = row.amount.plus(amount);
+      perAsset.set(bot.symbolId, row);
+    }
+
+    const rialId = await this.rialSymbolId();
+    let allocatedRial = new Decimal(0);
+    const unpricedAssets: string[] = [];
+    const allocations: ArbitrageBotSummary["allocations"] = [];
+
+    for (const row of perAsset.values()) {
+      let rial: number | null = null;
+      if (rialId && row.symbolId === rialId) {
+        rial = row.amount.toNumber();
+      } else if (rialId) {
+        const rate = await this.valuation.getRate(
+          row.symbolId,
+          rialId,
+          ValuationBasisEnum.BID,
+          DEFAULT_BOT_THRESHOLDS.maxQuoteAgeSeconds
+        );
+        if (rate.rate !== null) rial = row.amount.times(rate.rate).toNumber();
+      }
+      if (rial === null) unpricedAssets.push(row.symbol);
+      else allocatedRial = allocatedRial.plus(rial);
+      allocations.push({ symbol: row.symbol, amount: row.amount.toNumber(), valueRial: rial });
+    }
+
+    const [openTrades, tradesLastDay, settledLastDay] = await Promise.all([
+      this.tradeRepo.count({
+        where: {
+          status: In([ArbitrageBotTradeStatusEnum.PLANNED, ArbitrageBotTradeStatusEnum.SUBMITTED]),
+        },
+      }),
+      this.tradeRepo.count({ where: { createAt: MoreThan(dayAgo) } }),
+      this.tradeRepo.find({
+        where: { settledAt: MoreThan(dayAgo) },
+        select: { status: true, realizedProfitRial: true },
+      }),
+    ]);
+
+    const filledLastDay = settledLastDay.filter(
+      (trade) => trade.status === ArbitrageBotTradeStatusEnum.FILLED
+    ).length;
+    const profitLastDayRial = settledLastDay.reduce(
+      (sum, trade) => sum.plus(trade.realizedProfitRial ?? 0),
+      new Decimal(0)
+    );
+
+    const totalProfitRial = await this.tradeRepo
+      .createQueryBuilder("trade")
+      .select("COALESCE(SUM(trade.realized_profit_rial), 0)", "sum")
+      .getRawOne<{ sum: string }>();
+
+    const sum = (pick: (bot: ArbitrageBotEntity) => number) =>
+      bots.reduce((total, bot) => total.plus(pick(bot) ?? 0), new Decimal(0)).toNumber();
+
+    const lossBudgetRemaining = bots
+      .filter((bot) => bot.status === ArbitrageBotStatusEnum.RUNNING)
+      .reduce((total, bot) => total.plus(this.lossBudgetRemaining(bot)), new Decimal(0));
+
+    return {
+      totalBots: bots.length,
+      running: byStatus(ArbitrageBotStatusEnum.RUNNING),
+      paused: byStatus(ArbitrageBotStatusEnum.PAUSED),
+      halted: byStatus(ArbitrageBotStatusEnum.HALTED),
+      stopped: byStatus(ArbitrageBotStatusEnum.STOPPED),
+      draft: byStatus(ArbitrageBotStatusEnum.DRAFT),
+      autoExecuting: bots.filter(
+        (bot) =>
+          bot.executionMode === ArbitrageBotExecutionModeEnum.AUTO &&
+          bot.status === ArbitrageBotStatusEnum.RUNNING
+      ).length,
+      allocatedRial: allocatedRial.toNumber(),
+      allocations,
+      unpricedAssets,
+      lossBudgetRemaining: lossBudgetRemaining.toNumber(),
+      matchedSignals: sum((bot) => bot.matchedSignals),
+      totalTrades: sum((bot) => bot.totalTrades),
+      // Two provider orders per cycle: this is the number the providers saw.
+      totalTransactions: sum((bot) => bot.totalTransactions ?? 0),
+      openTrades,
+      tradesLastDay,
+      transactionsLastDay: tradesLastDay * 2,
+      settledLastDay: settledLastDay.length,
+      filledLastDay,
+      failedLastDay: settledLastDay.length - filledLastDay,
+      fillRateLastDay:
+        settledLastDay.length > 0 ? (filledLastDay / settledLastDay.length) * 100 : null,
+      profitLastDayRial: profitLastDayRial.toNumber(),
+      totalProfitRial: Number(totalProfitRial?.sum ?? 0),
+      lastSignalAt:
+        bots
+          .map((bot) => bot.lastSignalAt)
+          .filter((at): at is Date => !!at)
+          .sort((a, b) => b.getTime() - a.getTime())[0] ?? null,
+    };
+  }
+
+  /** The Rial symbol, cached: every money KPI is expressed against it. */
+  private async rialSymbolId(): Promise<string | null> {
+    if (this.rialId !== undefined) return this.rialId;
+    const symbol = await this.symbolRepo.findOne({
+      where: { symbolType: SymbolTypeEnum.RIAL },
+      order: { createAt: "ASC" },
+    });
+    this.rialId = symbol?.id ?? null;
+    return this.rialId;
+  }
+
   async getTrades(botId: string, limit = 50, offset = 0) {
     const take = Math.min(limit, 200);
     const [items, total] = await this.tradeRepo.findAndCount({
@@ -516,6 +665,7 @@ export class ArbitrageBotService {
       lastTradeAt: bot.lastTradeAt,
       matchedSignals: bot.matchedSignals,
       totalTrades: bot.totalTrades,
+      totalTransactions: bot.totalTransactions ?? 0,
       createdAt: bot.createAt,
       updatedAt: bot.updateAt,
     };
