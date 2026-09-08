@@ -45,3 +45,14 @@ export const PROVIDER_EVENTS = {
 } as const;
 
 export type ProviderEvent = (typeof PROVIDER_EVENTS)[keyof typeof PROVIDER_EVENTS];
+
+// Lifecycle of a row in `provider_deals`. Only DONE deals are settled trades:
+// everything else is either still cancellable or was refused by the provider,
+// so it must never reach the deal-balance aggregate.
+// Plain numbers rather than an enum: `provider_deals.dealStatus` is whatever
+// the provider's JSON carried, so it is typed `number` everywhere it is read.
+export const DealStatus = {
+  PENDING: 0,
+  DONE: 1,
+  CANCELLED: 2,
+} as const;

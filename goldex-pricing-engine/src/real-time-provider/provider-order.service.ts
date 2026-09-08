@@ -8,8 +8,7 @@ import { ConsoleFormatterService } from '../common/console-formatter.service';
 import { ProviderEntity } from './entity/provider.entity';
 import { ProviderDealEntity } from './entity/provider-deal.entity';
 import { ProviderAccountService } from './provider-account.service';
-import { ProviderCategory } from './types/enums';
-import { CurrencyUnit, fromRial } from '../common/currency-unit';
+import { DealStatus, ProviderCategory } from './types/enums';
 import { RabbitMQService, MessagePatterns, RabbitMQMessage } from '../rabbitmq/rabbitmq.module';
 import {
   ZaryarDealViewData,
@@ -201,7 +200,10 @@ export class ProviderOrderService implements OnModuleInit {
         data.providerKey,
       );
     } catch (err) {
-      this.formatter.error('ProviderOrder', `Failed to publish order-failed: ${(err as Error).message}`);
+      this.formatter.error(
+        'ProviderOrder',
+        `Failed to publish order-failed: ${(err as Error).message}`,
+      );
     }
   }
 
@@ -234,11 +236,9 @@ export class ProviderOrderService implements OnModuleInit {
     const body = this.buildSubmitDealBody(dealView, data, clientOrderId);
 
     const response = await firstValueFrom(
-      this.httpService.post<ZaryarSubmitDealResponse>(
-        `${apiBaseUrl}/api/Home/SubmitDeal`,
-        body,
-        { headers },
-      ),
+      this.httpService.post<ZaryarSubmitDealResponse>(`${apiBaseUrl}/api/Home/SubmitDeal`, body, {
+        headers,
+      }),
     );
 
     const result = response.data;
@@ -268,7 +268,13 @@ export class ProviderOrderService implements OnModuleInit {
       orderStatusStr: result.Data.OrderStatusStr,
     });
 
-    await this.publishOrderPlaced(data, orderId, result.Data.OrderStatus, result.Data.OrderStatusStr, clientOrderId);
+    await this.publishOrderPlaced(
+      data,
+      orderId,
+      result.Data.OrderStatus,
+      result.Data.OrderStatusStr,
+      clientOrderId,
+    );
     this.startZaryarTracking(apiBaseUrl, headers, orderId, data, clientOrderId);
 
     return { orderId };
@@ -289,11 +295,9 @@ export class ProviderOrderService implements OnModuleInit {
     const body = buildTalaabTradeBody(data);
 
     const response = await firstValueFrom(
-      this.httpService.post<TalaabTradeResponse>(
-        `${apiBaseUrl}/profile/trades/molten`,
-        body,
-        { headers },
-      ),
+      this.httpService.post<TalaabTradeResponse>(`${apiBaseUrl}/profile/trades/molten`, body, {
+        headers,
+      }),
     );
 
     const result = response.data;
@@ -308,9 +312,12 @@ export class ProviderOrderService implements OnModuleInit {
     );
 
     await this.publishOrderPlaced(data, orderId, result.data.status, '', data.clientOrderId);
-    this.startTalaabTracking(apiBaseUrl, headers, orderId, data);
 
+    // Persist before tracking starts: the tracker resolves the deal by orderId,
+    // and a fast resolution would otherwise update a row that does not exist yet
+    // and leave the deal stuck pending.
     await this.saveTalaabDeal(provider.key, result.data, data);
+    this.startTalaabTracking(apiBaseUrl, headers, orderId, data);
 
     return { orderId };
   }
@@ -337,9 +344,16 @@ export class ProviderOrderService implements OnModuleInit {
         gramPrice: data.gramPrice,
         mesghalPrice: data.price, // price placed with the provider is per mesghal
         dealType: data.dealType,
-        dealTypeStr: tradeData.type_text,
-        dealStatus: tradeData.status,
-        orderStatusStr: '',
+        // Talaab reports the trade from the SHOP's side, so its `type_text` is
+        // the mirror of ours; store the platform's own direction the way
+        // fetched transactions already do.
+        dealTypeStr: data.dealType === 0 ? 'خرید' : 'فروش',
+        // Placement is never a settlement — the trade is still cancellable
+        // (`time_for_cancel`) and Talaab can refuse it. Whatever status the
+        // placement response carries, the deal starts pending and only the
+        // tracker may mark it done.
+        dealStatus: DealStatus.PENDING,
+        orderStatusStr: 'pending',
         mazane: tradeData.mazaneh,
         mazaneStr: String(tradeData.mazaneh),
         orderDate: new Date(),
@@ -388,7 +402,7 @@ export class ProviderOrderService implements OnModuleInit {
           gramPrice: params.gramPrice,
           mesghalPrice: params.inputPrice, // price placed with the provider is per mesghal
           dealType: params.dealType,
-          dealStatus: 0, // pending
+          dealStatus: DealStatus.PENDING,
           orderStatusStr: params.orderStatusStr ?? 'pending',
           orderDate: new Date(),
         }),
@@ -410,11 +424,12 @@ export class ProviderOrderService implements OnModuleInit {
       const update: Partial<ProviderDealEntity> = { dealStatus: status, orderStatusStr: statusStr };
       const deal = await this.dealRepo.findOne({ where: { providerKey, orderId } });
       // On success, the mock fills at the requested price → record it as filled.
-      if (status === 1 && deal) update.filledPrice = deal.inputPrice;
+      if (status === DealStatus.DONE && deal) update.filledPrice = deal.inputPrice;
       await this.dealRepo.update({ providerKey, orderId }, update);
-      // A completed deal changes the provider's settled position — push the fresh
-      // aggregate to the backend so the dashboard/provider-finance reflect it.
-      if (status === 1) await this.providerAccountService.publishDealBalance(providerKey);
+      // Any resolution changes the provider's settled position: a completion adds
+      // the deal to the aggregate, and a refusal has to take back a deal that an
+      // earlier provider status may already have counted. Republish either way.
+      await this.providerAccountService.publishDealBalance(providerKey);
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : String(error);
       this.formatter.error('ProviderOrder', `Failed to update deal ${orderId}: ${message}`);
@@ -659,13 +674,7 @@ export class ProviderOrderService implements OnModuleInit {
             'ProviderOrder',
             `Talaab order ${requestId} status changed to ${status} (${statusStr})`,
           );
-          await this.settleTrackedOrder(
-            requestId,
-            status,
-            statusStr,
-            data,
-            data.clientOrderId,
-          );
+          await this.settleTrackedOrder(requestId, status, statusStr, data, data.clientOrderId);
         }
       } catch (error: unknown) {
         const message = error instanceof Error ? error.message : String(error);
@@ -723,11 +732,9 @@ export class ProviderOrderService implements OnModuleInit {
     };
 
     const response = await firstValueFrom(
-      this.httpService.post<ZaryarDealListResponse>(
-        `${apiBaseUrl}/api/Deal/DealsList`,
-        body,
-        { headers },
-      ),
+      this.httpService.post<ZaryarDealListResponse>(`${apiBaseUrl}/api/Deal/DealsList`, body, {
+        headers,
+      }),
     );
 
     const deals = response.data.Data || [];
@@ -739,14 +746,16 @@ export class ProviderOrderService implements OnModuleInit {
     return null;
   }
 
-  async getTrackedOrders(): Promise<{
-    orderId: string;
-    providerKey: string;
-    itemId: number;
-    dealType: number;
-    count: number;
-    lastStatus: number;
-  }[]> {
+  async getTrackedOrders(): Promise<
+    {
+      orderId: string;
+      providerKey: string;
+      itemId: number;
+      dealType: number;
+      count: number;
+      lastStatus: number;
+    }[]
+  > {
     return Array.from(this.trackedOrders.values()).map((t) => ({
       orderId: t.orderId,
       providerKey: t.providerKey,
