@@ -8,6 +8,7 @@ import { AdminDashboardService } from "./admin-dashboard.service";
 import {
   DashboardActivityItemDto,
   DashboardDistributionDto,
+  DashboardKpiDto,
   DashboardHealthDto,
   DashboardKpisDto,
   DashboardListQueryDto,
@@ -30,14 +31,27 @@ export class AdminDashboardController {
 
   @Get("kpis")
   @ApiOperation({
-    summary: "All four KPI cards",
+    summary: "Every KPI card, unfiltered",
     description:
       "Returned together because the panel shows them together and any one of them can be the " +
-      "active filter. Amounts are in `unit`'s own terms — the API never converts.",
+      "active metric. Each card carries three figures and, where it has one, the values its " +
+      "own filter accepts. Amounts are in `unit`'s own terms — the API never converts.",
   })
   @ApiEnvelopeResponse(DashboardKpisDto)
   async kpis() {
     return { data: await this.dashboard.kpis() };
+  }
+
+  @Get("card")
+  @ApiOperation({
+    summary: "One card, optionally narrowed by its filter",
+    description:
+      "Re-fetched on its own when a card's filter changes: the other cards would come back " +
+      "identical, and a filter belongs to one card rather than to the page.",
+  })
+  @ApiEnvelopeResponse(DashboardKpiDto)
+  async card(@Query() query: DashboardMetricQueryDto) {
+    return { data: await this.dashboard.card(query.metric, query.filter) };
   }
 
   @Get("series")
@@ -50,7 +64,7 @@ export class AdminDashboardController {
   })
   @ApiEnvelopeResponse(DashboardSeriesDto)
   async series(@Query() query: DashboardSeriesQueryDto) {
-    return { data: await this.dashboard.series(query.metric, query.year) };
+    return { data: await this.dashboard.series(query.metric, query.year, query.filter) };
   }
 
   @Get("distribution")
@@ -60,14 +74,14 @@ export class AdminDashboardController {
   })
   @ApiEnvelopeResponse(DashboardDistributionDto)
   async distribution(@Query() query: DashboardMetricQueryDto) {
-    return { data: await this.dashboard.distribution(query.metric) };
+    return { data: await this.dashboard.distribution(query.metric, query.filter) };
   }
 
   @Get("activity")
   @ApiOperation({ summary: "Recent activity for the selected metric" })
   @ApiEnvelopeResponse(DashboardActivityItemDto, { isArray: true })
   async activity(@Query() query: DashboardListQueryDto) {
-    return { data: await this.dashboard.activity(query.metric, query.limit) };
+    return { data: await this.dashboard.activity(query.metric, query.limit, query.filter) };
   }
 
   @Get("health")
@@ -80,7 +94,7 @@ export class AdminDashboardController {
   })
   @ApiEnvelopeResponse(DashboardHealthDto)
   async health(@Query() query: DashboardMetricQueryDto) {
-    return { data: await this.dashboard.health(query.metric) };
+    return { data: await this.dashboard.health(query.metric, query.filter) };
   }
 
   @Get("recent")
@@ -92,6 +106,6 @@ export class AdminDashboardController {
   })
   @ApiEnvelopeResponse(DashboardRecentDto)
   async recent(@Query() query: DashboardListQueryDto) {
-    return { data: await this.dashboard.recent(query.metric, query.limit) };
+    return { data: await this.dashboard.recent(query.metric, query.limit, query.filter) };
   }
 }

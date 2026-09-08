@@ -9,6 +9,7 @@ import {
   isRialSymbol,
   rialToToman,
   tomanToRial,
+  splitCompact,
 } from "./money";
 
 /**
@@ -94,5 +95,33 @@ describe("form helpers", () => {
     // empty input submit as a deliberate zero.
     expect(toApiAmount("", "IRR")).toBeNull();
     expect(toFormAmount(null, "XAU")).toBeNull();
+  });
+});
+
+describe("splitCompact", () => {
+  it("scales a billion Rial into digits plus words", () => {
+    // Three figures share a KPI tile; the full digit string does not fit.
+    expect(splitCompact(184_300_000_000, "IRR")).toEqual({
+      text: "۱۸۴٫۳",
+      suffix: "میلیارد ریال",
+    });
+  });
+
+  it("uses the right scale word at each threshold", () => {
+    expect(splitCompact(2_400_000, "IRR").suffix).toBe("میلیون ریال");
+    expect(splitCompact(2_400_000_000, "IRR").suffix).toBe("میلیارد ریال");
+    expect(splitCompact(2_400_000_000_000, "IRR").suffix).toBe("هزار میلیارد ریال");
+  });
+
+  it("leaves a small amount exact, where the digits still matter", () => {
+    expect(splitCompact(84_500, "IRR")).toEqual({ text: "۸۴٬۵۰۰", suffix: "ریال" });
+  });
+
+  it("keeps a non-rial symbol as its own unit", () => {
+    expect(splitCompact(1240.5, "XAU")).toEqual({ text: "۱٬۲۴۰٫۵", suffix: "XAU" });
+  });
+
+  it("renders a missing value as a dash, not as zero", () => {
+    expect(splitCompact(null, "IRR")).toEqual({ text: "—", suffix: "" });
   });
 });

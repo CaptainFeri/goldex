@@ -2,14 +2,15 @@ import { useQuery } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
 import { Line, Doughnut } from "react-chartjs-2";
 import { api, unwrap, apiError } from "../api/client";
-import { Card, Stat, Loading, ErrorState, Empty, Badge } from "../components/ui";
+import { Card, Loading, ErrorState, Empty, Badge } from "../components/ui";
 import { fmtNum, fmtYear } from "../lib/format";
 import { gridColor } from "../lib/chart";
-import { fmtBySymbol } from "../lib/money";
+import { fmtBySymbol, fmtCompact, splitCompact } from "../lib/money";
 import type {
   DashboardActivityItem,
   DashboardDistribution,
   DashboardHealth,
+  DashboardKpi,
   DashboardKpis,
   DashboardMetric,
   DashboardColumnKind,
@@ -74,12 +75,106 @@ function Delta({ percent }: { percent: number | null }) {
   );
 }
 
+/**
+ * One card: three figures, and its own filter where it has one.
+ *
+ * The filter belongs to the card rather than the page — a warehouse means
+ * nothing to the profit card — so selecting one re-fetches this card alone and
+ * passes the same value to the panels below when the card is the active one.
+ */
+function MetricCard({
+  card,
+  selected,
+  filter,
+  onSelect,
+  onFilter,
+}: {
+  card: DashboardKpi;
+  selected: boolean;
+  filter: string;
+  onSelect: () => void;
+  onFilter: (value: string) => void;
+}) {
+  // Refetched on its own when the filter moves; the row's other cards would
+  // come back identical.
+  const filtered = useQuery({
+    queryKey: ["dash-card", card.metric, filter],
+    queryFn: async () =>
+      unwrap<DashboardKpi>(
+        (await api.get("/admin/dashboard/card", { params: { metric: card.metric, filter } })).data,
+      ),
+    enabled: !!filter,
+  });
+
+  const shown = (filter && filtered.data) || card;
+
+  return (
+    <div
+      className={`dash-card${selected ? " selected" : ""}`}
+      role="button"
+      tabIndex={0}
+      onClick={onSelect}
+      onKeyDown={(e) => {
+        if (e.key === "Enter" || e.key === " ") onSelect();
+      }}
+    >
+      <div className="row spread" style={{ gap: 8, alignItems: "center" }}>
+        <span style={{ fontSize: 13, fontWeight: 600 }}>{card.label}</span>
+        <Delta percent={shown.deltaPercent} />
+      </div>
+
+      {card.filters.length > 0 && (
+        <select
+          className="select sm"
+          value={filter}
+          // The click would otherwise pick the card while the operator is only
+          // choosing what it shows.
+          onClick={(e) => e.stopPropagation()}
+          onChange={(e) => onFilter(e.target.value)}
+          style={{ marginTop: 8 }}
+        >
+          <option value="">همه {card.filterLabel ?? ""}</option>
+          {card.filters.map((f) => (
+            <option key={f.value} value={f.value}>{f.label}</option>
+          ))}
+        </select>
+      )}
+
+      <div className="dash-card-stats">
+        {shown.stats.map((stat) => {
+          // Three figures share one card, so a billion Rial is scaled and its
+          // words move to the line below rather than overrunning the column
+          // beside it. The exact amount stays on the tile's title.
+          const { text, suffix } = splitCompact(stat.value, stat.unit);
+          const note = [suffix, stat.hint].filter(Boolean).join(" · ");
+          return (
+            <div key={stat.label}>
+              <div className="muted" style={{ fontSize: 11 }}>{stat.label}</div>
+              <div
+                className="mono dash-stat-value"
+                title={stat.unit ? fmtBySymbol(stat.value, stat.unit, { digits: 0 }) : undefined}
+              >
+                {stat.unit ? text : fmtNum(stat.value, 0)}
+              </div>
+              {note && <div className="muted dash-stat-note">{note}</div>}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 function MetricCards({
   metric,
+  filters,
   onSelect,
+  onFilter,
 }: {
   metric: DashboardMetric;
+  filters: Record<string, string>;
   onSelect: (m: DashboardMetric) => void;
+  onFilter: (m: DashboardMetric, value: string) => void;
 }) {
   const kpis = useQuery({
     queryKey: ["dash-kpis"],
@@ -88,72 +183,52 @@ function MetricCards({
 
   const cards = kpis.data?.cards ?? [];
 
+  if (kpis.isLoading) return <Loading />;
+  if (kpis.isError) return <ErrorState message={apiError(kpis.error)} />;
+
   return (
-    <div className="grid grid-4" style={{ marginBottom: 16 }}>
-      {cards.length === 0
-        ? [0, 1, 2, 3].map((i) => <Stat key={i} label="…" value="…" />)
-        : cards.map((c) => (
-            <div
-              key={c.metric}
-              role="button"
-              tabIndex={0}
-              onClick={() => onSelect(c.metric)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter" || e.key === " ") onSelect(c.metric);
-              }}
-              style={{
-                cursor: "pointer",
-                outline: metric === c.metric ? "1px solid var(--gold)" : undefined,
-                borderRadius: "var(--radius)",
-              }}
-            >
-              <Stat
-                label={c.label}
-                // The API reports in the symbol's own units; this is the one
-                // place that converts, exactly as everywhere else in the panel.
-                value={fmtBySymbol(c.value, c.unit, { digits: c.unit === "XAU" ? 4 : 0 })}
-                sub={
-                  <span className="row" style={{ gap: 8 }}>
-                    <Delta percent={c.deltaPercent} />
-                    <span className="muted">
-                      {c.subValue
-                        ? `${fmtBySymbol(c.subValue, c.subUnit, { digits: 0 })} ${c.sub}`
-                        : c.sub}
-                    </span>
-                  </span>
-                }
-              />
-            </div>
-          ))}
+    <div className="dash-cards">
+      {cards.map((c) => (
+        <MetricCard
+          key={c.metric}
+          card={c}
+          selected={metric === c.metric}
+          filter={filters[c.metric] ?? ""}
+          onSelect={() => onSelect(c.metric)}
+          onFilter={(value) => onFilter(c.metric, value)}
+        />
+      ))}
     </div>
   );
 }
 
-function MetricPanels({ metric }: { metric: DashboardMetric }) {
-  const params = { metric };
+function MetricPanels({ metric, filter }: { metric: DashboardMetric; filter: string }) {
+  // Every panel is a function of the metric *and* whatever its card is
+  // narrowed to, so the same value goes into the key and the request.
+  const params = filter ? { metric, filter } : { metric };
 
   const series = useQuery({
-    queryKey: ["dash-series", metric],
+    queryKey: ["dash-series", metric, filter],
     queryFn: async () =>
       unwrap<DashboardSeries>((await api.get("/admin/dashboard/series", { params })).data),
   });
   const distribution = useQuery({
-    queryKey: ["dash-distribution", metric],
+    queryKey: ["dash-distribution", metric, filter],
     queryFn: async () =>
       unwrap<DashboardDistribution>((await api.get("/admin/dashboard/distribution", { params })).data),
   });
   const activity = useQuery({
-    queryKey: ["dash-activity", metric],
+    queryKey: ["dash-activity", metric, filter],
     queryFn: async () =>
       unwrap<DashboardActivityItem[]>((await api.get("/admin/dashboard/activity", { params })).data),
   });
   const health = useQuery({
-    queryKey: ["dash-health", metric],
+    queryKey: ["dash-health", metric, filter],
     queryFn: async () =>
       unwrap<DashboardHealth>((await api.get("/admin/dashboard/health", { params })).data),
   });
   const recent = useQuery({
-    queryKey: ["dash-recent", metric],
+    queryKey: ["dash-recent", metric, filter],
     queryFn: async () =>
       unwrap<DashboardRecent>((await api.get("/admin/dashboard/recent", { params })).data),
   });
@@ -287,6 +362,23 @@ function MetricPanels({ metric }: { metric: DashboardMetric }) {
               <div className="muted" style={{ fontSize: 11, marginBottom: 10 }}>
                 ترکیب {fmtNum(health.data!.windowDays)} روز گذشته — نه وضعیت لحظه‌ای سرویس
               </div>
+              {(health.data!.measures ?? []).length > 0 && (
+                <div className="dash-measures">
+                  {health.data!.measures.map((m) => (
+                    <div key={m.label}>
+                      <div className="muted" style={{ fontSize: 11 }}>{m.label}</div>
+                      <div className="mono dash-stat-value" style={{ fontSize: 14 }}>
+                        {m.value === "—"
+                          ? "—"
+                          : m.unit
+                            ? fmtCompact(m.value, m.unit)
+                            : fmtNum(m.value, 1)}
+                      </div>
+                      {m.hint && <div className="muted" style={{ fontSize: 10 }}>{m.hint}</div>}
+                    </div>
+                  ))}
+                </div>
+              )}
               <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
                 {health.data!.rows.map((r) => (
                   <div key={r.label}>
@@ -366,6 +458,9 @@ function MetricPanels({ metric }: { metric: DashboardMetric }) {
 
 export default function DashboardPage() {
   const [metric, setMetric] = useState<DashboardMetric>("volume");
+  // Kept per card, not per page: switching metrics should not silently apply
+  // the last card's warehouse to the credits panels.
+  const [filters, setFilters] = useState<Record<string, string>>({});
 
   // Only the two surviving panels' data is fetched here; the metric panels own
   // their own queries. The previous page also pulled profit, KYC stats,
@@ -387,11 +482,16 @@ export default function DashboardPage() {
 
   return (
     <>
-      {/* The four cards are the page's global filter: every panel below is a
-          function of the selected metric, which is why they are fetched
-          together and the panels take it as a prop. */}
-      <MetricCards metric={metric} onSelect={setMetric} />
-      <MetricPanels metric={metric} />
+      {/* The cards are the page's global filter: every panel below is a
+          function of the selected metric and that card's own sub-filter, which
+          is why they are fetched together and the panels take both as props. */}
+      <MetricCards
+        metric={metric}
+        filters={filters}
+        onSelect={setMetric}
+        onFilter={(m, value) => setFilters((f) => ({ ...f, [m]: value }))}
+      />
+      <MetricPanels metric={metric} filter={filters[metric] ?? ""} />
 
       {/* Kept from the previous dashboard: per-asset balances and provider
           balances have no equivalent among the metric views, so replacing the
