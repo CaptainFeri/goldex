@@ -1394,22 +1394,43 @@ export interface ReportSchedule {
 
 // ── Dashboard ──────────────────────────────────────────────────────────────
 
-/** The four cards, which act as one global filter over every panel. */
-export type DashboardMetric = "users" | "volume" | "profit" | "withdrawals";
+/** The cards, which act as one global filter over every panel. */
+export type DashboardMetric =
+  | "users"
+  | "volume"
+  | "profit"
+  | "withdrawals"
+  | "providers"
+  | "trades"
+  | "credits"
+  | "inventory";
 export type DashboardSeverity = "good" | "warn" | "bad" | "info";
 
-export interface DashboardKpi {
-  metric: DashboardMetric;
+/** One figure on a card. Three of them make the card. */
+export interface DashboardStat {
   label: string;
   /** Decimal string in `unit`'s own terms — format with `fmtBySymbol`. */
   value: string;
   unit: string | null;
+  hint?: string | null;
+}
+
+/** One value a card's own filter can take. */
+export interface DashboardFilterOption {
+  value: string;
+  label: string;
+}
+
+export interface DashboardKpi {
+  metric: DashboardMetric;
+  label: string;
+  stats: DashboardStat[];
+  /** What the card's filter selects; null when it has none. */
+  filterLabel: string | null;
+  filters: DashboardFilterOption[];
+  activeFilter: string | null;
   /** Null when the previous period was empty; a rise from nothing has no percentage. */
   deltaPercent: number | null;
-  sub: string;
-  /** A figure for the sub-line, kept out of `sub` so it can be formatted. */
-  subValue: string | null;
-  subUnit: string | null;
 }
 
 export interface DashboardKpis {
@@ -1464,6 +1485,8 @@ export interface DashboardHealth {
   title: string;
   windowDays: number;
   rows: DashboardHealthRow[];
+  /** Measures that are not a share of anything — latency, amounts paid out. */
+  measures: DashboardStat[];
 }
 
 export interface DashboardRecentRow {

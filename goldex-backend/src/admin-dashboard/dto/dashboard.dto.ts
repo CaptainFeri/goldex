@@ -1,12 +1,25 @@
 import { ApiProperty, ApiPropertyOptional } from "@nestjs/swagger";
 import { Type } from "class-transformer";
-import { IsEnum, IsInt, IsOptional, Max, Min } from "class-validator";
+import { IsEnum, IsInt, IsOptional, IsString, Max, MaxLength, Min } from "class-validator";
 import { DashboardMetric, DashboardSeverity } from "../dashboard.enums";
 
 export class DashboardMetricQueryDto {
   @ApiProperty({ enum: DashboardMetric, example: DashboardMetric.VOLUME })
   @IsEnum(DashboardMetric)
   metric: DashboardMetric;
+
+  @ApiPropertyOptional({
+    example: "material",
+    description:
+      "Narrows the metric to one of the values its card offers in `filters` — a symbol " +
+      "category, a withdrawal channel, a price pair, an order type, a symbol or a warehouse. " +
+      "Omit for the metric as a whole. An unknown value is ignored rather than erroring, so a " +
+      "stale bookmark still renders the page.",
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(100)
+  filter?: string;
 }
 
 export class DashboardSeriesQueryDto extends DashboardMetricQueryDto {
@@ -32,7 +45,52 @@ export class DashboardListQueryDto extends DashboardMetricQueryDto {
   limit?: number;
 }
 
-/** One of the four cards. */
+/** One figure on a card. Three of them make the card. */
+export class DashboardStatDto {
+  @ApiProperty({ example: "حساب‌های فعال" })
+  label: string;
+
+  @ApiProperty({
+    example: "12480",
+    description: "Decimal string. In `unit`'s own terms — never converted by the API.",
+  })
+  value: string;
+
+  @ApiPropertyOptional({
+    nullable: true,
+    example: "IRR",
+    description:
+      "The symbol `value` is denominated in, where it is money or a weight. Null for a count. " +
+      "A rial value is shown as toman by the panel, not by the API.",
+  })
+  unit?: string | null;
+
+  @ApiPropertyOptional({
+    nullable: true,
+    example: "۳۰ روز گذشته",
+    description: "What the figure covers, where that is not obvious from the label",
+  })
+  hint?: string | null;
+}
+
+/** One value the card's filter can take. */
+export class DashboardFilterOptionDto {
+  @ApiProperty({ example: "material" })
+  value: string;
+
+  @ApiProperty({ example: "فلزات گران‌بها" })
+  label: string;
+}
+
+/**
+ * One card.
+ *
+ * Three figures rather than one: an operator reading "users" wants the split
+ * — active, blocked, under review — and a single headline with a delta hides
+ * exactly the number they came for. Where a card can be narrowed it also
+ * carries its filter's options, so the panel never hardcodes what a category
+ * or a warehouse is called.
+ */
 export class DashboardKpiDto {
   @ApiProperty({ enum: DashboardMetric })
   metric: DashboardMetric;
@@ -40,49 +98,42 @@ export class DashboardKpiDto {
   @ApiProperty({ example: "حجم معاملات" })
   label: string;
 
-  @ApiProperty({
-    example: "2480.5",
-    description: "Decimal string. In `unit`'s own terms — never converted by the API.",
-  })
-  value: string;
+  @ApiProperty({ type: [DashboardStatDto], description: "The card's figures, in display order" })
+  stats: DashboardStatDto[];
 
   @ApiPropertyOptional({
     nullable: true,
-    example: "XAU",
-    description:
-      "The symbol `value` is denominated in, where it is money or a weight. Null for a count. " +
-      "Format by it; a rial value is shown as toman by the panel, not by the API.",
+    example: "دسته‌بندی",
+    description: "What the filter selects. Null when the metric has no sub-filter.",
   })
-  unit?: string | null;
+  filterLabel?: string | null;
+
+  @ApiProperty({
+    type: [DashboardFilterOptionDto],
+    description: "Values the filter accepts. Empty when the metric has no sub-filter.",
+  })
+  filters: DashboardFilterOptionDto[];
+
+  @ApiPropertyOptional({
+    nullable: true,
+    example: "material",
+    description: "The filter these figures were computed under, echoed back",
+  })
+  activeFilter?: string | null;
 
   @ApiPropertyOptional({
     nullable: true,
     example: 12.4,
     description:
-      "Percent change against the previous period of equal length. Null when the previous " +
-      "period was empty — a rise from nothing is not a percentage.",
+      "Percent change of the card's headline figure against the previous period of equal " +
+      "length. Null when the previous period was empty — a rise from nothing is not a " +
+      "percentage — or when the card has no meaningful trend.",
   })
   deltaPercent?: number | null;
-
-  @ApiProperty({ example: "30 روز گذشته", description: "The card's sub-line" })
-  sub: string;
-
-  @ApiPropertyOptional({
-    nullable: true,
-    example: "21000000000.00",
-    description:
-      "A figure belonging to the sub-line, kept separate from `sub` so the client formats it. " +
-      "The API must not bake an amount into prose: a rial number inside a sentence cannot be " +
-      "converted to toman by the panel, and would be the one unformatted amount on the page.",
-  })
-  subValue?: string | null;
-
-  @ApiPropertyOptional({ nullable: true, example: "IRR", description: "Unit of `subValue`" })
-  subUnit?: string | null;
 }
 
 export class DashboardKpisDto {
-  @ApiProperty({ type: [DashboardKpiDto], description: "All four cards, in display order" })
+  @ApiProperty({ type: [DashboardKpiDto], description: "All cards, in display order" })
   cards: DashboardKpiDto[];
 
   @ApiProperty({ example: "2026-09-05T09:12:00.000Z" })
@@ -186,6 +237,14 @@ export class DashboardHealthDto {
 
   @ApiProperty({ type: [DashboardHealthRowDto] })
   rows: DashboardHealthRowDto[];
+
+  @ApiProperty({
+    type: [DashboardStatDto],
+    description:
+      "Measures that are not a share of anything — average settlement latency, amounts paid " +
+      "out — shown beside the composition rather than forced into it as a percentage.",
+  })
+  measures: DashboardStatDto[];
 }
 
 /**

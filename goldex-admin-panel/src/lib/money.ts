@@ -90,6 +90,58 @@ export function fmtBySymbol(
 }
 
 /**
+ * A large amount split into the digits and the words that scale them.
+ *
+ * Three Rial figures side by side in one tile do not fit at full length, and
+ * "۱۸۴٫۳ میلیارد ریال" on one line is no better — it clips. So the number and
+ * its scale are returned separately: the tile prints the digits large and the
+ * words small underneath, which fits and still says what the number is.
+ * Anything under a million keeps its exact figure, since that is where the
+ * digits still matter.
+ */
+export function splitCompact(
+  value: Amount,
+  slug: string | null | undefined,
+  opts: { locale?: string } = {}
+): { text: string; suffix: string } {
+  const n = toNumber(value);
+  const unit = isRialSymbol(slug) ? DISPLAY_UNIT : (slug ?? "");
+  if (n === null) return { text: "—", suffix: "" };
+
+  const abs = Math.abs(n);
+  const locale = opts.locale ?? DISPLAY_LOCALE;
+  const scale =
+    abs >= 1e12
+      ? { by: 1e12, word: "هزار میلیارد" }
+      : abs >= 1e9
+        ? { by: 1e9, word: "میلیارد" }
+        : abs >= 1e6
+          ? { by: 1e6, word: "میلیون" }
+          : null;
+
+  if (!scale) {
+    return {
+      text: n.toLocaleString(locale, { maximumFractionDigits: isRialSymbol(slug) ? 0 : 4 }),
+      suffix: unit,
+    };
+  }
+  return {
+    text: (n / scale.by).toLocaleString(locale, { maximumFractionDigits: 1 }),
+    suffix: unit ? `${scale.word} ${unit}` : scale.word,
+  };
+}
+
+/** The same, as one string, where a single line is what the caller wants. */
+export function fmtCompact(
+  value: Amount,
+  slug: string | null | undefined,
+  opts: { locale?: string } = {}
+): string {
+  const { text, suffix } = splitCompact(value, slug, opts);
+  return suffix ? `${text} ${suffix}` : text;
+}
+
+/**
  * The unit an operator reads and types for a symbol.
  *
  * Use it on input labels: a rial field under any other label leaves the

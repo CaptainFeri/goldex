@@ -1737,3 +1737,65 @@ canvas {
 .alloc-row .alloc-remove {
   margin-top: 22px;
 }
+
+/* ── Dashboard cards ───────────────────────────────────────────────────── */
+.dash-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: 12px;
+  margin-bottom: 16px;
+}
+.dash-card {
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 14px 16px;
+  cursor: pointer;
+  /* Cards differ in height — only some carry a filter — so the figures are
+     pushed to the bottom and the row reads as one band. */
+  display: flex;
+  flex-direction: column;
+}
+.dash-card.selected {
+  border-color: var(--gold);
+}
+.dash-card-stats {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 10px;
+  margin-top: auto;
+  padding-top: 10px;
+}
+.dash-stat-note {
+  font-size: 10px;
+  line-height: 1.4;
+}
+.dash-stat-value {
+  font-size: 15px;
+  font-weight: 600;
+  direction: rtl;
+  /* Latin-digit fallbacks and the unit word must not be split across lines
+     mid-number; a wrapped figure reads as two numbers. */
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+/* A card is only as wide as its narrowest column of three; the labels wrap
+   rather than clipping a figure in half. */
+.dash-card-stats > div {
+  min-width: 0;
+}
+.dash-measures {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  gap: 10px;
+  padding: 10px 0;
+  margin-bottom: 8px;
+  border-top: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+}
+.select.sm {
+  height: 28px;
+  padding: 0 8px;
+  font-size: 12px;
+}
