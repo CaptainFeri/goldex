@@ -9,7 +9,7 @@ import { ProviderEntity } from './entity/provider.entity';
 import { ProviderDealEntity } from './entity/provider-deal.entity';
 import { ProviderBalanceEntity } from './entity/provider-balance.entity';
 import { RabbitMQService, MessagePatterns } from '../rabbitmq/rabbitmq.module';
-import { ProviderCategory } from './types/enums';
+import { DealStatus, ProviderCategory } from './types/enums';
 import {
   CurrencyUnit,
   resolvePriceUnit,
@@ -47,10 +47,12 @@ export class ProviderAccountService implements OnApplicationBootstrap {
   // the backend's snapshot reflects existing deals without a fresh provider fetch.
   async onApplicationBootstrap(): Promise<void> {
     try {
+      // Every provider that has deals at all, not just completed ones: a
+      // provider whose only deals were refused still needs its snapshot
+      // published so the backend zeroes any stale row.
       const rows = await this.dealRepo
         .createQueryBuilder('d')
         .select('DISTINCT d.providerKey', 'providerKey')
-        .where('d.dealStatus = :done', { done: 1 })
         .getRawMany();
       for (const r of rows) {
         await this.publishDealBalance(r.providerKey);
@@ -69,9 +71,14 @@ export class ProviderAccountService implements OnApplicationBootstrap {
   // the result over RabbitMQ (PROVIDER_DEALS_UPDATED) for the backend to
   // snapshot. Aggregating per itemId lets the backend map each item to its
   // real base/quote pair symbols instead of assuming XAU/IRR.
+  //
+  // Items are grouped from ALL of the provider's deals but only DONE ones are
+  // summed, so an item whose deals were all refused (or are still pending)
+  // publishes a zeroed aggregate rather than leaving the backend's previous
+  // snapshot row standing.
   async publishDealBalance(providerKey: string): Promise<void> {
     if (!this.rabbitMQService) return;
-    const deals = await this.dealRepo.find({ where: { providerKey, dealStatus: 1 } });
+    const deals = await this.dealRepo.find({ where: { providerKey } });
 
     const byItem = new Map<number | null, ProviderDealEntity[]>();
     for (const d of deals) {
@@ -81,6 +88,7 @@ export class ProviderAccountService implements OnApplicationBootstrap {
     }
 
     for (const [itemId, itemDeals] of byItem.entries()) {
+      let dealCount = 0;
       let totalVolume = 0;
       let totalValue = 0;
       let buyVolume = 0;
@@ -92,6 +100,11 @@ export class ProviderAccountService implements OnApplicationBootstrap {
 
       for (const d of itemDeals) {
         if (!itemName && d.itemName) itemName = d.itemName;
+        // A deal only counts once the provider has settled it. Pending deals
+        // are still cancellable and refused ones never happened, so neither
+        // may move the provider's balance.
+        if (d.dealStatus !== DealStatus.DONE) continue;
+        dealCount += 1;
         const vol = Number(d.gramVolume ?? d.count ?? 0);
         // Value is reckoned at the CUSTOMER gram price (display) whenever it's known
         // (our order-placed deals); otherwise fall back to the provider's reported
@@ -100,8 +113,9 @@ export class ProviderAccountService implements OnApplicationBootstrap {
         const val = cgp > 0 ? vol * cgp : Number(d.totalPrice ?? 0) || vol * Number(d.gramPrice ?? 0);
         totalVolume += vol;
         totalValue += val;
-        // dealTypeStr is set for fetched deals; order-placed deals only set the
-        // numeric dealType (0 = buy, 1 = sell).
+        // dealTypeStr is stored from the PLATFORM's perspective for every deal
+        // (Talaab's inverted titles are normalized on the way in); order-placed
+        // deals may only carry the numeric dealType (0 = buy, 1 = sell).
         const t = d.dealTypeStr || '';
         const isBuy = t.includes('خرید') || (t === '' && d.dealType === 0);
         const isSell = t.includes('فروش') || (t === '' && d.dealType === 1);
@@ -122,7 +136,7 @@ export class ProviderAccountService implements OnApplicationBootstrap {
           itemId: itemId ?? null,
           itemName: itemName ?? null,
           doneDeals: {
-            dealCount: itemDeals.length,
+            dealCount,
             totalVolume,
             totalValue,
             buyVolume,
@@ -520,7 +534,7 @@ export class ProviderAccountService implements OnApplicationBootstrap {
           dealType: isShopBuy ? 0 : 1,
           dealTypeStr: isShopBuy ? 'خرید' : 'فروش',
           orderStatusStr: 'انجام شده',
-          dealStatus: 1,
+          dealStatus: DealStatus.DONE,
           count: Math.abs(goldAffect),
           totalPrice: Math.abs(parseFloat(txn.affect?.rial?.balance || '0')),
           mazane,
