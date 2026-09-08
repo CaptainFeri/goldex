@@ -8,6 +8,7 @@ import { ConsoleFormatterService } from '../common/console-formatter.service';
 import { ProviderEntity } from './entity/provider.entity';
 import { ProviderDealEntity } from './entity/provider-deal.entity';
 import { ProviderAccountService } from './provider-account.service';
+import { CurrencyUnit, fromRial } from '../common/currency-unit';
 import { DealStatus, ProviderCategory } from './types/enums';
 import { RabbitMQService, MessagePatterns, RabbitMQMessage } from '../rabbitmq/rabbitmq.module';
 import {
