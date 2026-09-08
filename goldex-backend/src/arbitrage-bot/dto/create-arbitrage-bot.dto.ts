@@ -1,4 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from "@nestjs/swagger";
+import { AllocateCapitalDto } from "./allocate-capital.dto";
 import { Type } from "class-transformer";
 import {
   ArrayUnique,
@@ -187,18 +188,39 @@ export class CreateArbitrageBotDto {
   @IsOptional()
   notifications?: ArbitrageBotNotificationsDto;
 
-  @ApiPropertyOptional({ description: "Asset the bot's capital and P&L are denominated in" })
+  @ApiPropertyOptional({
+    type: AllocateCapitalDto,
+    isArray: true,
+    description:
+      "Capital to freeze, one entry per asset — e.g. 10 grams of gold and 100bn Rial. " +
+      "Several assets let the bot fund either direction of an opportunity.",
+  })
+  @ValidateNested({ each: true })
+  @Type(() => AllocateCapitalDto)
+  @IsArray()
+  @IsOptional()
+  allocations?: AllocateCapitalDto[];
+
+  @ApiPropertyOptional({
+    deprecated: true,
+    description: "Single-asset funding; prefer `allocations`. Kept for existing callers.",
+  })
   @IsUUID()
   @IsOptional()
   symbolId?: string;
 
-  @ApiPropertyOptional({ description: "Capital to freeze from the owner's manager account" })
+  @ApiPropertyOptional({
+    deprecated: true,
+    description: "Amount for `symbolId`; prefer `allocations`.",
+  })
   @IsNumber()
   @IsPositive()
   @IsOptional()
   allocatedAmount?: number;
 
-  @ApiPropertyOptional({ description: "Share of the allocation the bot may lose before halting" })
+  @ApiPropertyOptional({
+    description: "Default share an allocation may lose before the bot stops using that asset",
+  })
   @IsNumber()
   @Min(1)
   @Max(100)

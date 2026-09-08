@@ -1,8 +1,7 @@
-import { Column, Entity, Index, JoinColumn, ManyToOne } from "typeorm";
+import { Column, Entity, Index, JoinColumn, ManyToOne, OneToMany } from "typeorm";
 import { myBaseEntity } from "../../shared/entity/base.entity";
 import { AdminEntity } from "../../admin/entity/admin.entity";
-import { SymbolEntity } from "../../admin-symbol/entity/symbol.entity";
-import { ManagerAccountEntity } from "../../manager-account/entity/manager-account.entity";
+import { ArbitrageBotAllocationEntity } from "./arbitrage-bot-allocation.entity";
 import {
   ArbitrageBotExecutionModeEnum,
   ArbitrageBotStatusEnum,
@@ -21,12 +20,12 @@ import {
  *
  * A bot is three things at once: a filter over the live opportunity stream
  * (which pairs, markets and providers it cares about), a risk budget (capital
- * frozen out of its owner's manager account), and a notification policy.
+ * frozen out of its owner's manager accounts), and a notification policy.
  *
- * The frozen allocation is what makes the bot safe to run: it may keep trading
- * only while its realized losses stay under `stopLossAmount`, which is itself
- * capped by the allocation. When that budget is spent the bot halts itself and
- * waits for a person.
+ * The frozen allocations are what make the bot safe to run: for each asset it
+ * holds, it may keep trading only while the realized losses in that asset stay
+ * under its stop-loss. When every asset's budget is spent the bot halts itself
+ * and waits for a person.
  */
 @Entity("arbitrage_bot")
 @Index(["ownerAdminId", "status"])
@@ -76,44 +75,19 @@ export class ArbitrageBotEntity extends myBaseEntity {
 
   // ── The capital behind it ────────────────────────────────────────────────
 
-  @Column({ name: "manager_account_id", type: "uuid", nullable: true })
-  managerAccountId: string | null;
+  /**
+   * Frozen capital, one row per asset.
+   *
+   * Funding lives here rather than on the bot because a bot may hold several
+   * assets at once — cash to buy first, the metal to sell first — and each
+   * carries its own stop-loss.
+   */
+  @OneToMany(() => ArbitrageBotAllocationEntity, (allocation) => allocation.bot)
+  allocations: ArbitrageBotAllocationEntity[];
 
-  @ManyToOne(() => ManagerAccountEntity, { nullable: true, onDelete: "SET NULL" })
-  @JoinColumn({ name: "manager_account_id" })
-  managerAccount: ManagerAccountEntity | null;
-
-  /** Asset of the allocation; the same asset the bot's P&L is booked in. */
-  @Column({ name: "symbol_id", type: "uuid", nullable: true })
-  symbolId: string | null;
-
-  @ManyToOne(() => SymbolEntity, { nullable: true, onDelete: "SET NULL" })
-  @JoinColumn({ name: "symbol_id" })
-  symbol: SymbolEntity | null;
-
-  /** Capital frozen out of the manager account for this bot. */
-  @Column({ type: "decimal", precision: 20, scale: 8, default: 0, name: "allocated_amount" })
-  allocatedAmount: number;
-
-  /** Share of the allocation the bot may lose before it halts. */
+  /** Default stop-loss applied to an allocation that does not set its own. */
   @Column({ type: "decimal", precision: 5, scale: 2, default: 100, name: "stop_loss_percent" })
   stopLossPercent: number;
-
-  /**
-   * The loss budget in the allocation's asset — `allocatedAmount` times
-   * `stopLossPercent`, stored so a later change to the allocation cannot
-   * silently move the line a running bot is measured against.
-   */
-  @Column({ type: "decimal", precision: 20, scale: 8, default: 0, name: "stop_loss_amount" })
-  stopLossAmount: number;
-
-  /** Net realized result since the allocation was made; negative is a loss. */
-  @Column({ type: "decimal", precision: 20, scale: 8, default: 0, name: "realized_pnl" })
-  realizedPnl: number;
-
-  /** Cumulative realized losses, which is what the stop-loss measures. */
-  @Column({ type: "decimal", precision: 20, scale: 8, default: 0, name: "realized_loss" })
-  realizedLoss: number;
 
   // ── Operational state ────────────────────────────────────────────────────
 

@@ -11,6 +11,7 @@ import Decimal from "decimal.js";
 import { ArbitrageBotEntity } from "./entity/arbitrage-bot.entity";
 import { ArbitrageBotTradeEntity } from "./entity/arbitrage-bot-trade.entity";
 import { ArbitrageBotEventEntity } from "./entity/arbitrage-bot-event.entity";
+import { ArbitrageBotAllocationEntity } from "./entity/arbitrage-bot-allocation.entity";
 import {
   ArbitrageBotEventSeverityEnum,
   ArbitrageBotEventTypeEnum,
@@ -67,6 +68,8 @@ export class ArbitrageBotService {
     private readonly tradeRepo: Repository<ArbitrageBotTradeEntity>,
     @InjectRepository(ArbitrageBotEventEntity)
     private readonly eventRepo: Repository<ArbitrageBotEventEntity>,
+    @InjectRepository(ArbitrageBotAllocationEntity)
+    private readonly allocationRepo: Repository<ArbitrageBotAllocationEntity>,
     private readonly managerAccounts: ManagerAccountService,
     @InjectRepository(SymbolEntity)
     private readonly symbolRepo: Repository<SymbolEntity>,
@@ -88,22 +91,52 @@ export class ArbitrageBotService {
       thresholds: this.mergeThresholds(DEFAULT_BOT_THRESHOLDS, dto.thresholds),
       notifications: this.mergeNotifications(DEFAULT_BOT_NOTIFICATIONS, dto.notifications),
       stopLossPercent: dto.stopLossPercent ?? 100,
-      allocatedAmount: 0,
-      stopLossAmount: 0,
     });
 
     const saved = await this.botRepo.save(bot);
 
     // Funding at creation time is the normal flow — the manager decides how
-    // much of their account this bot may risk as they define it.
-    if (dto.symbolId && dto.allocatedAmount) {
-      return this.allocate(
-        saved.id,
-        { symbolId: dto.symbolId, amount: dto.allocatedAmount, stopLossPercent: dto.stopLossPercent },
-        actor
+    // much of which accounts this bot may risk as they define it. Several
+    // assets at once is the point: cash lets it buy first, the metal lets it
+    // sell first, and a bot given both can act on either direction.
+    const lines = this.requestedAllocations(dto);
+    try {
+      for (const line of lines) {
+        await this.allocate(saved.id, line, actor);
+      }
+    } catch (err) {
+      // A second asset can fail on balance after the first is already frozen.
+      // Leaving the manager with capital locked behind a half-made bot is
+      // worse than the original error, so undo before reporting it.
+      await this.releaseAll(saved, actor.id).catch((releaseErr) =>
+        this.logger.error(
+          `failed to unwind allocations of bot ${saved.id}: ${(releaseErr as Error).message}`
+        )
       );
+      await this.botRepo.remove(saved);
+      throw err;
     }
-    return saved;
+    return this.getOwned(saved.id, actor);
+  }
+
+  /**
+   * The allocations a create request asks for, accepting both the list form
+   * and the older single-asset fields so an existing caller keeps working.
+   */
+  private requestedAllocations(dto: CreateArbitrageBotDto): AllocateCapitalDto[] {
+    if (dto.allocations?.length) {
+      return dto.allocations.filter((line) => Number(line.amount) > 0);
+    }
+    if (dto.symbolId && Number(dto.allocatedAmount) > 0) {
+      return [
+        {
+          symbolId: dto.symbolId,
+          amount: dto.allocatedAmount as number,
+          stopLossPercent: dto.stopLossPercent,
+        },
+      ];
+    }
+    return [];
   }
 
   async update(id: string, dto: UpdateArbitrageBotDto, actor: BotActor): Promise<ArbitrageBotEntity> {
@@ -123,14 +156,19 @@ export class ArbitrageBotService {
       );
     }
     if (dto.stopLossPercent !== undefined) {
+      // The bot-level percent is the default for new allocations, and changing
+      // it re-measures the ones already there: a manager who moves the line
+      // means it for the capital the bot is holding now.
       bot.stopLossPercent = dto.stopLossPercent;
-      bot.stopLossAmount = new Decimal(bot.allocatedAmount)
-        .times(dto.stopLossPercent)
-        .dividedBy(100)
-        .toNumber();
+      for (const allocation of await this.allocationsOf(bot.id)) {
+        allocation.stopLossPercent = dto.stopLossPercent;
+        allocation.stopLossAmount = this.budgetFor(allocation.allocatedAmount, dto.stopLossPercent);
+        await this.allocationRepo.save(allocation);
+      }
     }
 
-    return this.botRepo.save(bot);
+    await this.botRepo.save(bot);
+    return this.getOwned(id, actor);
   }
 
   async list(filters: { ownerAdminId?: string; status?: ArbitrageBotStatusEnum } = {}) {
@@ -139,7 +177,7 @@ export class ArbitrageBotService {
         ...(filters.ownerAdminId ? { ownerAdminId: filters.ownerAdminId } : {}),
         ...(filters.status ? { status: filters.status } : {}),
       },
-      relations: { symbol: true, ownerAdmin: true },
+      relations: { allocations: { symbol: true }, ownerAdmin: true },
       order: { createAt: "DESC" },
     });
     return bots.map((b) => this.present(b));
@@ -148,7 +186,7 @@ export class ArbitrageBotService {
   async get(id: string) {
     const bot = await this.botRepo.findOne({
       where: { id },
-      relations: { symbol: true, ownerAdmin: true, managerAccount: true },
+      relations: { allocations: { symbol: true }, ownerAdmin: true },
     });
     if (!bot) throw new NotFoundException("ARBITRAGE_BOT.NOT_FOUND");
     return this.present(bot);
@@ -159,83 +197,126 @@ export class ArbitrageBotService {
     if (bot.status === ArbitrageBotStatusEnum.RUNNING) {
       throw new BadRequestException("ARBITRAGE_BOT.STOP_BEFORE_DELETE");
     }
-    // Deleting must never strand frozen capital in a bot nobody can see.
-    if (Number(bot.allocatedAmount) > 0 && bot.managerAccountId) {
-      await this.managerAccounts.releaseFromBot(
-        bot.managerAccountId,
-        bot.id,
-        bot.allocatedAmount,
-        actor.id
-      );
-    }
+    // Deleting must never strand frozen capital in a bot nobody can see, in
+    // any of the assets it holds.
+    await this.releaseAll(bot, actor.id);
     await this.botRepo.softRemove(bot);
   }
 
   // ── Capital ──────────────────────────────────────────────────────────────
 
   /**
-   * Freezes capital from the owner's manager account into this bot. The bot's
-   * loss budget is recomputed from the new total, so raising an allocation
-   * also raises the line at which the bot halts.
+   * Freezes capital from one of the owner's manager accounts into this bot.
+   *
+   * Each asset is its own allocation with its own loss budget. Allocating an
+   * asset the bot already holds tops that allocation up and re-measures its
+   * budget against the new total, so raising an allocation also raises the
+   * line at which the bot stops using it.
    */
   async allocate(id: string, dto: AllocateCapitalDto, actor: BotActor): Promise<ArbitrageBotEntity> {
     const bot = await this.getOwned(id, actor);
 
-    if (bot.symbolId && bot.symbolId !== dto.symbolId) {
-      throw new BadRequestException("ARBITRAGE_BOT.SYMBOL_MISMATCH");
-    }
-
     const account = await this.managerAccounts.getOrCreateAccount(bot.ownerAdminId, dto.symbolId);
-    if (bot.managerAccountId && bot.managerAccountId !== account.id) {
-      throw new BadRequestException("ARBITRAGE_BOT.ACCOUNT_MISMATCH");
-    }
-
     await this.managerAccounts.allocateToBot(account.id, bot.id, dto.amount, actor.id);
 
-    bot.managerAccountId = account.id;
-    bot.symbolId = dto.symbolId;
-    bot.allocatedAmount = new Decimal(bot.allocatedAmount).plus(dto.amount).toNumber();
-    if (dto.stopLossPercent !== undefined) bot.stopLossPercent = dto.stopLossPercent;
-    bot.stopLossAmount = new Decimal(bot.allocatedAmount)
-      .times(bot.stopLossPercent)
-      .dividedBy(100)
-      .toNumber();
+    const existing = await this.allocationRepo.findOne({
+      where: { botId: bot.id, symbolId: dto.symbolId },
+    });
+    const percent = dto.stopLossPercent ?? existing?.stopLossPercent ?? bot.stopLossPercent ?? 100;
+    const amount = new Decimal(existing?.allocatedAmount ?? 0).plus(dto.amount).toNumber();
 
-    return this.botRepo.save(bot);
+    const allocation =
+      existing ??
+      this.allocationRepo.create({
+        botId: bot.id,
+        symbolId: dto.symbolId,
+        managerAccountId: account.id,
+      });
+    allocation.managerAccountId = account.id;
+    allocation.allocatedAmount = amount;
+    allocation.stopLossPercent = percent;
+    allocation.stopLossAmount = this.budgetFor(amount, percent);
+    await this.allocationRepo.save(allocation);
+
+    return this.getOwned(id, actor);
   }
 
   /**
-   * Returns frozen capital to the manager account. A running bot keeps at
-   * least the capital its stop-loss budget is measured against, so releasing
-   * everything requires stopping it first.
+   * Returns frozen capital to the manager account it came from. A running bot
+   * keeps at least the capital its stop-loss is measured against, so emptying
+   * an allocation entirely requires stopping the bot first.
    */
   async release(id: string, dto: ReleaseCapitalDto, actor: BotActor): Promise<ArbitrageBotEntity> {
     const bot = await this.getOwned(id, actor);
-    if (!bot.managerAccountId) throw new BadRequestException("ARBITRAGE_BOT.NOT_FUNDED");
+    const allocations = await this.allocationsOf(bot.id);
+    if (allocations.length === 0) throw new BadRequestException("ARBITRAGE_BOT.NOT_FUNDED");
 
-    const allocated = new Decimal(bot.allocatedAmount);
-    const requested = dto.amount === undefined ? allocated : new Decimal(dto.amount);
-    if (requested.greaterThan(allocated)) {
-      throw new BadRequestException("ARBITRAGE_BOT.RELEASE_EXCEEDS_ALLOCATION");
+    // Without an asset the request means "all of it", which is the only
+    // reading that does not silently pick one of several allocations.
+    const targets = dto.symbolId
+      ? allocations.filter((a) => a.symbolId === dto.symbolId)
+      : allocations;
+    if (targets.length === 0) throw new BadRequestException("ARBITRAGE_BOT.NOT_FUNDED");
+    if (dto.amount !== undefined && targets.length > 1) {
+      throw new BadRequestException("ARBITRAGE_BOT.RELEASE_AMOUNT_NEEDS_SYMBOL");
     }
-    if (bot.status === ArbitrageBotStatusEnum.RUNNING && requested.equals(allocated)) {
-      throw new BadRequestException("ARBITRAGE_BOT.STOP_BEFORE_FULL_RELEASE");
+
+    for (const allocation of targets) {
+      const allocated = new Decimal(allocation.allocatedAmount);
+      const requested = dto.amount === undefined ? allocated : new Decimal(dto.amount);
+      if (requested.greaterThan(allocated)) {
+        throw new BadRequestException("ARBITRAGE_BOT.RELEASE_EXCEEDS_ALLOCATION");
+      }
+      if (bot.status === ArbitrageBotStatusEnum.RUNNING && requested.equals(allocated)) {
+        throw new BadRequestException("ARBITRAGE_BOT.STOP_BEFORE_FULL_RELEASE");
+      }
+      if (!requested.greaterThan(0)) continue;
+
+      await this.managerAccounts.releaseFromBot(
+        allocation.managerAccountId,
+        bot.id,
+        requested.toNumber(),
+        actor.id
+      );
+      allocation.allocatedAmount = allocated.minus(requested).toNumber();
+      allocation.stopLossAmount = this.budgetFor(
+        allocation.allocatedAmount,
+        allocation.stopLossPercent
+      );
+      await this.allocationRepo.save(allocation);
     }
 
-    await this.managerAccounts.releaseFromBot(
-      bot.managerAccountId,
-      bot.id,
-      requested.toNumber(),
-      actor.id
-    );
+    return this.getOwned(id, actor);
+  }
 
-    bot.allocatedAmount = allocated.minus(requested).toNumber();
-    bot.stopLossAmount = new Decimal(bot.allocatedAmount)
-      .times(bot.stopLossPercent)
-      .dividedBy(100)
-      .toNumber();
+  /** Every allocation of a bot, oldest first so the list reads stably. */
+  async allocationsOf(botId: string): Promise<ArbitrageBotAllocationEntity[]> {
+    return this.allocationRepo.find({
+      where: { botId },
+      relations: { symbol: true },
+      order: { createAt: "ASC" },
+    });
+  }
 
-    return this.botRepo.save(bot);
+  /** Unfreezes everything a bot holds, in every asset. */
+  private async releaseAll(bot: ArbitrageBotEntity, actorAdminId: string): Promise<void> {
+    for (const allocation of await this.allocationsOf(bot.id)) {
+      if (!(Number(allocation.allocatedAmount) > 0)) continue;
+      await this.managerAccounts.releaseFromBot(
+        allocation.managerAccountId,
+        bot.id,
+        allocation.allocatedAmount,
+        actorAdminId
+      );
+      allocation.allocatedAmount = 0;
+      allocation.stopLossAmount = 0;
+      await this.allocationRepo.save(allocation);
+    }
+  }
+
+  /** What an allocation of this size may lose, at this percent. */
+  private budgetFor(amount: number | string, percent: number | string): number {
+    return new Decimal(amount).times(percent).dividedBy(100).toNumber();
   }
 
   // ── Lifecycle ────────────────────────────────────────────────────────────
@@ -244,12 +325,17 @@ export class ArbitrageBotService {
     const bot = await this.getOwned(id, actor);
 
     if (bot.status === ArbitrageBotStatusEnum.RUNNING) return bot;
-    if (!bot.managerAccountId || !(Number(bot.allocatedAmount) > 0)) {
+
+    const allocations = await this.allocationsOf(bot.id);
+    const funded = allocations.filter((a) => Number(a.allocatedAmount) > 0);
+    if (funded.length === 0) {
       // Without frozen capital there is no loss budget, so there is no rule
       // that could ever stop the bot. Refuse rather than run unbounded.
       throw new BadRequestException("ARBITRAGE_BOT.ALLOCATION_REQUIRED");
     }
-    if (this.lossBudgetRemaining(bot).lessThanOrEqualTo(0)) {
+    // One asset with budget left is enough to run: the engine picks the
+    // allocation that can fund each opportunity and skips the rest.
+    if (!funded.some((a) => this.allocationBudget(a).greaterThan(0))) {
       throw new BadRequestException("ARBITRAGE_BOT.LOSS_BUDGET_EXHAUSTED");
     }
 
@@ -264,7 +350,12 @@ export class ArbitrageBotService {
       type: ArbitrageBotEventTypeEnum.STATUS_CHANGED,
       severity: ArbitrageBotEventSeverityEnum.INFO,
       title: `ربات ${saved.name} شروع به کار کرد`,
-      message: `ربات با سرمایه فریزشده ${saved.allocatedAmount} و حد ضرر ${saved.stopLossAmount} فعال شد.`,
+      message:
+        "ربات با سرمایه فریزشده " +
+        funded
+          .map((a) => `${a.allocatedAmount} ${a.symbol?.slug ?? ""} (حد ضرر ${a.stopLossAmount})`)
+          .join(" و ") +
+        " فعال شد.",
     });
     return saved;
   }
@@ -286,16 +377,7 @@ export class ArbitrageBotService {
   async stop(id: string, actor: BotActor): Promise<ArbitrageBotEntity> {
     const bot = await this.getOwned(id, actor);
 
-    if (bot.managerAccountId && Number(bot.allocatedAmount) > 0) {
-      await this.managerAccounts.releaseFromBot(
-        bot.managerAccountId,
-        bot.id,
-        bot.allocatedAmount,
-        actor.id
-      );
-      bot.allocatedAmount = 0;
-      bot.stopLossAmount = 0;
-    }
+    await this.releaseAll(bot, actor.id);
 
     bot.status = ArbitrageBotStatusEnum.STOPPED;
     bot.stoppedAt = new Date();
@@ -305,7 +387,7 @@ export class ArbitrageBotService {
       type: ArbitrageBotEventTypeEnum.STATUS_CHANGED,
       severity: ArbitrageBotEventSeverityEnum.INFO,
       title: `ربات ${saved.name} متوقف شد`,
-      message: "سرمایه فریزشده به حساب مدیریتی بازگردانده شد.",
+      message: "سرمایه فریزشده در همه دارایی‌ها به حساب‌های مدیریتی بازگردانده شد.",
     });
     return saved;
   }
@@ -342,9 +424,12 @@ export class ArbitrageBotService {
       title: `ربات ${saved.name} به حد ضرر رسید`,
       message: reason,
       metadata: {
-        realizedLoss: Number(saved.realizedLoss),
-        stopLossAmount: Number(saved.stopLossAmount),
-        allocatedAmount: Number(saved.allocatedAmount),
+        allocations: (await this.allocationsOf(saved.id)).map((a) => ({
+          symbol: a.symbol?.slug ?? a.symbolId,
+          allocatedAmount: Number(a.allocatedAmount),
+          stopLossAmount: Number(a.stopLossAmount),
+          realizedLoss: Number(a.realizedLoss),
+        })),
       },
     });
     return saved;
@@ -356,7 +441,7 @@ export class ArbitrageBotService {
   async listRunning(): Promise<ArbitrageBotEntity[]> {
     return this.botRepo.find({
       where: { status: ArbitrageBotStatusEnum.RUNNING },
-      relations: { symbol: true },
+      relations: { allocations: { symbol: true } },
     });
   }
 
@@ -373,7 +458,7 @@ export class ArbitrageBotService {
    * silently counted as zero.
    */
   async summary(): Promise<ArbitrageBotSummary> {
-    const bots = await this.botRepo.find({ relations: { symbol: true } });
+    const bots = await this.botRepo.find({ relations: { allocations: { symbol: true } } });
     const now = Date.now();
     const dayAgo = new Date(now - 24 * 3600_000);
 
@@ -382,17 +467,16 @@ export class ArbitrageBotService {
 
     // Allocations are per-asset; group first, then value each asset once.
     const perAsset = new Map<string, { symbolId: string; symbol: string; amount: Decimal }>();
-    for (const bot of bots) {
-      if (!bot.symbolId) continue;
-      const amount = new Decimal(bot.allocatedAmount ?? 0);
+    for (const allocation of bots.flatMap((bot) => bot.allocations ?? [])) {
+      const amount = new Decimal(allocation.allocatedAmount ?? 0);
       if (amount.lessThanOrEqualTo(0)) continue;
-      const row = perAsset.get(bot.symbolId) ?? {
-        symbolId: bot.symbolId,
-        symbol: bot.symbol?.name ?? bot.symbolId,
+      const row = perAsset.get(allocation.symbolId) ?? {
+        symbolId: allocation.symbolId,
+        symbol: allocation.symbol?.slug ?? allocation.symbol?.name ?? allocation.symbolId,
         amount: new Decimal(0),
       };
       row.amount = row.amount.plus(amount);
-      perAsset.set(bot.symbolId, row);
+      perAsset.set(allocation.symbolId, row);
     }
 
     const rialId = await this.rialSymbolId();
@@ -447,9 +531,19 @@ export class ArbitrageBotService {
     const sum = (pick: (bot: ArbitrageBotEntity) => number) =>
       bots.reduce((total, bot) => total.plus(pick(bot) ?? 0), new Decimal(0)).toNumber();
 
-    const lossBudgetRemaining = bots
+    // Loss budgets live in different assets, so they are counted rather than
+    // summed: one number over gold and Rial would mean nothing.
+    const runningAllocations = bots
       .filter((bot) => bot.status === ArbitrageBotStatusEnum.RUNNING)
-      .reduce((total, bot) => total.plus(this.lossBudgetRemaining(bot)), new Decimal(0));
+      .flatMap((bot) => bot.allocations ?? []);
+    const fundedAssets = new Set(
+      runningAllocations
+        .filter((a) => Number(a.allocatedAmount) > 0)
+        .map((a) => a.symbol?.slug ?? a.symbolId)
+    );
+    const exhaustedAssets = runningAllocations.filter(
+      (a) => Number(a.allocatedAmount) > 0 && this.allocationBudget(a).lessThanOrEqualTo(0)
+    ).length;
 
     return {
       totalBots: bots.length,
@@ -466,7 +560,8 @@ export class ArbitrageBotService {
       allocatedRial: allocatedRial.toNumber(),
       allocations,
       unpricedAssets,
-      lossBudgetRemaining: lossBudgetRemaining.toNumber(),
+      fundedAssets: fundedAssets.size,
+      exhaustedAllocations: exhaustedAssets,
       matchedSignals: sum((bot) => bot.matchedSignals),
       totalTrades: sum((bot) => bot.totalTrades),
       // Two provider orders per cycle: this is the number the providers saw.
@@ -542,8 +637,9 @@ export class ArbitrageBotService {
   }
 
   /** Loss the bot may still absorb before its stop-loss halts it. */
-  lossBudgetRemaining(bot: ArbitrageBotEntity): Decimal {
-    return new Decimal(bot.stopLossAmount).minus(bot.realizedLoss);
+  /** What one allocation may still lose before the bot stops using that asset. */
+  allocationBudget(allocation: ArbitrageBotAllocationEntity): Decimal {
+    return new Decimal(allocation.stopLossAmount).minus(allocation.realizedLoss);
   }
 
   /**
@@ -597,7 +693,10 @@ export class ArbitrageBotService {
    * belonging to one specific manager.
    */
   async getOwned(id: string, actor: BotActor): Promise<ArbitrageBotEntity> {
-    const bot = await this.botRepo.findOne({ where: { id } });
+    const bot = await this.botRepo.findOne({
+      where: { id },
+      relations: { allocations: { symbol: true }, ownerAdmin: true },
+    });
     if (!bot) throw new NotFoundException("ARBITRAGE_BOT.NOT_FOUND");
     if (bot.ownerAdminId !== actor.id && actor.role !== AdminRole.SUPER_ADMIN) {
       throw new ForbiddenException("ARBITRAGE_BOT.NOT_OWNER");
@@ -628,11 +727,38 @@ export class ArbitrageBotService {
     return { ...DEFAULT_BOT_NOTIFICATIONS, ...current, ...(patch ?? {}) };
   }
 
+  /**
+   * The shape the panel reads.
+   *
+   * Frozen capital is a list, not a number: a bot funded with gold and Rial
+   * holds two different things, and adding them together would be nonsense.
+   * The rolled-up `lossBudgetUsedPercent` is the worst allocation rather than
+   * an average, because the binding constraint is the asset closest to its
+   * stop-loss, not the healthy one beside it.
+   */
   private present(bot: ArbitrageBotEntity) {
-    const allocated = Number(bot.allocatedAmount) || 0;
-    const stopLoss = Number(bot.stopLossAmount) || 0;
-    const realizedLoss = Number(bot.realizedLoss) || 0;
-    const remaining = Math.max(0, stopLoss - realizedLoss);
+    const allocations = (bot.allocations ?? []).map((allocation) => {
+      const allocated = Number(allocation.allocatedAmount) || 0;
+      const stopLoss = Number(allocation.stopLossAmount) || 0;
+      const realizedLoss = Number(allocation.realizedLoss) || 0;
+      return {
+        id: allocation.id,
+        symbolId: allocation.symbolId,
+        symbol: allocation.symbol
+          ? { id: allocation.symbol.id, name: allocation.symbol.name, slug: allocation.symbol.slug }
+          : null,
+        managerAccountId: allocation.managerAccountId,
+        allocatedAmount: allocated,
+        stopLossPercent: Number(allocation.stopLossPercent) || 0,
+        stopLossAmount: stopLoss,
+        realizedPnl: Number(allocation.realizedPnl) || 0,
+        realizedLoss,
+        lossBudgetRemaining: Math.max(0, stopLoss - realizedLoss),
+        lossBudgetUsedPercent: stopLoss > 0 ? Math.min(100, (realizedLoss / stopLoss) * 100) : 0,
+      };
+    });
+
+    const funded = allocations.filter((a) => a.allocatedAmount > 0);
 
     return {
       id: bot.id,
@@ -647,16 +773,11 @@ export class ArbitrageBotService {
       scope: bot.scope ?? DEFAULT_BOT_SCOPE,
       thresholds: bot.thresholds ?? DEFAULT_BOT_THRESHOLDS,
       notifications: bot.notifications ?? DEFAULT_BOT_NOTIFICATIONS,
-      managerAccountId: bot.managerAccountId,
-      symbolId: bot.symbolId,
-      symbol: bot.symbol ? { id: bot.symbol.id, name: bot.symbol.name, slug: bot.symbol.slug } : null,
-      allocatedAmount: allocated,
+      allocations,
       stopLossPercent: Number(bot.stopLossPercent) || 0,
-      stopLossAmount: stopLoss,
-      realizedPnl: Number(bot.realizedPnl) || 0,
-      realizedLoss,
-      lossBudgetRemaining: remaining,
-      lossBudgetUsedPercent: stopLoss > 0 ? Math.min(100, (realizedLoss / stopLoss) * 100) : 0,
+      lossBudgetUsedPercent: funded.length
+        ? Math.max(...funded.map((a) => a.lossBudgetUsedPercent))
+        : 0,
       startedAt: bot.startedAt,
       stoppedAt: bot.stoppedAt,
       haltedAt: bot.haltedAt,

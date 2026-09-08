@@ -24,69 +24,111 @@ const signal: any = {
   sellLeg: { providerKey: "prov-b", price: 1_100_000 },
 };
 
+/** An allocation with room left in its budget, unless told otherwise. */
+function alloc(symbolId: string, over: Record<string, any> = {}): any {
+  return {
+    id: `alloc-${symbolId}`,
+    symbolId,
+    managerAccountId: `acct-${symbolId}`,
+    allocatedAmount: 1_000,
+    stopLossAmount: 1_000,
+    realizedLoss: 0,
+    ...over,
+  };
+}
+
+/** The real budget rule, so the tests exercise it rather than a stand-in. */
+const bots = {
+  allocationBudget: (a: any) => new Decimal(a.stopLossAmount).minus(a.realizedLoss),
+};
+
 describe("funding direction", () => {
   const pairs = [{ id: "pair-1", baseId: "gold-18", quoteId: "irr" }];
+  const svc = () => engine({ bots, pairsForSignal: jest.fn().mockResolvedValue(pairs) });
 
-  it("buys first when the bot holds the pair's quote asset (cash)", async () => {
-    const svc = engine({ pairsForSignal: jest.fn().mockResolvedValue(pairs) });
-    await expect(svc.resolveFundingDirection({ symbolId: "irr" }, signal)).resolves.toBe(
-      ArbitrageBotFundingDirectionEnum.BUY_FIRST
-    );
+  it("buys first when funded with the pair's quote asset (cash)", async () => {
+    const funding = await svc().resolveFunding([alloc("irr")], signal);
+    expect(funding.direction).toBe(ArbitrageBotFundingDirectionEnum.BUY_FIRST);
+    expect(funding.allocation.symbolId).toBe("irr");
   });
 
-  it("sells first when the bot holds the pair's base asset (the metal)", async () => {
-    const svc = engine({ pairsForSignal: jest.fn().mockResolvedValue(pairs) });
-    await expect(svc.resolveFundingDirection({ symbolId: "gold-18" }, signal)).resolves.toBe(
-      ArbitrageBotFundingDirectionEnum.SELL_FIRST
-    );
+  it("sells first when funded with the pair's base asset (the metal)", async () => {
+    const funding = await svc().resolveFunding([alloc("gold-18")], signal);
+    expect(funding.direction).toBe(ArbitrageBotFundingDirectionEnum.SELL_FIRST);
+    expect(funding.allocation.symbolId).toBe("gold-18");
   });
 
-  it("returns null when the bot holds neither side of the pair", async () => {
-    const svc = engine({ pairsForSignal: jest.fn().mockResolvedValue(pairs) });
-    await expect(svc.resolveFundingDirection({ symbolId: "usdt" }, signal)).resolves.toBeNull();
+  it("prefers buying first when the bot holds both sides", async () => {
+    const funding = await svc().resolveFunding([alloc("gold-18"), alloc("irr")], signal);
+    expect(funding.direction).toBe(ArbitrageBotFundingDirectionEnum.BUY_FIRST);
+    expect(funding.allocation.symbolId).toBe("irr");
   });
 
-  it("returns null when no allocation asset is set at all", async () => {
-    const svc = engine({ pairsForSignal: jest.fn() });
-    await expect(svc.resolveFundingDirection({}, signal)).resolves.toBeNull();
+  it("falls back to the asset it can still afford when the cash budget is spent", async () => {
+    const spent = alloc("irr", { realizedLoss: 1_000 });
+    const funding = await svc().resolveFunding([spent, alloc("gold-18")], signal);
+    expect(funding.direction).toBe(ArbitrageBotFundingDirectionEnum.SELL_FIRST);
+    expect(funding.allocation.symbolId).toBe("gold-18");
+  });
+
+  it("returns null when no allocation matches either side of the pair", async () => {
+    await expect(svc().resolveFunding([alloc("usdt")], signal)).resolves.toBeNull();
+  });
+
+  it("returns null when the bot is unfunded", async () => {
+    await expect(svc().resolveFunding([], signal)).resolves.toBeNull();
   });
 });
 
 describe("direction-aware sizing", () => {
   const thresholds = { ...DEFAULT_BOT_THRESHOLDS, maxTradeVolume: 0 };
-  const bot: any = { id: "bot-1", symbolId: "irr" };
+  const bot: any = { id: "bot-1" };
 
   it("sizes a buy-first trade against the buy leg's price", async () => {
-    const svc = engine({ toRial: jest.fn().mockResolvedValue(new Decimal(10_000_000)) });
+    const svc = engine({ bots, toRial: jest.fn().mockResolvedValue(new Decimal(10_000_000)) });
     const volume = await svc.sizeTrade(
       bot,
       signal,
       thresholds,
-      new Decimal(10_000_000),
+      alloc("irr", { stopLossAmount: 10_000_000 }),
       ArbitrageBotFundingDirectionEnum.BUY_FIRST
     );
     expect(volume.toNumber()).toBe(10);
   });
 
   it("sizes a sell-first trade against the sell leg's price", async () => {
-    const svc = engine({ toRial: jest.fn().mockResolvedValue(new Decimal(11_000_000)) });
+    const svc = engine({ bots, toRial: jest.fn().mockResolvedValue(new Decimal(11_000_000)) });
     const volume = await svc.sizeTrade(
       bot,
       signal,
       thresholds,
-      new Decimal(11_000_000),
+      alloc("gold-18", { stopLossAmount: 10 }),
       ArbitrageBotFundingDirectionEnum.SELL_FIRST
     );
     expect(volume.toNumber()).toBe(10);
   });
 
+  it("values the budget of the asset that is paying, not the bot's total", async () => {
+    const toRial = jest.fn().mockResolvedValue(new Decimal(10_000_000));
+    const svc = engine({ bots, toRial });
+    await svc.sizeTrade(
+      bot,
+      signal,
+      thresholds,
+      alloc("gold-18", { stopLossAmount: 10, realizedLoss: 2 }),
+      ArbitrageBotFundingDirectionEnum.SELL_FIRST
+    );
+    expect(toRial).toHaveBeenCalledWith("gold-18", expect.anything());
+    expect(toRial.mock.calls[0][1].toNumber()).toBe(8);
+  });
+
   it("still respects the owner's max trade volume", async () => {
-    const svc = engine({ toRial: jest.fn().mockResolvedValue(new Decimal(10_000_000)) });
+    const svc = engine({ bots, toRial: jest.fn().mockResolvedValue(new Decimal(10_000_000)) });
     const volume = await svc.sizeTrade(
       bot,
       signal,
       { ...DEFAULT_BOT_THRESHOLDS, maxTradeVolume: 4 },
-      new Decimal(10_000_000),
+      alloc("irr", { stopLossAmount: 10_000_000 }),
       ArbitrageBotFundingDirectionEnum.BUY_FIRST
     );
     expect(volume.toNumber()).toBe(4);

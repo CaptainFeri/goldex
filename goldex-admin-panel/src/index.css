@@ -1725,3 +1725,15 @@ canvas {
   -webkit-box-orient: vertical;
   overflow: hidden;
 }
+
+/* One asset of a bot's funding: picker, amount, and a remove button. */
+.alloc-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr auto;
+  gap: 12px;
+  align-items: start;
+  margin-bottom: 10px;
+}
+.alloc-row .alloc-remove {
+  margin-top: 22px;
+}

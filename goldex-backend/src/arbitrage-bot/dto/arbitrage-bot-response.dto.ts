@@ -31,6 +31,42 @@ export class BotSymbolRefDto {
   slug: string;
 }
 
+/** Capital frozen into a bot in one asset, with that asset's own loss budget. */
+export class BotAllocationDto {
+  @ApiProperty({ format: "uuid" })
+  id: string;
+
+  @ApiProperty({ format: "uuid" })
+  symbolId: string;
+
+  @ApiProperty({ type: BotSymbolRefDto, nullable: true })
+  symbol: BotSymbolRefDto | null;
+
+  @ApiProperty({ format: "uuid", description: "Account this capital was frozen out of" })
+  managerAccountId: string;
+
+  @ApiProperty({ description: "Frozen amount, in the asset's own unit" })
+  allocatedAmount: number;
+
+  @ApiProperty()
+  stopLossPercent: number;
+
+  @ApiProperty({ description: "The loss budget, in this asset" })
+  stopLossAmount: number;
+
+  @ApiProperty()
+  realizedPnl: number;
+
+  @ApiProperty({ description: "Cumulative realized losses — what this stop-loss measures" })
+  realizedLoss: number;
+
+  @ApiProperty()
+  lossBudgetRemaining: number;
+
+  @ApiProperty()
+  lossBudgetUsedPercent: number;
+}
+
 /** Which opportunities the bot is interested in; an empty list means "any". */
 export class BotScopeDto {
   @ApiProperty({ type: [String], format: "uuid" })
@@ -126,34 +162,21 @@ export class ArbitrageBotDto {
   @ApiProperty({ type: BotNotificationsDto })
   notifications: BotNotificationsDto;
 
-  @ApiProperty({ format: "uuid", nullable: true })
-  managerAccountId: string | null;
+  @ApiProperty({
+    type: BotAllocationDto,
+    isArray: true,
+    description: "Frozen capital, one entry per asset — each with its own stop-loss",
+  })
+  allocations: BotAllocationDto[];
 
-  @ApiProperty({ format: "uuid", nullable: true })
-  symbolId: string | null;
-
-  @ApiProperty({ type: BotSymbolRefDto, nullable: true })
-  symbol: BotSymbolRefDto | null;
-
-  @ApiProperty({ description: "Capital frozen out of the owner's manager account" })
-  allocatedAmount: number;
-
-  @ApiProperty()
+  @ApiProperty({ description: "Default stop-loss share applied to new allocations" })
   stopLossPercent: number;
 
-  @ApiProperty({ description: "The loss budget, in the allocation's asset" })
-  stopLossAmount: number;
-
-  @ApiProperty()
-  realizedPnl: number;
-
-  @ApiProperty({ description: "Cumulative realized losses — what the stop-loss measures" })
-  realizedLoss: number;
-
-  @ApiProperty()
-  lossBudgetRemaining: number;
-
-  @ApiProperty()
+  @ApiProperty({
+    description:
+      "The worst allocation's stop-loss consumption — the binding constraint, " +
+      "not an average across assets",
+  })
   lossBudgetUsedPercent: number;
 
   @ApiProperty({ format: "date-time", nullable: true })
@@ -244,6 +267,13 @@ export class ArbitrageBotTradeDto {
   })
   direction: ArbitrageBotFundingDirectionEnum;
 
+  @ApiProperty({
+    format: "uuid",
+    nullable: true,
+    description: "The allocation that funded this cycle, and takes its result",
+  })
+  allocationId: string | null;
+
   @ApiProperty({ type: Object, nullable: true, description: "Per-leg execution state" })
   legs: Record<string, any> | null;
 
@@ -332,8 +362,11 @@ export class ArbitrageBotSummaryDto {
   @ApiProperty({ type: String, isArray: true, description: "Assets excluded from the Rial total" })
   unpricedAssets: string[];
 
-  @ApiProperty({ description: "What the running bots may still lose before halting" })
-  lossBudgetRemaining: number;
+  @ApiProperty({ description: "Distinct assets funding the running bots" })
+  fundedAssets: number;
+
+  @ApiProperty({ description: "Funded allocations whose stop-loss is already spent" })
+  exhaustedAllocations: number;
 
   @ApiProperty()
   matchedSignals: number;

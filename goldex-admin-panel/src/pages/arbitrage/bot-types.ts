@@ -39,6 +39,21 @@ export interface BotNotifications {
   smsPhone?: string | null;
 }
 
+/** Capital frozen into a bot in one asset. */
+export interface BotAllocation {
+  id: string;
+  symbolId: string;
+  symbol: { id: string; name: string; slug: string } | null;
+  managerAccountId: string;
+  allocatedAmount: number;
+  stopLossPercent: number;
+  stopLossAmount: number;
+  realizedPnl: number;
+  realizedLoss: number;
+  lossBudgetRemaining: number;
+  lossBudgetUsedPercent: number;
+}
+
 export interface ArbitrageBot {
   id: string;
   name: string;
@@ -50,15 +65,11 @@ export interface ArbitrageBot {
   scope: BotScope;
   thresholds: BotThresholds;
   notifications: BotNotifications;
-  managerAccountId: string | null;
-  symbolId: string | null;
-  symbol: { id: string; name: string; slug: string } | null;
-  allocatedAmount: number;
+  /** Frozen capital, one entry per asset — each with its own stop-loss. */
+  allocations: BotAllocation[];
+  /** Default stop-loss share applied to new allocations. */
   stopLossPercent: number;
-  stopLossAmount: number;
-  realizedPnl: number;
-  realizedLoss: number;
-  lossBudgetRemaining: number;
+  /** The worst allocation's consumption, which is the binding constraint. */
   lossBudgetUsedPercent: number;
   startedAt: string | null;
   stoppedAt: string | null;
@@ -92,7 +103,8 @@ export interface ArbitrageBotSummary {
   allocatedRial: number;
   allocations: { symbol: string; amount: number; valueRial: number | null }[];
   unpricedAssets: string[];
-  lossBudgetRemaining: number;
+  fundedAssets: number;
+  exhaustedAllocations: number;
   matchedSignals: number;
   totalTrades: number;
   totalTransactions: number;

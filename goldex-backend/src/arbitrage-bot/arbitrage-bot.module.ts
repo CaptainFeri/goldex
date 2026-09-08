@@ -8,6 +8,7 @@ import { ArbitrageBotController } from "./arbitrage-bot.controller";
 import { ArbitrageBotEntity } from "./entity/arbitrage-bot.entity";
 import { ArbitrageBotTradeEntity } from "./entity/arbitrage-bot-trade.entity";
 import { ArbitrageBotEventEntity } from "./entity/arbitrage-bot-event.entity";
+import { ArbitrageBotAllocationEntity } from "./entity/arbitrage-bot-allocation.entity";
 import { ProviderPairMappingEntity } from "../provider-pair-mapping/entity/provider-pair-mapping.entity";
 import { PricePairEntity } from "../admin-pair/entity/price.pair.entity";
 import { SymbolEntity } from "../admin-symbol/entity/symbol.entity";
@@ -25,6 +26,7 @@ import { RabbitMQModule } from "../rabbitmq/rabbitmq.module";
       ArbitrageBotEntity,
       ArbitrageBotTradeEntity,
       ArbitrageBotEventEntity,
+      ArbitrageBotAllocationEntity,
       ProviderPairMappingEntity,
       PricePairEntity,
       SymbolEntity,
