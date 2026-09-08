@@ -55,8 +55,10 @@ export class ProviderDealConsumer implements OnModuleInit {
       // the platform's perspective: a platform buy (we take gold from the
       // provider) is always positive netVolume and negative netValue. The engine
       // classifies deals from dealTypeStr; Talaab's inverted raw titles are
-      // normalized when its transactions are stored, so no extra flip is needed
-      // here.
+      // normalized when its deals are stored, so no extra flip is needed here.
+      // The aggregate covers only deals the provider has settled — pending and
+      // refused orders contribute nothing, and an item whose deals were all
+      // refused arrives zeroed so this row is reset rather than left stale.
       const netVolume = a.netVolume ?? 0;
       const netValue = a.netValue ?? 0;
 
