@@ -5,6 +5,7 @@ import { Cron, CronExpression } from "@nestjs/schedule";
 import Decimal from "decimal.js";
 import { ArbitrageBotEntity } from "./entity/arbitrage-bot.entity";
 import { ArbitrageBotTradeEntity } from "./entity/arbitrage-bot-trade.entity";
+import { ArbitrageBotAllocationEntity } from "./entity/arbitrage-bot-allocation.entity";
 import { ArbitrageBotService } from "./arbitrage-bot.service";
 import {
   ArbitrageBotEventSeverityEnum,
@@ -60,6 +61,8 @@ export class ArbitrageBotEngineService implements OnModuleInit {
     private readonly botRepo: Repository<ArbitrageBotEntity>,
     @InjectRepository(ArbitrageBotTradeEntity)
     private readonly tradeRepo: Repository<ArbitrageBotTradeEntity>,
+    @InjectRepository(ArbitrageBotAllocationEntity)
+    private readonly allocationRepo: Repository<ArbitrageBotAllocationEntity>,
     @InjectRepository(ProviderPairMappingEntity)
     private readonly mappingRepo: Repository<ProviderPairMappingEntity>,
     @InjectRepository(PricePairEntity)
@@ -113,28 +116,32 @@ export class ArbitrageBotEngineService implements OnModuleInit {
     const hourAgo = new Date(Date.now() - 3600_000);
     if ((await this.bots.countTradesSince(bot.id, hourAgo)) >= thresholds.maxTradesPerHour) return;
 
-    // The loss budget is the whole reason the allocation is frozen: once it is
-    // gone the bot stops itself rather than trading on unbudgeted capital.
-    const budget = this.bots.lossBudgetRemaining(bot);
-    if (budget.lessThanOrEqualTo(0)) {
+    // The loss budget is the whole reason the allocation is frozen: once every
+    // asset's budget is gone the bot stops itself rather than trading on
+    // unbudgeted capital. One asset with room left is enough to keep going.
+    const allocations = (bot.allocations ?? []).filter(
+      (allocation) => Number(allocation.allocatedAmount) > 0
+    );
+    if (!allocations.some((a) => this.bots.allocationBudget(a).greaterThan(0))) {
       await this.bots.haltById(
         bot.id,
-        "حد ضرر تعیین‌شده مصرف شده است؛ ربات به‌صورت خودکار متوقف شد."
+        "حد ضرر تعیین‌شده در همه دارایی‌ها مصرف شده است؛ ربات به‌صورت خودکار متوقف شد."
       );
       this.invalidate();
       return;
     }
 
-    const direction = await this.resolveFundingDirection(bot, signal);
-    if (!direction) {
-      // The bot holds neither side of this pair, so it cannot open either leg.
+    const funding = await this.resolveFunding(allocations, signal);
+    if (!funding) {
+      // None of the bot's assets can pay for either leg of this pair.
       this.logger.debug(
-        `bot ${bot.id} skipped ${signal.key}: its asset funds neither leg of this pair`
+        `bot ${bot.id} skipped ${signal.key}: no allocation funds either leg of this pair`
       );
       return;
     }
+    const { allocation, direction } = funding;
 
-    const volume = await this.sizeTrade(bot, signal, thresholds, budget, direction);
+    const volume = await this.sizeTrade(bot, signal, thresholds, allocation, direction);
     if (volume.lessThanOrEqualTo(0)) return;
 
     const expectedProfit = new Decimal(signal.profitRial ?? 0).times(volume);
@@ -154,6 +161,7 @@ export class ArbitrageBotEngineService implements OnModuleInit {
         expectedProfitRial: expectedProfit.toNumber(),
         status: ArbitrageBotTradeStatusEnum.PLANNED,
         direction,
+        allocationId: allocation.id,
         signal: signal as unknown as Record<string, any>,
       })
     );
@@ -197,26 +205,38 @@ export class ArbitrageBotEngineService implements OnModuleInit {
   }
 
   /**
-   * Which leg this bot's capital can pay for on this signal.
+   * Which of the bot's assets can pay for this signal, and which leg first.
    *
    * An arbitrage needs one side settled before the other pays out, so what the
    * bot holds decides the direction: the pair's quote asset (cash) buys first,
-   * the base asset (the metal itself) sells first. Holding neither means the
-   * opportunity is real but not one this bot can take — which is a skip, not a
-   * threshold failure.
+   * the base asset (the metal itself) sells first. A bot funded with both can
+   * take either, and buying first is preferred when it can — owning the asset
+   * before owing it is the safer half of the same profit. Holding neither, or
+   * holding only an asset whose budget is spent, means the opportunity is real
+   * but not one this bot can take, which is a skip rather than a failure.
    */
-  private async resolveFundingDirection(
-    bot: ArbitrageBotEntity,
+  private async resolveFunding(
+    allocations: ArbitrageBotAllocationEntity[],
     signal: ArbitrageSignal
-  ): Promise<ArbitrageBotFundingDirectionEnum | null> {
-    if (!bot.symbolId) return null;
+  ): Promise<{ allocation: ArbitrageBotAllocationEntity; direction: ArbitrageBotFundingDirectionEnum } | null> {
+    const usable = allocations.filter((a) => this.bots.allocationBudget(a).greaterThan(0));
+    if (usable.length === 0) return null;
 
     const pairs = await this.pairsForSignal(signal);
+    let sellFirst: ArbitrageBotAllocationEntity | null = null;
+
     for (const pair of pairs) {
-      if (pair.quoteId === bot.symbolId) return ArbitrageBotFundingDirectionEnum.BUY_FIRST;
-      if (pair.baseId === bot.symbolId) return ArbitrageBotFundingDirectionEnum.SELL_FIRST;
+      for (const allocation of usable) {
+        if (allocation.symbolId === pair.quoteId) {
+          return { allocation, direction: ArbitrageBotFundingDirectionEnum.BUY_FIRST };
+        }
+        if (allocation.symbolId === pair.baseId && !sellFirst) sellFirst = allocation;
+      }
     }
-    return null;
+
+    return sellFirst
+      ? { allocation: sellFirst, direction: ArbitrageBotFundingDirectionEnum.SELL_FIRST }
+      : null;
   }
 
   // ── Filters ──────────────────────────────────────────────────────────────
@@ -315,7 +335,7 @@ export class ArbitrageBotEngineService implements OnModuleInit {
     bot: ArbitrageBotEntity,
     signal: ArbitrageSignal,
     thresholds: typeof DEFAULT_BOT_THRESHOLDS,
-    budgetInAsset: Decimal,
+    allocation: ArbitrageBotAllocationEntity,
     direction: ArbitrageBotFundingDirectionEnum
   ): Promise<Decimal> {
     // The leg the bot pays for first is the one its capital has to cover, so
@@ -327,7 +347,12 @@ export class ArbitrageBotEngineService implements OnModuleInit {
     );
     if (legPrice.lessThanOrEqualTo(0)) return new Decimal(0);
 
-    const budgetRial = await this.toRial(bot, budgetInAsset);
+    // Sized against the budget of the asset that is paying, not the bot's
+    // total: a Rial budget cannot underwrite a gold position.
+    const budgetRial = await this.toRial(
+      allocation.symbolId,
+      this.bots.allocationBudget(allocation)
+    );
     if (budgetRial.lessThanOrEqualTo(0)) return new Decimal(0);
 
     const affordable = budgetRial.dividedBy(legPrice);
@@ -337,14 +362,27 @@ export class ArbitrageBotEngineService implements OnModuleInit {
     return Decimal.min(affordable, ceiling);
   }
 
-  /** Values an amount of the bot's allocation asset in Rial at live prices. */
-  private async toRial(bot: ArbitrageBotEntity, amount: Decimal): Promise<Decimal> {
+  /** Values an amount of one allocation asset in Rial at live prices. */
+  private async toRial(symbolId: string | null, amount: Decimal): Promise<Decimal> {
+    const rate = await this.rialRate(symbolId);
+    if (rate === null) return new Decimal(0);
+    return amount.times(rate);
+  }
+
+  private async fromRial(symbolId: string | null, rial: Decimal): Promise<Decimal> {
+    const rate = await this.rialRate(symbolId);
+    if (rate === null || rate === 0) return new Decimal(0);
+    return rial.dividedBy(rate);
+  }
+
+  /** Live rate of one asset against Rial, or null when it cannot be priced. */
+  private async rialRate(symbolId: string | null): Promise<number | null> {
     const rialId = await this.getRialSymbolId();
-    if (!rialId || !bot.symbolId) return new Decimal(0);
-    if (bot.symbolId === rialId) return amount;
+    if (!rialId || !symbolId) return null;
+    if (symbolId === rialId) return 1;
 
     const rate = await this.valuation.getRate(
-      bot.symbolId,
+      symbolId,
       rialId,
       ValuationBasisEnum.BID,
       DEFAULT_BOT_THRESHOLDS.maxQuoteAgeSeconds
@@ -352,25 +390,10 @@ export class ArbitrageBotEngineService implements OnModuleInit {
     // No live rate means no defensible size — trading blind against an
     // unpriceable budget is worse than skipping the opportunity.
     if (rate.rate === null) {
-      this.logger.warn(`bot ${bot.id}: allocation asset has no live rate to rial`);
-      return new Decimal(0);
+      this.logger.warn(`allocation asset ${symbolId} has no live rate to rial`);
+      return null;
     }
-    return amount.times(rate.rate);
-  }
-
-  private async fromRial(bot: ArbitrageBotEntity, rial: Decimal): Promise<Decimal> {
-    const rialId = await this.getRialSymbolId();
-    if (!rialId || !bot.symbolId) return new Decimal(0);
-    if (bot.symbolId === rialId) return rial;
-
-    const rate = await this.valuation.getRate(
-      bot.symbolId,
-      rialId,
-      ValuationBasisEnum.BID,
-      DEFAULT_BOT_THRESHOLDS.maxQuoteAgeSeconds
-    );
-    if (rate.rate === null || rate.rate === 0) return new Decimal(0);
-    return rial.dividedBy(rate.rate);
+    return rate.rate;
   }
 
   // ── Execution ────────────────────────────────────────────────────────────
@@ -518,8 +541,18 @@ export class ArbitrageBotEngineService implements OnModuleInit {
     bothFilled: boolean,
     reason?: string
   ): Promise<void> {
-    const bot = await this.botRepo.findOne({ where: { id: trade.botId } });
+    const bot = await this.botRepo.findOne({
+      where: { id: trade.botId },
+      relations: { allocations: { symbol: true } },
+    });
     if (!bot) return;
+
+    // The result belongs to the asset that funded the cycle. Older trades
+    // predate multi-asset funding and fall back to the bot's only allocation.
+    const allocation =
+      (trade.allocationId
+        ? await this.allocationRepo.findOne({ where: { id: trade.allocationId } })
+        : null) ?? (bot.allocations ?? [])[0] ?? null;
 
     const legs = (trade.legs ?? {}) as Record<string, any>;
     let profitRial: Decimal;
@@ -538,7 +571,7 @@ export class ArbitrageBotEngineService implements OnModuleInit {
       profitRial = new Decimal(0);
     }
 
-    const pnlAsset = await this.fromRial(bot, profitRial);
+    const pnlAsset = await this.fromRial(allocation?.symbolId ?? null, profitRial);
 
     trade.status = bothFilled
       ? ArbitrageBotTradeStatusEnum.FILLED
@@ -549,22 +582,26 @@ export class ArbitrageBotEngineService implements OnModuleInit {
     if (!bothFilled) trade.failureReason = reason ?? "one or both legs did not fill";
     await this.tradeRepo.save(trade);
 
-    if (bot.managerAccountId && !pnlAsset.isZero()) {
-      await this.managerAccounts.bookBotResult(
-        bot.managerAccountId,
-        bot.id,
-        pnlAsset.toNumber(),
-        `arbitrage bot ${bot.name} trade ${trade.id}`
-      );
-    }
+    if (allocation) {
+      if (!pnlAsset.isZero()) {
+        await this.managerAccounts.bookBotResult(
+          allocation.managerAccountId,
+          bot.id,
+          pnlAsset.toNumber(),
+          `arbitrage bot ${bot.name} trade ${trade.id}`
+        );
+      }
 
-    bot.realizedPnl = new Decimal(bot.realizedPnl).plus(pnlAsset).toNumber();
-    if (pnlAsset.isNegative()) {
-      bot.realizedLoss = new Decimal(bot.realizedLoss).plus(pnlAsset.negated()).toNumber();
+      allocation.realizedPnl = new Decimal(allocation.realizedPnl).plus(pnlAsset).toNumber();
+      if (pnlAsset.isNegative()) {
+        allocation.realizedLoss = new Decimal(allocation.realizedLoss)
+          .plus(pnlAsset.negated())
+          .toNumber();
+      }
+      // Safe to save the whole row: it was loaded fresh at the top of the
+      // settlement, unlike the cached instances the signal path works with.
+      await this.allocationRepo.save(allocation);
     }
-    // Safe to save the whole row: this bot was loaded fresh at the top of the
-    // settlement, unlike the cached instances the signal path works with.
-    await this.botRepo.save(bot);
 
     await this.bots.recordEvent(bot, {
       type: bothFilled
@@ -576,31 +613,67 @@ export class ArbitrageBotEngineService implements OnModuleInit {
       title: bothFilled
         ? `معامله ربات ${bot.name} انجام شد`
         : `معامله ربات ${bot.name} ناموفق بود`,
-      message: `نتیجه: ${profitRial.toFixed(0)} ریال${reason ? ` — ${reason}` : ""}`,
-      metadata: { profitRial: profitRial.toNumber(), pnlAsset: pnlAsset.toNumber() },
+      message:
+        `نتیجه: ${profitRial.toFixed(0)} ریال${reason ? ` — ${reason}` : ""}` +
+        (allocation?.symbol ? ` (از محل ${allocation.symbol.slug})` : ""),
+      metadata: {
+        profitRial: profitRial.toNumber(),
+        pnlAsset: pnlAsset.toNumber(),
+        symbol: allocation?.symbol?.slug ?? null,
+      },
       tradeId: trade.id,
     });
 
-    await this.checkRisk(bot);
+    if (allocation) await this.checkRisk(bot, allocation);
     this.invalidate();
   }
 
   /**
-   * Halts a bot that has spent its loss budget, and warns once it is close.
+   * Halts a bot that has spent its loss budgets, and warns once one is close.
    * The warning exists so a manager can top the bot up or narrow its scope
-   * before the stop-loss takes the decision out of their hands.
+   * before a stop-loss takes the decision out of their hands.
+   *
+   * Each asset is judged on its own budget, but the bot only halts when every
+   * funded asset is spent — one exhausted allocation just takes that asset out
+   * of play, and the bot keeps trading the side it can still afford.
    */
-  private async checkRisk(bot: ArbitrageBotEntity): Promise<void> {
-    const stopLoss = new Decimal(bot.stopLossAmount);
+  private async checkRisk(
+    bot: ArbitrageBotEntity,
+    allocation: ArbitrageBotAllocationEntity
+  ): Promise<void> {
+    const asset = allocation.symbol?.slug ?? "";
+    const stopLoss = new Decimal(allocation.stopLossAmount);
     if (stopLoss.lessThanOrEqualTo(0)) return;
 
-    const used = new Decimal(bot.realizedLoss).dividedBy(stopLoss).times(100);
+    const used = new Decimal(allocation.realizedLoss).dividedBy(stopLoss).times(100);
 
     if (used.greaterThanOrEqualTo(100)) {
-      await this.bots.halt(
-        bot,
-        `زیان محقق‌شده (${bot.realizedLoss}) به حد ضرر (${bot.stopLossAmount}) رسید.`
+      const funded = (bot.allocations ?? []).filter((a) => Number(a.allocatedAmount) > 0);
+      const stillUsable = funded.filter(
+        (a) => a.id !== allocation.id && this.bots.allocationBudget(a).greaterThan(0)
       );
+
+      if (stillUsable.length === 0) {
+        await this.bots.halt(
+          bot,
+          `زیان محقق‌شده در ${asset} (${allocation.realizedLoss}) به حد ضرر (${allocation.stopLossAmount}) رسید و دارایی دیگری با بودجه باقی‌مانده وجود ندارد.`
+        );
+        return;
+      }
+
+      await this.bots.recordEvent(bot, {
+        type: ArbitrageBotEventTypeEnum.LOSS_WARNING,
+        severity: ArbitrageBotEventSeverityEnum.CRITICAL,
+        title: `حد ضرر ${asset} در ربات ${bot.name} مصرف شد`,
+        message: `ربات دیگر از محل ${asset} معامله نمی‌کند، اما با ${stillUsable
+          .map((a) => a.symbol?.slug ?? "")
+          .join("، ")} فعال می‌ماند.`,
+        metadata: {
+          symbol: asset,
+          realizedLoss: Number(allocation.realizedLoss),
+          stopLossAmount: Number(allocation.stopLossAmount),
+        },
+      });
       return;
     }
 
@@ -610,11 +683,12 @@ export class ArbitrageBotEngineService implements OnModuleInit {
         type: ArbitrageBotEventTypeEnum.LOSS_WARNING,
         severity: ArbitrageBotEventSeverityEnum.WARNING,
         title: `ربات ${bot.name} به آستانه هشدار زیان رسید`,
-        message: `${used.toFixed(1)}٪ از بودجه حد ضرر مصرف شده است.`,
+        message: `${used.toFixed(1)}٪ از بودجه حد ضرر ${asset} مصرف شده است.`,
         metadata: {
+          symbol: asset,
           usedPercent: used.toNumber(),
-          realizedLoss: Number(bot.realizedLoss),
-          stopLossAmount: Number(bot.stopLossAmount),
+          realizedLoss: Number(allocation.realizedLoss),
+          stopLossAmount: Number(allocation.stopLossAmount),
         },
       });
     }

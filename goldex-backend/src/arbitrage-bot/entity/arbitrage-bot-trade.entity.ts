@@ -1,6 +1,7 @@
 import { Column, Entity, Index, JoinColumn, ManyToOne } from "typeorm";
 import { myBaseEntity } from "../../shared/entity/base.entity";
 import { ArbitrageBotEntity } from "./arbitrage-bot.entity";
+import { ArbitrageBotAllocationEntity } from "./arbitrage-bot-allocation.entity";
 import {
   ArbitrageBotFundingDirectionEnum,
   ArbitrageBotTradeStatusEnum,
@@ -24,6 +25,18 @@ export class ArbitrageBotTradeEntity extends myBaseEntity {
   @ManyToOne(() => ArbitrageBotEntity, { onDelete: "CASCADE" })
   @JoinColumn({ name: "bot_id" })
   bot: ArbitrageBotEntity;
+
+  /**
+   * The allocation that funded this cycle — which asset paid for the first
+   * leg, and therefore which budget the result is booked against. Null only
+   * for trades predating multi-asset funding.
+   */
+  @Column({ name: "allocation_id", type: "uuid", nullable: true })
+  allocationId: string | null;
+
+  @ManyToOne(() => ArbitrageBotAllocationEntity, { nullable: true, onDelete: "SET NULL" })
+  @JoinColumn({ name: "allocation_id" })
+  allocation: ArbitrageBotAllocationEntity | null;
 
   /** The engine's stable key for the opportunity (item + provider pair). */
   @Column({ name: "signal_key", type: "varchar", length: 200 })

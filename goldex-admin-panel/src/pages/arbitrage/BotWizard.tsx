@@ -108,6 +108,17 @@ const num = (v: string, fallback = 0) => {
   return Number.isFinite(parsed) ? parsed : fallback;
 };
 
+/** One row of the capital step: an asset and the amount to freeze from it. */
+interface CapitalLine {
+  key: number;
+  symbolId: string;
+  amount: string;
+}
+
+/** Row identity, so removing a row does not renumber the ones after it. */
+let lineKeySeed = 0;
+const nextLineKey = () => ++lineKeySeed;
+
 /**
  * Defining an arbitrage bot, one decision at a time.
  *
@@ -162,9 +173,20 @@ export default function BotWizard({
   const [maxQuoteAgeSeconds, setMaxQuoteAgeSeconds] = useState(String(t?.maxQuoteAgeSeconds ?? 30));
 
   // ── Capital ──────────────────────────────────────────────────────────────
-  const [symbolId, setSymbolId] = useState(initial?.symbolId ?? "");
-  const [allocatedAmount, setAllocatedAmount] = useState("");
+  /**
+   * Funding is a list, because a bot can hold several assets at once — cash to
+   * buy first, the metal to sell first. One draft row starts the list so the
+   * step is never an empty box the manager has to guess at.
+   */
+  const [lines, setLines] = useState<CapitalLine[]>([{ key: nextLineKey(), symbolId: "", amount: "" }]);
   const [stopLossPercent, setStopLossPercent] = useState(String(initial?.stopLossPercent ?? 100));
+
+  const setLine = (key: number, patch: Partial<CapitalLine>) =>
+    setLines((rows) => rows.map((row) => (row.key === key ? { ...row, ...patch } : row)));
+  const addLine = () =>
+    setLines((rows) => [...rows, { key: nextLineKey(), symbolId: "", amount: "" }]);
+  const removeLine = (key: number) =>
+    setLines((rows) => (rows.length > 1 ? rows.filter((row) => row.key !== key) : rows));
 
   // ── Alerts ───────────────────────────────────────────────────────────────
   const n = initial?.notifications;
@@ -243,22 +265,29 @@ export default function BotWizard({
     meta: p.isValid ? undefined : <Badge kind="gray">بدون قیمت</Badge>,
   }));
 
-  const account = accountList.find(
-    (a) => a.symbolId === symbolId && a.adminId === (initial?.ownerAdminId ?? admin?.id),
-  );
-  const available = account?.availableBalance ?? 0;
-  const chosenSymbol = symbolList.find((s) => s.id === symbolId);
-  const amount = num(allocatedAmount);
-  const stopLossAmount = (amount * num(stopLossPercent, 100)) / 100;
+  const ownerId = initial?.ownerAdminId ?? admin?.id;
+  /** Free balance of the owner's manager account in one asset. */
+  const availableOf = (id: string) =>
+    accountList.find((a) => a.symbolId === id && a.adminId === ownerId)?.availableBalance ?? 0;
+  const symbolOf = (id: string) => symbolList.find((s) => s.id === id);
 
-  // Editing a funded bot re-derives its loss budget from the capital it already
-  // holds. Dropping the percentage below what it has already lost halts it the
-  // moment the change is saved, so that is said before it is saved.
-  const currentLoss = Number(initial?.realizedLoss ?? 0);
-  const editedStopLossAmount =
-    (Number(initial?.allocatedAmount ?? 0) * num(stopLossPercent, 100)) / 100;
+  const filled = lines.filter((line) => line.symbolId && num(line.amount) > 0);
+  const overdrawn = filled.find((line) => num(line.amount) > availableOf(line.symbolId));
+  const duplicated = filled.some(
+    (line, i) => filled.findIndex((other) => other.symbolId === line.symbolId) !== i,
+  );
+
+  // Editing a funded bot re-derives each allocation's loss budget from the
+  // capital it already holds. Dropping the percentage below what an asset has
+  // already lost halts the bot the moment the change is saved, so that is said
+  // before it is saved.
+  const existingAllocations = initial?.allocations ?? [];
   const stopLossWouldHalt =
-    editing && Number(initial?.allocatedAmount ?? 0) > 0 && editedStopLossAmount <= currentLoss;
+    editing &&
+    existingAllocations.length > 0 &&
+    existingAllocations
+      .filter((a) => a.allocatedAmount > 0)
+      .every((a) => (a.allocatedAmount * num(stopLossPercent, 100)) / 100 <= a.realizedLoss);
 
   // ── Validation, per step ─────────────────────────────────────────────────
   const stepError: Record<StepKey, string | null> = {
@@ -270,11 +299,11 @@ export default function BotWizard({
         : "سقف معاملات و اعتبار قیمت باید دست‌کم ۱ باشد.",
     capital: editing
       ? null
-      : !symbolId || amount <= 0
-        ? null // Capital is optional at creation; it can be allocated later.
-        : amount > available
-          ? "مبلغ فریز شدنی از موجودی آزاد حساب مدیریتی بیشتر است."
-          : null,
+      : duplicated
+        ? "هر دارایی فقط یک بار قابل تخصیص است؛ ردیف تکراری را حذف کنید."
+        : overdrawn
+          ? `مبلغ ${symbolOf(overdrawn.symbolId)?.slug ?? ""} از موجودی آزاد حساب مدیریتی بیشتر است.`
+          : null, // Capital is optional at creation; it can be allocated later.
     alerts:
       !notifyEnabled || channels.length > 0 ? null : "دست‌کم یک کانال اطلاع‌رسانی انتخاب کنید.",
     review: null,
@@ -347,9 +376,11 @@ export default function BotWizard({
     };
     // Capital moves through the allocate route once a bot exists, so it is only
     // part of the create call.
-    if (!editing && symbolId && amount > 0) {
-      body.symbolId = symbolId;
-      body.allocatedAmount = amount;
+    if (!editing && filled.length > 0) {
+      body.allocations = filled.map((line) => ({
+        symbolId: line.symbolId,
+        amount: num(line.amount),
+      }));
     }
     save.mutate(body);
   }
@@ -612,97 +643,162 @@ export default function BotWizard({
         {step === "capital" && (
           <>
             <div className="muted" style={{ fontSize: 12, marginBottom: 12 }}>
-              سرمایه از حساب مدیریتی مالک ربات فریز می‌شود — خرج نمی‌شود، اما تا آزادسازی در اختیار
-              همین ربات است. تا وقتی زیان محقق‌شده از حد ضرر عبور نکند، ربات اجازه معامله دارد؛ پس
-              از آن خودکار متوقف می‌شود.
+              سرمایه از حساب‌های مدیریتی مالک ربات فریز می‌شود — خرج نمی‌شود، اما تا آزادسازی در
+              اختیار همین ربات است. می‌توانید چند دارایی را هم‌زمان تخصیص دهید (مثلاً ۱۰ گرم طلا و
+              ۱۰۰ میلیارد ریال): ریال به ربات اجازه می‌دهد اول بخرد و طلا اجازه می‌دهد اول بفروشد،
+              پس رباتی که هر دو را دارد هر دو جهت فرصت را می‌تواند بگیرد. هر دارایی حد ضرر خودش را
+              دارد.
             </div>
 
             {editing ? (
               <>
-                <div className="grid grid-3" style={{ marginBottom: 12 }}>
-                  <Stat
-                    label={`سرمایه فریزشده (${initial?.symbol?.slug ?? ""})`}
-                    value={fmtNum(initial?.allocatedAmount ?? 0, 4)}
-                  />
-                  <Stat
-                    label="زیان محقق‌شده تاکنون"
-                    value={fmtNum(initial?.realizedLoss ?? 0, 4)}
-                  />
-                  <Stat
-                    label="بودجه باقی‌مانده حد ضرر"
-                    value={fmtNum(Math.max(0, editedStopLossAmount - currentLoss), 4)}
-                  />
-                </div>
+                {existingAllocations.length === 0 ? (
+                  <div className="ok-text" style={{ marginBottom: 12 }}>
+                    این ربات هنوز سرمایه‌ای ندارد. از دکمه «تخصیص سرمایه» در فهرست ربات‌ها استفاده
+                    کنید.
+                  </div>
+                ) : (
+                  <div className="table-wrap" style={{ marginBottom: 12 }}>
+                    <table>
+                      <thead>
+                        <tr>
+                          <th>دارایی</th>
+                          <th>فریزشده</th>
+                          <th>زیان محقق‌شده</th>
+                          <th>بودجه باقی‌مانده</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {existingAllocations.map((a) => (
+                          <tr key={a.id}>
+                            <td>{a.symbol?.slug ?? "—"}</td>
+                            <td className="mono">{fmtNum(a.allocatedAmount, 4)}</td>
+                            <td className="mono">{fmtNum(a.realizedLoss, 4)}</td>
+                            <td className="mono">
+                              {fmtNum(
+                                Math.max(
+                                  0,
+                                  (a.allocatedAmount * num(stopLossPercent, 100)) / 100 -
+                                    a.realizedLoss,
+                                ),
+                                4,
+                              )}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
                 <div className="ok-text" style={{ marginBottom: 12 }}>
                   برای تغییر سرمایه از دکمه «تخصیص سرمایه» در فهرست ربات‌ها استفاده کنید تا جابه‌جایی
                   در دفتر حساب مدیریتی ثبت شود. در این صفحه فقط درصد حد ضرر قابل ویرایش است.
                 </div>
               </>
             ) : (
-              <div className="grid grid-2" style={{ gap: 14 }}>
-                <div className="field">
-                  <label>دارایی</label>
-                  <select
-                    className="select"
-                    value={symbolId}
-                    onChange={(e) => setSymbolId(e.target.value)}
-                  >
-                    <option value="">— بدون تخصیص فعلاً —</option>
-                    {symbolList.map((s: any) => (
-                      <option key={s.id} value={s.id}>{symbolLabel(s)}</option>
-                    ))}
-                  </select>
-                  {symbolId && (
-                    <span className="muted" style={{ fontSize: 11 }}>
-                      موجودی آزاد حساب مدیریتی: <span className="mono">{fmtNum(available, 4)}</span>{" "}
-                      {chosenSymbol?.slug ?? ""}
-                    </span>
-                  )}
-                </div>
+              <>
+                {lines.map((line) => {
+                  const free = line.symbolId ? availableOf(line.symbolId) : 0;
+                  const slug = symbolOf(line.symbolId)?.slug ?? "";
+                  const taken = lines.some(
+                    (other) => other.key !== line.key && other.symbolId === line.symbolId,
+                  );
+                  return (
+                    <div key={line.key} className="alloc-row">
+                      <div className="field">
+                        <label>دارایی</label>
+                        <select
+                          className="select"
+                          value={line.symbolId}
+                          onChange={(e) => setLine(line.key, { symbolId: e.target.value })}
+                        >
+                          <option value="">— انتخاب دارایی —</option>
+                          {symbolList.map((sym: any) => (
+                            <option key={sym.id} value={sym.id}>{symbolLabel(sym)}</option>
+                          ))}
+                        </select>
+                        {line.symbolId && (
+                          <span className={taken ? "error-text" : "muted"} style={{ fontSize: 11 }}>
+                            {taken ? (
+                              "این دارایی در ردیف دیگری انتخاب شده است."
+                            ) : (
+                              <>
+                                موجودی آزاد: <span className="mono">{fmtNum(free, 4)}</span> {slug}
+                              </>
+                            )}
+                          </span>
+                        )}
+                      </div>
 
-                <div className="field">
-                  <label>مبلغ فریز شدنی</label>
-                  <div className="row" style={{ gap: 6 }}>
-                    <input
-                      className="input mono"
-                      dir="ltr"
-                      type="number"
-                      step="0.0001"
-                      min={0}
-                      value={allocatedAmount}
-                      onChange={(e) => setAllocatedAmount(e.target.value)}
-                      disabled={!symbolId}
-                      style={{ flex: 1 }}
-                    />
-                    <button
-                      type="button"
-                      className="btn ghost sm"
-                      disabled={!symbolId || available <= 0}
-                      onClick={() => setAllocatedAmount(String(available))}
-                    >
-                      حداکثر
-                    </button>
+                      <div className="field">
+                        <label>مبلغ فریز شدنی</label>
+                        <div className="row" style={{ gap: 6 }}>
+                          <input
+                            className="input mono"
+                            dir="ltr"
+                            type="number"
+                            step="0.0001"
+                            min={0}
+                            value={line.amount}
+                            onChange={(e) => setLine(line.key, { amount: e.target.value })}
+                            disabled={!line.symbolId}
+                            style={{ flex: 1 }}
+                          />
+                          <button
+                            type="button"
+                            className="btn ghost sm"
+                            disabled={!line.symbolId || free <= 0}
+                            onClick={() => setLine(line.key, { amount: String(free) })}
+                          >
+                            حداکثر
+                          </button>
+                        </div>
+                        {line.symbolId && num(line.amount) > free && (
+                          <span className="error-text" style={{ fontSize: 11 }}>
+                            بیش از موجودی آزاد این حساب است.
+                          </span>
+                        )}
+                      </div>
+
+                      <button
+                        type="button"
+                        className="btn ghost sm alloc-remove"
+                        disabled={lines.length === 1}
+                        onClick={() => removeLine(line.key)}
+                        title="حذف این دارایی"
+                      >
+                        ✕
+                      </button>
+                    </div>
+                  );
+                })}
+
+                <button type="button" className="btn ghost sm" onClick={addLine}>
+                  + دارایی دیگر
+                </button>
+
+                {filled.length === 0 && (
+                  <div className="muted" style={{ fontSize: 11, marginTop: 8 }}>
+                    می‌توانید ربات را بدون سرمایه بسازید و بعداً تخصیص دهید — ولی تا آن زمان قابل
+                    اجرا نیست.
                   </div>
-                  {!symbolId && (
-                    <span className="muted" style={{ fontSize: 11 }}>
-                      می‌توانید ربات را بدون سرمایه بسازید و بعداً تخصیص دهید — ولی تا آن زمان قابل
-                      اجرا نیست.
-                    </span>
-                  )}
-                </div>
-              </div>
-            )}
+                )}
 
-            {!editing && symbolId && (
-              <div className="ok-text" style={{ marginTop: 10, marginBottom: 4, fontSize: 12 }}>
-                {chosenSymbol?.symbolType === "rial"
-                  ? `با تخصیص ${chosenSymbol?.slug ?? "ریال"}، ربات سیگنال‌هایی را اجرا می‌کند که اول خرید و سپس فروش دارند. برای اجرای سیگنال‌های «فروش سپس خرید» باید دارایی پایه (مثلاً طلا) به ربات تخصیص یابد، چون فروش بدون در اختیار داشتن دارایی ممکن نیست.`
-                  : `با تخصیص ${chosenSymbol?.slug ?? "این دارایی"}، ربات روی جفت‌ارزهایی که پایه‌شان همین دارایی است اول می‌فروشد و سپس بازخرید می‌کند. برای سیگنال‌های «خرید سپس فروش» تخصیص ریال لازم است.`}
-              </div>
+                {filled.length > 0 && (
+                  <div className="ok-text" style={{ marginTop: 10, fontSize: 12 }}>
+                    {filled.some((line) => symbolOf(line.symbolId)?.symbolType === "rial") &&
+                    filled.some((line) => symbolOf(line.symbolId)?.symbolType !== "rial")
+                      ? "با این ترکیب، ربات هم می‌تواند اول بخرد و هم اول بفروشد؛ برای هر فرصت، دارایی مناسب را خودش انتخاب می‌کند."
+                      : filled.every((line) => symbolOf(line.symbolId)?.symbolType === "rial")
+                        ? "با تخصیص ریال، ربات فقط فرصت‌هایی را می‌گیرد که اول خرید و سپس فروش دارند. برای «فروش سپس خرید» یک دارایی پایه (مثلاً طلا) هم اضافه کنید."
+                        : "با این دارایی، ربات روی جفت‌ارزهایی که پایه‌شان همین دارایی است اول می‌فروشد و سپس بازخرید می‌کند. برای «خرید سپس فروش» ریال هم اضافه کنید."}
+                  </div>
+                )}
+              </>
             )}
 
             <div className="field" style={{ marginTop: 6 }}>
-              <label>حد ضرر — {stopLossPercent}٪ از سرمایه فریزشده</label>
+              <label>حد ضرر — {stopLossPercent}٪ از هر دارایی تخصیص‌یافته</label>
               <input
                 className="range"
                 type="range"
@@ -712,16 +808,34 @@ export default function BotWizard({
                 onChange={(e) => setStopLossPercent(e.target.value)}
               />
               <span className="muted" style={{ fontSize: 11 }}>
+                {/* Each asset is measured against its own allocation, so the
+                    budget is a list of amounts rather than one number. */}
                 {editing
-                  ? `بر مبنای سرمایه فعلی: ${fmtNum(editedStopLossAmount, 4)}`
-                  : amount > 0
-                    ? `یعنی ربات تا ${fmtNum(stopLossAmount, 4)} ${chosenSymbol?.slug ?? ""} زیان اجازه معامله دارد.`
+                  ? existingAllocations.length > 0
+                    ? `بر مبنای سرمایه فعلی: ${existingAllocations
+                        .map(
+                          (a) =>
+                            `${fmtNum((a.allocatedAmount * num(stopLossPercent, 100)) / 100, 4)} ${
+                              a.symbol?.slug ?? ""
+                            }`,
+                        )
+                        .join(" · ")}`
+                    : "پس از تخصیص سرمایه، مبلغ حد ضرر از همین درصد حساب می‌شود."
+                  : filled.length > 0
+                    ? `یعنی ربات تا ${filled
+                        .map(
+                          (line) =>
+                            `${fmtNum((num(line.amount) * num(stopLossPercent, 100)) / 100, 4)} ${
+                              symbolOf(line.symbolId)?.slug ?? ""
+                            }`,
+                        )
+                        .join(" و ")} زیان اجازه معامله دارد.`
                     : "پس از تخصیص سرمایه، مبلغ حد ضرر از همین درصد حساب می‌شود."}
               </span>
               {editing && stopLossWouldHalt && (
                 <div className="error-text">
-                  ⚠ با این درصد، بودجه حد ضرر ({fmtNum(editedStopLossAmount, 4)}) از زیان محقق‌شده (
-                  {fmtNum(currentLoss, 4)}) کمتر است و ربات بلافاصله پس از ذخیره متوقف می‌شود.
+                  ⚠ با این درصد، بودجه حد ضرر همه دارایی‌های ربات از زیان محقق‌شده‌شان کمتر است و
+                  ربات بلافاصله پس از ذخیره متوقف می‌شود.
                 </div>
               )}
             </div>
@@ -872,26 +986,45 @@ export default function BotWizard({
             </SummaryRow>
             <SummaryRow label="سرمایه">
               {editing ? (
+                existingAllocations.length > 0 ? (
+                  <>
+                    {existingAllocations
+                      .map((a) => `${fmtNum(a.allocatedAmount, 4)} ${a.symbol?.slug ?? ""}`)
+                      .join(" · ")}{" "}
+                    (بدون تغییر)
+                  </>
+                ) : (
+                  "بدون تخصیص"
+                )
+              ) : filled.length > 0 ? (
                 <>
-                  <span className="mono">{fmtNum(initial?.allocatedAmount ?? 0, 4)}</span>{" "}
-                  {initial?.symbol?.slug ?? ""} (بدون تغییر)
-                </>
-              ) : symbolId && amount > 0 ? (
-                <>
-                  <span className="mono">{fmtNum(amount, 4)}</span> {chosenSymbol?.slug ?? ""} فریز
-                  می‌شود
+                  {filled
+                    .map(
+                      (line) =>
+                        `${fmtNum(num(line.amount), 4)} ${symbolOf(line.symbolId)?.slug ?? ""}`,
+                    )
+                    .join(" · ")}{" "}
+                  فریز می‌شود
                 </>
               ) : (
                 "بدون تخصیص — ربات تا زمان تخصیص سرمایه قابل اجرا نیست"
               )}
             </SummaryRow>
             <SummaryRow label="حد ضرر">
-              <span className="mono">{stopLossPercent}</span>٪
-              {!editing && amount > 0 && (
+              <span className="mono">{stopLossPercent}</span>٪ از هر دارایی
+              {!editing && filled.length > 0 && (
                 <>
                   {" "}
-                  (<span className="mono">{fmtNum(stopLossAmount, 4)}</span>{" "}
-                  {chosenSymbol?.slug ?? ""})
+                  (
+                  {filled
+                    .map(
+                      (line) =>
+                        `${fmtNum((num(line.amount) * num(stopLossPercent, 100)) / 100, 4)} ${
+                          symbolOf(line.symbolId)?.slug ?? ""
+                        }`,
+                    )
+                    .join(" · ")}
+                  )
                 </>
               )}
             </SummaryRow>

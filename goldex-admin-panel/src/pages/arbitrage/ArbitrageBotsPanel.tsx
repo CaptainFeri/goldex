@@ -87,10 +87,14 @@ function BotKpis() {
         }
       />
       <Kpi
-        label="ظرفیت باقی‌مانده حد ضرر"
-        value={fmtNum(s.lossBudgetRemaining, 4)}
-        hint="مجموع ربات‌های در حال اجرا، به واحد دارایی هر ربات"
-        tone={s.lossBudgetRemaining <= 0 ? "red" : undefined}
+        label="دارایی‌های تأمین‌کننده"
+        value={String(s.fundedAssets)}
+        hint={
+          s.exhaustedAllocations > 0
+            ? `${s.exhaustedAllocations} تخصیص با حد ضرر مصرف‌شده`
+            : "هیچ تخصیصی حد ضررش را تمام نکرده است"
+        }
+        tone={s.exhaustedAllocations > 0 ? "gold" : undefined}
       />
       <Kpi
         label="سود/زیان محقق‌شده (ریال)"
@@ -139,18 +143,51 @@ function BotKpis() {
   );
 }
 
-/** How much of the stop-loss budget a bot has spent, as a bar. */
-function LossBudgetBar({ bot }: { bot: ArbitrageBot }) {
-  const used = Math.min(100, Math.max(0, bot.lossBudgetUsedPercent ?? 0));
-  const tone = used >= 100 ? "var(--red)" : used >= 70 ? "var(--gold)" : "var(--green)";
+/**
+ * Stop-loss consumption, one bar per funded asset.
+ *
+ * A bot holding gold and Rial has two independent budgets, and averaging them
+ * would hide the one that is nearly spent — which is the only one that decides
+ * whether the bot keeps trading that side.
+ */
+function LossBudgetBars({ bot }: { bot: ArbitrageBot }) {
+  const funded = (bot.allocations ?? []).filter((a) => a.allocatedAmount > 0);
+  if (funded.length === 0) return <span className="muted">—</span>;
+
   return (
-    <div style={{ minWidth: 120 }}>
-      <div style={{ height: 6, borderRadius: 3, background: "var(--bg-elev)", overflow: "hidden" }}>
-        <div style={{ width: `${used}%`, height: "100%", background: tone }} />
-      </div>
-      <div className="muted mono" style={{ fontSize: 11, marginTop: 3 }}>
-        {fmtNum(bot.realizedLoss, 4)} / {fmtNum(bot.stopLossAmount, 4)} ({used.toFixed(0)}٪)
-      </div>
+    <div style={{ minWidth: 140, display: "grid", gap: 6 }}>
+      {funded.map((a) => {
+        const used = Math.min(100, Math.max(0, a.lossBudgetUsedPercent ?? 0));
+        const tone = used >= 100 ? "var(--red)" : used >= 70 ? "var(--gold)" : "var(--green)";
+        return (
+          <div key={a.id}>
+            <div
+              style={{ height: 6, borderRadius: 3, background: "var(--bg-elev)", overflow: "hidden" }}
+            >
+              <div style={{ width: `${used}%`, height: "100%", background: tone }} />
+            </div>
+            <div className="muted mono" style={{ fontSize: 11, marginTop: 3 }}>
+              {a.symbol?.slug ?? ""} {fmtNum(a.realizedLoss, 4)} / {fmtNum(a.stopLossAmount, 4)} (
+              {used.toFixed(0)}٪)
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+/** The assets a bot holds, as one compact cell. */
+function AllocationCell({ bot }: { bot: ArbitrageBot }) {
+  const funded = (bot.allocations ?? []).filter((a) => a.allocatedAmount > 0);
+  if (funded.length === 0) return <span className="muted">بدون تخصیص</span>;
+  return (
+    <div style={{ display: "grid", gap: 2 }}>
+      {funded.map((a) => (
+        <div key={a.id} className="mono" style={{ whiteSpace: "nowrap" }}>
+          {fmtNum(a.allocatedAmount, 4)} {a.symbol?.slug ?? ""}
+        </div>
+      ))}
     </div>
   );
 }
@@ -159,7 +196,7 @@ function AllocateModal({ bot, onClose }: { bot: ArbitrageBot; onClose: () => voi
   const qc = useQueryClient();
   const [amount, setAmount] = useState("");
   const [stopLossPercent, setStopLossPercent] = useState(String(bot.stopLossPercent || 100));
-  const [symbolId, setSymbolId] = useState(bot.symbolId ?? "");
+  const [symbolId, setSymbolId] = useState(bot.allocations?.[0]?.symbolId ?? "");
 
   const symbols = useQuery({
     queryKey: ["symbols-for-bot"],
@@ -192,8 +229,9 @@ function AllocateModal({ bot, onClose }: { bot: ArbitrageBot; onClose: () => voi
   return (
     <Modal title={`تخصیص سرمایه به ${bot.name}`} onClose={onClose}>
       <div className="muted" style={{ fontSize: 12, marginBottom: 12 }}>
-        مبلغ از موجودی آزاد حساب مدیریتی مالک ربات کسر و فریز می‌شود. حد ضرر بر مبنای کل سرمایه فریزشده
-        محاسبه می‌گردد.
+        مبلغ از موجودی آزاد حساب مدیریتی مالک ربات کسر و فریز می‌شود. انتخاب دارایی جدید یک بودجه
+        تازه به ربات اضافه می‌کند و انتخاب دارایی موجود، همان تخصیص را افزایش می‌دهد. حد ضرر هر
+        دارایی جدا از بقیه محاسبه می‌شود.
       </div>
       <div className="field">
         <label>دارایی</label>
@@ -201,7 +239,6 @@ function AllocateModal({ bot, onClose }: { bot: ArbitrageBot; onClose: () => voi
           className="select"
           value={symbolId}
           onChange={(e) => setSymbolId(e.target.value)}
-          disabled={!!bot.symbolId}
         >
           <option value="">انتخاب دارایی</option>
           {symbolList.map((s: any) => (
@@ -262,12 +299,8 @@ function BotDetailModal({ bot, onClose }: { bot: ArbitrageBot; onClose: () => vo
           </div>
         </div>
         <div className="field">
-          <label>سرمایه فریزشده</label>
-          <div className="mono">{fmtNum(bot.allocatedAmount, 4)} {bot.symbol?.slug ?? ""}</div>
-        </div>
-        <div className="field">
-          <label>سود/زیان محقق‌شده</label>
-          <div className="mono">{fmtNum(bot.realizedPnl, 4)}</div>
+          <label>دارایی‌های تخصیص‌یافته</label>
+          <div><AllocationCell bot={bot} /></div>
         </div>
         <div className="field">
           <label>معامله / تراکنش</label>
@@ -284,6 +317,38 @@ function BotDetailModal({ bot, onClose }: { bot: ArbitrageBot; onClose: () => vo
           <div style={{ fontSize: 12 }}>{bot.lastTradeAt ? fmtDate(bot.lastTradeAt) : "—"}</div>
         </div>
       </div>
+      {(bot.allocations ?? []).length > 0 && (
+        <div className="table-wrap" style={{ marginBottom: 12 }}>
+          <table>
+            <thead>
+              <tr>
+                <th>دارایی</th>
+                <th>فریزشده</th>
+                <th>حد ضرر</th>
+                <th>زیان محقق‌شده</th>
+                <th>سود/زیان</th>
+                <th>بودجه باقی‌مانده</th>
+              </tr>
+            </thead>
+            <tbody>
+              {bot.allocations.map((a) => (
+                <tr key={a.id}>
+                  <td>{a.symbol?.slug ?? "—"}</td>
+                  <td className="mono">{fmtNum(a.allocatedAmount, 4)}</td>
+                  <td className="mono">
+                    {fmtNum(a.stopLossAmount, 4)}{" "}
+                    <span className="muted">({fmtNum(a.stopLossPercent, 0)}٪)</span>
+                  </td>
+                  <td className="mono">{fmtNum(a.realizedLoss, 4)}</td>
+                  <td className="mono">{fmtNum(a.realizedPnl, 4)}</td>
+                  <td className="mono">{fmtNum(a.lossBudgetRemaining, 4)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
       {bot.haltReason && (
         <div className="error-text" style={{ marginBottom: 12 }}>{bot.haltReason}</div>
       )}
@@ -477,11 +542,23 @@ export default function ArbitrageBotsPanel() {
                     <Badge kind={BOT_STATUS_KIND[b.status]}>{BOT_STATUS_LABEL[b.status]}</Badge>
                   </td>
                   <td style={{ fontSize: 12 }}>{EXECUTION_MODE_LABEL[b.executionMode]}</td>
+                  <td><AllocationCell bot={b} /></td>
+                  <td><LossBudgetBars bot={b} /></td>
                   <td className="mono">
-                    {fmtNum(b.allocatedAmount, 4)} {b.symbol?.slug ?? ""}
+                    {(b.allocations ?? []).filter((a) => a.allocatedAmount > 0).length === 0 ? (
+                      <span className="muted">—</span>
+                    ) : (
+                      <div style={{ display: "grid", gap: 2 }}>
+                        {b.allocations
+                          .filter((a) => a.allocatedAmount > 0)
+                          .map((a) => (
+                            <div key={a.id} style={{ whiteSpace: "nowrap" }}>
+                              {fmtNum(a.realizedPnl, 4)} {a.symbol?.slug ?? ""}
+                            </div>
+                          ))}
+                      </div>
+                    )}
                   </td>
-                  <td><LossBudgetBar bot={b} /></td>
-                  <td className="mono">{fmtNum(b.realizedPnl, 4)}</td>
                   <td className="mono" title="فرصت منطبق / معامله / سفارش نزد تأمین‌کننده">
                     {b.matchedSignals} / {b.totalTrades} / {b.totalTransactions ?? 0}
                   </td>

@@ -7,5 +7,5 @@ import { CreateArbitrageBotDto } from "./create-arbitrage-bot.dto";
  * recorded on the manager account's ledger.
  */
 export class UpdateArbitrageBotDto extends PartialType(
-  OmitType(CreateArbitrageBotDto, ["allocatedAmount", "symbolId"] as const)
+  OmitType(CreateArbitrageBotDto, ["allocations", "allocatedAmount", "symbolId"] as const)
 ) {}

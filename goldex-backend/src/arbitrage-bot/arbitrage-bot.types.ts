@@ -115,8 +115,10 @@ export interface ArbitrageBotSummary {
   allocations: { symbol: string; amount: number; valueRial: number | null }[];
   /** Allocation assets with no usable live rate, so excluded from the Rial total. */
   unpricedAssets: string[];
-  /** How much the running bots may still lose before halting themselves. */
-  lossBudgetRemaining: number;
+  /** Distinct assets funding the running bots — Rial, gold, and so on. */
+  fundedAssets: number;
+  /** Funded allocations whose stop-loss is spent, so the bot cannot use them. */
+  exhaustedAllocations: number;
   matchedSignals: number;
   totalTrades: number;
   /** Provider orders placed — two per completed cycle. */
