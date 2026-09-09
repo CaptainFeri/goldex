@@ -12,6 +12,7 @@ import { InjectRepository as InjectSymbolRepository } from "@nestjs/typeorm";
 import { Repository } from "typeorm";
 import { CreatePricePairDto } from "./dto/create-pair.dto";
 import { UpdatePricePairDto } from "./dto/update-price-paird.dto";
+import { validateDeadlineConfig } from "../credit/util/pend-deadline.util";
 import { OrderEntity } from "../order/order.entity";
 import { QuoteRequestEntity } from "../quote-request/quote-request.entity";
 import { PendDeadlineStateEnum } from "../credit/enum/pend-deadline-state.enum";
@@ -89,6 +90,8 @@ export class AdminPairService {
       );
     }
 
+    this.assertDeadlineConfig(createPricePairDto);
+
     const pricePair = this.pricePairRepository.create({
       ...createPricePairDto,
       baseSymbol: baseSymbol,
@@ -137,10 +140,21 @@ export class AdminPairService {
     }
 
     Object.assign(pricePair, updatePricePairDto);
+    // Validate the merged result: a patch that only sets a mode still has to
+    // agree with the cutoff times already stored on the pair.
+    this.assertDeadlineConfig(pricePair);
 
     const saved = await this.pricePairRepository.save(pricePair);
     await this.syncOrderBook(saved);
     return saved;
+  }
+
+  /** Reject a credit-deadline configuration that could never produce a deadline. */
+  private assertDeadlineConfig(pair: Parameters<typeof validateDeadlineConfig>[0]): void {
+    const problems = validateDeadlineConfig(pair);
+    if (problems.length > 0) {
+      throw new BadRequestException(problems.join("; "));
+    }
   }
 
   async remove(id: string): Promise<void> {

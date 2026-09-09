@@ -8,13 +8,14 @@ import {
   PriceSnapshot,
   TRADE_FEE_PER_MITHQAL,
 } from './price.types';
+import { moneyFromEnv } from '../common/currency';
 
 /** Max snapshots kept per category bucket (in-memory ring). */
 const MAX_PER_CATEGORY = 1000;
 /** Only compare prices seen within this window (seconds) for arbitrage. */
 const DEFAULT_ARBITRAGE_WINDOW_SECONDS = 600;
-/** Default minimum per-unit profit (spread) to alert on. */
-const DEFAULT_MIN_PROFIT = 80_000;
+/** Default minimum per-unit profit (spread) to alert on, in Rial. */
+const DEFAULT_MIN_PROFIT = 800_000;
 /**
  * The two legs of an arbitrage pair must be observed this close together
  * (seconds). A leg that is older may have moved — pairing with it books
@@ -42,8 +43,11 @@ export class PriceHistoryService {
   private readonly logger = new StructuredLogger(PriceHistoryService.name);
 
   /** Only opportunities with a per-unit spread above this are reported. */
-  private readonly minProfit =
-    Number(process.env.ARBITRAGE_MIN_PROFIT) || DEFAULT_MIN_PROFIT;
+  private readonly minProfit = moneyFromEnv(
+    process.env.ARBITRAGE_MIN_PROFIT_RIAL,
+    process.env.ARBITRAGE_MIN_PROFIT,
+    DEFAULT_MIN_PROFIT,
+  );
 
   /** How far back (seconds) prices may be compared for arbitrage. */
   private readonly windowSeconds =
@@ -191,7 +195,7 @@ export class PriceHistoryService {
     // Two legs each pay the fee per mesqal — anything at or below that is a
     // guaranteed loss, whatever ARBITRAGE_MIN_PROFIT is set to.
     const feeFloor = 2 * TRADE_FEE_PER_MITHQAL;
-    // Only alert on a meaningful margin (default > 80,000 per unit).
+    // Only alert on a meaningful margin (default > 800,000 Rial per unit).
     if (spread <= Math.max(this.minProfit, feeFloor)) {
       this.logger.logStructured('ARBITRAGE_SKIP', {
         reason: 'below-threshold',

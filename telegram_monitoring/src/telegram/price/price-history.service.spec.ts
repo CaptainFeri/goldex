@@ -1,7 +1,14 @@
 import { PriceHistoryService } from './price-history.service';
 import { parsePriceMessage } from './price-message.parser';
 
-import { MITHQALS_PER_KILO } from './price.types';
+import { MITHQALS_PER_KILO, TRADE_FEE_PER_MITHQAL } from './price.types';
+import { RIAL_PER_TOMAN } from '../common/currency';
+
+/**
+ * The messages below are real channel posts, which quote Toman; the parser
+ * converts them, so every figure the service returns is Rial.
+ */
+const rial = (toman: number) => toman * RIAL_PER_TOMAN;
 
 describe('PriceHistoryService arbitrage', () => {
   let service: PriceHistoryService;
@@ -16,8 +23,10 @@ describe('PriceHistoryService arbitrage', () => {
     return service.record(parsed, id, date);
   };
 
-  const profit = (spread: number, qty: number) =>
-    Math.round((spread - 2 * 10_000) * MITHQALS_PER_KILO * qty);
+  const profit = (spreadRial: number, qty: number) =>
+    Math.round(
+      (spreadRial - 2 * TRADE_FEE_PER_MITHQAL) * MITHQALS_PER_KILO * qty,
+    );
 
   it('flags profit when خرید (we sell) exceeds فروش (we buy) in same bucket', () => {
     // فروش 73,500,000 => we BUY at 73.5M
@@ -28,14 +37,14 @@ describe('PriceHistoryService arbitrage', () => {
     const opp = service.detectArbitrage(sellSide);
     expect(opp).not.toBeNull();
     expect(opp).toMatchObject({
-      spread: 100000,
+      spread: rial(100_000),
       quantity: 1,
-      totalProfit: profit(100000, 1),
+      totalProfit: profit(rial(100_000), 1),
       subType: 'normal',
       deliveryType: 'با حواله',
     });
-    expect(opp?.buy.price).toBe(73500000);
-    expect(opp?.sell.price).toBe(73600000);
+    expect(opp?.buy.price).toBe(rial(73_500_000));
+    expect(opp?.sell.price).toBe(rial(73_600_000));
   });
 
   it('ignores opportunities below the minimum profit threshold (default 80,000)', () => {
@@ -87,7 +96,7 @@ describe('PriceHistoryService arbitrage', () => {
     const sell = record('73,600,000 🔵خرید⏳با حواله 1 تا', 2, 1050); // 50s later
     const opp = service.detectArbitrage(sell);
     expect(opp).not.toBeNull();
-    expect(opp!.spread).toBe(100000);
+    expect(opp!.spread).toBe(rial(100_000));
   });
 
   it('detects arbitrage when the current message is the فروش (we buy) side', () => {
@@ -95,9 +104,9 @@ describe('PriceHistoryService arbitrage', () => {
     const buy = record('73,500,000 🔴فروش⏳با حواله 1 تا', 2, 1010); // we buy 73.5M
     const opp = service.detectArbitrage(buy);
     expect(opp).not.toBeNull();
-    expect(opp!.buy.price).toBe(73500000);
-    expect(opp!.sell.price).toBe(73600000);
-    expect(opp!.totalProfit).toBe(profit(100000, 1));
+    expect(opp!.buy.price).toBe(rial(73_500_000));
+    expect(opp!.sell.price).toBe(rial(73_600_000));
+    expect(opp!.totalProfit).toBe(profit(rial(100_000), 1));
   });
 
   it('reports an opportunity once, then only again when the spread changes', () => {
@@ -113,7 +122,7 @@ describe('PriceHistoryService arbitrage', () => {
     const sell2 = record('73,700,000 🔵خرید⏳با حواله 1 تا', 3, 1020);
     const opp2 = service.detectArbitrage(sell2);
     expect(opp2).not.toBeNull();
-    expect(opp2!.sell.price).toBe(73700000);
+    expect(opp2!.sell.price).toBe(rial(73_700_000));
     expect(service.markReportedIfNew(opp2!)).toBe(true);
   });
 
@@ -150,7 +159,7 @@ describe('PriceHistoryService arbitrage', () => {
     const opp = service.detectArbitrage(sell);
     expect(opp).not.toBeNull();
     expect(opp!.quantity).toBe(2);
-    expect(opp!.totalProfit).toBe(profit(100000, 2));
+    expect(opp!.totalProfit).toBe(profit(rial(100_000), 2));
   });
 
   it('buckets history by sub-type', () => {

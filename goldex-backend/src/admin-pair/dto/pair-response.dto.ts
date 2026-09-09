@@ -3,6 +3,7 @@ import { SymbolRefDto } from "../../shared/dto/symbol-ref.dto";
 import { RoutingModeEnum } from "../../pricing-route/enum/routing-mode.enum";
 import { RouteKind, RouteRejection } from "../../pricing-route/price-route.types";
 import { OrderSideEnum } from "../../order/enum/order.side.enum";
+import { CreditDeadlineModeEnum } from "../../credit/enum/credit-deadline-mode.enum";
 
 /**
  * A trading pair, base/quote.
@@ -78,6 +79,43 @@ export class PricePairDto {
 
   @ApiProperty({ example: 2, description: "Display precision for prices on this pair" })
   decimals: number;
+
+  @ApiPropertyOptional({
+    enum: CreditDeadlineModeEnum,
+    nullable: true,
+    description: "How a credit BUY request on this pair ages (null reads as RELATIVE)",
+  })
+  buyDeadlineMode?: CreditDeadlineModeEnum | null;
+
+  @ApiPropertyOptional({ enum: CreditDeadlineModeEnum, nullable: true })
+  sellDeadlineMode?: CreditDeadlineModeEnum | null;
+
+  @ApiPropertyOptional({ nullable: true, example: "12:00", description: "DAILY_CUTOFF warn time" })
+  buyWarnTime?: string | null;
+
+  @ApiPropertyOptional({ nullable: true, example: "14:00", description: "DAILY_CUTOFF cutoff" })
+  buyExpireTime?: string | null;
+
+  @ApiPropertyOptional({ nullable: true, example: "12:00" })
+  sellWarnTime?: string | null;
+
+  @ApiPropertyOptional({ nullable: true, example: "14:00" })
+  sellExpireTime?: string | null;
+
+  @ApiPropertyOptional({
+    nullable: true,
+    example: "Asia/Tehran",
+    description: "Timezone every deadline on this pair is reckoned in",
+  })
+  deadlineTimezone?: string | null;
+
+  @ApiPropertyOptional({
+    type: [String],
+    nullable: true,
+    example: ["2026-03-21"],
+    description: "Dated exceptions on which this pair does not settle",
+  })
+  holidayDates?: string[] | null;
 
   @ApiPropertyOptional({ nullable: true, description: "Hours before a buy position warns" })
   buyWarnHours?: number | null;

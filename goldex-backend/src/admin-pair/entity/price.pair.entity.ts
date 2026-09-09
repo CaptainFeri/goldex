@@ -3,6 +3,10 @@ import { myBaseEntity } from "../../shared/entity/base.entity";
 import { Entity, Column, ManyToOne, JoinColumn, Index, ManyToMany } from "typeorm";
 import { UserLevelEntity } from "../../user-level/entity/user-level.entity";
 import { RoutingModeEnum } from "../../pricing-route/enum/routing-mode.enum";
+import {
+  CreditDeadlineModeEnum,
+  DEFAULT_DEADLINE_TIMEZONE,
+} from "../../credit/enum/credit-deadline-mode.enum";
 
 @Entity("price_pairs")
 @Index(["baseId", "quoteId"], { unique: true })
@@ -72,8 +76,57 @@ export class PricePairEntity extends myBaseEntity {
   @Column({ type: "int", default: 2, name: "decimals" })
   decimals: number;
 
-  // ── Credit v2 pend-deadline time limits (per side) ───────────────
-  // x = warn hours, y = expire hours, z = post-expire grace hours.
+  // ── Credit pend-deadline convention (per side) ───────────────────
+  // How a credit-linked request on this pair ages: NONE (never), RELATIVE
+  // (x/y/z hours from registration) or DAILY_CUTOFF (a wall-clock time of day).
+  // Rows predating the mode carry hours only, so null reads as RELATIVE.
+  @Column({
+    type: "varchar",
+    length: 20,
+    nullable: true,
+    name: "buy_deadline_mode",
+  })
+  buyDeadlineMode: CreditDeadlineModeEnum | null;
+
+  @Column({
+    type: "varchar",
+    length: 20,
+    nullable: true,
+    name: "sell_deadline_mode",
+  })
+  sellDeadlineMode: CreditDeadlineModeEnum | null;
+
+  // DAILY_CUTOFF: wall-clock "HH:mm" in `deadlineTimezone`. A request made past
+  // the cutoff is due at the next open day's cutoff.
+  @Column({ type: "varchar", length: 5, nullable: true, name: "buy_warn_time" })
+  buyWarnTime: string | null;
+
+  @Column({ type: "varchar", length: 5, nullable: true, name: "buy_expire_time" })
+  buyExpireTime: string | null;
+
+  @Column({ type: "varchar", length: 5, nullable: true, name: "sell_warn_time" })
+  sellWarnTime: string | null;
+
+  @Column({ type: "varchar", length: 5, nullable: true, name: "sell_expire_time" })
+  sellExpireTime: string | null;
+
+  // The zone every deadline on this pair is reckoned in. A cutoff is a local
+  // trading-desk time, so it must not drift with the server's clock.
+  @Column({
+    type: "varchar",
+    length: 64,
+    nullable: true,
+    default: DEFAULT_DEADLINE_TIMEZONE,
+    name: "deadline_timezone",
+  })
+  deadlineTimezone: string | null;
+
+  // Dated exceptions ("YYYY-MM-DD") on top of the weekly closures below —
+  // the holidays on which this pair does not settle.
+  @Column({ type: "varchar", length: 10, array: true, nullable: true, name: "holiday_dates" })
+  holidayDates: string[] | null;
+
+  // RELATIVE: x = warn hours, y = expire hours. z (grace) applies to both modes.
   @Column({ type: "int", nullable: true, name: "buy_warn_hours" })
   buyWarnHours: number;
 
@@ -92,7 +145,8 @@ export class PricePairEntity extends myBaseEntity {
   @Column({ type: "int", nullable: true, name: "sell_grace_hours" })
   sellGraceHours: number;
 
-  // Excluded days from deadline calculation (0=Sunday, 1=Monday, ..., 5=Friday, 6=Saturday)
+  // Weekly closures skipped by every deadline on this pair
+  // (0=Sunday, 1=Monday, ..., 5=Friday, 6=Saturday).
   @Column({ type: "int", array: true, nullable: true, name: "excluded_days" })
   excludedDays: number[];
 

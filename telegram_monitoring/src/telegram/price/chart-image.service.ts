@@ -6,9 +6,9 @@ import { ArbitrageOpportunity, PriceSnapshot } from './price.types';
 export interface WalletChartPoint {
   /** Unix seconds. */
   date: number;
-  /** Cash balance in Toman. */
+  /** Cash balance in Rial. */
   cash: number;
-  /** Mark-to-market value of held gold in Toman. */
+  /** Mark-to-market value of held gold in Rial. */
   goldValue: number;
 }
 

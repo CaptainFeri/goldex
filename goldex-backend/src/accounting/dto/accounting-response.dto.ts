@@ -1,96 +1,122 @@
 import { ApiProperty, ApiPropertyOptional } from "@nestjs/swagger";
 import { ValuationBasisEnum } from "../enum/valuation-basis.enum";
 
-/** A symbol as the accounting endpoints identify it. */
+/** A symbol as named on an accounting response. */
 export class AccountingSymbolRefDto {
-  @ApiProperty({ format: "uuid" })
-  id: string;
+  @ApiPropertyOptional({ format: "uuid", nullable: true })
+  id?: string | null;
 
-  @ApiProperty({ nullable: true, example: "طلای ۱۸ عیار" })
-  name: string | null;
+  @ApiPropertyOptional({ nullable: true })
+  name?: string | null;
 
-  @ApiProperty({ nullable: true, example: "XAU" })
-  slug: string | null;
+  @ApiPropertyOptional({ nullable: true, example: "XAU" })
+  slug?: string | null;
 }
 
-/** The symbol every figure is converted into, and whether it was chosen. */
-export class EffectiveReferenceDto {
+/**
+ * The pricing symbol every figure on the page is converted into. `isDefault`
+ * marks the Rial fallback used before an admin has chosen one.
+ */
+export class AccountingReferenceDto {
   @ApiProperty({ format: "uuid" })
   symbolId: string;
 
-  @ApiProperty({ nullable: true })
-  name: string | null;
+  @ApiProperty()
+  name: string;
 
-  @ApiProperty({ nullable: true, example: "IRR" })
-  slug: string | null;
+  @ApiProperty({ example: "IRR" })
+  slug: string;
 
-  @ApiProperty({
-    description: "True when no reference was chosen and the Rial fallback is in use",
-  })
-  isDefault: boolean;
+  @ApiPropertyOptional({ description: "True when this is the fallback, not an explicit choice" })
+  isDefault?: boolean;
 }
 
+/** The accounting policy: what the books are reported in and how assets are valued. */
 export class AccountingSettingsDto {
-  @ApiProperty({
+  @ApiPropertyOptional({
     format: "uuid",
     nullable: true,
-    description: "The pricing symbol an admin chose, or null while unset",
+    description: "Null until an admin picks one; the Rial symbol is used meanwhile",
   })
-  referenceSymbolId: string | null;
+  referenceSymbolId?: string | null;
 
   @ApiProperty({ enum: ValuationBasisEnum })
   valuationBasis: ValuationBasisEnum;
 
-  @ApiProperty({ example: 120, description: "A quote older than this is reported as stale" })
+  @ApiProperty({ description: "A quote older than this is still used, but reported as stale" })
   priceStalenessSeconds: number;
 
-  @ApiPropertyOptional({ type: EffectiveReferenceDto })
-  effectiveReference?: EffectiveReferenceDto;
+  @ApiPropertyOptional({
+    type: AccountingReferenceDto,
+    description: "The symbol actually in effect (present on reads, not on the update response)",
+  })
+  effectiveReference?: AccountingReferenceDto;
 }
 
-/** One hop of a conversion into the reference symbol. */
+/** One hop of a conversion path between two symbols. */
 export class ValuationLegDto {
   @ApiProperty({ format: "uuid" })
   pairId: string;
 
-  @ApiProperty({ example: "XAU" })
+  @ApiProperty()
   from: string;
 
-  @ApiProperty({ example: "IRR" })
+  @ApiProperty()
   to: string;
 
-  @ApiProperty({ description: "True when the stored pair reads to/from and was inverted" })
+  @ApiProperty({ description: "True when the stored pair reads to/from and its price was inverted" })
   inverted: boolean;
 
   @ApiProperty({ description: "`to` units per one `from` unit, after any inversion" })
   rate: number;
 
-  @ApiProperty({ nullable: true, format: "date-time" })
-  lastUpdated: string | null;
+  @ApiPropertyOptional({ nullable: true, format: "date-time" })
+  lastUpdated?: string | null;
 
   @ApiProperty()
   stale: boolean;
 }
 
-/** One asset's contribution to the books, native and converted. */
-export class AccountingAssetLineDto {
+/** A conversion rate from one symbol into the reference, with its path. */
+export class ValuationRateDto {
+  @ApiProperty({ type: AccountingSymbolRefDto })
+  from: AccountingSymbolRefDto;
+
+  @ApiProperty({ type: AccountingSymbolRefDto })
+  to: AccountingSymbolRefDto;
+
+  @ApiPropertyOptional({
+    nullable: true,
+    description: "`to` units per one `from` unit, or null when no priced path exists",
+  })
+  rate?: number | null;
+
+  @ApiProperty({ type: [ValuationLegDto] })
+  legs: ValuationLegDto[];
+
+  @ApiProperty({ description: "True when any leg's quote is older than the staleness window" })
+  stale: boolean;
+
+  @ApiPropertyOptional({ description: "Set when rate is null, saying why nothing could be priced" })
+  reason?: string;
+}
+
+/** Profit and cost for one asset, in its own unit and in the reference. */
+export class AccountingProfitAssetDto {
   @ApiProperty({ type: AccountingSymbolRefDto })
   symbol: AccountingSymbolRefDto;
 
-  @ApiProperty({ description: "Credits to the system in this asset" })
+  @ApiProperty()
   revenue: number;
 
-  @ApiProperty({ description: "Debits against the system in this asset, as a positive number" })
+  @ApiProperty()
   cost: number;
 
-  @ApiProperty({ description: "revenue - cost, in this asset" })
+  @ApiProperty({ description: "revenue − cost" })
   net: number;
 
-  @ApiProperty({
-    nullable: true,
-    description: "Reference units per one unit of this asset, or null when unpriced",
-  })
-  rate: number | null;
+  @ApiPropertyOptional({ nullable: true })
+  rate?: number | null;
 
   @ApiProperty()
   rateStale: boolean;
@@ -98,20 +124,21 @@ export class AccountingAssetLineDto {
   @ApiProperty({ type: [ValuationLegDto] })
   rateLegs: ValuationLegDto[];
 
-  @ApiProperty({ nullable: true })
-  revenueInReference: number | null;
+  @ApiPropertyOptional({ nullable: true })
+  revenueInReference?: number | null;
 
-  @ApiProperty({ nullable: true })
-  costInReference: number | null;
+  @ApiPropertyOptional({ nullable: true })
+  costInReference?: number | null;
 
-  @ApiProperty({ nullable: true })
-  netInReference: number | null;
+  @ApiPropertyOptional({ nullable: true })
+  netInReference?: number | null;
 
-  @ApiPropertyOptional({ description: "Why this line could not be converted" })
+  @ApiPropertyOptional({ description: "Why this asset could not be priced" })
   unpricedReason?: string;
 }
 
-export class AccountingTotalsDto {
+/** Totals in the reference symbol. */
+export class AccountingProfitTotalsDto {
   @ApiProperty()
   revenue: number;
 
@@ -122,14 +149,16 @@ export class AccountingTotalsDto {
   net: number;
 }
 
-export class UnpricedAssetDto {
+/** An asset left out of the totals because nothing could price it. */
+export class AccountingUnpricedAssetDto {
   @ApiProperty({ type: AccountingSymbolRefDto })
   symbol: AccountingSymbolRefDto;
 
-  @ApiPropertyOptional()
-  reason?: string;
+  @ApiPropertyOptional({ nullable: true })
+  reason?: string | null;
 }
 
+/** The window a summary covers. */
 export class AccountingRangeDto {
   @ApiProperty({ format: "date-time" })
   from: string;
@@ -138,12 +167,13 @@ export class AccountingRangeDto {
   to: string;
 }
 
-export class AccountingSummaryDto {
+/** Profit, cost and net per asset, valued at live prices in the reference symbol. */
+export class AccountingProfitSummaryDto {
   @ApiProperty({ type: AccountingRangeDto })
   range: AccountingRangeDto;
 
-  @ApiProperty({ type: EffectiveReferenceDto })
-  reference: EffectiveReferenceDto;
+  @ApiProperty({ type: AccountingReferenceDto })
+  reference: AccountingReferenceDto;
 
   @ApiProperty({ enum: ValuationBasisEnum })
   valuationBasis: ValuationBasisEnum;
@@ -151,20 +181,17 @@ export class AccountingSummaryDto {
   @ApiProperty()
   priceStalenessSeconds: number;
 
-  @ApiProperty({ type: [AccountingAssetLineDto] })
-  assets: AccountingAssetLineDto[];
+  @ApiProperty({ type: [AccountingProfitAssetDto] })
+  assets: AccountingProfitAssetDto[];
+
+  @ApiProperty({ type: AccountingProfitTotalsDto })
+  totals: AccountingProfitTotalsDto;
 
   @ApiProperty({
-    type: AccountingTotalsDto,
-    description: "Priced assets only — see `unpricedAssets` for what is missing",
+    type: [AccountingUnpricedAssetDto],
+    description: "A non-empty list means the totals understate the books",
   })
-  totals: AccountingTotalsDto;
-
-  @ApiProperty({
-    type: [UnpricedAssetDto],
-    description: "Assets left out of the totals because nothing could price them",
-  })
-  unpricedAssets: UnpricedAssetDto[];
+  unpricedAssets: AccountingUnpricedAssetDto[];
 
   @ApiProperty({ description: "True when any priced leg is older than the staleness window" })
   stale: boolean;
@@ -173,29 +200,31 @@ export class AccountingSummaryDto {
   asOf: string;
 }
 
-export class AccountingHoldingLineDto {
+/** Customer and system balances for one asset. */
+export class AccountingHoldingDto {
   @ApiProperty({ type: AccountingSymbolRefDto })
   symbol: AccountingSymbolRefDto;
 
-  @ApiProperty()
+  @ApiProperty({ description: "Free, locked and frozen customer balances added together" })
   customerTotal: number;
 
   @ApiProperty()
   systemBalance: number;
 
-  @ApiProperty({ nullable: true })
-  rate: number | null;
+  @ApiPropertyOptional({ nullable: true })
+  rate?: number | null;
 
   @ApiProperty()
   rateStale: boolean;
 
-  @ApiProperty({ nullable: true })
-  customerTotalInReference: number | null;
+  @ApiPropertyOptional({ nullable: true })
+  customerTotalInReference?: number | null;
 
-  @ApiProperty({ nullable: true })
-  systemBalanceInReference: number | null;
+  @ApiPropertyOptional({ nullable: true })
+  systemBalanceInReference?: number | null;
 }
 
+/** Holdings totals in the reference symbol. */
 export class AccountingHoldingTotalsDto {
   @ApiProperty()
   customer: number;
@@ -204,15 +233,16 @@ export class AccountingHoldingTotalsDto {
   system: number;
 }
 
+/** Customer and system balances valued in the reference symbol. */
 export class AccountingHoldingsDto {
-  @ApiProperty({ type: EffectiveReferenceDto })
-  reference: EffectiveReferenceDto;
+  @ApiProperty({ type: AccountingReferenceDto })
+  reference: AccountingReferenceDto;
 
   @ApiProperty({ enum: ValuationBasisEnum })
   valuationBasis: ValuationBasisEnum;
 
-  @ApiProperty({ type: [AccountingHoldingLineDto] })
-  assets: AccountingHoldingLineDto[];
+  @ApiProperty({ type: [AccountingHoldingDto] })
+  assets: AccountingHoldingDto[];
 
   @ApiProperty({ type: AccountingHoldingTotalsDto })
   totals: AccountingHoldingTotalsDto;
@@ -221,29 +251,10 @@ export class AccountingHoldingsDto {
   asOf: string;
 }
 
-export class ValuationRateDto {
-  @ApiProperty({ type: AccountingSymbolRefDto })
-  from: { id: string; slug: string };
-
-  @ApiProperty({ type: AccountingSymbolRefDto })
-  to: { id: string; slug: string };
-
-  @ApiProperty({ nullable: true, description: "`to` units per one `from` unit" })
-  rate: number | null;
-
-  @ApiProperty({ type: [ValuationLegDto] })
-  legs: ValuationLegDto[];
-
-  @ApiProperty()
-  stale: boolean;
-
-  @ApiPropertyOptional({ description: "Set when `rate` is null" })
-  reason?: string;
-}
-
+/** Live conversion rate from each active symbol into the reference. */
 export class AccountingRatesDto {
-  @ApiProperty({ type: AccountingSymbolRefDto })
-  reference: { symbolId: string; name: string; slug: string };
+  @ApiProperty({ type: AccountingReferenceDto })
+  reference: AccountingReferenceDto;
 
   @ApiProperty({ enum: ValuationBasisEnum })
   valuationBasis: ValuationBasisEnum;

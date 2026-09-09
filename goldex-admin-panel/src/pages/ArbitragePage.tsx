@@ -10,12 +10,7 @@ import {
   Stat,
   Modal,
 } from "../components/ui";
-import {
-  fmtNum,
-  fmtDuration,
-  fmtTime,
-  colorFor,
-} from "../lib/format";
+import { fmtNum, fmtDuration, fmtTime, colorFor } from "../lib/format";
 import ArbitrageBotsPanel from "./arbitrage/ArbitrageBotsPanel";
 import type {
   ArbitrageSignal,
@@ -457,12 +452,10 @@ export default function ArbitragePage() {
   }, [opps]);
 
   const visible = useMemo(() => {
-    // The filter box and the signals are both in rial, so this is a plain
-    // comparison — no unit conversion belongs here any more.
-    const min = Number(minProfit) || 0;
+    const minRial = Number(minProfit) || 0;
     const term = search.trim().toLowerCase();
     const filtered = opps.filter((s) => {
-      if ((s.profitRial ?? 0) < min) return false;
+      if ((s.profitRial ?? 0) < minRial) return false;
       if (
         provider &&
         s.buyLeg?.providerKey !== provider &&

@@ -23,8 +23,6 @@ import DiscountsPage from "./pages/DiscountsPage";
 import CreditsPage from "./pages/CreditsPage";
 import FinanceLogsPage from "./pages/FinanceLogsPage";
 import ReportsPage from "./pages/ReportsPage";
-import AccountingPage from "./pages/AccountingPage";
-import AccountingValuationPage from "./pages/AccountingValuationPage";
 import AccountingVouchersPage from "./pages/AccountingVouchersPage";
 import RolesPage from "./pages/RolesPage";
 import SettingsPage from "./pages/SettingsPage";
@@ -53,6 +51,8 @@ import BankAccountsPage from "./pages/BankAccountsPage";
 import P2pEscalationsPage from "./pages/P2pEscalationsPage";
 import P2pWithdrawalsPage from "./pages/P2pWithdrawalsPage";
 import P2pSettingsPage from "./pages/P2pSettingsPage";
+import AccountingPage from "./pages/AccountingPage";
+import AccountingValuationPage from "./pages/AccountingValuationPage";
 
 function RequireAuth({ children }: { children: JSX.Element }) {
   const { token, checkSession } = useAuth();
@@ -110,8 +110,14 @@ export default function App() {
         <Route path="/finance-logs" element={<FinanceLogsPage />} />
         <Route path="/reports" element={<ReportsPage />} />
         <Route path="/accounting" element={<AccountingPage />} />
-        <Route path="/accounting/valuation" element={<AccountingValuationPage />} />
-        <Route path="/accounting/vouchers" element={<AccountingVouchersPage />} />
+        <Route
+          path="/accounting/valuation"
+          element={<AccountingValuationPage />}
+        />
+        <Route
+          path="/accounting/vouchers"
+          element={<AccountingVouchersPage />}
+        />
         <Route path="/user-levels" element={<LevelsPage />} />
         <Route path="/deposits" element={<DepositsPage />} />
         <Route path="/withdraws" element={<WithdrawsPage />} />

@@ -130,6 +130,25 @@ export class CreditAdminController {
     return { data: await this.creditService.forceLiquidateCredit(req.admin.id, id, dto.description) };
   }
 
+  @Post(":id/approve")
+  @AdminRoles(AdminRole.FINANCE, AdminRole.SUPER_ADMIN, AdminRole.ADMIN)
+  @ApiOperation({
+    summary:
+      "Approve a pending credit request (levels that require admin sign-off) and issue its credit line",
+  })
+  @ApiEnvelopeResponse(CreditDto, { status: 201 })
+  async approveRequest(@Req() req: any, @Param("id") id: string) {
+    return { data: await this.creditService.approveCreditRequest(id, req.admin.id) };
+  }
+
+  @Post(":id/reject")
+  @AdminRoles(AdminRole.FINANCE, AdminRole.SUPER_ADMIN, AdminRole.ADMIN)
+  @ApiOperation({ summary: "Decline a pending credit request and return the frozen collateral" })
+  @ApiEnvelopeResponse(CreditDto, { status: 201 })
+  async rejectRequest(@Req() req: any, @Param("id") id: string, @Body() dto: CancelCreditDto) {
+    return { data: await this.creditService.rejectCreditRequest(id, req.admin.id, dto.reason) };
+  }
+
   @Post(":id/cancel")
   @AdminRoles(AdminRole.FINANCE, AdminRole.SUPER_ADMIN, AdminRole.ADMIN)
   @ApiOperation({ summary: "Cancel a credit" })

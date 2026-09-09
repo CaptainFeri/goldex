@@ -8,8 +8,14 @@ import { ConsoleFormatterService } from '../common/console-formatter.service';
 import { ProviderEntity } from './entity/provider.entity';
 import { ProviderDealEntity } from './entity/provider-deal.entity';
 import { ProviderAccountService } from './provider-account.service';
-import { CurrencyUnit, fromRial } from '../common/currency-unit';
 import { DealStatus, ProviderCategory } from './types/enums';
+import {
+  CurrencyUnit,
+  fromRial,
+  providerUnitLabel,
+  resolvePriceUnit,
+  toRial,
+} from '../common/currency-unit';
 import { RabbitMQService, MessagePatterns, RabbitMQMessage } from '../rabbitmq/rabbitmq.module';
 import {
   ZaryarDealViewData,
@@ -293,7 +299,21 @@ export class ProviderOrderService implements OnModuleInit {
       throw new Error('Talaab order requires a price field');
     }
 
-    const body = buildTalaabTradeBody(data);
+    // Prices reach us in Rial — the engine normalizes every quote on the way in
+    // — but a provider is placed with in the unit it declared when it was
+    // defined. Sending a Rial figure to a Toman shop (which the hard-coded
+    // 'toman' label used to do) prices the order ten times over.
+    const priceUnit = resolvePriceUnit(provider.priceUnit);
+    const tradeType = data.dealType === 0 ? '1' : '0';
+    const body: TalaabTradeRequest = {
+      current_price: String(fromRial(data.price, priceUnit)),
+      trade_type: tradeType,
+      description: '',
+      weight: String(data.count),
+      calculate_type: data.itemId,
+      trade_id: 1,
+      price_unit: providerUnitLabel(priceUnit),
+    };
 
     const response = await firstValueFrom(
       this.httpService.post<TalaabTradeResponse>(`${apiBaseUrl}/profile/trades/molten`, body, {
@@ -317,7 +337,7 @@ export class ProviderOrderService implements OnModuleInit {
     // Persist before tracking starts: the tracker resolves the deal by orderId,
     // and a fast resolution would otherwise update a row that does not exist yet
     // and leave the deal stuck pending.
-    await this.saveTalaabDeal(provider.key, result.data, data);
+    await this.saveTalaabDeal(provider.key, result.data, data, priceUnit);
     this.startTalaabTracking(apiBaseUrl, headers, orderId, data);
 
     return { orderId };
@@ -327,8 +347,13 @@ export class ProviderOrderService implements OnModuleInit {
     providerKey: string,
     tradeData: TalaabTradeResponse['data'],
     data: OrderPlaceRequestData,
+    priceUnit: CurrencyUnit,
   ): Promise<void> {
     try {
+      // The provider echoes its own money back in its own unit; `provider_deals`
+      // is Rial like everything else the engine stores.
+      const rial = (amount: number | null | undefined) =>
+        amount === null || amount === undefined ? amount : toRial(Number(amount), priceUnit);
       const entity = {
         providerKey,
         providerCategory: ProviderCategory.TALAAB,
@@ -337,7 +362,7 @@ export class ProviderOrderService implements OnModuleInit {
         itemId: data.itemId,
         itemName: tradeData.gold_type_title,
         count: tradeData.value,
-        totalPrice: tradeData.price,
+        totalPrice: rial(tradeData.price),
         inputPrice: data.price,
         customerPrice: data.customerPrice,
         customerGramPrice: data.customerGramPrice,
@@ -355,8 +380,8 @@ export class ProviderOrderService implements OnModuleInit {
         // tracker may mark it done.
         dealStatus: DealStatus.PENDING,
         orderStatusStr: 'pending',
-        mazane: tradeData.mazaneh,
-        mazaneStr: String(tradeData.mazaneh),
+        mazane: rial(tradeData.mazaneh),
+        mazaneStr: String(rial(tradeData.mazaneh)),
         orderDate: new Date(),
         rawData: tradeData as any,
       };

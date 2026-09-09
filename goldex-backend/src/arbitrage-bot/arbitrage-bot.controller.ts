@@ -17,17 +17,12 @@ import {
   UseGuards,
 } from "@nestjs/common";
 import { ApiBearerAuth, ApiOperation, ApiTags } from "@nestjs/swagger";
+import { ApiAdminErrorResponses, ApiEnvelopeResponse } from "../shared/swagger";
 import {
-  ApiAdminErrorResponses,
-  ApiEnvelopeNoDataResponse,
-  ApiEnvelopeResponse,
-  ApiPaginatedResponse,
-} from "../shared/swagger";
-import {
+  ArbitrageBotDeletedDto,
   ArbitrageBotDto,
-  ArbitrageBotSummaryDto,
-  ArbitrageBotEventDto,
-  ArbitrageBotTradeDto,
+  ArbitrageBotEventPageDto,
+  ArbitrageBotTradePageDto,
 } from "./dto/arbitrage-bot-response.dto";
 import { ArbitrageBotService, BotActor } from "./arbitrage-bot.service";
 import { ArbitrageBotEngineService } from "./arbitrage-bot-engine.service";
@@ -39,6 +34,8 @@ import { AdminAuthGuard } from "../admin/auth/Guard/admin.guard";
 import { AdminPermissionsGuard } from "../admin-role/guard/admin-permissions.guard";
 import { RequirePermissions } from "../admin-role/guard/require-permissions.decorator";
 import { AdminExpressRequest } from "../admin/auth/types/adminExpressRequest";
+import { AdminRoles } from "../admin/role/admin.role.decorator";
+import { AdminRole } from "../admin/role/admin.roles.enum";
 
 @ApiTags("Admin-Arbitrage-Bots")
 @ApiBearerAuth()
@@ -55,16 +52,13 @@ export class ArbitrageBotController {
   @Get()
   @ApiOperation({ summary: "Arbitrage bots with their allocation and risk state" })
   @ApiEnvelopeResponse(ArbitrageBotDto, { isArray: true })
-  async list(
-    @Query("ownerAdminId") ownerAdminId?: string,
-    @Query("status") status?: ArbitrageBotStatusEnum
-  ) {
+  async list(@Query("ownerAdminId") ownerAdminId?: string, @Query("status") status?: ArbitrageBotStatusEnum) {
     return { data: await this.bots.list({ ownerAdminId, status }) };
   }
 
   @Get("summary")
   @ApiOperation({ summary: "Section-wide KPIs for managing the arbitrage bots" })
-  @ApiEnvelopeResponse(ArbitrageBotSummaryDto)
+  @ApiEnvelopeResponse(ArbitrageBotDto)
   async summary() {
     return { data: await this.bots.summary() };
   }
@@ -81,6 +75,7 @@ export class ArbitrageBotController {
   }
 
   @Get(":id")
+  @AdminRoles(AdminRole.SUPER_ADMIN, AdminRole.ADMIN)
   @ApiOperation({ summary: "One bot with its allocation and risk state" })
   @ApiEnvelopeResponse(ArbitrageBotDto)
   async get(@Param("id", ParseUUIDPipe) id: string) {
@@ -103,7 +98,7 @@ export class ArbitrageBotController {
   @Delete(":id")
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: "Delete a stopped bot, releasing any capital it still holds" })
-  @ApiEnvelopeNoDataResponse()
+  @ApiEnvelopeResponse(ArbitrageBotDeletedDto)
   async remove(@Param("id", ParseUUIDPipe) id: string, @Req() req: AdminExpressRequest) {
     await this.bots.remove(id, this.actor(req));
     this.engine.invalidate();
@@ -113,7 +108,7 @@ export class ArbitrageBotController {
   @Post(":id/allocate")
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: "Freeze capital from the manager account into this bot" })
-  @ApiEnvelopeResponse(ArbitrageBotDto)
+  @ApiEnvelopeResponse(ArbitrageBotDto, { status: 201 })
   async allocate(
     @Param("id", ParseUUIDPipe) id: string,
     @Body() dto: AllocateCapitalDto,
@@ -127,7 +122,7 @@ export class ArbitrageBotController {
   @Post(":id/release")
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: "Return frozen capital to the manager account" })
-  @ApiEnvelopeResponse(ArbitrageBotDto)
+  @ApiEnvelopeResponse(ArbitrageBotDto, { status: 201 })
   async release(
     @Param("id", ParseUUIDPipe) id: string,
     @Body() dto: ReleaseCapitalDto,
@@ -140,7 +135,8 @@ export class ArbitrageBotController {
 
   @Post(":id/start")
   @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: "Start the bot evaluating live signals" })
+  @AdminRoles(AdminRole.SUPER_ADMIN, AdminRole.ADMIN)
+  @ApiOperation({ summary: "Start evaluating live signals" })
   @ApiEnvelopeResponse(ArbitrageBotDto)
   async start(@Param("id", ParseUUIDPipe) id: string, @Req() req: AdminExpressRequest) {
     await this.bots.start(id, this.actor(req));
@@ -150,6 +146,7 @@ export class ArbitrageBotController {
 
   @Post(":id/pause")
   @HttpCode(HttpStatus.OK)
+  @AdminRoles(AdminRole.SUPER_ADMIN, AdminRole.ADMIN)
   @ApiOperation({ summary: "Pause the bot, leaving its allocation frozen" })
   @ApiEnvelopeResponse(ArbitrageBotDto)
   async pause(@Param("id", ParseUUIDPipe) id: string, @Req() req: AdminExpressRequest) {
@@ -169,8 +166,9 @@ export class ArbitrageBotController {
   }
 
   @Get(":id/trades")
-  @ApiOperation({ summary: "Trades this bot opened, newest first" })
-  @ApiPaginatedResponse(ArbitrageBotTradeDto)
+  @AdminRoles(AdminRole.SUPER_ADMIN, AdminRole.ADMIN)
+  @ApiOperation({ summary: "Trades the bot opened, newest first" })
+  @ApiEnvelopeResponse(ArbitrageBotTradePageDto)
   async trades(
     @Param("id", ParseUUIDPipe) id: string,
     @Query("limit", new DefaultValuePipe(50), ParseIntPipe) limit: number,
@@ -181,7 +179,7 @@ export class ArbitrageBotController {
 
   @Get(":id/events")
   @ApiOperation({ summary: "The bot's own log, including which alerts went out" })
-  @ApiPaginatedResponse(ArbitrageBotEventDto)
+  @ApiEnvelopeResponse(ArbitrageBotEventPageDto)
   async events(
     @Param("id", ParseUUIDPipe) id: string,
     @Query("limit", new DefaultValuePipe(50), ParseIntPipe) limit: number,
