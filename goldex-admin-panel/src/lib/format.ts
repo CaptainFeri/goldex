@@ -123,34 +123,9 @@ export function fmtYear(year: number | string | null | undefined): string {
 }
 
 // ─── Rial (IRR) ──────────────────────────────────────────────
-// The Iranian market feeds behind the panel — the gold Telegram channels and
-// the pricing engine's providers — quote in toman. The panel speaks rial
-// everywhere, so those figures are converted on the way in and on the way back
-// out to the engine.
-export const IRR_PER_TOMAN = 10;
-
-export function tomanToIrr(
-  v: number | string | null | undefined,
-): number | null {
-  if (v === null || v === undefined || v === "") return null;
-  const n = typeof v === "string" ? Number(v) : v;
-  if (!Number.isFinite(n)) return null;
-  return n * IRR_PER_TOMAN;
-}
-
-export function irrToToman(
-  v: number | string | null | undefined,
-): number | null {
-  if (v === null || v === undefined || v === "") return null;
-  const n = typeof v === "string" ? Number(v) : v;
-  if (!Number.isFinite(n)) return null;
-  return n / IRR_PER_TOMAN;
-}
-
-/** A toman figure from an upstream feed, rendered as a rial amount. */
-export function fmtIrrFromToman(
-  v: number | string | null | undefined,
-  digits = 0,
-): string {
-  return fmtNum(tomanToIrr(v), digits);
-}
+// Every feed behind this panel now serves rial: the pricing engine converts a
+// provider's quote with the unit that provider declared, and the Telegram
+// service converts a channel's toman quote where it parses the message. The
+// panel therefore renders what it is given and converts nothing — the helpers
+// that used to scale by ten are gone deliberately, because reintroducing one
+// is how a price silently becomes ten times its value.

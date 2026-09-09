@@ -38,14 +38,14 @@ function formatTrade(trade: TradeRecord): string[] {
   const pricePerGram = Math.round(trade.price / GRAMS_PER_MITHQAL);
   const lines = [
     `${SIDE_LABELS[trade.side]} ${formatKg(trade.quantityKg)} @ ${formatPrice(pricePerGram)} (گرم)`,
-    `   💵 ${trade.side === 'BUY' ? 'هزینه' : 'درآمد'}: ${formatPrice(trade.amount)} تومان`,
+    `   💵 ${trade.side === 'BUY' ? 'هزینه' : 'درآمد'}: ${formatPrice(trade.amount)} ریال`,
   ];
   if (trade.fee) {
-    lines.push(`   💸 کمیسیون: ${formatPrice(trade.fee)} تومان`);
+    lines.push(`   💸 کمیسیون: ${formatPrice(trade.fee)} ریال`);
   }
   if (trade.profit !== 0) {
     const label = trade.profit > 0 ? '💰 سود' : '📉 زیان';
-    lines.push(`   ${label}: ${formatPrice(Math.abs(trade.profit))} تومان`);
+    lines.push(`   ${label}: ${formatPrice(Math.abs(trade.profit))} ریال`);
   }
   if (!trade.executed) {
     lines.push(`   ⛔️ اجرا نشد: ${trade.reason ?? 'موجودی کافی نیست'}`);
@@ -70,15 +70,15 @@ export function formatWalletTradeReport(
   if (trades.some((t) => t.executed)) {
     const profit = trades.reduce((sum, t) => sum + t.profit, 0);
     if (profit !== 0) {
-      lines.push('', `💰 سود معامله: ${formatPrice(profit)} تومان`);
+      lines.push('', `💰 سود معامله: ${formatPrice(profit)} ریال`);
     }
     lines.push('', '📊 وضعیت کیف پول:');
     for (const s of snapshot.symbols) {
       lines.push(`   • ${s.symbol}: ${formatKg(s.goldKg)}`);
     }
-    lines.push(`   • موجودی ریال: ${formatPrice(snapshot.irrBalance)} تومان`);
+    lines.push(`   • موجودی ریال: ${formatPrice(snapshot.irrBalance)} ریال`);
     lines.push(
-      `   • سود کل تحقق‌یافته: ${formatPrice(snapshot.totalRealizedProfit)} تومان`,
+      `   • سود کل تحقق‌یافته: ${formatPrice(snapshot.totalRealizedProfit)} ریال`,
     );
   }
 
@@ -89,17 +89,17 @@ export function formatWalletStatusReport(snapshot: WalletSnapshot): string {
   const profit = snapshot.totalRealizedProfit;
   const profitLabel =
     profit >= 0
-      ? `💰 سود کل تحقق‌یافته: +${formatPrice(profit)} تومان`
-      : `📉 زیان کل تحقق‌یافته: ${formatPrice(profit)} تومان`;
+      ? `💰 سود کل تحقق‌یافته: +${formatPrice(profit)} ریال`
+      : `📉 زیان کل تحقق‌یافته: ${formatPrice(profit)} ریال`;
 
   const lines = [
     '📊 گزارش وضعیت کیف پول ربات',
     `🕐 زمان: ${formatDateTime(Math.floor(Date.now() / 1000))}`,
     '',
-    `💵 موجودی ریال: ${formatPrice(snapshot.irrBalance)} تومان`,
-    `💼 ارزش داراییها (نقد + بهای تمامشده طلا): ${formatPrice(snapshot.equity)} تومان`,
-    `🛡 ذخیره نقدی: ${formatPrice(snapshot.cashReserve)} تومان`,
-    `⚡ قدرت خرید: ${formatPrice(snapshot.buyingPower)} تومان`,
+    `💵 موجودی ریال: ${formatPrice(snapshot.irrBalance)} ریال`,
+    `💼 ارزش داراییها (نقد + بهای تمامشده طلا): ${formatPrice(snapshot.equity)} ریال`,
+    `🛡 ذخیره نقدی: ${formatPrice(snapshot.cashReserve)} ریال`,
+    `⚡ قدرت خرید: ${formatPrice(snapshot.buyingPower)} ریال`,
     profitLabel,
     `🔢 تعداد معاملات اجراشده: ${snapshot.trades.filter((t) => t.executed).length}`,
     '',

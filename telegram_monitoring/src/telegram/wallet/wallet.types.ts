@@ -8,7 +8,7 @@ export type TradeSide = 'BUY' | 'SELL';
 export interface GoldLot {
   id: number;
   /**
-   * Cost basis per kilogram in Toman. 0 = free seed gold: charged at the
+   * Cost basis per kilogram in Rial. 0 = free seed gold: charged at the
    * sale price when consumed, so it never books a profit or a loss.
    */
   pricePerKg: number;
@@ -40,9 +40,9 @@ export interface TradeRecord {
   price: number;
   /** Quantity in kilograms (1 تا = 1 kg). */
   quantityKg: number;
-  /** Cash flow in Toman: cost for BUY, proceeds for SELL (gross of fee). */
+  /** Cash flow in Rial: cost for BUY, proceeds for SELL (gross of fee). */
   amount: number;
-  /** Exchange fee for the leg (per mesqal × mesqal quantity), in Toman. */
+  /** Exchange fee for the leg (per mesqal × mesqal quantity), in Rial. */
   fee?: number;
   /** Realized profit for SELL legs; 0 for BUY legs. */
   profit: number;
