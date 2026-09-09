@@ -40,6 +40,7 @@ import { UserLevelService } from "../user-level/user-level.service";
 import { UserKycEntity } from "../user/entity/user.kyc.entity";
 import { KycStatusEnum } from "../baseinfo/enum/kycStatus.enum";
 import { computePendDeadlines, initialPendDeadlineState } from "../credit/util/pend-deadline.util";
+import { resolveFacilityPairConfig } from "../credit/util/credit-pair-config.util";
 
 @Injectable()
 export class OrderService {
@@ -181,12 +182,15 @@ export class OrderService {
           await this.creditService.ensureSellCreditCapacity(activeCredit.id);
         }
 
-        // Credit trading must not be explicitly disabled by the user's level
-        // (absent => allowed, opt-out model). Per-pair config wins when present.
-        const pairCreditConfig = activeCredit.metadata?.creditConfigs?.[dto.pricePairId] || {};
+        // Every credit rule for this trade, with the pair's own settings layered
+        // over the level defaults the facility was opened under.
+        const creditRules = resolveFacilityPairConfig(activeCredit, dto.pricePairId);
+
+        // Credit trading must not be explicitly disabled for this pair or level
+        // (absent => allowed, opt-out model).
         const creditTradingValue =
-          pairCreditConfig.creditTradingEnabled !== undefined
-            ? pairCreditConfig.creditTradingEnabled
+          creditRules.creditTradingEnabled !== null
+            ? creditRules.creditTradingEnabled
             : await this.userLevelService.getFeatureValue(userId, "CREDIT_TRADING_ENABLED");
         const creditTradingDisabled =
           creditTradingValue !== null &&
@@ -195,9 +199,35 @@ export class OrderService {
         if (creditTradingDisabled) {
           throw new BadRequestException("CREDIT_TRADING_DISABLED");
         }
-        // Credit v2: parallel-request cap from the facility snapshot (per-pair
-        // config wins when the traded pair has one).
-        const maxParallel = pairCreditConfig.creditMaxParallelRequests ?? activeCredit.metadata?.maxParallelRequests;
+
+        // Per-pair credit trade size bounds. Gold and dollar do not take the
+        // same clip, so the bounds belong to the pair rather than the level.
+        if (creditRules.creditMinTradeSize != null && dto.quantity < creditRules.creditMinTradeSize) {
+          throw new BadRequestException(
+            `CREDIT_MIN_TRADE_SIZE: minimum credit trade on this pair is ${creditRules.creditMinTradeSize}`,
+          );
+        }
+        if (creditRules.creditMaxTradeSize != null && dto.quantity > creditRules.creditMaxTradeSize) {
+          throw new BadRequestException(
+            `CREDIT_MAX_TRADE_SIZE: maximum credit trade on this pair is ${creditRules.creditMaxTradeSize}`,
+          );
+        }
+
+        // Hops: how many credit trades may be chained on this pair before the
+        // facility has to be settled. Only completed trades consume a hop.
+        if (creditRules.creditMaxExecutionLevel != null) {
+          const completedHops = await this.creditOrderRepo.count({
+            where: { creditId: activeCredit.id, status: CreditOrderStatusEnum.COMPLETED },
+          });
+          if (completedHops >= creditRules.creditMaxExecutionLevel) {
+            throw new BadRequestException(
+              `CREDIT_MAX_EXECUTION_LEVEL: ${completedHops} of ${creditRules.creditMaxExecutionLevel} hops used`,
+            );
+          }
+        }
+
+        // Credit v2: parallel-request cap (per-pair config wins when set).
+        const maxParallel = creditRules.creditMaxParallelRequests;
         if (maxParallel != null) {
           const [activeCreditOrders, pendingLinkedOrders] = await Promise.all([
             this.creditOrderRepo.count({
@@ -217,8 +247,8 @@ export class OrderService {
         }
         // Credit v2: drawdown check — re-price collateral; ENFORCE liquidates,
         // ALERT blocks exposure-increasing (BUY) orders. Per-pair config wins.
-        const ddPercent = pairCreditConfig.creditDrawdownPercent ?? activeCredit.drawdownPercent;
-        const ddEnforce = pairCreditConfig.creditEnforceOnDrawdown ?? activeCredit.enforceOnDrawdown;
+        const ddPercent = creditRules.creditDrawdownPercent;
+        const ddEnforce = creditRules.creditEnforceOnDrawdown;
         if (ddPercent != null) {
           const { blockBuy } = await this.creditService.enforceDrawdownRules(activeCredit, {
             drawdownPercent: ddPercent,
@@ -230,9 +260,11 @@ export class OrderService {
         }
         // Reduce-only mode (handoff Section 25): when riskState is WARNING or
         // MARGIN_CALL, block new/increase orders — only reducing orders allowed.
+        // A pair may opt out by setting creditReduceOnlyOnWarning to false.
         if (
-          activeCredit.riskState === RiskStateEnum.WARNING ||
-          activeCredit.riskState === RiskStateEnum.MARGIN_CALL
+          creditRules.creditReduceOnlyOnWarning !== false &&
+          (activeCredit.riskState === RiskStateEnum.WARNING ||
+            activeCredit.riskState === RiskStateEnum.MARGIN_CALL)
         ) {
           // Allow SELL orders (reducing a BUY position) on credit-linked pairs.
           // Block BUY orders (increasing/opening new positions).

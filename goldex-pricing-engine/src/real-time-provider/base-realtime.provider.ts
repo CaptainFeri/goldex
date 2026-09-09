@@ -124,6 +124,11 @@ export abstract class BaseRealtimeProvider implements IRealtimePriceProvider, On
     data.sellPrice = toRial(data.sellPrice, sourceUnit);
     data.buyPriceStr = formatRial(data.buyPrice);
     data.sellPriceStr = formatRial(data.sellPrice);
+    // The allowed price ranges are money too, and they ride the same wire out
+    // to the backend. The spread and the per-gram prices need no conversion —
+    // the emit path recomputes both from the prices above, after this runs.
+    data.buyRange = toRial(data.buyRange, sourceUnit);
+    data.sellRange = toRial(data.sellRange, sourceUnit);
   }
 
   private normalizePrices(data: PriceData): void {

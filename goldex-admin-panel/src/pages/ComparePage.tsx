@@ -3,11 +3,15 @@ import { useQuery } from "@tanstack/react-query";
 import { Line } from "react-chartjs-2";
 import { api, unwrap, apiError } from "../api/client";
 import { Card, Loading, ErrorState, Empty, Badge } from "../components/ui";
-// Monitoring serves the pricing engine's own figures, which are already rial
-// — see `fmtIrrFromToman`, which is for feeds that still quote toman.
 import { colorFor, fmtNum, fmtTime, pairLabel } from "../lib/format";
 import { gridColor } from "../lib/chart";
-import type { CompareResponse, PricePair, HistoryResponse, ProviderSnapshot, ProviderSnapshotItem } from "../api/types";
+import type {
+  CompareResponse,
+  PricePair,
+  HistoryResponse,
+  ProviderSnapshot,
+  ProviderSnapshotItem,
+} from "../api/types";
 
 const MIN = 60_000;
 const HOUR = 60 * MIN;
@@ -68,7 +72,9 @@ function useProviderSnapshot(provider: string, refetchInterval?: number) {
     enabled: !!provider,
     refetchInterval,
     queryFn: async () =>
-      unwrap<ProviderSnapshot>((await api.get(`/admin/monitoring/current/${provider}`)).data),
+      unwrap<ProviderSnapshot>(
+        (await api.get(`/admin/monitoring/current/${provider}`)).data,
+      ),
   });
 }
 
@@ -84,12 +90,14 @@ function CompareTab() {
 
   const pairs = useQuery({
     queryKey: ["pairs"],
-    queryFn: async () => unwrap<PricePair[]>((await api.get("/admin/pair")).data),
+    queryFn: async () =>
+      unwrap<PricePair[]>((await api.get("/admin/pair")).data),
   });
 
   const activeProviders = useQuery({
     queryKey: ["mon-providers"],
-    queryFn: async () => unwrap<string[]>((await api.get("/admin/monitoring/providers")).data),
+    queryFn: async () =>
+      unwrap<string[]>((await api.get("/admin/monitoring/providers")).data),
     refetchInterval: 30_000,
   });
 
@@ -107,7 +115,11 @@ function CompareTab() {
         params.to = Date.now();
       }
       return unwrap<CompareResponse>(
-        (await api.get(`/admin/monitoring/pairs/${effectivePairId}/compare`, { params })).data
+        (
+          await api.get(`/admin/monitoring/pairs/${effectivePairId}/compare`, {
+            params,
+          })
+        ).data,
       );
     },
   });
@@ -115,7 +127,7 @@ function CompareTab() {
   const chart = useMemo(() => {
     const series = compare.data?.series ?? [];
     const allTs = Array.from(
-      new Set(series.flatMap((s) => s.points.map((p) => p.timestamp)))
+      new Set(series.flatMap((s) => s.points.map((p) => p.timestamp))),
     ).sort();
     const datasets = series.map((s) => {
       const map = new Map(s.points.map((p) => [p.timestamp, p[metric]]));
@@ -158,7 +170,11 @@ function CompareTab() {
         </div>
         <div className="field" style={{ margin: 0, minWidth: 150 }}>
           <label>شاخص</label>
-          <select className="select" value={metric} onChange={(e) => setMetric(e.target.value as Metric)}>
+          <select
+            className="select"
+            value={metric}
+            onChange={(e) => setMetric(e.target.value as Metric)}
+          >
             <option value="buyPrice">قیمت خرید (ریال)</option>
             <option value="sellPrice">قیمت فروش (ریال)</option>
             <option value="spread">اسپرد (ریال)</option>
@@ -166,7 +182,11 @@ function CompareTab() {
         </div>
         <div className="field" style={{ margin: 0, minWidth: 140 }}>
           <label>بازه زمانی</label>
-          <select className="select" value={range} onChange={(e) => setRange(e.target.value)}>
+          <select
+            className="select"
+            value={range}
+            onChange={(e) => setRange(e.target.value)}
+          >
             {RANGES.map((r) => (
               <option key={r.key} value={r.key}>
                 {r.label}
@@ -175,13 +195,22 @@ function CompareTab() {
           </select>
         </div>
         <div style={{ marginInlineStart: "auto", alignSelf: "flex-end" }}>
-          {compare.isFetching ? <Badge kind="gray">به‌روزرسانی…</Badge> : <Badge kind="green">زنده</Badge>}
+          {compare.isFetching ? (
+            <Badge kind="gray">به‌روزرسانی…</Badge>
+          ) : (
+            <Badge kind="green">زنده</Badge>
+          )}
         </div>
       </div>
 
       {activeProviders.data && activeProviders.data.length > 0 && (
-        <div className="toolbar" style={{ marginTop: 8, marginBottom: 4, flexWrap: "wrap", gap: 6 }}>
-          <label style={{ fontSize: 12, color: "var(--muted)" }}>تأمین‌کنندگان فعال:</label>
+        <div
+          className="toolbar"
+          style={{ marginTop: 8, marginBottom: 4, flexWrap: "wrap", gap: 6 }}
+        >
+          <label style={{ fontSize: 12, color: "var(--muted)" }}>
+            تأمین‌کنندگان فعال:
+          </label>
           {activeProviders.data.map((p) => {
             const hasData = seriesKeys.has(p);
             return (
@@ -189,7 +218,11 @@ function CompareTab() {
                 key={p}
                 className={`badge ${hasData ? "green" : "gray"}`}
                 style={{ opacity: hasData ? 1 : 0.5, cursor: "default" }}
-                title={hasData ? "داده در این جفت‌ارز دارد" : "در این جفت‌ارز نگاشت نشده"}
+                title={
+                  hasData
+                    ? "داده در این جفت‌ارز دارد"
+                    : "در این جفت‌ارز نگاشت نشده"
+                }
               >
                 {hasData ? "●" : "○"} {p}
               </span>
@@ -217,12 +250,22 @@ function CompareTab() {
                   x: {
                     type: "time",
                     time: {
-                      tooltipFormat: range === "7d" || range === "all" ? "MM/dd HH:mm" : "HH:mm:ss",
+                      tooltipFormat:
+                        range === "7d" || range === "all"
+                          ? "MM/dd HH:mm"
+                          : "HH:mm:ss",
                     },
                     grid: { color: gridColor() },
-                    ticks: { maxRotation: 0, autoSkip: true, maxTicksLimit: 10 },
+                    ticks: {
+                      maxRotation: 0,
+                      autoSkip: true,
+                      maxTicksLimit: 10,
+                    },
                   },
-                  y: { grid: { color: gridColor() }, ticks: { callback: (v) => fmtNum(v as number) } },
+                  y: {
+                    grid: { color: gridColor() },
+                    ticks: { callback: (v) => fmtNum(v as number) },
+                  },
                 },
                 plugins: { legend: { position: "bottom" } },
               }}
@@ -251,13 +294,26 @@ function CompareTab() {
                   return (
                     <tr key={s.providerKey + s.providerItemId}>
                       <td>
-                        <span style={{ color: colorFor(s.providerKey), fontWeight: 700 }}>●</span>{" "}
+                        <span
+                          style={{
+                            color: colorFor(s.providerKey),
+                            fontWeight: 700,
+                          }}
+                        >
+                          ●
+                        </span>{" "}
                         {s.providerKey}
                       </td>
                       <td className="mono">{s.providerItemId}</td>
-                      <td className="mono">{last ? fmtNum(last.buyPrice) : "—"}</td>
-                      <td className="mono">{last ? fmtNum(last.sellPrice) : "—"}</td>
-                      <td className="mono">{last ? fmtNum(last.spread) : "—"}</td>
+                      <td className="mono">
+                        {last ? fmtNum(last.buyPrice) : "—"}
+                      </td>
+                      <td className="mono">
+                        {last ? fmtNum(last.sellPrice) : "—"}
+                      </td>
+                      <td className="mono">
+                        {last ? fmtNum(last.spread) : "—"}
+                      </td>
                       <td className="mono">{s.points.length}</td>
                     </tr>
                   );
@@ -274,7 +330,8 @@ function CompareTab() {
 function HistoryTab() {
   const providers = useQuery({
     queryKey: ["mon-providers"],
-    queryFn: async () => unwrap<string[]>((await api.get("/admin/monitoring/providers")).data),
+    queryFn: async () =>
+      unwrap<string[]>((await api.get("/admin/monitoring/providers")).data),
   });
   const [provider, setProvider] = useState<string>("");
   const [itemId, setItemId] = useState<string>("");
@@ -296,7 +353,15 @@ function HistoryTab() {
     refetchInterval: 15_000,
     queryFn: async () =>
       unwrap<HistoryResponse>(
-        (await api.get("/admin/monitoring/history", { params: { provider: effectiveProvider, itemId: effectiveItemId, limit } })).data
+        (
+          await api.get("/admin/monitoring/history", {
+            params: {
+              provider: effectiveProvider,
+              itemId: effectiveItemId,
+              limit,
+            },
+          })
+        ).data,
       ),
   });
 
@@ -306,8 +371,22 @@ function HistoryTab() {
     const points = history.data?.points ?? [];
     const labels = points.map((p) => new Date(p.timestamp));
     const datasets = [
-      { label: "خرید (ریال)", data: points.map((p) => p.buyPrice), borderColor: "#2ea861", backgroundColor: "transparent", tension: 0.25, pointRadius: 0 },
-      { label: "فروش (ریال)", data: points.map((p) => p.sellPrice), borderColor: "#e5544b", backgroundColor: "transparent", tension: 0.25, pointRadius: 0 },
+      {
+        label: "خرید (ریال)",
+        data: points.map((p) => p.buyPrice),
+        borderColor: "#2ea861",
+        backgroundColor: "transparent",
+        tension: 0.25,
+        pointRadius: 0,
+      },
+      {
+        label: "فروش (ریال)",
+        data: points.map((p) => p.sellPrice),
+        borderColor: "#e5544b",
+        backgroundColor: "transparent",
+        tension: 0.25,
+        pointRadius: 0,
+      },
     ];
     return { labels, datasets, n: points.length };
   }, [history.data]);
@@ -326,7 +405,11 @@ function HistoryTab() {
             }}
           >
             <option value="">انتخاب…</option>
-            {providers.data?.map((p) => <option key={p} value={p}>{p}</option>)}
+            {providers.data?.map((p) => (
+              <option key={p} value={p}>
+                {p}
+              </option>
+            ))}
           </select>
         </div>
         <div className="field" style={{ margin: 0, minWidth: 280 }}>
@@ -353,17 +436,28 @@ function HistoryTab() {
         </div>
         <div className="field" style={{ margin: 0, minWidth: 130 }}>
           <label>سقف نقاط</label>
-          <input className="input mono" dir="ltr" type="number" value={limit} onChange={(e) => setLimit(Number(e.target.value) || 500)} />
+          <input
+            className="input mono"
+            dir="ltr"
+            type="number"
+            value={limit}
+            onChange={(e) => setLimit(Number(e.target.value) || 500)}
+          />
         </div>
       </div>
 
       {selected && (
-        <div className="toolbar" style={{ marginBottom: 12, gap: 8, flexWrap: "wrap" }}>
+        <div
+          className="toolbar"
+          style={{ marginBottom: 12, gap: 8, flexWrap: "wrap" }}
+        >
           <Badge kind="gray">گروه: {selected.groupName ?? "—"}</Badge>
           <Badge kind="gray">واحد: {selected.unit ?? "—"}</Badge>
           {selected.mappedPairs.length > 0 ? (
             selected.mappedPairs.map((m) => (
-              <Badge key={m.pairId} kind="gold">{m.pairLabel}</Badge>
+              <Badge key={m.pairId} kind="gold">
+                {m.pairLabel}
+              </Badge>
             ))
           ) : (
             <Badge kind="gray">به هیچ جفت‌ارزی نگاشت نشده</Badge>
@@ -391,7 +485,10 @@ function HistoryTab() {
               interaction: { mode: "index", intersect: false },
               scales: {
                 x: { type: "time", grid: { color: gridColor() } },
-                y: { grid: { color: gridColor() }, ticks: { callback: (v) => fmtNum(v as number) } },
+                y: {
+                  grid: { color: gridColor() },
+                  ticks: { callback: (v) => fmtNum(v as number) },
+                },
               },
               plugins: { legend: { position: "bottom" } },
             }}
@@ -405,7 +502,8 @@ function HistoryTab() {
 function CurrentTab() {
   const providers = useQuery({
     queryKey: ["mon-providers"],
-    queryFn: async () => unwrap<string[]>((await api.get("/admin/monitoring/providers")).data),
+    queryFn: async () =>
+      unwrap<string[]>((await api.get("/admin/monitoring/providers")).data),
   });
   const [provider, setProvider] = useState<string>("");
   const [search, setSearch] = useState("");
@@ -435,9 +533,17 @@ function CurrentTab() {
       <div className="toolbar" style={{ marginBottom: 16 }}>
         <div className="field" style={{ margin: 0, minWidth: 200 }}>
           <label>تأمین‌کننده</label>
-          <select className="select" value={effective} onChange={(e) => setProvider(e.target.value)}>
+          <select
+            className="select"
+            value={effective}
+            onChange={(e) => setProvider(e.target.value)}
+          >
             <option value="">انتخاب…</option>
-            {providers.data?.map((p) => <option key={p} value={p}>{p}</option>)}
+            {providers.data?.map((p) => (
+              <option key={p} value={p}>
+                {p}
+              </option>
+            ))}
           </select>
         </div>
         <div className="field" style={{ margin: 0, minWidth: 200 }}>
@@ -449,23 +555,50 @@ function CurrentTab() {
             onChange={(e) => setSearch(e.target.value)}
           />
         </div>
-        <label className="row" style={{ gap: 6, alignSelf: "flex-end", fontSize: 12, paddingBottom: 10 }}>
-          <input type="checkbox" checked={onlyMapped} onChange={(e) => setOnlyMapped(e.target.checked)} />
+        <label
+          className="row"
+          style={{
+            gap: 6,
+            alignSelf: "flex-end",
+            fontSize: 12,
+            paddingBottom: 10,
+          }}
+        >
+          <input
+            type="checkbox"
+            checked={onlyMapped}
+            onChange={(e) => setOnlyMapped(e.target.checked)}
+          />
           فقط آیتم‌های نگاشت‌شده
         </label>
-        <div style={{ marginInlineStart: "auto", alignSelf: "flex-end", paddingBottom: 10 }}>
-          {current.isFetching ? <Badge kind="gray">به‌روزرسانی…</Badge> : <Badge kind="green">زنده</Badge>}
+        <div
+          style={{
+            marginInlineStart: "auto",
+            alignSelf: "flex-end",
+            paddingBottom: 10,
+          }}
+        >
+          {current.isFetching ? (
+            <Badge kind="gray">به‌روزرسانی…</Badge>
+          ) : (
+            <Badge kind="green">زنده</Badge>
+          )}
         </div>
       </div>
 
       {snapshot && (
-        <div className="toolbar" style={{ marginBottom: 12, gap: 8, fontSize: 12 }}>
+        <div
+          className="toolbar"
+          style={{ marginBottom: 12, gap: 8, fontSize: 12 }}
+        >
           <Badge kind="gray">{snapshot.totalItems} آیتم</Badge>
           <Badge kind="green">{snapshot.pricedItems} دارای قیمت</Badge>
           <Badge kind="gold">{snapshot.mappedItems} نگاشت‌شده</Badge>
           <span className="muted">
             آخرین بروزرسانی:{" "}
-            <span className="mono">{snapshot.lastUpdate ? fmtTime(snapshot.lastUpdate) : "—"}</span>
+            <span className="mono">
+              {snapshot.lastUpdate ? fmtTime(snapshot.lastUpdate) : "—"}
+            </span>
           </span>
         </div>
       )}
@@ -500,7 +633,10 @@ function CurrentTab() {
             </thead>
             <tbody>
               {items.map((it) => (
-                <tr key={String(it.itemId)} style={it.stale ? { opacity: 0.6 } : undefined}>
+                <tr
+                  key={String(it.itemId)}
+                  style={it.stale ? { opacity: 0.6 } : undefined}
+                >
                   <td className="mono">{it.itemId}</td>
                   <td>{it.name ?? <span className="muted">—</span>}</td>
                   <td style={{ fontSize: 12 }}>{it.groupName ?? "—"}</td>
@@ -509,23 +645,41 @@ function CurrentTab() {
                       <span className="muted">—</span>
                     ) : (
                       it.mappedPairs.map((m) => (
-                        <Badge key={m.pairId} kind="gold">{m.pairLabel}</Badge>
+                        <Badge key={m.pairId} kind="gold">
+                          {m.pairLabel}
+                        </Badge>
                       ))
                     )}
                   </td>
-                  <td className="mono" style={{ color: it.canBuy ? undefined : "var(--text-faint)" }}>
+                  <td
+                    className="mono"
+                    style={{
+                      color: it.canBuy ? undefined : "var(--text-faint)",
+                    }}
+                  >
                     {it.buyPrice == null ? "—" : fmtNum(it.buyPrice, 2)}
                   </td>
-                  <td className="mono" style={{ color: it.canSell ? undefined : "var(--text-faint)" }}>
+                  <td
+                    className="mono"
+                    style={{
+                      color: it.canSell ? undefined : "var(--text-faint)",
+                    }}
+                  >
                     {it.sellPrice == null ? "—" : fmtNum(it.sellPrice, 2)}
                   </td>
-                  <td className="mono">{it.spread == null ? "—" : fmtNum(it.spread, 2)}</td>
+                  <td className="mono">
+                    {it.spread == null ? "—" : fmtNum(it.spread, 2)}
+                  </td>
                   <td>{it.unit ?? "—"}</td>
                   <td>
                     {it.stale ? (
-                      <Badge kind="gray">{it.timestamp ? "کهنه" : "بدون قیمت"}</Badge>
+                      <Badge kind="gray">
+                        {it.timestamp ? "کهنه" : "بدون قیمت"}
+                      </Badge>
                     ) : (
-                      <Badge kind="green">{it.timestamp ? fmtTime(it.timestamp) : "زنده"}</Badge>
+                      <Badge kind="green">
+                        {it.timestamp ? fmtTime(it.timestamp) : "زنده"}
+                      </Badge>
                     )}
                   </td>
                 </tr>

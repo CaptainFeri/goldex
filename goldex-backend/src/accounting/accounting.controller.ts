@@ -3,9 +3,9 @@ import { ApiBearerAuth, ApiOperation, ApiQuery, ApiTags } from "@nestjs/swagger"
 import { ApiAdminErrorResponses, ApiEnvelopeResponse } from "../shared/swagger";
 import {
   AccountingHoldingsDto,
+  AccountingProfitSummaryDto,
   AccountingRatesDto,
   AccountingSettingsDto,
-  AccountingSummaryDto,
 } from "./dto/accounting-response.dto";
 import { AccountingService } from "./accounting.service";
 import { AccountingSettingService } from "./accounting-setting.service";
@@ -37,10 +37,7 @@ export class AccountingController {
   @ApiOperation({ summary: "Accounting policy: reference (pricing) symbol and valuation basis" })
   @ApiEnvelopeResponse(AccountingSettingsDto)
   async getSettings() {
-    const [settings, reference] = await Promise.all([
-      this.settings.get(),
-      this.settings.getReferenceSymbol(),
-    ]);
+    const [settings, reference] = await Promise.all([this.settings.get(), this.settings.getReferenceSymbol()]);
     return {
       data: {
         ...settings,
@@ -67,9 +64,10 @@ export class AccountingController {
   @ApiOperation({
     summary: "Profit, cost and net profit per asset, valued at live prices in the reference symbol",
   })
-  @ApiEnvelopeResponse(AccountingSummaryDto)
+  @ApiEnvelopeResponse(AccountingProfitSummaryDto)
   @ApiQuery({ name: "from", required: false, description: "ISO date (default: 30 days ago)" })
   @ApiQuery({ name: "to", required: false, description: "ISO date (default: now)" })
+  @ApiEnvelopeResponse(AccountingProfitSummaryDto)
   async summary(@Query("from") from?: string, @Query("to") to?: string) {
     return {
       data: await this.accounting.getProfitSummary({

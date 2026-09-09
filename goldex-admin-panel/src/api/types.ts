@@ -138,6 +138,16 @@ export interface PricePair {
   isValid?: boolean;
   buyPrice?: number;
   sellPrice?: number;
+  // Credit pend-deadline convention, per side: NONE, RELATIVE (hours from
+  // registration) or DAILY_CUTOFF (a wall-clock time of day).
+  buyDeadlineMode?: "NONE" | "RELATIVE" | "DAILY_CUTOFF" | null;
+  sellDeadlineMode?: "NONE" | "RELATIVE" | "DAILY_CUTOFF" | null;
+  buyWarnTime?: string | null;
+  buyExpireTime?: string | null;
+  sellWarnTime?: string | null;
+  sellExpireTime?: string | null;
+  deadlineTimezone?: string | null;
+  holidayDates?: string[] | null;
   buyWarnHours?: number | null;
   buyExpireHours?: number | null;
   buyGraceHours?: number | null;

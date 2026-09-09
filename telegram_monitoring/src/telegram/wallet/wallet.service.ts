@@ -22,6 +22,7 @@ import {
   kgToMesqal,
 } from './wallet-report.formatter';
 import { buildWalletExcel } from './wallet-excel.builder';
+import { moneyFromEnv, tomanToRial } from '../common/currency';
 import type {
   SymbolWallet,
   TradeRecord,
@@ -29,8 +30,17 @@ import type {
   WalletSnapshot,
 } from './wallet.types';
 
-const WALLET_INITIAL_IRR =
-  Number(process.env.WALLET_INITIAL_IRR) || 100_000_000_000;
+/**
+ * Seed cash for the paper wallet, in Rial. The default is ten times the old
+ * Toman figure so the simulation keeps the buying power it was tuned for now
+ * that prices are Rial; a value set in Toman is converted rather than read as
+ * a tenth of what was meant.
+ */
+const WALLET_INITIAL_IRR = moneyFromEnv(
+  process.env.WALLET_INITIAL_RIAL,
+  process.env.WALLET_INITIAL_IRR,
+  1_000_000_000_000,
+);
 const WALLET_INITIAL_GOLD_KG = Number(process.env.WALLET_INITIAL_GOLD_KG) || 0;
 const WALLET_TTL = Number(process.env.WALLET_TTL) || 604800;
 const WALLET_STATUS_INTERVAL_SECONDS =
@@ -68,10 +78,18 @@ const WALLET_HOURLY_EXCEL_ENABLED = process.env.WALLET_HOURLY_EXCEL !== 'false';
 const STATE_KEY = 'wallet:state';
 const TRADE_IDS_KEY = 'wallet:trade:ids';
 
+/**
+ * The unit a persisted wallet is denominated in. State written before the
+ * service moved onto Rial carries no marker, and is scaled once on load.
+ */
+const STATE_CURRENCY = 'IRR';
+
 interface PersistedState {
   irrBalance: number;
   totalRealizedProfit: number;
   symbols: SymbolWallet[];
+  /** Absent on state written while the wallet still worked in Toman. */
+  currency?: string;
 }
 
 @Injectable()
@@ -80,7 +98,7 @@ export class WalletService implements OnModuleInit, OnModuleDestroy {
 
   private readonly symbols = new Map<string, SymbolWallet>();
   private readonly trades: TradeRecord[] = [];
-  /** Latest known market price per symbol (Toman per mesqal). */
+  /** Latest known market price per symbol (Rial per mesqal). */
   private readonly lastPrices = new Map<string, number>();
   /** Asset mix history (mark-to-market) for the status chart. */
   private readonly history: WalletChartPoint[] = [];
@@ -610,8 +628,8 @@ export class WalletService implements OnModuleInit, OnModuleDestroy {
   }
 
   /**
-   * Exchange fee for a leg in Toman: 10,000 IRR per mesqal of traded gold.
-   * Buys pay it on top of the cost; sells have it deducted from the proceeds.
+   * Exchange fee for a leg, in Rial per mesqal of traded gold. Buys pay it on
+   * top of the cost; sells have it deducted from the proceeds.
    */
   private tradeFee(qtyKg: number): number {
     return Math.round(kgToMesqal(qtyKg) * TRADE_FEE_PER_MITHQAL);
@@ -641,7 +659,7 @@ export class WalletService implements OnModuleInit, OnModuleDestroy {
 
   private insufficientCashReason(costPerKg: number): string {
     const needed = Math.round((costPerKg + this.tradeFee(1)) * WALLET_MIN_TRADE_KG);
-    return `موجودی ریال کافی نیست (ذخیره نقدی و یک پایه آربیتراژ حفظ میشود؛ حداقل ${WALLET_MIN_TRADE_KG} کیلوگرم با کمیسیون ≈ ${needed.toLocaleString('en-US')} تومان لازم است)`;
+    return `موجودی ریال کافی نیست (ذخیره نقدی و یک پایه آربیتراژ حفظ میشود؛ حداقل ${WALLET_MIN_TRADE_KG} کیلوگرم با کمیسیون ≈ ${needed.toLocaleString('en-US')} ریال لازم است)`;
   }
 
   /**
@@ -663,7 +681,7 @@ export class WalletService implements OnModuleInit, OnModuleDestroy {
 
   /**
    * Consumes qtyKg from the oldest lots (FIFO) and returns the cost basis in
-   * Toman. Free seed lots (pricePerKg = 0) are charged at the sale price of
+   * Rial. Free seed lots (pricePerKg = 0) are charged at the sale price of
    * the material, so selling seed gold never books a profit or a loss — only
    * gold actually bought at a real price contributes to realized P/L.
    */
@@ -692,7 +710,7 @@ export class WalletService implements OnModuleInit, OnModuleDestroy {
 
   /**
    * Mark-to-market equity: cash plus gold valued at the latest observed price
-   * per symbol (Toman). Symbols without a price yet contribute zero.
+   * per symbol (Rial). Symbols without a price yet contribute zero.
    */
   private marketEquity(): number {
     let goldValue = 0;
@@ -704,7 +722,7 @@ export class WalletService implements OnModuleInit, OnModuleDestroy {
   }
 
   /**
-   * Gold value (Toman) of one symbol at the latest known price; 0 when the
+   * Gold value (Rial) of one symbol at the latest known price; 0 when the
    * symbol has no price yet.
    */
   private symbolMarketValueKg(symbol: string): number {
@@ -1095,6 +1113,7 @@ export class WalletService implements OnModuleInit, OnModuleDestroy {
         irrBalance: this.irrBalance,
         totalRealizedProfit: this.totalRealizedProfit,
         symbols: Array.from(this.symbols.values()),
+        currency: STATE_CURRENCY,
       };
       await client.set(STATE_KEY, JSON.stringify(state));
     } catch (error) {
@@ -1146,13 +1165,29 @@ export class WalletService implements OnModuleInit, OnModuleDestroy {
     try {
       const client = this.redis.getClient();
       const rawState = await client.get(STATE_KEY);
+      // A wallet saved before the move to Rial holds Toman; every money field
+      // it carries — and every trade below — is scaled once, then written back
+      // marked so it is never scaled again.
+      let legacyToman = false;
       if (rawState) {
         const state = JSON.parse(rawState) as PersistedState;
-        this.irrBalance = state.irrBalance;
-        this.totalRealizedProfit = state.totalRealizedProfit;
+        legacyToman = state.currency !== STATE_CURRENCY;
+        const money = (value: number) =>
+          legacyToman ? tomanToRial(value) : value;
+
+        this.irrBalance = money(state.irrBalance);
+        this.totalRealizedProfit = money(state.totalRealizedProfit);
         for (const w of state.symbols ?? []) {
           this.migrateSymbolWallet(w);
+          if (legacyToman) {
+            for (const lot of w.lots) lot.pricePerKg = tomanToRial(lot.pricePerKg);
+          }
           this.symbols.set(w.symbol, w);
+        }
+        if (legacyToman) {
+          this.logger.warn(
+            'Wallet state was stored in Toman; converting it to Rial on load',
+          );
         }
       }
 
@@ -1164,10 +1199,23 @@ export class WalletService implements OnModuleInit, OnModuleDestroy {
       for (const json of raw) {
         if (!json) continue;
         try {
-          this.trades.push(JSON.parse(json) as TradeRecord);
+          const trade = JSON.parse(json) as TradeRecord;
+          if (legacyToman) {
+            trade.price = tomanToRial(trade.price);
+            trade.amount = tomanToRial(trade.amount);
+            trade.profit = tomanToRial(trade.profit);
+            if (trade.fee !== undefined) trade.fee = tomanToRial(trade.fee);
+          }
+          this.trades.push(trade);
         } catch {
           // skip corrupt entry
         }
+      }
+      if (legacyToman) {
+        // Persist the converted figures so the scaling happens exactly once,
+        // whatever restarts in between.
+        await this.persistState();
+        await Promise.all(this.trades.map((t) => this.persistTrade(t)));
       }
       this.logger.log(
         `Loaded ${this.trades.length} wallet trades and ${this.symbols.size} symbol wallets from Redis`,

@@ -1,10 +1,4 @@
-import {
-  BadRequestException,
-  ForbiddenException,
-  Injectable,
-  Logger,
-  NotFoundException,
-} from "@nestjs/common";
+import { BadRequestException, ForbiddenException, Injectable, Logger, NotFoundException } from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
 import { DataSource, In, MoreThan, Repository } from "typeorm";
 import Decimal from "decimal.js";
@@ -109,9 +103,7 @@ export class ArbitrageBotService {
       // Leaving the manager with capital locked behind a half-made bot is
       // worse than the original error, so undo before reporting it.
       await this.releaseAll(saved, actor.id).catch((releaseErr) =>
-        this.logger.error(
-          `failed to unwind allocations of bot ${saved.id}: ${(releaseErr as Error).message}`
-        )
+        this.logger.error(`failed to unwind allocations of bot ${saved.id}: ${(releaseErr as Error).message}`)
       );
       await this.botRepo.remove(saved);
       throw err;
@@ -150,10 +142,7 @@ export class ArbitrageBotService {
       bot.thresholds = this.mergeThresholds(bot.thresholds ?? DEFAULT_BOT_THRESHOLDS, dto.thresholds);
     }
     if (dto.notifications) {
-      bot.notifications = this.mergeNotifications(
-        bot.notifications ?? DEFAULT_BOT_NOTIFICATIONS,
-        dto.notifications
-      );
+      bot.notifications = this.mergeNotifications(bot.notifications ?? DEFAULT_BOT_NOTIFICATIONS, dto.notifications);
     }
     if (dto.stopLossPercent !== undefined) {
       // The bot-level percent is the default for new allocations, and changing
@@ -253,9 +242,7 @@ export class ArbitrageBotService {
 
     // Without an asset the request means "all of it", which is the only
     // reading that does not silently pick one of several allocations.
-    const targets = dto.symbolId
-      ? allocations.filter((a) => a.symbolId === dto.symbolId)
-      : allocations;
+    const targets = dto.symbolId ? allocations.filter((a) => a.symbolId === dto.symbolId) : allocations;
     if (targets.length === 0) throw new BadRequestException("ARBITRAGE_BOT.NOT_FUNDED");
     if (dto.amount !== undefined && targets.length > 1) {
       throw new BadRequestException("ARBITRAGE_BOT.RELEASE_AMOUNT_NEEDS_SYMBOL");
@@ -272,17 +259,9 @@ export class ArbitrageBotService {
       }
       if (!requested.greaterThan(0)) continue;
 
-      await this.managerAccounts.releaseFromBot(
-        allocation.managerAccountId,
-        bot.id,
-        requested.toNumber(),
-        actor.id
-      );
+      await this.managerAccounts.releaseFromBot(allocation.managerAccountId, bot.id, requested.toNumber(), actor.id);
       allocation.allocatedAmount = allocated.minus(requested).toNumber();
-      allocation.stopLossAmount = this.budgetFor(
-        allocation.allocatedAmount,
-        allocation.stopLossPercent
-      );
+      allocation.stopLossAmount = this.budgetFor(allocation.allocatedAmount, allocation.stopLossPercent);
       await this.allocationRepo.save(allocation);
     }
 
@@ -352,9 +331,7 @@ export class ArbitrageBotService {
       title: `ربات ${saved.name} شروع به کار کرد`,
       message:
         "ربات با سرمایه فریزشده " +
-        funded
-          .map((a) => `${a.allocatedAmount} ${a.symbol?.slug ?? ""} (حد ضرر ${a.stopLossAmount})`)
-          .join(" و ") +
+        funded.map((a) => `${a.allocatedAmount} ${a.symbol?.slug ?? ""} (حد ضرر ${a.stopLossAmount})`).join(" و ") +
         " فعال شد.",
     });
     return saved;
@@ -462,8 +439,7 @@ export class ArbitrageBotService {
     const now = Date.now();
     const dayAgo = new Date(now - 24 * 3600_000);
 
-    const byStatus = (status: ArbitrageBotStatusEnum) =>
-      bots.filter((bot) => bot.status === status).length;
+    const byStatus = (status: ArbitrageBotStatusEnum) => bots.filter((bot) => bot.status === status).length;
 
     // Allocations are per-asset; group first, then value each asset once.
     const perAsset = new Map<string, { symbolId: string; symbol: string; amount: Decimal }>();
@@ -515,9 +491,7 @@ export class ArbitrageBotService {
       }),
     ]);
 
-    const filledLastDay = settledLastDay.filter(
-      (trade) => trade.status === ArbitrageBotTradeStatusEnum.FILLED
-    ).length;
+    const filledLastDay = settledLastDay.filter((trade) => trade.status === ArbitrageBotTradeStatusEnum.FILLED).length;
     const profitLastDayRial = settledLastDay.reduce(
       (sum, trade) => sum.plus(trade.realizedProfitRial ?? 0),
       new Decimal(0)
@@ -537,9 +511,7 @@ export class ArbitrageBotService {
       .filter((bot) => bot.status === ArbitrageBotStatusEnum.RUNNING)
       .flatMap((bot) => bot.allocations ?? []);
     const fundedAssets = new Set(
-      runningAllocations
-        .filter((a) => Number(a.allocatedAmount) > 0)
-        .map((a) => a.symbol?.slug ?? a.symbolId)
+      runningAllocations.filter((a) => Number(a.allocatedAmount) > 0).map((a) => a.symbol?.slug ?? a.symbolId)
     );
     const exhaustedAssets = runningAllocations.filter(
       (a) => Number(a.allocatedAmount) > 0 && this.allocationBudget(a).lessThanOrEqualTo(0)
@@ -554,8 +526,7 @@ export class ArbitrageBotService {
       draft: byStatus(ArbitrageBotStatusEnum.DRAFT),
       autoExecuting: bots.filter(
         (bot) =>
-          bot.executionMode === ArbitrageBotExecutionModeEnum.AUTO &&
-          bot.status === ArbitrageBotStatusEnum.RUNNING
+          bot.executionMode === ArbitrageBotExecutionModeEnum.AUTO && bot.status === ArbitrageBotStatusEnum.RUNNING
       ).length,
       allocatedRial: allocatedRial.toNumber(),
       allocations,
@@ -572,8 +543,7 @@ export class ArbitrageBotService {
       settledLastDay: settledLastDay.length,
       filledLastDay,
       failedLastDay: settledLastDay.length - filledLastDay,
-      fillRateLastDay:
-        settledLastDay.length > 0 ? (filledLastDay / settledLastDay.length) * 100 : null,
+      fillRateLastDay: settledLastDay.length > 0 ? (filledLastDay / settledLastDay.length) * 100 : null,
       profitLastDayRial: profitLastDayRial.toNumber(),
       totalProfitRial: Number(totalProfitRial?.sum ?? 0),
       lastSignalAt:
@@ -775,9 +745,7 @@ export class ArbitrageBotService {
       notifications: bot.notifications ?? DEFAULT_BOT_NOTIFICATIONS,
       allocations,
       stopLossPercent: Number(bot.stopLossPercent) || 0,
-      lossBudgetUsedPercent: funded.length
-        ? Math.max(...funded.map((a) => a.lossBudgetUsedPercent))
-        : 0,
+      lossBudgetUsedPercent: funded.length ? Math.max(...funded.map((a) => a.lossBudgetUsedPercent)) : 0,
       startedAt: bot.startedAt,
       stoppedAt: bot.stoppedAt,
       haltedAt: bot.haltedAt,

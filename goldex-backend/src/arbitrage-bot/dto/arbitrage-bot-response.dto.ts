@@ -3,109 +3,52 @@ import {
   ArbitrageBotEventSeverityEnum,
   ArbitrageBotEventTypeEnum,
   ArbitrageBotExecutionModeEnum,
-  ArbitrageBotFundingDirectionEnum,
   ArbitrageBotNotifyChannelEnum,
   ArbitrageBotStatusEnum,
   ArbitrageBotTradeStatusEnum,
 } from "../enum/arbitrage-bot.enums";
 
-export class BotOwnerRefDto {
-  @ApiProperty({ format: "uuid" })
-  id: string;
-
-  @ApiPropertyOptional({ nullable: true })
-  phone?: string;
-
-  @ApiPropertyOptional({ nullable: true })
-  email?: string;
-}
-
-export class BotSymbolRefDto {
-  @ApiProperty({ format: "uuid" })
-  id: string;
-
-  @ApiProperty()
-  name: string;
-
-  @ApiProperty({ example: "XAU" })
-  slug: string;
-}
-
-/** Capital frozen into a bot in one asset, with that asset's own loss budget. */
-export class BotAllocationDto {
-  @ApiProperty({ format: "uuid" })
-  id: string;
-
-  @ApiProperty({ format: "uuid" })
-  symbolId: string;
-
-  @ApiProperty({ type: BotSymbolRefDto, nullable: true })
-  symbol: BotSymbolRefDto | null;
-
-  @ApiProperty({ format: "uuid", description: "Account this capital was frozen out of" })
-  managerAccountId: string;
-
-  @ApiProperty({ description: "Frozen amount, in the asset's own unit" })
-  allocatedAmount: number;
-
-  @ApiProperty()
-  stopLossPercent: number;
-
-  @ApiProperty({ description: "The loss budget, in this asset" })
-  stopLossAmount: number;
-
-  @ApiProperty()
-  realizedPnl: number;
-
-  @ApiProperty({ description: "Cumulative realized losses — what this stop-loss measures" })
-  realizedLoss: number;
-
-  @ApiProperty()
-  lossBudgetRemaining: number;
-
-  @ApiProperty()
-  lossBudgetUsedPercent: number;
-}
-
-/** Which opportunities the bot is interested in; an empty list means "any". */
-export class BotScopeDto {
+/** Which opportunities a bot acts on. Every empty list means "no restriction". */
+export class ArbitrageBotScopeDto {
   @ApiProperty({ type: [String], format: "uuid" })
   pricePairIds: string[];
 
   @ApiProperty({ type: [String], example: ["formal"] })
   marketTypes: string[];
 
-  @ApiProperty({ type: [String] })
+  @ApiProperty({ type: [String], example: ["mock-zaryar-b"] })
   providerKeys: string[];
 
-  @ApiProperty({ type: [Number] })
+  @ApiProperty({ type: [Number], example: [101] })
   itemIds: number[];
 }
 
-export class BotThresholdsDto {
-  @ApiProperty()
+/** The conditions an opportunity must clear before the bot acts on it. */
+export class ArbitrageBotThresholdsDto {
+  @ApiProperty({ description: "Absolute profit floor for one trade, in Rial" })
   minProfitRial: number;
 
-  @ApiProperty()
+  @ApiProperty({ description: "Percentage profit floor for one trade" })
   minProfitPercent: number;
 
-  @ApiProperty({ description: "In the traded item's own unit; 0 = only the loss budget limits it" })
+  @ApiProperty({ description: "Largest position opened at once, in the item's own unit" })
   maxTradeVolume: number;
 
-  @ApiProperty()
+  @ApiProperty({ description: "Submitted-but-unsettled trades allowed at once" })
   maxOpenTrades: number;
 
-  @ApiProperty()
+  @ApiProperty({ description: "Cap on new trades in any rolling hour" })
   maxTradesPerHour: number;
 
-  @ApiProperty()
+  @ApiProperty({ description: "Quiet period after a trade before the bot may act again" })
   cooldownSeconds: number;
 
-  @ApiProperty()
+  @ApiProperty({ description: "Refuse a signal whose quotes are older than this" })
   maxQuoteAgeSeconds: number;
 }
 
-export class BotNotificationsDto {
+/** Per-bot notification policy. */
+export class ArbitrageBotNotificationsDto {
   @ApiProperty()
   enabled: boolean;
 
@@ -115,22 +58,50 @@ export class BotNotificationsDto {
   @ApiProperty({ enum: ArbitrageBotEventTypeEnum, isArray: true })
   events: ArbitrageBotEventTypeEnum[];
 
-  @ApiProperty({ description: "Warn once this share of the stop-loss budget is spent" })
+  @ApiProperty({ description: "Warn once this share of the stop-loss budget is used" })
   lossWarningPercent: number;
 
-  @ApiProperty()
+  @ApiProperty({ description: "Do not notify about matched signals smaller than this (Rial)" })
   minProfitToNotifyRial: number;
 
-  @ApiProperty()
+  @ApiProperty({ description: "Minimum gap between notifications of the same event type" })
   throttleSeconds: number;
 
-  @ApiProperty({ nullable: true })
+  @ApiPropertyOptional({ nullable: true })
   telegramChatId?: string | null;
 
-  @ApiProperty({ nullable: true })
+  @ApiPropertyOptional({ nullable: true })
   smsPhone?: string | null;
 }
 
+/** The admin who owns a bot. */
+export class ArbitrageBotOwnerDto {
+  @ApiProperty({ format: "uuid" })
+  id: string;
+
+  @ApiPropertyOptional({ nullable: true })
+  phone?: string | null;
+
+  @ApiPropertyOptional({ nullable: true })
+  email?: string | null;
+}
+
+/** The asset a bot's allocation is denominated in. */
+export class ArbitrageBotSymbolDto {
+  @ApiProperty({ format: "uuid" })
+  id: string;
+
+  @ApiProperty()
+  name: string;
+
+  @ApiProperty({ example: "IRR" })
+  slug: string;
+}
+
+/**
+ * An arbitrage bot: what it watches, what it may risk, and how much of its
+ * loss budget it has already spent.
+ */
 export class ArbitrageBotDto {
   @ApiProperty({ format: "uuid" })
   id: string;
@@ -138,8 +109,8 @@ export class ArbitrageBotDto {
   @ApiProperty()
   name: string;
 
-  @ApiProperty({ nullable: true })
-  description: string | null;
+  @ApiPropertyOptional({ nullable: true })
+  description?: string | null;
 
   @ApiProperty({ enum: ArbitrageBotStatusEnum })
   status: ArbitrageBotStatusEnum;
@@ -150,71 +121,80 @@ export class ArbitrageBotDto {
   @ApiProperty({ format: "uuid" })
   ownerAdminId: string;
 
-  @ApiProperty({ type: BotOwnerRefDto, nullable: true })
-  owner: BotOwnerRefDto | null;
+  @ApiPropertyOptional({ type: ArbitrageBotOwnerDto, nullable: true })
+  owner?: ArbitrageBotOwnerDto | null;
 
-  @ApiProperty({ type: BotScopeDto })
-  scope: BotScopeDto;
+  @ApiProperty({ type: ArbitrageBotScopeDto })
+  scope: ArbitrageBotScopeDto;
 
-  @ApiProperty({ type: BotThresholdsDto })
-  thresholds: BotThresholdsDto;
+  @ApiProperty({ type: ArbitrageBotThresholdsDto })
+  thresholds: ArbitrageBotThresholdsDto;
 
-  @ApiProperty({ type: BotNotificationsDto })
-  notifications: BotNotificationsDto;
+  @ApiProperty({ type: ArbitrageBotNotificationsDto })
+  notifications: ArbitrageBotNotificationsDto;
 
-  @ApiProperty({
-    type: BotAllocationDto,
-    isArray: true,
-    description: "Frozen capital, one entry per asset — each with its own stop-loss",
-  })
-  allocations: BotAllocationDto[];
+  @ApiPropertyOptional({ format: "uuid", nullable: true })
+  managerAccountId?: string | null;
 
-  @ApiProperty({ description: "Default stop-loss share applied to new allocations" })
+  @ApiPropertyOptional({ format: "uuid", nullable: true })
+  symbolId?: string | null;
+
+  @ApiPropertyOptional({ type: ArbitrageBotSymbolDto, nullable: true })
+  symbol?: ArbitrageBotSymbolDto | null;
+
+  @ApiProperty({ description: "Capital frozen from the manager account into this bot" })
+  allocatedAmount: number;
+
+  @ApiProperty()
   stopLossPercent: number;
 
-  @ApiProperty({
-    description:
-      "The worst allocation's stop-loss consumption — the binding constraint, " +
-      "not an average across assets",
-  })
+  @ApiProperty({ description: "The loss budget, derived from the allocation" })
+  stopLossAmount: number;
+
+  @ApiProperty()
+  realizedPnl: number;
+
+  @ApiProperty()
+  realizedLoss: number;
+
+  @ApiProperty({ description: "stopLossAmount − realizedLoss, floored at zero" })
+  lossBudgetRemaining: number;
+
+  @ApiProperty({ description: "Share of the loss budget already spent (0–100)" })
   lossBudgetUsedPercent: number;
 
-  @ApiProperty({ format: "date-time", nullable: true })
-  startedAt: Date | null;
+  @ApiPropertyOptional({ format: "date-time", nullable: true })
+  startedAt?: Date | null;
 
-  @ApiProperty({ format: "date-time", nullable: true })
-  stoppedAt: Date | null;
+  @ApiPropertyOptional({ format: "date-time", nullable: true })
+  stoppedAt?: Date | null;
 
-  @ApiProperty({ format: "date-time", nullable: true })
-  haltedAt: Date | null;
+  @ApiPropertyOptional({ format: "date-time", nullable: true })
+  haltedAt?: Date | null;
 
-  @ApiProperty({ nullable: true, description: "Why the risk rules stopped it" })
-  haltReason: string | null;
+  @ApiPropertyOptional({ nullable: true, description: "Why the risk rules halted the bot" })
+  haltReason?: string | null;
 
-  @ApiProperty({ format: "date-time", nullable: true })
-  lastSignalAt: Date | null;
+  @ApiPropertyOptional({ format: "date-time", nullable: true })
+  lastSignalAt?: Date | null;
 
-  @ApiProperty({ format: "date-time", nullable: true })
-  lastTradeAt: Date | null;
+  @ApiPropertyOptional({ format: "date-time", nullable: true })
+  lastTradeAt?: Date | null;
 
   @ApiProperty()
   matchedSignals: number;
 
-  @ApiProperty({ description: "Completed arbitrage cycles" })
+  @ApiProperty()
   totalTrades: number;
 
-  @ApiProperty({
-    description: "Provider orders placed — two per cycle, one for each leg",
-  })
-  totalTransactions: number;
+  @ApiProperty({ format: "date-time" })
+  createdAt: Date;
 
-  @ApiProperty({ format: "date-time", nullable: true })
-  createdAt: Date | null;
-
-  @ApiProperty({ format: "date-time", nullable: true })
-  updatedAt: Date | null;
+  @ApiProperty({ format: "date-time" })
+  updatedAt: Date;
 }
 
+/** One opportunity a bot acted on, from sizing through settlement. */
 export class ArbitrageBotTradeDto {
   @ApiProperty({ format: "uuid" })
   id: string;
@@ -222,17 +202,17 @@ export class ArbitrageBotTradeDto {
   @ApiProperty({ format: "uuid" })
   botId: string;
 
-  @ApiProperty({ description: "The engine's stable key for the opportunity" })
+  @ApiProperty({ description: "The opportunity's stable key, for de-duplication" })
   signalKey: string;
 
-  @ApiProperty({ nullable: true })
-  signalId: string | null;
+  @ApiPropertyOptional({ nullable: true })
+  signalId?: string | null;
 
-  @ApiProperty({ nullable: true })
-  itemId: number | null;
+  @ApiPropertyOptional({ nullable: true })
+  itemId?: number | null;
 
-  @ApiProperty({ nullable: true })
-  itemName: string | null;
+  @ApiPropertyOptional({ nullable: true })
+  itemName?: string | null;
 
   @ApiProperty()
   buyProviderKey: string;
@@ -240,53 +220,47 @@ export class ArbitrageBotTradeDto {
   @ApiProperty()
   sellProviderKey: string;
 
-  @ApiProperty({ description: "Rial price the bot buys at" })
+  @ApiProperty()
   buyPrice: number;
 
-  @ApiProperty({ description: "Rial price the bot sells at" })
+  @ApiProperty()
   sellPrice: number;
 
-  @ApiProperty({ description: "Position size in the traded item's own unit" })
+  @ApiProperty()
   volume: number;
 
   @ApiProperty()
   expectedProfitRial: number;
 
-  @ApiProperty({ nullable: true, description: "Null until the trade settles" })
-  realizedProfitRial: number | null;
+  @ApiPropertyOptional({ nullable: true })
+  realizedProfitRial?: number | null;
 
-  @ApiProperty({ nullable: true, description: "The same result in the allocation's asset" })
-  realizedPnlAsset: number | null;
+  @ApiPropertyOptional({ nullable: true, description: "P&L in the allocation's own asset" })
+  realizedPnlAsset?: number | null;
 
   @ApiProperty({ enum: ArbitrageBotTradeStatusEnum })
   status: ArbitrageBotTradeStatusEnum;
 
-  @ApiProperty({
-    enum: ArbitrageBotFundingDirectionEnum,
-    description: "Which leg the bot's capital paid for first",
-  })
-  direction: ArbitrageBotFundingDirectionEnum;
+  @ApiPropertyOptional({ type: Object, nullable: true, description: "Both provider legs" })
+  legs?: Record<string, any> | null;
 
-  @ApiProperty({
-    format: "uuid",
-    nullable: true,
-    description: "The allocation that funded this cycle, and takes its result",
-  })
-  allocationId: string | null;
+  @ApiPropertyOptional({ format: "date-time", nullable: true })
+  submittedAt?: Date | null;
 
-  @ApiProperty({ type: Object, nullable: true, description: "Per-leg execution state" })
-  legs: Record<string, any> | null;
+  @ApiPropertyOptional({ format: "date-time", nullable: true })
+  settledAt?: Date | null;
 
-  @ApiProperty({ format: "date-time", nullable: true })
-  submittedAt: Date | null;
+  @ApiPropertyOptional({ nullable: true })
+  failureReason?: string | null;
 
-  @ApiProperty({ format: "date-time", nullable: true })
-  settledAt: Date | null;
+  @ApiPropertyOptional({ type: Object, nullable: true, description: "The signal as matched" })
+  signal?: Record<string, any> | null;
 
-  @ApiProperty({ nullable: true })
-  failureReason: string | null;
+  @ApiProperty({ format: "date-time" })
+  createAt: Date;
 }
 
+/** An entry in a bot's own log, including which alerts went out. */
 export class ArbitrageBotEventDto {
   @ApiProperty({ format: "uuid" })
   id: string;
@@ -306,104 +280,39 @@ export class ArbitrageBotEventDto {
   @ApiProperty()
   message: string;
 
-  @ApiProperty({ type: Object, nullable: true })
-  metadata: Record<string, any> | null;
+  @ApiPropertyOptional({ type: Object, nullable: true })
+  metadata?: Record<string, any> | null;
 
-  @ApiProperty({
-    type: [String],
-    description: "Channels the alert went out on; empty when it was not notified",
-  })
-  notifiedChannels: string[];
+  @ApiProperty({ enum: ArbitrageBotNotifyChannelEnum, isArray: true })
+  notifiedChannels: ArbitrageBotNotifyChannelEnum[];
 
-  @ApiProperty({ format: "uuid", nullable: true })
-  tradeId: string | null;
+  @ApiPropertyOptional({ format: "uuid", nullable: true })
+  tradeId?: string | null;
+
+  @ApiProperty({ format: "date-time" })
+  createAt: Date;
 }
 
-export class ArbitrageBotAllocationDto {
-  @ApiProperty({ description: "Allocation asset" })
-  symbol: string;
+/** A page of trades, newest first, with the unpaged total. */
+export class ArbitrageBotTradePageDto {
+  @ApiProperty({ type: [ArbitrageBotTradeDto] })
+  items: ArbitrageBotTradeDto[];
 
-  @ApiProperty({ description: "Frozen amount in the asset's own unit" })
-  amount: number;
-
-  @ApiProperty({ nullable: true, description: "Null when the asset has no live rate" })
-  valueRial: number | null;
+  @ApiProperty()
+  total: number;
 }
 
-/** Management KPIs for the arbitrage section as a whole. */
-export class ArbitrageBotSummaryDto {
-  @ApiProperty()
-  totalBots: number;
+/** A page of log entries, newest first, with the unpaged total. */
+export class ArbitrageBotEventPageDto {
+  @ApiProperty({ type: [ArbitrageBotEventDto] })
+  items: ArbitrageBotEventDto[];
 
   @ApiProperty()
-  running: number;
+  total: number;
+}
 
-  @ApiProperty()
-  paused: number;
-
-  @ApiProperty()
-  halted: number;
-
-  @ApiProperty()
-  stopped: number;
-
-  @ApiProperty()
-  draft: number;
-
-  @ApiProperty({ description: "Running bots that place orders, not signal-only" })
-  autoExecuting: number;
-
-  @ApiProperty({ description: "Frozen capital across all bots, valued in Rial" })
-  allocatedRial: number;
-
-  @ApiProperty({ type: ArbitrageBotAllocationDto, isArray: true })
-  allocations: ArbitrageBotAllocationDto[];
-
-  @ApiProperty({ type: String, isArray: true, description: "Assets excluded from the Rial total" })
-  unpricedAssets: string[];
-
-  @ApiProperty({ description: "Distinct assets funding the running bots" })
-  fundedAssets: number;
-
-  @ApiProperty({ description: "Funded allocations whose stop-loss is already spent" })
-  exhaustedAllocations: number;
-
-  @ApiProperty()
-  matchedSignals: number;
-
-  @ApiProperty({ description: "Completed arbitrage cycles" })
-  totalTrades: number;
-
-  @ApiProperty({ description: "Provider orders placed — two per cycle" })
-  totalTransactions: number;
-
-  @ApiProperty()
-  openTrades: number;
-
-  @ApiProperty()
-  tradesLastDay: number;
-
-  @ApiProperty()
-  transactionsLastDay: number;
-
-  @ApiProperty()
-  settledLastDay: number;
-
-  @ApiProperty()
-  filledLastDay: number;
-
-  @ApiProperty()
-  failedLastDay: number;
-
-  @ApiProperty({ nullable: true, description: "Null when nothing settled in the window" })
-  fillRateLastDay: number | null;
-
-  @ApiProperty()
-  profitLastDayRial: number;
-
-  @ApiProperty()
-  totalProfitRial: number;
-
-  @ApiProperty({ format: "date-time", nullable: true })
-  lastSignalAt: Date | null;
+/** The acknowledgement returned when a bot is deleted. */
+export class ArbitrageBotDeletedDto {
+  @ApiProperty({ example: true })
+  deleted: boolean;
 }

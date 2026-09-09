@@ -1,18 +1,14 @@
 import Decimal from "decimal.js";
 import { isWholeToman, rialToToman, tomanToRial } from "./currency.helper";
-import {
-  DISPLAY_CURRENCY,
-  RIAL_PER_TOMAN,
-  RIAL_SYMBOL_SLUG,
-} from "./constants/currency.constants";
+import { DISPLAY_CURRENCY, RIAL_PER_TOMAN, RIAL_SYMBOL_SLUG } from "./constants/currency.constants";
 
 /**
- * These tests are the guard rail for the entire money model: stored amounts are
- * rial, toman is what the panels render, and if the factor between them is
- * wrong every figure on screen is out by an order of magnitude.
+ * These tests are the guard rail for the entire money model: if the stored unit
+ * or the display factor is wrong, every figure is wrong by an order of
+ * magnitude.
  */
 describe("currency helper", () => {
-  it("stores rial, and treats toman as a display convention only", () => {
+  it("stores rial and only presents toman", () => {
     expect(RIAL_SYMBOL_SLUG).toBe("IRR");
     expect(DISPLAY_CURRENCY).toBe("IRT");
     expect(RIAL_PER_TOMAN).toBe(10);

@@ -10,7 +10,12 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, unwrap } from "../api/client";
 import type { UnreadCount } from "../api/types";
 import { fmtNum } from "../lib/format";
-import { applyTheme, persistTheme, storedTheme, type Theme } from "../lib/theme";
+import {
+  applyTheme,
+  persistTheme,
+  storedTheme,
+  type Theme,
+} from "../lib/theme";
 
 type NavItem = {
   to: string;
@@ -78,12 +83,7 @@ const NAV: NavGroup[] = [
       { to: "/wallets", label: "کیف‌پول‌ها", icon: "👛", perm: "wallets_view" },
       { to: "/warehouse", label: "انبار", icon: "🏭", perm: "warehouse" },
       { to: "/finance", label: "مالی", icon: "💰" },
-      {
-        to: "/manager-accounts",
-        label: "حساب‌های مدیریتی",
-        icon: "🗄",
-        perm: "accounting",
-      },
+      { to: "/manager-accounts", label: "حساب‌های مدیریتی", icon: "🗄" },
       { to: "/provider-finance", label: "مالی تأمین‌کنندگان", icon: "🏦" },
       { to: "/cbp", label: "درگاه‌های پرداخت (CBP)", icon: "💳" },
       { to: "/credits", label: "اعتبارات", icon: "💳" },
@@ -182,7 +182,8 @@ const TITLES: Record<string, string> = {
   "/wallets": "مدیریت کیف‌پول",
   "/warehouse": "مدیریت انبار — انبارها، بسته‌ها و درخواست‌ها",
   "/finance": "مالی — سفارش‌ها، تراکنش‌ها و دفتر سیستم",
-  "/manager-accounts": "حساب‌های مدیریتی — سرمایه ربات‌های آربیتراژ و تأیید شارژ",
+  "/manager-accounts":
+    "حساب‌های مدیریتی — سرمایه ربات‌های آربیتراژ و تأیید شارژ",
   "/provider-finance": "مالی تأمین‌کنندگان — بدهکار/بستانکار و تسویه",
   "/cbp": "درگاه‌های پرداخت — سلامت درگاه‌ها و تراکنش‌های CBP",
   "/symbols": "مدیریت نمادها",

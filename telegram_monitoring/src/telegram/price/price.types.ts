@@ -1,3 +1,5 @@
+import { moneyFromEnv } from '../common/currency';
+
 export type PriceSideLabel = 'خرید' | 'فروش';
 
 export type OurAction = 'WE_SELL' | 'WE_BUY';
@@ -14,9 +16,18 @@ export function sideToAction(side: PriceSideLabel): OurAction {
 export const GRAMS_PER_MITHQAL = Number(process.env.MITHQAL_GRAMS) || 4.3318;
 export const MITHQALS_PER_KILO = 1000 / GRAMS_PER_MITHQAL;
 
-/** Exchange fee per mesqal of traded gold (Toman), charged on every leg. */
-export const TRADE_FEE_PER_MITHQAL =
-  Number(process.env.TRADE_FEE_PER_MITHQAL) || 10_000;
+/**
+ * Exchange fee per mesqal of traded gold (Rial), charged on every leg.
+ *
+ * `TRADE_FEE_PER_MITHQAL` was given in Toman before the service moved onto
+ * Rial, so a leftover value is converted rather than read at a tenth of what
+ * the operator meant.
+ */
+export const TRADE_FEE_PER_MITHQAL = moneyFromEnv(
+  process.env.TRADE_FEE_PER_MITHQAL_RIAL,
+  process.env.TRADE_FEE_PER_MITHQAL,
+  100_000,
+);
 
 export type PriceSubType = 'normal' | 'shena' | 'makus';
 
@@ -173,7 +184,7 @@ export interface ArbitrageRecord {
   sellAt: number;
   spread: number;
   quantity: number;
-  /** spread * quantity, in Toman. */
+  /** spread * quantity, in Rial. */
   totalProfit: number;
   /** Whether the buy order came before the sell order chronologically. */
   buyFirst: boolean;
@@ -191,11 +202,11 @@ export interface WalletState {
   totalGoldSold: number;
   /** Net gold position (grams). */
   netGold: number;
-  /** Total cash spent on buys (Toman). */
+  /** Total cash spent on buys (Rial). */
   totalCashSpent: number;
-  /** Total cash received from sells (Toman). */
+  /** Total cash received from sells (Rial). */
   totalCashReceived: number;
-  /** Net cash balance = received - spent (Toman). */
+  /** Net cash balance = received - spent (Rial). */
   netCash: number;
 }
 
