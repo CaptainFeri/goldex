@@ -25,16 +25,15 @@ export function IsCreditPairConfigMap(options?: ValidationOptions) {
       propertyName,
       options,
       validator: {
-        validate(value: unknown, args: ValidationArguments) {
-          const errors = collectErrors(value);
-          // Stash the detail so the message can name what actually failed.
-          (args.object as Record<string, unknown>).__creditConfigErrors = errors;
-          return errors.length === 0;
+        validate(value: unknown) {
+          return collectErrors(value).length === 0;
         },
+        // Recomputed rather than carried over from `validate`: stashing the
+        // detail on the DTO left a property behind that TypeORM then tried to
+        // write as a column. The check is pure, so running it again on the
+        // failure path costs nothing and mutates nothing.
         defaultMessage(args: ValidationArguments) {
-          const errors = ((args.object as Record<string, unknown>).__creditConfigErrors ??
-            []) as string[];
-          return `creditConfigs is invalid: ${errors.join("; ")}`;
+          return `creditConfigs is invalid: ${collectErrors(args.value).join("; ")}`;
         },
       },
     });
