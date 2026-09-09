@@ -39,6 +39,23 @@ export function toRial(amount: number, unit: CurrencyUnit): number {
   return amount * rialFactor(unit);
 }
 
+/**
+ * Converts a Rial amount back into `unit`.
+ *
+ * The inverse of `toRial`, for the one direction that leaves the system: an
+ * order placed with a provider has to be priced in the unit that provider
+ * speaks, or the order is off by a factor of ten.
+ */
+export function fromRial(amount: number, unit: CurrencyUnit): number {
+  if (!Number.isFinite(amount)) return amount;
+  return amount / rialFactor(unit);
+}
+
+/** The unit label a provider API expects for `unit`. */
+export function providerUnitLabel(unit: CurrencyUnit): 'rial' | 'toman' {
+  return unit === CurrencyUnit.TOMAN ? 'toman' : 'rial';
+}
+
 /** Formats a Rial amount the way the panels and logs display it. */
 export function formatRial(amount: number): string {
   return `${Math.round(amount).toLocaleString('fa-IR')} ریال`;
