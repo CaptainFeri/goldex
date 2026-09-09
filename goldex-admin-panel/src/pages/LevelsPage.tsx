@@ -214,6 +214,22 @@ function LevelFormModal({ title, initial, onClose, onSave, loading }: {
     creditTradingEnabled: initial?.creditTradingEnabled ?? true,
     creditMaxAmount: initial?.creditMaxAmount ?? "",
     creditMaxDurationDays: initial?.creditMaxDurationDays ?? "",
+    creditWarningMarginPercent: initial?.creditWarningMarginPercent ?? "",
+    creditMarginCallPercent: initial?.creditMarginCallPercent ?? "",
+    creditLiquidationMarginPercent: initial?.creditLiquidationMarginPercent ?? "",
+    creditReduceOnlyOnWarning: initial?.creditReduceOnlyOnWarning !== false,
+    creditMaxExecutionLevel: initial?.creditMaxExecutionLevel ?? "",
+    creditMinTradeSize: initial?.creditMinTradeSize ?? "",
+    creditMaxTradeSize: initial?.creditMaxTradeSize ?? "",
+    creditRequireAdminApprovalForCreation: initial?.creditRequireAdminApprovalForCreation === true,
+    creditRequireAdminApprovalForSettlement:
+      initial?.creditRequireAdminApprovalForSettlement === true,
+    creditAllowUserSettlement: initial?.creditAllowUserSettlement !== false,
+    creditCashoutEnabled: initial?.creditCashoutEnabled !== false,
+    creditCashoutFeePercent: initial?.creditCashoutFeePercent ?? "",
+    creditAllowedCashoutSources: initial?.creditAllowedCashoutSources ?? [],
+    creditSettlementMethods: initial?.creditSettlementMethods ?? [],
+    creditNettingEnabled: initial?.creditNettingEnabled === true,
     creditConfigs: initial?.creditConfigs ?? {},
   });
   const [showFeatures, setShowFeatures] = useState(false);
@@ -304,6 +320,31 @@ function LevelFormModal({ title, initial, onClose, onSave, loading }: {
     payload.creditTradingEnabled = form.creditTradingEnabled;
     if (form.creditMaxAmount !== "") payload.creditMaxAmount = +form.creditMaxAmount;
     if (form.creditMaxDurationDays !== "") payload.creditMaxDurationDays = +form.creditMaxDurationDays;
+    // A blank risk rung means "not enforced", so it is omitted rather than sent as 0.
+    for (const key of [
+      "creditWarningMarginPercent",
+      "creditMarginCallPercent",
+      "creditLiquidationMarginPercent",
+      "creditMaxExecutionLevel",
+      "creditMinTradeSize",
+      "creditMaxTradeSize",
+      "creditCashoutFeePercent",
+    ] as const) {
+      if (form[key] !== "" && form[key] !== null) payload[key] = +form[key];
+    }
+    payload.creditReduceOnlyOnWarning = form.creditReduceOnlyOnWarning;
+    payload.creditRequireAdminApprovalForCreation = form.creditRequireAdminApprovalForCreation;
+    payload.creditRequireAdminApprovalForSettlement = form.creditRequireAdminApprovalForSettlement;
+    payload.creditAllowUserSettlement = form.creditAllowUserSettlement;
+    payload.creditCashoutEnabled = form.creditCashoutEnabled;
+    payload.creditNettingEnabled = form.creditNettingEnabled;
+    // An empty selection means "no restriction", which the backend reads as null.
+    payload.creditAllowedCashoutSources = form.creditAllowedCashoutSources.length
+      ? form.creditAllowedCashoutSources
+      : undefined;
+    payload.creditSettlementMethods = form.creditSettlementMethods.length
+      ? form.creditSettlementMethods
+      : undefined;
     // Clean the per-pair credit configs to only reference selected pairs.
     const creditConfigs: Record<string, any> = {};
     for (const id of form.pairs) {
@@ -418,6 +459,14 @@ function LevelFormModal({ title, initial, onClose, onSave, loading }: {
                 currencyField="creditBaseSymbolId"
               />
 
+              <div style={{ fontSize: "0.85rem", fontWeight: 600, color: "var(--text-muted)", borderTop: "1px solid var(--line)", paddingTop: 12 }}>
+                امکانات فرایند اعتبار (در سطح کاربری)
+              </div>
+              <CreditAbilityFields
+                value={form}
+                onChange={(patch: any) => setForm((f: any) => ({ ...f, ...patch }))}
+              />
+
               {form.pairs.length > 0 && (
                 <div style={{ fontSize: "0.85rem", fontWeight: 600, color: "var(--text-muted)", borderTop: "1px solid var(--line)", paddingTop: 12 }}>
                   ساختار اعتبار به تفکیک جفت ({form.pairs.length} جفت)
@@ -528,6 +577,147 @@ function CreditFields({ value, onChange, currencySymbols, currencyField, fixedCu
           <input type="checkbox" checked={v.creditEnforceRequestDeadline !== false} onChange={(e) => onChange({ creditEnforceRequestDeadline: e.target.checked })} />
           <span>بستن خودکار درخواست‌های منقضی‌شده</span>
         </label>
+      </div>
+
+      {/* Margin-call ladder: equity as a share of open exposure. Each rung may
+          differ per pair, so it lives in the shared field set. */}
+      <div className="field" style={{ gridColumn: "1 / -1", fontSize: "0.8rem", fontWeight: 600, color: "var(--text-muted)", marginTop: 4 }}>
+        پله‌های مارجین کال (نسبت مارجین به درصد)
+      </div>
+      <div className="field">
+        <label>هشدار مارجین (٪)</label>
+        <input className="input mono" type="number" min={0} max={100} step={0.1} value={num(v.creditWarningMarginPercent)} onChange={(e) => onChange({ creditWarningMarginPercent: e.target.value })} placeholder="پیش‌فرض: 15" />
+      </div>
+      <div className="field">
+        <label>مارجین کال (٪)</label>
+        <input className="input mono" type="number" min={0} max={100} step={0.1} value={num(v.creditMarginCallPercent)} onChange={(e) => onChange({ creditMarginCallPercent: e.target.value })} placeholder="پیش‌فرض: 7.5" />
+      </div>
+      <div className="field">
+        <label>نقد شدن اجباری (٪)</label>
+        <input className="input mono" type="number" min={0} max={100} step={0.1} value={num(v.creditLiquidationMarginPercent)} onChange={(e) => onChange({ creditLiquidationMarginPercent: e.target.value })} placeholder="بدون حد" />
+      </div>
+      <div className="field">
+        <label className="checkbox-label">
+          <input type="checkbox" checked={v.creditReduceOnlyOnWarning !== false} onChange={(e) => onChange({ creditReduceOnlyOnWarning: e.target.checked })} />
+          <span>پس از هشدار فقط معامله کاهنده</span>
+        </label>
+      </div>
+
+      <div className="field" style={{ gridColumn: "1 / -1", fontSize: "0.8rem", fontWeight: 600, color: "var(--text-muted)", marginTop: 4 }}>
+        سقف‌های معامله اعتباری
+      </div>
+      <div className="field">
+        <label>حداکثر زنجیره معاملات (Hops)</label>
+        <input className="input mono" type="number" min={1} value={num(v.creditMaxExecutionLevel)} onChange={(e) => onChange({ creditMaxExecutionLevel: e.target.value })} placeholder="بدون حد" />
+      </div>
+      <div className="field">
+        <label>حداکثر نوشنال (به ارز اعتبار)</label>
+        <input className="input mono" type="number" min={0} value={num(v.creditMaxNotional)} onChange={(e) => onChange({ creditMaxNotional: e.target.value })} placeholder="بدون حد" />
+      </div>
+      <div className="field">
+        <label>حداکثر سهم وثیقه قفل‌شده (0 تا 1)</label>
+        <input className="input mono" type="number" min={0} max={1} step={0.05} value={num(v.creditMaxLockedCollateral)} onChange={(e) => onChange({ creditMaxLockedCollateral: e.target.value })} placeholder="بدون حد" />
+      </div>
+      <div className="field">
+        <label>حداقل حجم هر معامله</label>
+        <input className="input mono" type="number" min={0} step="any" value={num(v.creditMinTradeSize)} onChange={(e) => onChange({ creditMinTradeSize: e.target.value })} placeholder="بدون حد" />
+      </div>
+      <div className="field">
+        <label>حداکثر حجم هر معامله</label>
+        <input className="input mono" type="number" min={0} step="any" value={num(v.creditMaxTradeSize)} onChange={(e) => onChange({ creditMaxTradeSize: e.target.value })} placeholder="بدون حد" />
+      </div>
+    </div>
+  );
+}
+
+/**
+ * What a level's users may do with a credit facility, as opposed to the terms
+ * a trade is measured against. These are level-wide: a facility is opened,
+ * settled and cashed out as a whole, not per pair.
+ */
+function CreditAbilityFields({ value, onChange }: { value: any; onChange: (patch: any) => void }) {
+  const v = value || {};
+  const num = (x: any) => (x === "" || x === undefined || x === null ? "" : x);
+  const toggleIn = (key: string, option: string) => {
+    const current: string[] = v[key] ?? [];
+    onChange({
+      [key]: current.includes(option)
+        ? current.filter((o) => o !== option)
+        : [...current, option],
+    });
+  };
+  return (
+    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+      <div className="field">
+        <label className="checkbox-label">
+          <input type="checkbox" checked={!!v.creditRequireAdminApprovalForCreation} onChange={(e) => onChange({ creditRequireAdminApprovalForCreation: e.target.checked })} />
+          <span>ایجاد اعتبار نیازمند تأیید مدیر</span>
+        </label>
+      </div>
+      <div className="field">
+        <label className="checkbox-label">
+          <input type="checkbox" checked={!!v.creditRequireAdminApprovalForSettlement} onChange={(e) => onChange({ creditRequireAdminApprovalForSettlement: e.target.checked })} />
+          <span>تسویه نیازمند تأیید مدیر</span>
+        </label>
+      </div>
+      <div className="field">
+        <label className="checkbox-label">
+          <input type="checkbox" checked={v.creditAllowUserSettlement !== false} onChange={(e) => onChange({ creditAllowUserSettlement: e.target.checked })} />
+          <span>امکان تسویه توسط کاربر</span>
+        </label>
+      </div>
+      <div className="field">
+        <label className="checkbox-label">
+          <input type="checkbox" checked={v.creditCashoutEnabled !== false} onChange={(e) => onChange({ creditCashoutEnabled: e.target.checked })} />
+          <span>امکان نقد کردن اعتبار مصرف‌شده</span>
+        </label>
+      </div>
+      <div className="field">
+        <label>کمیسیون نقد کردن (٪)</label>
+        <input className="input mono" type="number" min={0} max={100} step={0.01} value={num(v.creditCashoutFeePercent)} onChange={(e) => onChange({ creditCashoutFeePercent: e.target.value })} placeholder="0" />
+      </div>
+      <div className="field">
+        <label className="checkbox-label">
+          <input type="checkbox" checked={!!v.creditNettingEnabled} onChange={(e) => onChange({ creditNettingEnabled: e.target.checked })} />
+          <span>تهاتر معاملات متقابل هنگام تسویه</span>
+        </label>
+      </div>
+      <div className="field">
+        <label>منابع مجاز نقد کردن (خالی = هر دو)</label>
+        <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
+          {[
+            { value: "DEPOSIT", label: "کیف پول واریزی" },
+            { value: "COLLATERAL", label: "وثیقه" },
+          ].map((o) => (
+            <label key={o.value} className="checkbox-label">
+              <input
+                type="checkbox"
+                checked={(v.creditAllowedCashoutSources ?? []).includes(o.value)}
+                onChange={() => toggleIn("creditAllowedCashoutSources", o.value)}
+              />
+              <span>{o.label}</span>
+            </label>
+          ))}
+        </div>
+      </div>
+      <div className="field">
+        <label>روش‌های تسویه (خالی = همه)</label>
+        <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
+          {[
+            { value: "FULL", label: "کامل" },
+            { value: "NET", label: "تهاتری" },
+            { value: "TOPUP", label: "شارژ مابه‌التفاوت" },
+          ].map((o) => (
+            <label key={o.value} className="checkbox-label">
+              <input
+                type="checkbox"
+                checked={(v.creditSettlementMethods ?? []).includes(o.value)}
+                onChange={() => toggleIn("creditSettlementMethods", o.value)}
+              />
+              <span>{o.label}</span>
+            </label>
+          ))}
+        </div>
       </div>
     </div>
   );

@@ -24,6 +24,11 @@ export interface CreditLevelDefaults {
   creditMaxLockedCollateral?: number | null;
   creditMinTradeSize?: number | null;
   creditMaxTradeSize?: number | null;
+  // Terms read when a facility is opened, resolved against the pair the
+  // collateral is valued on.
+  creditRequireKyc?: boolean | null;
+  creditMaxAmount?: number | null;
+  creditMaxDurationDays?: number | null;
 }
 
 /** Every credit rule that applies to one pair, after the level fallback. */
@@ -45,12 +50,15 @@ const NUMERIC_KEYS = [
   "creditMaxLockedCollateral",
   "creditMinTradeSize",
   "creditMaxTradeSize",
+  "creditMaxAmount",
+  "creditMaxDurationDays",
 ] as const;
 
 const BOOLEAN_KEYS = [
   "creditTradingEnabled",
   "creditReduceOnlyOnWarning",
   "creditEnforceRequestDeadline",
+  "creditRequireKyc",
 ] as const;
 
 const ENUM_KEYS = ["creditEnforceOnDrawdown", "creditEnforceOnExpiry"] as const;
@@ -189,6 +197,9 @@ export function snapshotCreditLevelDefaults(level: {
   creditMaxLockedCollateral?: number | null;
   creditMinTradeSize?: number | null;
   creditMaxTradeSize?: number | null;
+  creditRequireKyc?: boolean | null;
+  creditMaxAmount?: number | null;
+  creditMaxDurationDays?: number | null;
 }): CreditLevelDefaults {
   const num = (v: unknown) => toNumber(v);
   const bool = (v: unknown) => (v === undefined || v === null ? null : !!v);
@@ -209,5 +220,8 @@ export function snapshotCreditLevelDefaults(level: {
     creditMaxLockedCollateral: num(level.creditMaxLockedCollateral),
     creditMinTradeSize: num(level.creditMinTradeSize),
     creditMaxTradeSize: num(level.creditMaxTradeSize),
+    creditRequireKyc: bool(level.creditRequireKyc),
+    creditMaxAmount: num(level.creditMaxAmount),
+    creditMaxDurationDays: num(level.creditMaxDurationDays),
   };
 }

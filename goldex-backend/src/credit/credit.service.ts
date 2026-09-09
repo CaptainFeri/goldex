@@ -17,9 +17,11 @@ import { SettlementStateEnum } from "./enum/settlement-state.enum";
 import { RiskStateEnum } from "./enum/risk-state.enum";
 import { CreditEnforceModeEnum } from "./enum/credit-enforce-mode.enum";
 import {
+  resolveCreditPairConfig,
   resolveFacilityPairConfig,
   snapshotCreditLevelDefaults,
 } from "./util/credit-pair-config.util";
+import { CreditPairConfig } from "./dto/credit-pair-config.dto";
 import { CreateCreditDto } from "./dto/create-credit.dto";
 import { RequestCreditDto } from "./dto/request-credit.dto";
 import { WalletTypeEnum } from "../wallet/enum/wallet-type.enum";
@@ -456,7 +458,9 @@ export class CreditService {
       }
 
       // KYC is required only if the user's level is configured to require it.
+      // A pair may additionally require it below even when the level does not.
       const requireKyc = level.creditRequireKyc !== false;
+      const kycChecked = requireKyc;
       if (requireKyc) {
         const kyc = await manager.findOne(UserKycEntity, { where: { userId } });
         if (!kyc || kyc.status !== KycStatusEnum.APPROVED) {
@@ -464,10 +468,11 @@ export class CreditService {
         }
       }
 
-      if (level.creditMaxLeverage == null || dto.leverage > Number(level.creditMaxLeverage)) {
-        throw new BadRequestException(
-          `Leverage exceeds your level maximum (${level.creditMaxLeverage ?? "unavailable"})`,
-        );
+      // A level with no leverage configured offers no credit at all. The cap
+      // itself is checked once the collateral pair is known, because a pair may
+      // set its own — tighter or looser than the level default.
+      if (level.creditMaxLeverage == null) {
+        throw new BadRequestException("Your level has no credit leverage configured");
       }
       if (!(dto.amount > 0)) {
         throw new BadRequestException("Collateral amount must be greater than zero");
@@ -531,10 +536,38 @@ export class CreditService {
         }
       }
 
-      // Enforce the level's max credit amount against the projected credit
-      // limit (collateral × price × leverage), and cap the facility duration.
-      const maxAmount = await this.userLevelService.getFeatureValue(userId, "CREDIT_MAX_AMOUNT");
-      const maxAmt = typeof maxAmount === "object" ? Number(maxAmount?.amount) : Number(maxAmount);
+      // The terms for opening a facility on this collateral: the level's
+      // defaults with the collateral pair's own config layered over them, so a
+      // gold-backed facility and a dollar-backed one can differ.
+      const openingTerms = resolveCreditPairConfig(
+        snapshotCreditLevelDefaults(level),
+        level.creditConfigs as Record<string, CreditPairConfig> | null,
+        collateralPair?.id,
+      );
+      if (
+        openingTerms.creditMaxLeverage != null &&
+        dto.leverage > openingTerms.creditMaxLeverage
+      ) {
+        throw new BadRequestException(
+          `Leverage exceeds the maximum for this collateral (${openingTerms.creditMaxLeverage})`,
+        );
+      }
+      if (openingTerms.creditRequireKyc === true && !kycChecked) {
+        const kyc = await manager.findOne(UserKycEntity, { where: { userId } });
+        if (!kyc || kyc.status !== KycStatusEnum.APPROVED) {
+          throw new BadRequestException("KYC approval is required to open a credit facility");
+        }
+      }
+
+      // Enforce the max credit amount against the projected credit limit
+      // (collateral × price × leverage), and cap the facility duration.
+      const levelMaxAmount = await this.userLevelService.getFeatureValue(userId, "CREDIT_MAX_AMOUNT");
+      const maxAmt =
+        openingTerms.creditMaxAmount != null
+          ? openingTerms.creditMaxAmount
+          : typeof levelMaxAmount === "object"
+            ? Number(levelMaxAmount?.amount)
+            : Number(levelMaxAmount);
       const unitPrice =
         depositWallet.symbolId === level.creditBaseSymbolId ? 1 : collateralPrice || 0;
       const projectedCredit =
@@ -547,10 +580,16 @@ export class CreditService {
 
       // Don't calculate credit amount yet - it will be calculated when user creates first order
       // using the current pair price at that moment
-      const maxDuration = await this.userLevelService.getFeatureValue(userId, "CREDIT_MAX_DURATION_DAYS");
-      const maxDays = typeof maxDuration === "object"
-        ? Number(maxDuration?.days ?? maxDuration?.amount)
-        : Number(maxDuration);
+      const levelMaxDuration = await this.userLevelService.getFeatureValue(
+        userId,
+        "CREDIT_MAX_DURATION_DAYS",
+      );
+      const maxDays =
+        openingTerms.creditMaxDurationDays != null
+          ? openingTerms.creditMaxDurationDays
+          : typeof levelMaxDuration === "object"
+            ? Number(levelMaxDuration?.days ?? levelMaxDuration?.amount)
+            : Number(levelMaxDuration);
       const expireAt =
         maxDays > 0
           ? new Date(Date.now() + maxDays * 24 * 60 * 60 * 1000)

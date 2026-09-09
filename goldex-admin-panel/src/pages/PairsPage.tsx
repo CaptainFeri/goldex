@@ -24,6 +24,14 @@ const EMPTY = {
   minSell: 0.001,
   maxSell: 100,
   decimals: 2,
+  buyDeadlineMode: "NONE",
+  sellDeadlineMode: "NONE",
+  buyWarnTime: "",
+  buyExpireTime: "",
+  sellWarnTime: "",
+  sellExpireTime: "",
+  deadlineTimezone: "Asia/Tehran",
+  holidayDates: [] as string[],
   buyWarnHours: "",
   buyExpireHours: "",
   buyGraceHours: "",
@@ -32,6 +40,24 @@ const EMPTY = {
   sellGraceHours: "",
   excludedDays: [] as number[],
 };
+
+// How a credit request on this pair falls due. Cash gold settles by a time of
+// day; a same-day havaleh settles a fixed span after it is registered.
+const DEADLINE_MODES = [
+  { value: "NONE", label: "بدون مهلت" },
+  { value: "RELATIVE", label: "ساعت پس از ثبت معامله" },
+  { value: "DAILY_CUTOFF", label: "تا ساعت مشخصی از روز" },
+];
+
+const WEEKDAYS = [
+  { value: 0, label: "یکشنبه" },
+  { value: 1, label: "دوشنبه" },
+  { value: 2, label: "سه‌شنبه" },
+  { value: 3, label: "چهارشنبه" },
+  { value: 4, label: "پنج‌شنبه" },
+  { value: 5, label: "جمعه" },
+  { value: 6, label: "شنبه" },
+];
 
 function PairForm({ initial, symbols, onClose }: { initial?: any; symbols: any[]; onClose: () => void }) {
   const qc = useQueryClient();
@@ -52,6 +78,14 @@ function PairForm({ initial, symbols, onClose }: { initial?: any; symbols: any[]
           minSell: Number(initial.minSell ?? 0.001),
           maxSell: Number(initial.maxSell ?? 100),
           decimals: Number(initial.decimals ?? 2),
+          buyDeadlineMode: initial.buyDeadlineMode ?? "NONE",
+          sellDeadlineMode: initial.sellDeadlineMode ?? "NONE",
+          buyWarnTime: initial.buyWarnTime ?? "",
+          buyExpireTime: initial.buyExpireTime ?? "",
+          sellWarnTime: initial.sellWarnTime ?? "",
+          sellExpireTime: initial.sellExpireTime ?? "",
+          deadlineTimezone: initial.deadlineTimezone ?? "Asia/Tehran",
+          holidayDates: initial.holidayDates ?? [],
           buyWarnHours: initial.buyWarnHours ?? "",
           buyExpireHours: initial.buyExpireHours ?? "",
           buyGraceHours: initial.buyGraceHours ?? "",
@@ -94,6 +128,16 @@ function PairForm({ initial, symbols, onClose }: { initial?: any; symbols: any[]
       minSell: n(form.minSell),
       maxSell: n(form.maxSell),
       decimals: n(form.decimals),
+      buyDeadlineMode: form.buyDeadlineMode || "NONE",
+      sellDeadlineMode: form.sellDeadlineMode || "NONE",
+      // Only the fields the chosen mode reads are sent, so switching a side to
+      // the other convention does not leave the old settings behind.
+      buyWarnTime: form.buyDeadlineMode === "DAILY_CUTOFF" ? form.buyWarnTime || null : null,
+      buyExpireTime: form.buyDeadlineMode === "DAILY_CUTOFF" ? form.buyExpireTime || null : null,
+      sellWarnTime: form.sellDeadlineMode === "DAILY_CUTOFF" ? form.sellWarnTime || null : null,
+      sellExpireTime: form.sellDeadlineMode === "DAILY_CUTOFF" ? form.sellExpireTime || null : null,
+      deadlineTimezone: form.deadlineTimezone || "Asia/Tehran",
+      holidayDates: form.holidayDates?.length ? form.holidayDates : null,
       buyWarnHours: form.buyWarnHours ? n(form.buyWarnHours) : null,
       buyExpireHours: form.buyExpireHours ? n(form.buyExpireHours) : null,
       buyGraceHours: form.buyGraceHours ? n(form.buyGraceHours) : null,
@@ -145,46 +189,72 @@ function PairForm({ initial, symbols, onClose }: { initial?: any; symbols: any[]
         </div>
 
         <details style={{ margin: "12px 0", padding: 10, border: "1px solid var(--line)", borderRadius: 8 }}>
-          <summary style={{ cursor: "pointer", fontWeight: 500, fontSize: "0.9rem" }}>محدودیت زمانی درخواست‌های اعتباری (Credit Pend Deadlines)</summary>
-          <div className="grid grid-3" style={{ marginTop: 10 }}>
-            <div className="field">
-              <label>خرید — هشدار (ساعت)</label>
-              <input className="input mono" dir="ltr" type="number" min={0} value={form.buyWarnHours} onChange={(e) => set("buyWarnHours", e.target.value)} placeholder="x" />
-            </div>
-            <div className="field">
-              <label>خرید — انقضا (ساعت)</label>
-              <input className="input mono" dir="ltr" type="number" min={0} value={form.buyExpireHours} onChange={(e) => set("buyExpireHours", e.target.value)} placeholder="y" />
-            </div>
-            <div className="field">
-              <label>خرید — مهلت پس از انقضا (ساعت)</label>
-              <input className="input mono" dir="ltr" type="number" min={0} value={form.buyGraceHours} onChange={(e) => set("buyGraceHours", e.target.value)} placeholder="z" />
-            </div>
-            <div className="field">
-              <label>فروش — هشدار (ساعت)</label>
-              <input className="input mono" dir="ltr" type="number" min={0} value={form.sellWarnHours} onChange={(e) => set("sellWarnHours", e.target.value)} placeholder="x" />
-            </div>
-            <div className="field">
-              <label>فروش — انقضا (ساعت)</label>
-              <input className="input mono" dir="ltr" type="number" min={0} value={form.sellExpireHours} onChange={(e) => set("sellExpireHours", e.target.value)} placeholder="y" />
-            </div>
-            <div className="field">
-              <label>فروش — مهلت پس از انقضا (ساعت)</label>
-              <input className="input mono" dir="ltr" type="number" min={0} value={form.sellGraceHours} onChange={(e) => set("sellGraceHours", e.target.value)} placeholder="z" />
-            </div>
-          </div>
-          
+          <summary style={{ cursor: "pointer", fontWeight: 500, fontSize: "0.9rem" }}>رفتار معاملات اعتباری — مهلت تعیین تکلیف</summary>
+
+          {(["buy", "sell"] as const).map((side) => {
+            const mode = form[`${side}DeadlineMode`];
+            const title = side === "buy" ? "خرید" : "فروش";
+            return (
+              <div key={side} style={{ marginTop: 12, paddingTop: 10, borderTop: "1px solid var(--line)" }}>
+                <div className="field">
+                  <label>{title} — نوع مهلت</label>
+                  <select className="select" value={mode} onChange={(e) => set(`${side}DeadlineMode`, e.target.value)}>
+                    {DEADLINE_MODES.map((m) => <option key={m.value} value={m.value}>{m.label}</option>)}
+                  </select>
+                </div>
+
+                {mode === "RELATIVE" && (
+                  <div className="grid grid-3" style={{ marginTop: 8 }}>
+                    <div className="field">
+                      <label>هشدار (ساعت پس از ثبت)</label>
+                      <input className="input mono" dir="ltr" type="number" min={0} step="0.5" value={form[`${side}WarnHours`]} onChange={(e) => set(`${side}WarnHours`, e.target.value)} placeholder="x" />
+                    </div>
+                    <div className="field">
+                      <label>انقضا (ساعت پس از ثبت)</label>
+                      <input className="input mono" dir="ltr" type="number" min={0} step="0.5" value={form[`${side}ExpireHours`]} onChange={(e) => set(`${side}ExpireHours`, e.target.value)} placeholder="y" />
+                    </div>
+                    <div className="field">
+                      <label>مهلت پس از انقضا (ساعت)</label>
+                      <input className="input mono" dir="ltr" type="number" min={0} step="0.5" value={form[`${side}GraceHours`]} onChange={(e) => set(`${side}GraceHours`, e.target.value)} placeholder="z" />
+                    </div>
+                  </div>
+                )}
+
+                {mode === "DAILY_CUTOFF" && (
+                  <div className="grid grid-3" style={{ marginTop: 8 }}>
+                    <div className="field">
+                      <label>ساعت هشدار</label>
+                      <input className="input mono" dir="ltr" type="time" value={form[`${side}WarnTime`]} onChange={(e) => set(`${side}WarnTime`, e.target.value)} />
+                    </div>
+                    <div className="field">
+                      <label>ساعت انقضا (سررسید روز)</label>
+                      <input className="input mono" dir="ltr" type="time" value={form[`${side}ExpireTime`]} onChange={(e) => set(`${side}ExpireTime`, e.target.value)} required />
+                    </div>
+                    <div className="field">
+                      <label>مهلت پس از انقضا (ساعت)</label>
+                      <input className="input mono" dir="ltr" type="number" min={0} step="0.5" value={form[`${side}GraceHours`]} onChange={(e) => set(`${side}GraceHours`, e.target.value)} placeholder="z" />
+                    </div>
+                  </div>
+                )}
+
+                {mode === "DAILY_CUTOFF" && (
+                  <div className="hint" style={{ fontSize: "0.8rem", opacity: 0.75 }}>
+                    معامله‌ای که پس از ساعت انقضا ثبت شود، به سررسید نخستین روز کاری بعد منتقل می‌شود.
+                  </div>
+                )}
+              </div>
+            );
+          })}
+
           <div className="field" style={{ marginTop: 15 }}>
-            <label>روزهای مستثنی از محاسبه مهلت</label>
+            <label>منطقه زمانی مهلت‌ها</label>
+            <input className="input mono" dir="ltr" value={form.deadlineTimezone} onChange={(e) => set("deadlineTimezone", e.target.value)} placeholder="Asia/Tehran" />
+          </div>
+
+          <div className="field" style={{ marginTop: 15 }}>
+            <label>روزهای تعطیل هفتگی (مستثنی از مهلت)</label>
             <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginTop: 5 }}>
-              {[
-                { value: 0, label: "یکشنبه" },
-                { value: 1, label: "دوشنبه" },
-                { value: 2, label: "سه‌شنبه" },
-                { value: 3, label: "چهارشنبه" },
-                { value: 4, label: "پنج‌شنبه" },
-                { value: 5, label: "جمعه" },
-                { value: 6, label: "شنبه" },
-              ].map((day) => (
+              {WEEKDAYS.map((day) => (
                 <label key={day.value} style={{ display: "flex", alignItems: "center", gap: 4, fontSize: "0.85rem" }}>
                   <input
                     type="checkbox"
@@ -200,6 +270,36 @@ function PairForm({ initial, symbols, onClose }: { initial?: any; symbols: any[]
                   {day.label}
                 </label>
               ))}
+            </div>
+          </div>
+
+          <div className="field" style={{ marginTop: 15 }}>
+            <label>روزهای استثنایی (تعطیلات تقویمی)</label>
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center", marginTop: 5 }}>
+              {(form.holidayDates ?? []).map((date: string) => (
+                <span key={date} className="badge" style={{ display: "inline-flex", gap: 6, alignItems: "center" }}>
+                  <span dir="ltr" className="mono">{date}</span>
+                  <button
+                    type="button"
+                    className="btn ghost"
+                    style={{ padding: "0 6px", lineHeight: 1 }}
+                    onClick={() => set("holidayDates", form.holidayDates.filter((d: string) => d !== date))}
+                  >×</button>
+                </span>
+              ))}
+              <input
+                className="input mono"
+                dir="ltr"
+                type="date"
+                style={{ maxWidth: 170 }}
+                value=""
+                onChange={(e) => {
+                  const value = e.target.value;
+                  if (!value) return;
+                  const current: string[] = form.holidayDates ?? [];
+                  if (!current.includes(value)) set("holidayDates", [...current, value].sort());
+                }}
+              />
             </div>
           </div>
         </details>

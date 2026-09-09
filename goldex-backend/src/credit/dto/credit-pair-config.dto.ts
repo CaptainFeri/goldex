@@ -1,5 +1,14 @@
 import { ApiPropertyOptional } from "@nestjs/swagger";
-import { IsBoolean, IsEnum, IsInt, IsNumber, IsOptional, Max, Min } from "class-validator";
+import {
+  IsBoolean,
+  IsEnum,
+  IsInt,
+  IsNumber,
+  IsOptional,
+  IsUUID,
+  Max,
+  Min,
+} from "class-validator";
 import { Type } from "class-transformer";
 import { CreditEnforceModeEnum } from "../enum/credit-enforce-mode.enum";
 
@@ -134,6 +143,31 @@ export class CreditPairConfigDto {
   @Type(() => Number)
   @ApiPropertyOptional({ description: "Largest credit trade quantity accepted on this pair" })
   creditMaxTradeSize?: number;
+
+  // ── Terms for opening a facility collateralised on this pair ──────
+  @IsOptional()
+  @IsUUID()
+  @ApiPropertyOptional({ description: "Credit currency for this pair (its quote symbol)" })
+  creditBaseSymbolId?: string;
+
+  @IsOptional()
+  @IsBoolean()
+  @ApiPropertyOptional({ description: "Require KYC to open a facility against this pair" })
+  creditRequireKyc?: boolean;
+
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  @Type(() => Number)
+  @ApiPropertyOptional({ description: "Max credit limit against this pair (0 = unlimited)" })
+  creditMaxAmount?: number;
+
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  @Type(() => Number)
+  @ApiPropertyOptional({ description: "Max facility duration in days against this pair (0 = none)" })
+  creditMaxDurationDays?: number;
 }
 
 /** The same shape as plain data, for the level's `creditConfigs` jsonb. */
