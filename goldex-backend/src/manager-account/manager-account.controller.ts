@@ -14,6 +14,12 @@ import {
   UseGuards,
 } from "@nestjs/common";
 import { ApiBearerAuth, ApiOperation, ApiTags } from "@nestjs/swagger";
+import { ApiEnvelopeResponse } from "../shared/swagger";
+import {
+  ManagerAccountDto,
+  ManagerAccountLedgerPageDto,
+  ManagerFundingRequestDto,
+} from "./dto/manager-account-response.dto";
 import { ManagerAccountService } from "./manager-account.service";
 import { CreateFundingRequestDto } from "./dto/create-funding-request.dto";
 import { ReviewFundingRequestDto } from "./dto/review-funding-request.dto";
@@ -34,6 +40,7 @@ export class ManagerAccountController {
   @Get()
   @AdminRoles(AdminRole.SUPER_ADMIN, AdminRole.ADMIN, AdminRole.FINANCE)
   @ApiOperation({ summary: "Manager trading accounts and their frozen allocations" })
+  @ApiEnvelopeResponse(ManagerAccountDto, { isArray: true })
   async list(@Query("adminId") adminId?: string, @Query("symbolId") symbolId?: string) {
     return { data: await this.service.listAccounts({ adminId, symbolId }) };
   }
@@ -41,6 +48,7 @@ export class ManagerAccountController {
   @Get("funding")
   @AdminRoles(AdminRole.SUPER_ADMIN, AdminRole.ADMIN, AdminRole.FINANCE)
   @ApiOperation({ summary: "Funding requests awaiting or past senior-admin review" })
+  @ApiEnvelopeResponse(ManagerFundingRequestDto, { isArray: true })
   async listFunding(@Query("status") status?: ManagerFundingStatusEnum, @Query("adminId") adminId?: string) {
     return { data: await this.service.listFundingRequests({ status, adminId }) };
   }
@@ -48,6 +56,7 @@ export class ManagerAccountController {
   @Post("funding")
   @AdminRoles(AdminRole.SUPER_ADMIN, AdminRole.ADMIN)
   @ApiOperation({ summary: "Request that a manager's account be charged or unwound" })
+  @ApiEnvelopeResponse(ManagerFundingRequestDto, { status: 201 })
   async requestFunding(@Body() dto: CreateFundingRequestDto, @Req() req: AdminExpressRequest) {
     return { data: await this.service.requestFunding(dto, this.adminId(req)) };
   }
@@ -55,6 +64,7 @@ export class ManagerAccountController {
   @Patch("funding/:id/review")
   @AdminRoles(AdminRole.SUPER_ADMIN)
   @ApiOperation({ summary: "Senior-admin approval or rejection of a funding request" })
+  @ApiEnvelopeResponse(ManagerFundingRequestDto)
   async reviewFunding(
     @Param("id", ParseUUIDPipe) id: string,
     @Body() dto: ReviewFundingRequestDto,
@@ -69,12 +79,15 @@ export class ManagerAccountController {
   @Patch("funding/:id/cancel")
   @AdminRoles(AdminRole.SUPER_ADMIN, AdminRole.ADMIN)
   @ApiOperation({ summary: "Withdraw a funding request you raised" })
+  @ApiEnvelopeResponse(ManagerFundingRequestDto)
   async cancelFunding(@Param("id", ParseUUIDPipe) id: string, @Req() req: AdminExpressRequest) {
     return { data: await this.service.cancelFunding(id, this.adminId(req)) };
   }
 
   @Get(":id")
   @AdminRoles(AdminRole.SUPER_ADMIN, AdminRole.ADMIN, AdminRole.FINANCE)
+  @ApiOperation({ summary: "One manager account with its balances" })
+  @ApiEnvelopeResponse(ManagerAccountDto)
   async get(@Param("id", ParseUUIDPipe) id: string) {
     return { data: await this.service.getAccount(id) };
   }
@@ -82,6 +95,7 @@ export class ManagerAccountController {
   @Get(":id/ledger")
   @AdminRoles(AdminRole.SUPER_ADMIN, AdminRole.ADMIN, AdminRole.FINANCE)
   @ApiOperation({ summary: "Every movement on the account, newest first" })
+  @ApiEnvelopeResponse(ManagerAccountLedgerPageDto)
   async ledger(
     @Param("id", ParseUUIDPipe) id: string,
     @Query("limit", new DefaultValuePipe(100), ParseIntPipe) limit: number,
@@ -93,6 +107,7 @@ export class ManagerAccountController {
   @Patch(":id/status")
   @AdminRoles(AdminRole.SUPER_ADMIN)
   @ApiOperation({ summary: "Suspend or reactivate a manager account" })
+  @ApiEnvelopeResponse(ManagerAccountDto)
   async setStatus(@Param("id", ParseUUIDPipe) id: string, @Body() dto: UpdateAccountStatusDto) {
     return { data: await this.service.setAccountStatus(id, dto.status, dto.note) };
   }
