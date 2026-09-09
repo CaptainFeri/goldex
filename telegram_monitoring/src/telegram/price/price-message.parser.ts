@@ -1,4 +1,5 @@
 import { ParsedPrice, OurAction, PriceSubType } from './price.types';
+import { tomanToRial } from '../common/currency';
 
 /** Strips pictographic emojis + variation selectors and collapses whitespace. */
 function stripEmojis(input: string): string {
@@ -27,6 +28,9 @@ const SUBTYPE_BY_KEYWORD: Record<string, PriceSubType> = {
 /**
  * Parses a raw channel message into a {@link ParsedPrice}, or `null` if the
  * text is not a recognizable price post.
+ *
+ * The returned price is in **Rial**: the channel writes Toman, and this is the
+ * service's unit boundary.
  */
 export function parsePriceMessage(
   text: string | undefined,
@@ -41,8 +45,11 @@ export function parsePriceMessage(
 
   const [, priceRaw, sideLabel, deliveryRaw, quantityRaw, subKeyword] = match;
 
-  const price = Number(priceRaw.replace(/,/g, ''));
-  if (!Number.isFinite(price) || price <= 0) return null;
+  const quoted = Number(priceRaw.replace(/,/g, ''));
+  if (!Number.isFinite(quoted) || quoted <= 0) return null;
+  // The channels quote Toman; this is the one place a price enters the service,
+  // so it is converted here and everything below works in Rial.
+  const price = tomanToRial(quoted);
 
   const quantity = Number(quantityRaw) || 1;
   const deliveryType = deliveryRaw.trim() || 'نامشخص';

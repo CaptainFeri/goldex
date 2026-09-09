@@ -1,4 +1,8 @@
 import { parsePriceMessage } from './price-message.parser';
+import { RIAL_PER_TOMAN } from '../common/currency';
+
+/** The channel posts Toman; the parser is the boundary that returns Rial. */
+const rial = (toman: number) => toman * RIAL_PER_TOMAN;
 
 describe('parsePriceMessage', () => {
   it('parses a خرید (we sell) with حواله and شنا sub-type + description', () => {
@@ -6,7 +10,7 @@ describe('parsePriceMessage', () => {
       '74,000,000 🔵خرید⏳با حواله 1 تا شنا\nتوضیحات ❗️ : ۷۳۸۰۰ب ۷۴۰۰۰ تعویضی',
     );
     expect(parsed).toMatchObject({
-      price: 74000000,
+      price: rial(74_000_000),
       sideLabel: 'خرید',
       ourAction: 'WE_SELL',
       subType: 'shena',
@@ -21,7 +25,7 @@ describe('parsePriceMessage', () => {
       '73,650,000 🔴فروش⏳بی حواله فردا💵💰 1 تا\nتوضیحات ❗️ : ۲۰۰ گرم',
     );
     expect(parsed).toMatchObject({
-      price: 73650000,
+      price: rial(73_650_000),
       sideLabel: 'فروش',
       ourAction: 'WE_BUY',
       subType: 'normal',
@@ -34,7 +38,7 @@ describe('parsePriceMessage', () => {
   it('parses روز delivery and multi-quantity', () => {
     const parsed = parsePriceMessage('73,550,000 🔵خرید☀️روز 3 تا');
     expect(parsed).toMatchObject({
-      price: 73550000,
+      price: rial(73_550_000),
       deliveryType: 'روز',
       quantity: 3,
       subType: 'normal',

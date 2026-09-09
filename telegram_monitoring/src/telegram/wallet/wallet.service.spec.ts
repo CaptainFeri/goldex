@@ -2,6 +2,7 @@ import { RedisService } from '../../redis/redis.service';
 import { TelegramService } from '../telegram.service';
 import { ChartImageService } from '../price/chart-image.service';
 import { MITHQALS_PER_KILO } from '../price/price.types';
+import { RIAL_PER_TOMAN } from '../common/currency';
 import type {
   ArbitrageOpportunity,
   MarketOpportunity,
@@ -23,14 +24,17 @@ type RebalanceInternals = {
 const rebalanceInternals = (s: WalletService): RebalanceInternals =>
   s as unknown as RebalanceInternals;
 
-function mockRedis(): RedisService {
+function mockRedis(stored?: { state?: unknown; trades?: unknown[] }): RedisService {
+  const trades = stored?.trades ?? [];
   const client = {
     set: jest.fn(async () => 'OK'),
     setex: jest.fn(async () => 'OK'),
-    get: jest.fn(async () => null),
-    mget: jest.fn(async () => []),
+    get: jest.fn(async () =>
+      stored?.state ? JSON.stringify(stored.state) : null,
+    ),
+    mget: jest.fn(async () => trades.map((t) => JSON.stringify(t))),
     zadd: jest.fn(async () => 1),
-    zrange: jest.fn(async () => []),
+    zrange: jest.fn(async () => trades.map((_, i) => String(i + 1))),
     on: jest.fn(),
     quit: jest.fn(),
   } as any;
@@ -53,15 +57,25 @@ function mockChartImage(
   } as any;
 }
 
+/**
+ * The scenarios below are written with the prices a channel actually posts,
+ * which are Toman, and converted where they enter the service — the same
+ * boundary `parsePriceMessage` applies. Everything the wallet returns is Rial.
+ */
+const rial = (toman: number) => toman * RIAL_PER_TOMAN;
+
+/** The wallet's seed cash, in Rial. */
+const SEED = rial(100_000_000_000);
+
 const amount = (price: number, kg: number) =>
-  Math.round(kgToMesqal(kg) * price);
+  Math.round(kgToMesqal(kg) * rial(price));
 
 const sellAmount = (price: number, kg: number) =>
-  Math.round(price * MITHQALS_PER_KILO * kg);
+  Math.round(rial(price) * MITHQALS_PER_KILO * kg);
 
-const TRADE_FEE_PER_MITHQAL = 10_000;
+const TRADE_FEE_PER_MITHQAL = rial(10_000);
 
-/** Exchange fee for one trade leg (per mesqal × mesqal quantity), Toman. */
+/** Exchange fee for one trade leg (per mesqal × mesqal quantity), Rial. */
 const fee = (kg: number) =>
   Math.round(kgToMesqal(kg) * TRADE_FEE_PER_MITHQAL);
 
@@ -71,7 +85,7 @@ const arbitrageProfit = (buy: number, sell: number, kg: number) =>
 
 function snapshot(price: number, side: 'خرید' | 'فروش'): PriceSnapshot {
   return {
-    price,
+    price: rial(price),
     sideLabel: side,
     ourAction: side === 'خرید' ? 'WE_SELL' : 'WE_BUY',
     subType: 'normal',
@@ -95,7 +109,7 @@ function arbitrageOpportunity(
     deliveryType: 'با حواله',
     buy: snapshot(buyPrice, 'فروش'),
     sell: snapshot(sellPrice, 'خرید'),
-    spread: sellPrice - buyPrice,
+    spread: rial(sellPrice - buyPrice),
     quantity,
     totalProfit: arbitrageProfit(buyPrice, sellPrice, quantity),
   };
@@ -112,8 +126,8 @@ function marketOpportunity(
     deliveryType: 'با حواله',
     direction: ourAction === 'WE_BUY' ? 'DOWN' : 'UP',
     ourAction,
-    price,
-    previousPrice: price,
+    price: rial(price),
+    previousPrice: rial(price),
     changePercent: 0,
     messageId: 1,
     date: 1000,
@@ -130,7 +144,7 @@ describe('WalletService', () => {
 
   it('starts with a 100B IRR pool and no symbol wallets', () => {
     const snapshot = service.getSnapshot();
-    expect(snapshot.irrBalance).toBe(100_000_000_000);
+    expect(snapshot.irrBalance).toBe(SEED);
     expect(snapshot.totalRealizedProfit).toBe(0);
     expect(snapshot.symbols).toEqual([]);
   });
@@ -145,7 +159,7 @@ describe('WalletService', () => {
     expect(trades[0]).toMatchObject({
       source: 'ARBITRAGE',
       side: 'BUY',
-      price: 73_500_000,
+      price: rial(73_500_000),
       quantityKg: 1,
       amount: amount(73_500_000, 1),
       fee: fee(1),
@@ -160,7 +174,7 @@ describe('WalletService', () => {
 
     const snapshot = service.getSnapshot();
     expect(snapshot.irrBalance).toBe(
-      100_000_000_000 + arbitrageProfit(73_500_000, 73_600_000, 1),
+      SEED + arbitrageProfit(73_500_000, 73_600_000, 1),
     );
     expect(snapshot.totalRealizedProfit).toBe(
       arbitrageProfit(73_500_000, 73_600_000, 1),
@@ -179,7 +193,7 @@ describe('WalletService', () => {
 
     expect(trades.map((t) => t.executed)).toEqual([false, false]);
     expect(trades[0].reason).toContain('ریال');
-    expect(service.getSnapshot().irrBalance).toBe(100_000_000_000);
+    expect(service.getSnapshot().irrBalance).toBe(SEED);
     expect(service.getTrades({ executed: true })).toHaveLength(0);
   });
 
@@ -192,7 +206,7 @@ describe('WalletService', () => {
     const snapshot = service.getSnapshot();
     expect(snapshot.symbols[0].goldKg).toBe(0);
     expect(snapshot.irrBalance).toBe(
-      100_000_000_000 + arbitrageProfit(40_000_000, 40_100_000, 2),
+      SEED + arbitrageProfit(40_000_000, 40_100_000, 2),
     );
     expect(snapshot.totalRealizedProfit).toBe(
       arbitrageProfit(40_000_000, 40_100_000, 2),
@@ -209,8 +223,8 @@ describe('WalletService', () => {
       goldKg: 2,
       lots: [{ id: 1, pricePerKg: amount(75_000_000, 1), qtyKg: 2 }],
     });
-    internals.irrBalance = 10_000_000_000;
-    internals.lastPrices.set('با حواله', 75_000_000);
+    internals.irrBalance = rial(10_000_000_000);
+    internals.lastPrices.set('با حواله', rial(75_000_000));
 
     const trades = service.executeArbitrage(
       arbitrageOpportunity(75_000_000, 75_200_000),
@@ -232,7 +246,7 @@ describe('WalletService', () => {
     const snapshot = service.getSnapshot();
     expect(snapshot.symbols[0].goldKg).toBe(1);
     expect(snapshot.irrBalance).toBe(
-      10_000_000_000 +
+      rial(10_000_000_000) +
         amount(75_000_000, 1) -
         fee(1) +
         arbitrageProfit(75_000_000, 75_200_000, 1),
@@ -256,7 +270,7 @@ describe('WalletService', () => {
 
     const snapshot = service.getSnapshot();
     expect(snapshot.irrBalance).toBe(
-      100_000_000_000 - amount(73_500_000, 1) - fee(1),
+      SEED - amount(73_500_000, 1) - fee(1),
     );
     expect(snapshot.symbols[0]).toMatchObject({
       goldKg: 1,
@@ -274,7 +288,7 @@ describe('WalletService', () => {
       side: 'SELL',
       reason: expect.stringContaining('طلا'),
     });
-    expect(service.getSnapshot().irrBalance).toBe(100_000_000_000);
+    expect(service.getSnapshot().irrBalance).toBe(SEED);
     expect(service.getSnapshot().totalRealizedProfit).toBe(0);
   });
 
@@ -295,7 +309,7 @@ describe('WalletService', () => {
 
     const snapshot = service.getSnapshot();
     expect(snapshot.symbols[0].goldKg).toBe(0);
-    expect(snapshot.irrBalance).toBe(100_000_000_000 + profit);
+    expect(snapshot.irrBalance).toBe(SEED + profit);
     expect(snapshot.totalRealizedProfit).toBe(profit);
   });
 
@@ -325,7 +339,7 @@ describe('WalletService', () => {
 
     expect(trade?.executed).toBe(false);
     expect(trade?.reason).toContain('طلا');
-    expect(service.getSnapshot().irrBalance).toBe(100_000_000_000);
+    expect(service.getSnapshot().irrBalance).toBe(SEED);
   });
 
   it('sizes a WE_BUY down when the full quantity is not affordable', () => {
@@ -343,7 +357,7 @@ describe('WalletService', () => {
     const snapshot = service.getSnapshot();
     expect(snapshot.symbols[0].goldKg).toBe(3);
     expect(snapshot.irrBalance).toBe(
-      100_000_000_000 - amount(73_500_000, 3) - fee(3),
+      SEED - amount(73_500_000, 3) - fee(3),
     );
   });
 
@@ -373,16 +387,16 @@ describe('WalletService', () => {
 
   it('keeps a cash reserve and exposes equity/buying power in the snapshot', () => {
     const before = service.getSnapshot();
-    expect(before.equity).toBe(100_000_000_000);
-    expect(before.cashReserve).toBe(20_000_000_000);
-    expect(before.buyingPower).toBe(80_000_000_000);
+    expect(before.equity).toBe(SEED);
+    expect(before.cashReserve).toBe(SEED * 0.2);
+    expect(before.buyingPower).toBe(SEED * 0.8);
 
     service.executeMarketMaker(marketOpportunity(73_500_000, 'WE_BUY', 5));
     const after = service.getSnapshot();
-    expect(after.equity).toBeCloseTo(100_000_000_000, -5);
-    expect(after.cashReserve).toBeCloseTo(20_000_000_000, -5);
+    expect(after.equity).toBeCloseTo(SEED, -5);
+    expect(after.cashReserve).toBeCloseTo(SEED * 0.2, -5);
     expect(after.buyingPower).toBeCloseTo(
-      100_000_000_000 - amount(73_500_000, 3) - fee(3) - 20_000_000_000,
+      SEED - amount(73_500_000, 3) - fee(3) - SEED * 0.2,
       -5,
     );
   });
@@ -399,7 +413,7 @@ describe('WalletService', () => {
 
     const snapshot = service.getSnapshot();
     expect(snapshot.irrBalance).toBe(
-      100_000_000_000 + arbitrageProfit(73_500_000, 73_600_000, 4),
+      SEED + arbitrageProfit(73_500_000, 73_600_000, 4),
     );
     expect(snapshot.symbols[0].goldKg).toBe(0);
   });
@@ -610,7 +624,7 @@ describe('WalletService', () => {
     expect(before.symbols[0].goldKg).toBe(3);
 
     // Push the market price up so a profitable FIFO sale becomes possible.
-    rebalanceInternals(service).lastPrices.set('با حواله', 90_000_000);
+    rebalanceInternals(service).lastPrices.set('با حواله', rial(90_000_000));
     const trades = rebalanceInternals(service).rebalanceTrades();
 
     expect(trades).toHaveLength(1);
@@ -630,7 +644,7 @@ describe('WalletService', () => {
   it('skips rebalancing when the imbalance is within the tolerance band', () => {
     service.handleMarketOpportunity(marketOpportunity(73_500_000, 'WE_BUY'));
     // Cash equal to the gold value -> gap of zero vs. the 50% target.
-    const goldValue = 1 * 73_500_000 * MITHQALS_PER_KILO;
+    const goldValue = 1 * rial(73_500_000) * MITHQALS_PER_KILO;
     rebalanceInternals(service).irrBalance = Math.round(goldValue);
 
     const trades = rebalanceInternals(service).rebalanceTrades();
@@ -675,5 +689,82 @@ describe('WalletService', () => {
       .calls[1][0] as string;
     expect(report).toContain('تعادل دارایی');
     expect(report).toContain('خرید');
+  });
+});
+
+describe('WalletService persisted-state currency', () => {
+  let started: WalletService | null = null;
+
+  afterEach(async () => {
+    await started?.onModuleDestroy();
+    started = null;
+  });
+
+  /** A wallet saved before the service moved onto Rial: money in Toman, no marker. */
+  const legacyState = {
+    irrBalance: 50_000_000_000,
+    totalRealizedProfit: 1_000_000,
+    symbols: [
+      {
+        symbol: 'با حواله',
+        goldKg: 2,
+        lots: [{ id: 1, pricePerKg: 17_000_000_000, qtyKg: 2 }],
+      },
+    ],
+  };
+
+  const legacyTrade = {
+    id: 1,
+    date: 1000,
+    source: 'ARBITRAGE',
+    symbol: 'با حواله',
+    subType: 'normal',
+    side: 'BUY',
+    price: 73_500_000,
+    quantityKg: 1,
+    amount: 16_967_542_361,
+    fee: 2_308_509,
+    profit: 0,
+    executed: true,
+  };
+
+  it('scales a Toman wallet onto Rial exactly once', async () => {
+    const service = new WalletService(
+      mockRedis({ state: legacyState, trades: [legacyTrade] }),
+      mockTelegram(),
+      mockChartImage(),
+    );
+    started = service;
+    await service.onModuleInit();
+
+    const snapshot = service.getSnapshot();
+    expect(snapshot.irrBalance).toBe(rial(50_000_000_000));
+    expect(snapshot.totalRealizedProfit).toBe(rial(1_000_000));
+    expect(snapshot.symbols[0].lots[0].pricePerKg).toBe(rial(17_000_000_000));
+    // Gold quantities are kilograms, not money — they must not be scaled.
+    expect(snapshot.symbols[0].goldKg).toBe(2);
+
+    const [trade] = service.getTrades({});
+    expect(trade.price).toBe(rial(73_500_000));
+    expect(trade.amount).toBe(rial(16_967_542_361));
+    expect(trade.fee).toBe(rial(2_308_509));
+  });
+
+  it('leaves a wallet already marked as Rial alone', async () => {
+    const service = new WalletService(
+      mockRedis({
+        state: { ...legacyState, currency: 'IRR' },
+        trades: [legacyTrade],
+      }),
+      mockTelegram(),
+      mockChartImage(),
+    );
+    started = service;
+    await service.onModuleInit();
+
+    const snapshot = service.getSnapshot();
+    expect(snapshot.irrBalance).toBe(50_000_000_000);
+    expect(snapshot.symbols[0].lots[0].pricePerKg).toBe(17_000_000_000);
+    expect(service.getTrades({})[0].price).toBe(73_500_000);
   });
 });
