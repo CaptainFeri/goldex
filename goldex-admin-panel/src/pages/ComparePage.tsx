@@ -3,7 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Line } from "react-chartjs-2";
 import { api, unwrap, apiError } from "../api/client";
 import { Card, Loading, ErrorState, Empty, Badge } from "../components/ui";
-import { colorFor, fmtNum, fmtIrrFromToman, fmtTime, pairLabel, IRR_PER_TOMAN } from "../lib/format";
+import { colorFor, fmtNum, fmtTime, pairLabel } from "../lib/format";
 import { gridColor } from "../lib/chart";
 import type { CompareResponse, PricePair, HistoryResponse, ProviderSnapshot, ProviderSnapshotItem } from "../api/types";
 
@@ -120,7 +120,7 @@ function CompareTab() {
       const c = colorFor(s.providerKey);
       return {
         label: `${s.providerKey} (#${s.providerItemId})`,
-        data: allTs.map((t) => (map.has(t) ? Number(map.get(t)) * IRR_PER_TOMAN : null)),
+        data: allTs.map((t) => (map.has(t) ? Number(map.get(t)) : null)),
         borderColor: c,
         backgroundColor: c + "20",
         spanGaps: true,
@@ -253,9 +253,9 @@ function CompareTab() {
                         {s.providerKey}
                       </td>
                       <td className="mono">{s.providerItemId}</td>
-                      <td className="mono">{last ? fmtIrrFromToman(last.buyPrice) : "—"}</td>
-                      <td className="mono">{last ? fmtIrrFromToman(last.sellPrice) : "—"}</td>
-                      <td className="mono">{last ? fmtIrrFromToman(last.spread) : "—"}</td>
+                      <td className="mono">{last ? fmtNum(last.buyPrice) : "—"}</td>
+                      <td className="mono">{last ? fmtNum(last.sellPrice) : "—"}</td>
+                      <td className="mono">{last ? fmtNum(last.spread) : "—"}</td>
                       <td className="mono">{s.points.length}</td>
                     </tr>
                   );
@@ -304,8 +304,8 @@ function HistoryTab() {
     const points = history.data?.points ?? [];
     const labels = points.map((p) => new Date(p.timestamp));
     const datasets = [
-      { label: "خرید (ریال)", data: points.map((p) => p.buyPrice * IRR_PER_TOMAN), borderColor: "#2ea861", backgroundColor: "transparent", tension: 0.25, pointRadius: 0 },
-      { label: "فروش (ریال)", data: points.map((p) => p.sellPrice * IRR_PER_TOMAN), borderColor: "#e5544b", backgroundColor: "transparent", tension: 0.25, pointRadius: 0 },
+      { label: "خرید (ریال)", data: points.map((p) => p.buyPrice), borderColor: "#2ea861", backgroundColor: "transparent", tension: 0.25, pointRadius: 0 },
+      { label: "فروش (ریال)", data: points.map((p) => p.sellPrice), borderColor: "#e5544b", backgroundColor: "transparent", tension: 0.25, pointRadius: 0 },
     ];
     return { labels, datasets, n: points.length };
   }, [history.data]);
@@ -512,12 +512,12 @@ function CurrentTab() {
                     )}
                   </td>
                   <td className="mono" style={{ color: it.canBuy ? undefined : "var(--text-faint)" }}>
-                    {it.buyPrice == null ? "—" : fmtIrrFromToman(it.buyPrice, 2)}
+                    {it.buyPrice == null ? "—" : fmtNum(it.buyPrice, 2)}
                   </td>
                   <td className="mono" style={{ color: it.canSell ? undefined : "var(--text-faint)" }}>
-                    {it.sellPrice == null ? "—" : fmtIrrFromToman(it.sellPrice, 2)}
+                    {it.sellPrice == null ? "—" : fmtNum(it.sellPrice, 2)}
                   </td>
-                  <td className="mono">{it.spread == null ? "—" : fmtIrrFromToman(it.spread, 2)}</td>
+                  <td className="mono">{it.spread == null ? "—" : fmtNum(it.spread, 2)}</td>
                   <td>{it.unit ?? "—"}</td>
                   <td>
                     {it.stale ? (

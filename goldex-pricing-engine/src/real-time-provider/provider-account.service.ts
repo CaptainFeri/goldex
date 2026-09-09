@@ -471,7 +471,7 @@ export class ProviderAccountService implements OnApplicationBootstrap {
 
         if (newTxns.length > 0) {
           allTransactions = allTransactions.concat(newTxns);
-          await this.saveTalaabTransactions(provider.key, newTxns);
+          await this.saveTalaabTransactions(provider, newTxns);
         }
 
         if (hasReachedExisting || !response.data.data?.has_more_page) break;
@@ -501,12 +501,19 @@ export class ProviderAccountService implements OnApplicationBootstrap {
   }
 
   private async saveTalaabTransactions(
-    providerKey: string,
+    provider: ProviderEntity,
     transactions: TalaabTransaction[],
   ): Promise<void> {
+    const providerKey = provider.key;
+    // Each transaction labels the unit of its own rial leg; fall back to the
+    // unit the provider declared when it was defined. `provider_deals` stores
+    // Rial, so a Toman shop's figures are scaled here rather than downstream.
+    const declaredUnit = resolvePriceUnit(provider.priceUnit);
+
     for (const txn of transactions) {
       try {
         const orderId = `txn-${txn.sanad}`;
+        const cashUnit = unitFromPersianLabel(txn.affect?.rial?.unit) ?? declaredUnit;
 
         const existing = await this.dealRepo.findOne({
           where: { providerKey, orderId },
@@ -514,7 +521,7 @@ export class ProviderAccountService implements OnApplicationBootstrap {
 
         const isCustomerBuy = txn.title?.includes('خريد');
         const goldAffect = parseFloat(txn.affect?.gold?.balance || '0');
-        const rialAffect = parseFloat(txn.affect?.rial?.balance || '0');
+        const rialAffect = toRial(parseFloat(txn.affect?.rial?.balance || '0'), cashUnit);
 
         const carat = this.extractTalaabNumber(txn.description, 'عیار');
         const weight = this.extractTalaabNumber(txn.description, 'وزن');
@@ -536,9 +543,11 @@ export class ProviderAccountService implements OnApplicationBootstrap {
           orderStatusStr: 'انجام شده',
           dealStatus: DealStatus.DONE,
           count: Math.abs(goldAffect),
-          totalPrice: Math.abs(parseFloat(txn.affect?.rial?.balance || '0')),
-          mazane,
-          mazaneStr: mazane ? mazane.toLocaleString() : null,
+          totalPrice: Math.abs(rialAffect),
+          // The mazaneh is parsed out of the description, which is written in
+          // the shop's own unit like the rest of its money.
+          mazane: toRial(mazane, cashUnit),
+          mazaneStr: mazane ? toRial(mazane, cashUnit).toLocaleString() : null,
           carat,
           weight750: weight,
           orderDate: this.parsePersianDate(txn.date, txn.time),
