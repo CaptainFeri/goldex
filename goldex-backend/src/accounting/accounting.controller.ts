@@ -1,5 +1,12 @@
 import { Body, Controller, Get, Patch, Query, Req, UseGuards } from "@nestjs/common";
 import { ApiBearerAuth, ApiOperation, ApiQuery, ApiTags } from "@nestjs/swagger";
+import { ApiEnvelopeResponse } from "../shared/swagger";
+import {
+  AccountingHoldingsDto,
+  AccountingProfitSummaryDto,
+  AccountingRatesDto,
+  AccountingSettingsDto,
+} from "./dto/accounting-response.dto";
 import { AccountingService } from "./accounting.service";
 import { AccountingSettingService } from "./accounting-setting.service";
 import { UpdateAccountingSettingDto } from "./dto/update-accounting-setting.dto";
@@ -21,6 +28,7 @@ export class AccountingController {
   @Get("settings")
   @AdminRoles(AdminRole.SUPER_ADMIN, AdminRole.ADMIN, AdminRole.FINANCE)
   @ApiOperation({ summary: "Accounting policy: reference (pricing) symbol and valuation basis" })
+  @ApiEnvelopeResponse(AccountingSettingsDto)
   async getSettings() {
     const [settings, reference] = await Promise.all([
       this.settings.get(),
@@ -44,6 +52,7 @@ export class AccountingController {
   @Patch("settings")
   @AdminRoles(AdminRole.SUPER_ADMIN, AdminRole.ADMIN)
   @ApiOperation({ summary: "Choose the pricing symbol the books are reported in" })
+  @ApiEnvelopeResponse(AccountingSettingsDto)
   async updateSettings(@Body() dto: UpdateAccountingSettingDto, @Req() req: any) {
     return { data: await this.settings.update(dto, req?.admin?.id) };
   }
@@ -55,6 +64,7 @@ export class AccountingController {
   })
   @ApiQuery({ name: "from", required: false, description: "ISO date (default: 30 days ago)" })
   @ApiQuery({ name: "to", required: false, description: "ISO date (default: now)" })
+  @ApiEnvelopeResponse(AccountingProfitSummaryDto)
   async summary(@Query("from") from?: string, @Query("to") to?: string) {
     return {
       data: await this.accounting.getProfitSummary({
@@ -67,6 +77,7 @@ export class AccountingController {
   @Get("holdings")
   @AdminRoles(AdminRole.SUPER_ADMIN, AdminRole.ADMIN, AdminRole.FINANCE)
   @ApiOperation({ summary: "Customer and system balances valued in the reference symbol" })
+  @ApiEnvelopeResponse(AccountingHoldingsDto)
   async holdings() {
     return { data: await this.accounting.getHoldings() };
   }
@@ -74,6 +85,7 @@ export class AccountingController {
   @Get("rates")
   @AdminRoles(AdminRole.SUPER_ADMIN, AdminRole.ADMIN, AdminRole.FINANCE)
   @ApiOperation({ summary: "Live conversion rate from each symbol into the reference" })
+  @ApiEnvelopeResponse(AccountingRatesDto)
   async rates() {
     return { data: await this.accounting.getRates() };
   }
