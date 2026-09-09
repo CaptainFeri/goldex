@@ -7,10 +7,15 @@ import {
   IsOptional,
   IsString,
   IsUUID,
+  Max,
   Min,
 } from "class-validator";
 import { Type } from "class-transformer";
 import { CreditEnforceModeEnum } from "../../credit/enum/credit-enforce-mode.enum";
+import { CreditPairConfigDto } from "../../credit/dto/credit-pair-config.dto";
+import { CashoutSourceEnum } from "../../credit/enum/cashout-source.enum";
+import { SettlementMethodEnum } from "../../credit/enum/settlement-workflow-status.enum";
+import { IsCreditPairConfigMap } from "../validator/credit-pair-config-map.validator";
 
 export class CreateLevelDto {
   @IsString()
@@ -112,7 +117,120 @@ export class CreateLevelDto {
   @ApiProperty({ required: false, description: "Max credit duration in days (0 = no expiry)" })
   creditMaxDurationDays?: number;
 
+  // ── Credit risk measurement defaults ───────────────────────────────
   @IsOptional()
-  @ApiProperty({ required: false, type: Object, description: "Per-pair credit configs keyed by price pair id" })
-  creditConfigs?: Record<string, any>;
+  @IsNumber()
+  @Min(0)
+  @Max(100)
+  @Type(() => Number)
+  @ApiProperty({ required: false, description: "Margin ratio (%) at which a facility is warned" })
+  creditWarningMarginPercent?: number;
+
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  @Max(100)
+  @Type(() => Number)
+  @ApiProperty({ required: false, description: "Margin ratio (%) at which a facility is margin-called" })
+  creditMarginCallPercent?: number;
+
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  @Max(100)
+  @Type(() => Number)
+  @ApiProperty({ required: false, description: "Margin ratio (%) at which positions are liquidated" })
+  creditLiquidationMarginPercent?: number;
+
+  @IsOptional()
+  @IsBoolean()
+  @ApiProperty({ required: false, description: "Block exposure-increasing orders once warned" })
+  creditReduceOnlyOnWarning?: boolean;
+
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  @Type(() => Number)
+  @ApiProperty({ required: false, description: "Max chained credit trades (hops)" })
+  creditMaxExecutionLevel?: number;
+
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  @Type(() => Number)
+  @ApiProperty({ required: false, description: "Smallest credit trade quantity" })
+  creditMinTradeSize?: number;
+
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  @Type(() => Number)
+  @ApiProperty({ required: false, description: "Largest credit trade quantity" })
+  creditMaxTradeSize?: number;
+
+  // ── Credit facility abilities ──────────────────────────────────────
+  @IsOptional()
+  @IsBoolean()
+  @ApiProperty({ required: false, description: "Opening a facility requires admin approval" })
+  creditRequireAdminApprovalForCreation?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
+  @ApiProperty({ required: false, description: "Settling a facility requires admin approval" })
+  creditRequireAdminApprovalForSettlement?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
+  @ApiProperty({ required: false, description: "Users on this level may settle their own facility" })
+  creditAllowUserSettlement?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
+  @ApiProperty({ required: false, description: "Cashing out a single credit purchase is allowed" })
+  creditCashoutEnabled?: boolean;
+
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  @Max(100)
+  @Type(() => Number)
+  @ApiProperty({ required: false, description: "Platform fee (%) charged on a credit cash-out" })
+  creditCashoutFeePercent?: number;
+
+  @IsOptional()
+  @IsEnum(CashoutSourceEnum, { each: true })
+  @ApiProperty({
+    required: false,
+    isArray: true,
+    enum: CashoutSourceEnum,
+    description: "Wallets a cash-out may be paid from (omit for both)",
+  })
+  creditAllowedCashoutSources?: CashoutSourceEnum[];
+
+  @IsOptional()
+  @IsEnum(SettlementMethodEnum, { each: true })
+  @ApiProperty({
+    required: false,
+    isArray: true,
+    enum: SettlementMethodEnum,
+    description: "Settlement methods offered on this level (omit for all)",
+  })
+  creditSettlementMethods?: SettlementMethodEnum[];
+
+  @IsOptional()
+  @IsBoolean()
+  @ApiProperty({ required: false, description: "Offsetting credit trades may be netted at settlement" })
+  creditNettingEnabled?: boolean;
+
+  // Keyed by price pair id; each value is validated as a CreditPairConfigDto so
+  // a typo in the admin panel is rejected here rather than silently ignored in
+  // the order path.
+  @IsOptional()
+  @IsCreditPairConfigMap()
+  @ApiProperty({
+    required: false,
+    type: Object,
+    description: "Per-pair credit configs keyed by price pair id",
+  })
+  creditConfigs?: Record<string, CreditPairConfigDto>;
 }

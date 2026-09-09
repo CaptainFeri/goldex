@@ -343,6 +343,23 @@ export class CreditCashoutService {
         throw new BadRequestException("CASHOUT_NOT_SUPPORTED_FOR_LEGACY_CREDIT");
       }
 
+      // Cash-out is a level ability: a level may withhold it entirely, or allow
+      // it only from the deposit wallet so collateral is never eaten into. Both
+      // were snapshotted onto the facility when it was opened.
+      const abilities = (credit.metadata?.abilities ?? {}) as {
+        cashoutEnabled?: boolean;
+        allowedCashoutSources?: string[] | null;
+      };
+      if (abilities.cashoutEnabled === false) {
+        throw new BadRequestException("CASHOUT_DISABLED_FOR_LEVEL");
+      }
+      const allowedSources = abilities.allowedCashoutSources;
+      if (allowedSources?.length && !allowedSources.includes(params.source)) {
+        throw new BadRequestException(
+          `CASHOUT_SOURCE_NOT_ALLOWED: this level allows ${allowedSources.join(", ")}`,
+        );
+      }
+
       const co = await manager.findOne(CreditOrderEntity, {
         where: { id: params.creditOrderId, creditId: credit.id },
         relations: { order: { pricePair: { baseSymbol: true, quoteSymbol: true } } },

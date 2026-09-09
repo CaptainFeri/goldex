@@ -4,6 +4,7 @@ import { UserEntity } from "../../user/entity/user.entity";
 import { PricePairEntity } from "../../admin-pair/entity/price.pair.entity";
 import { SymbolEntity } from "../../admin-symbol/entity/symbol.entity";
 import { CreditEnforceModeEnum } from "../../credit/enum/credit-enforce-mode.enum";
+import { CreditPairConfig } from "../../credit/dto/credit-pair-config.dto";
 
 @Entity("user_level")
 export class UserLevelEntity extends myBaseEntity {
@@ -94,10 +95,107 @@ export class UserLevelEntity extends myBaseEntity {
   @Column({ type: "int", nullable: true, name: "credit_max_duration_days" })
   creditMaxDurationDays: number;
 
+  // ── Credit risk measurement defaults ───────────────────────────────
+  // The margin-call ladder, as equity over open exposure in percent. A
+  // facility is warned at the first rung, margin-called at the second and
+  // force-liquidated at the third. Null leaves the engine's own default.
+  @Column({
+    type: "decimal",
+    precision: 5,
+    scale: 2,
+    nullable: true,
+    name: "credit_warning_margin_percent",
+  })
+  creditWarningMarginPercent: number;
+
+  @Column({
+    type: "decimal",
+    precision: 5,
+    scale: 2,
+    nullable: true,
+    name: "credit_margin_call_percent",
+  })
+  creditMarginCallPercent: number;
+
+  @Column({
+    type: "decimal",
+    precision: 5,
+    scale: 2,
+    nullable: true,
+    name: "credit_liquidation_margin_percent",
+  })
+  creditLiquidationMarginPercent: number;
+
+  // Whether a warned or margin-called facility may still open exposure.
+  @Column({ type: "boolean", nullable: true, name: "credit_reduce_only_on_warning" })
+  creditReduceOnlyOnWarning: boolean;
+
+  // Max chained credit trades (hops) before settlement is required.
+  @Column({ type: "int", nullable: true, name: "credit_max_execution_level" })
+  creditMaxExecutionLevel: number;
+
+  // Per-trade size bounds for credit orders, in the traded base symbol.
+  @Column({ type: "decimal", precision: 20, scale: 8, nullable: true, name: "credit_min_trade_size" })
+  creditMinTradeSize: number;
+
+  @Column({ type: "decimal", precision: 20, scale: 8, nullable: true, name: "credit_max_trade_size" })
+  creditMaxTradeSize: number;
+
+  // ── Credit facility abilities (what this level's users may do) ─────
+  // Whether opening a facility needs an admin to approve it first. When true
+  // the request is created PENDING with the collateral already frozen, and no
+  // credit line is issued until an admin approves.
+  @Column({
+    type: "boolean",
+    nullable: true,
+    default: false,
+    name: "credit_require_admin_approval_for_creation",
+  })
+  creditRequireAdminApprovalForCreation: boolean;
+
+  // Whether settling needs an admin to approve it before anything moves.
+  @Column({
+    type: "boolean",
+    nullable: true,
+    default: false,
+    name: "credit_require_admin_approval_for_settlement",
+  })
+  creditRequireAdminApprovalForSettlement: boolean;
+
+  // Whether the user may settle at all, or only an admin may close facilities.
+  @Column({ type: "boolean", nullable: true, default: true, name: "credit_allow_user_settlement" })
+  creditAllowUserSettlement: boolean;
+
+  // Whether a single credit purchase may be cashed out without closing the
+  // facility, from which wallets, and at what platform fee.
+  @Column({ type: "boolean", nullable: true, default: true, name: "credit_cashout_enabled" })
+  creditCashoutEnabled: boolean;
+
+  @Column({
+    type: "decimal",
+    precision: 5,
+    scale: 2,
+    nullable: true,
+    name: "credit_cashout_fee_percent",
+  })
+  creditCashoutFeePercent: number;
+
+  // Subset of CashoutSourceEnum ("DEPOSIT" | "COLLATERAL"); null = both.
+  @Column({ type: "jsonb", nullable: true, name: "credit_allowed_cashout_sources" })
+  creditAllowedCashoutSources: string[];
+
+  // Subset of SettlementMethodEnum ("FULL" | "NET" | "TOPUP"); null = all.
+  @Column({ type: "jsonb", nullable: true, name: "credit_settlement_methods" })
+  creditSettlementMethods: string[];
+
+  // Whether offsetting credit trades may be netted at settlement.
+  @Column({ type: "boolean", nullable: true, default: false, name: "credit_netting_enabled" })
+  creditNettingEnabled: boolean;
+
   // Per-pair credit structure: { [pairId]: CreditPairConfig }. When a pair is
   // configured here its settings override the level-level credit defaults above.
   @Column({ type: "jsonb", nullable: true, name: "credit_configs" })
-  creditConfigs: Record<string, any>;
+  creditConfigs: Record<string, CreditPairConfig>;
 
   @ManyToMany(() => PricePairEntity, (p) => p.levels)
   @JoinTable({

@@ -1,6 +1,27 @@
-import { IsString, IsNumber, IsBoolean, IsOptional, IsDecimal, Min, Max, IsArray, IsInt } from "class-validator";
+import {
+  IsString,
+  IsNumber,
+  IsBoolean,
+  IsOptional,
+  IsDecimal,
+  IsEnum,
+  Matches,
+  Min,
+  Max,
+  IsArray,
+  IsInt,
+} from "class-validator";
 import { Type } from "class-transformer";
 import { ApiProperty } from "@nestjs/swagger";
+import {
+  CreditDeadlineModeEnum,
+  DEFAULT_DEADLINE_TIMEZONE,
+} from "../../credit/enum/credit-deadline-mode.enum";
+
+/** 24-hour wall clock, e.g. "14:00". */
+const CLOCK_TIME_RE = /^([01]\d|2[0-3]):([0-5]\d)$/;
+/** Calendar day, e.g. "2026-03-21". */
+const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
 export class CreatePricePairDto {
   @IsString()
@@ -58,8 +79,59 @@ export class CreatePricePairDto {
   @ApiProperty()
   decimals: number;
 
-  // ── Credit v2 pend-deadline time limits (per side) ───────────────
-  // x = warn hours, y = expire hours, z = post-expire grace hours.
+  // ── Credit pend-deadline convention (per side) ───────────────────
+  // NONE = the pair never ages a credit request; RELATIVE = x/y/z hours from
+  // registration; DAILY_CUTOFF = a wall-clock time of day in `deadlineTimezone`.
+  @IsOptional()
+  @IsEnum(CreditDeadlineModeEnum)
+  @ApiProperty({ required: false, enum: CreditDeadlineModeEnum })
+  buyDeadlineMode?: CreditDeadlineModeEnum;
+
+  @IsOptional()
+  @IsEnum(CreditDeadlineModeEnum)
+  @ApiProperty({ required: false, enum: CreditDeadlineModeEnum })
+  sellDeadlineMode?: CreditDeadlineModeEnum;
+
+  @IsOptional()
+  @Matches(CLOCK_TIME_RE, { message: "buyWarnTime must be a 24h HH:mm time" })
+  @ApiProperty({ required: false, example: "12:00", description: "DAILY_CUTOFF warn time" })
+  buyWarnTime?: string;
+
+  @IsOptional()
+  @Matches(CLOCK_TIME_RE, { message: "buyExpireTime must be a 24h HH:mm time" })
+  @ApiProperty({ required: false, example: "14:00", description: "DAILY_CUTOFF settlement cutoff" })
+  buyExpireTime?: string;
+
+  @IsOptional()
+  @Matches(CLOCK_TIME_RE, { message: "sellWarnTime must be a 24h HH:mm time" })
+  @ApiProperty({ required: false, example: "12:00", description: "DAILY_CUTOFF warn time" })
+  sellWarnTime?: string;
+
+  @IsOptional()
+  @Matches(CLOCK_TIME_RE, { message: "sellExpireTime must be a 24h HH:mm time" })
+  @ApiProperty({ required: false, example: "14:00", description: "DAILY_CUTOFF settlement cutoff" })
+  sellExpireTime?: string;
+
+  @IsOptional()
+  @IsString()
+  @ApiProperty({
+    required: false,
+    default: DEFAULT_DEADLINE_TIMEZONE,
+    description: "IANA timezone every deadline on this pair is reckoned in",
+  })
+  deadlineTimezone?: string;
+
+  @IsOptional()
+  @IsArray()
+  @Matches(ISO_DATE_RE, { each: true, message: "holidayDates must be YYYY-MM-DD dates" })
+  @ApiProperty({
+    required: false,
+    type: [String],
+    description: "Dated exceptions (YYYY-MM-DD) on which this pair does not settle",
+  })
+  holidayDates?: string[];
+
+  // RELATIVE: x = warn hours, y = expire hours. z (grace) applies to both modes.
   @IsOptional()
   @IsNumber()
   @Min(0)
@@ -102,7 +174,7 @@ export class CreatePricePairDto {
   @ApiProperty({ required: false })
   sellGraceHours?: number;
 
-  // Excluded days from deadline calculation (0=Sunday, 1=Monday, ..., 5=Friday, 6=Saturday)
+  // Weekly closures skipped by every deadline on this pair.
   @IsOptional()
   @IsArray()
   @IsInt({ each: true })
