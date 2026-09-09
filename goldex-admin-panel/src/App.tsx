@@ -24,7 +24,6 @@ import DiscountsPage from "./pages/DiscountsPage";
 import CreditsPage from "./pages/CreditsPage";
 import FinanceLogsPage from "./pages/FinanceLogsPage";
 import ReportsPage from "./pages/ReportsPage";
-import AccountingPage from "./pages/AccountingPage";
 import AccountingVouchersPage from "./pages/AccountingVouchersPage";
 import RolesPage from "./pages/RolesPage";
 import SettingsPage from "./pages/SettingsPage";
