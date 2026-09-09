@@ -54,6 +54,7 @@ export class UserLevelService {
       await this.levelRepo.update({ isDefault: true }, { isDefault: false });
     }
     const { pairIds, ...rest } = dto;
+    this.validateCreditConfigPairs(dto.creditConfigs, pairIds ?? []);
     const saved = await this.levelRepo.save(this.levelRepo.create(rest));
     if (pairIds && pairIds.length > 0) {
       const pairs = await this.pairRepo.findBy({ id: In(pairIds) });
@@ -74,6 +75,13 @@ export class UserLevelService {
       await this.levelRepo.update({ isDefault: true }, { isDefault: false });
     }
     const { pairIds, ...rest } = dto;
+    // A per-pair config only means something for a pair the level actually
+    // trades; validate against the incoming selection, or the stored one when
+    // the patch does not touch the pairs.
+    this.validateCreditConfigPairs(
+      dto.creditConfigs,
+      pairIds ?? (level.pairs ?? []).map((p) => p.id),
+    );
     await this.levelRepo.update(id, rest);
     const baseSymbolId = dto.creditBaseSymbolId ?? level.creditBaseSymbolId;
     if (pairIds) {
@@ -82,6 +90,27 @@ export class UserLevelService {
       await this.levelRepo.save({ id, pairs });
     }
     return this.findById(id);
+  }
+
+  /**
+   * Reject credit settings written against a pair the level does not have.
+   *
+   * `creditConfigs` is keyed by pair id, so a stale key survives a pair being
+   * removed from the level and then silently governs nothing. Failing here
+   * keeps the level's credit rules and its pair selection in step.
+   */
+  private validateCreditConfigPairs(
+    creditConfigs: Record<string, unknown> | undefined,
+    pairIds: string[],
+  ): void {
+    if (!creditConfigs) return;
+    const selected = new Set(pairIds);
+    const orphans = Object.keys(creditConfigs).filter((pairId) => !selected.has(pairId));
+    if (orphans.length > 0) {
+      throw new BadRequestException(
+        `creditConfigs references pairs this level does not trade: ${orphans.join(", ")}`,
+      );
+    }
   }
 
   // Every pair of a level must be quoted in the level's credit base symbol

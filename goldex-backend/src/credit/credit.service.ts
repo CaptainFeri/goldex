@@ -1,7 +1,7 @@
 import { Injectable, NotFoundException, BadRequestException, Logger } from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
 import { EventEmitter2, OnEvent } from "@nestjs/event-emitter";
-import { Repository, DataSource, LessThan, IsNull, Not, In } from "typeorm";
+import { EntityManager, Repository, DataSource, LessThan, IsNull, Not, In } from "typeorm";
 import Decimal from "decimal.js";
 import { CreditEntity } from "./entity/credit.entity";
 import { CreditOrderEntity } from "./entity/credit-order.entity";
@@ -16,6 +16,10 @@ import { CreditNotificationTypeEnum } from "./enum/credit-notification-type.enum
 import { SettlementStateEnum } from "./enum/settlement-state.enum";
 import { RiskStateEnum } from "./enum/risk-state.enum";
 import { CreditEnforceModeEnum } from "./enum/credit-enforce-mode.enum";
+import {
+  resolveFacilityPairConfig,
+  snapshotCreditLevelDefaults,
+} from "./util/credit-pair-config.util";
 import { CreateCreditDto } from "./dto/create-credit.dto";
 import { RequestCreditDto } from "./dto/request-credit.dto";
 import { WalletTypeEnum } from "../wallet/enum/wallet-type.enum";
@@ -44,6 +48,11 @@ import { UserLevelService } from "../user-level/user-level.service";
 import { RIAL_SYMBOL_SLUG } from "../shared/constants/currency.constants";
 
 Decimal.set({ precision: 20, rounding: Decimal.ROUND_HALF_UP, toExpNeg: -7, toExpPos: 21 });
+
+// Margin rungs used when neither the pair nor the level configures one.
+// Equity as a fraction of open exposure: warn at 15%, margin-call at 7.5%.
+const DEFAULT_WARNING_MARGIN_RATIO = 0.15;
+const DEFAULT_MARGIN_CALL_RATIO = 0.075;
 
 @Injectable()
 export class CreditService {
@@ -601,14 +610,19 @@ export class CreditService {
       const creditLimit = collateralValue.mul(dto.leverage || 1);
       const sellCreditAmount = new Decimal(dto.amount).mul(dto.leverage || 1);
 
+      // Levels can require an admin to sign off before any credit is issued.
+      // The collateral is frozen either way — the request is real — but the
+      // facility waits in PENDING until an admin approves it.
+      const needsApproval = level.creditRequireAdminApprovalForCreation === true;
+
       const credit = manager.create(CreditEntity, {
         userId,
         adminId: null,
         creditCode,
         amount: creditLimit.toNumber(),
-        status: CreditStatusEnum.ACTIVE,
+        status: needsApproval ? CreditStatusEnum.PENDING : CreditStatusEnum.ACTIVE,
         expireAt,
-        activatedAt: new Date(),
+        activatedAt: needsApproval ? null : new Date(),
         leverage: dto.leverage,
         creditLimit: creditLimit.toNumber(),
         usedCredit: 0,
@@ -626,25 +640,137 @@ export class CreditService {
           level.creditMaxNotional != null ? Number(level.creditMaxNotional) : null,
         maxTotalLockedCollateral:
           level.creditMaxLockedCollateral != null ? Number(level.creditMaxLockedCollateral) : null,
+        // Settlement and cash-out policy is snapshotted from the level, so an
+        // open facility keeps the terms it was granted under even if the level
+        // is re-configured later. An admin can still override per facility.
+        requireAdminApprovalForSettlement:
+          level.creditRequireAdminApprovalForSettlement === true,
+        settlementMethods:
+          level.creditSettlementMethods?.length
+            ? level.creditSettlementMethods
+            : ["FULL", "NET", "TOPUP"],
+        nettingEnabled: level.creditNettingEnabled === true,
+        cashoutFeePercent:
+          level.creditCashoutFeePercent != null ? Number(level.creditCashoutFeePercent) : 0,
         metadata: {
           selfService: true,
           collateralWalletId: savedCollateralWallet.id,
           depositWalletId: depositWallet.id,
           maxParallelRequests: level.creditMaxParallelRequests,
           creditConfigs: level.creditConfigs || {},
+          // The level's credit rules as they stood at creation; the per-pair
+          // resolver layers `creditConfigs` over these on every order.
+          creditLevelDefaults: snapshotCreditLevelDefaults(level),
+          abilities: {
+            requiredAdminApprovalForCreation: needsApproval,
+            allowUserSettlement: level.creditAllowUserSettlement !== false,
+            cashoutEnabled: level.creditCashoutEnabled !== false,
+            allowedCashoutSources: level.creditAllowedCashoutSources?.length
+              ? level.creditAllowedCashoutSources
+              : null,
+          },
         },
       });
       const savedCredit = await manager.save(credit);
 
-      // ── Issue the CREDIT wallets (BUY = IRR creditLimit, SELL = base capacity) ──
-      let creditWallet = await manager.findOne(WalletEntity, {
-        where: { userId, symbolId: level.creditBaseSymbolId, walletType: WalletTypeEnum.CREDIT },
+      if (needsApproval) {
+        // No credit line yet: nothing is spendable until an admin approves.
+        await manager.save(
+          manager.create(CreditNotificationEntity, {
+            userId: savedCredit.userId,
+            creditId: savedCredit.id,
+            type: CreditNotificationTypeEnum.SETTLEMENT,
+            message:
+              `Credit request ${savedCredit.creditCode} submitted with leverage ${dto.leverage}x ` +
+              `and is awaiting admin approval. Your collateral is held until it is decided.`,
+            isRead: false,
+          }),
+        );
+        return savedCredit;
+      }
+
+      const issued = await this.issueCreditLine(manager, savedCredit, unitPrice);
+
+      const notification = manager.create(CreditNotificationEntity, {
+        userId: issued.userId,
+        creditId: issued.id,
+        type: CreditNotificationTypeEnum.SETTLEMENT,
+        message:
+          `Credit ${issued.creditCode} opened with leverage ${dto.leverage}x. ` +
+          `Credit limit ${creditLimit.toFixed(0)} ${level.creditBaseSymbolId}.`,
+        isRead: false,
+      });
+      await manager.save(notification);
+
+      return issued;
+    });
+  }
+
+
+  /**
+   * Issue a facility's credit line: a CREDIT wallet in the credit currency
+   * holding the BUY capacity, and one in the collateral symbol holding the
+   * leveraged SELL capacity.
+   *
+   * Split out of `requestCredit` because a level may require an admin to
+   * approve the request first — the collateral is frozen at request time and
+   * the line is only issued here, on approval, from the amounts the facility
+   * already carries.
+   */
+  private async issueCreditLine(
+    manager: EntityManager,
+    credit: CreditEntity,
+    unitPrice: number,
+  ): Promise<CreditEntity> {
+    const creditLimit = new Decimal(credit.creditLimit || 0);
+    const sellCreditAmount = new Decimal(credit.collateralAmount || 0).mul(credit.leverage || 1);
+
+    // ── Issue the CREDIT wallets (BUY = IRR creditLimit, SELL = base capacity) ──
+    let creditWallet = await manager.findOne(WalletEntity, {
+      where: { userId: credit.userId, symbolId: credit.creditBaseSymbolId, walletType: WalletTypeEnum.CREDIT },
+      lock: { mode: "pessimistic_write" },
+    });
+    if (!creditWallet) {
+      creditWallet = manager.create(WalletEntity, {
+        userId: credit.userId,
+        symbolId: credit.creditBaseSymbolId,
+        walletType: WalletTypeEnum.CREDIT,
+        status: WalletStatusEnum.ACTIVE,
+        freeBalance: 0,
+        lockedBalance: 0,
+        availableBalance: 0,
+        creditBalance: 0,
+        frozenFreeBalance: 0,
+        frozenLockedBalance: 0,
+      });
+    }
+    creditWallet.creditBalance = new Decimal(creditWallet.creditBalance || 0).plus(creditLimit).toNumber();
+    creditWallet.freeBalance = new Decimal(creditWallet.availableBalance || 0).plus(creditWallet.creditBalance).toNumber();
+    const savedCreditWallet = await manager.save(creditWallet);
+    await manager.save(
+      manager.create(TransactionEntity, {
+        walletId: savedCreditWallet.id,
+        transactionId: crypto.randomUUID(),
+        transactionType: TransactionTypeEnum.CREDIT_DEPOSIT,
+        status: TransactionStatusEnum.COMPLETED,
+        amount: creditLimit.toNumber(),
+        fee: 0,
+        description: `Credit line issued on credit creation`,
+        metadata: { creditId: credit.id, leverage: credit.leverage, collateralPrice: unitPrice },
+        completedAt: new Date(),
+      }),
+    );
+
+    let sellCreditWalletId: string | null = null;
+    if (sellCreditAmount.greaterThan(0)) {
+      let baseCreditWallet = await manager.findOne(WalletEntity, {
+        where: { userId: credit.userId, symbolId: credit.collateralSymbolId, walletType: WalletTypeEnum.CREDIT },
         lock: { mode: "pessimistic_write" },
       });
-      if (!creditWallet) {
-        creditWallet = manager.create(WalletEntity, {
-          userId,
-          symbolId: level.creditBaseSymbolId,
+      if (!baseCreditWallet) {
+        baseCreditWallet = manager.create(WalletEntity, {
+          userId: credit.userId,
+          symbolId: credit.collateralSymbolId,
           walletType: WalletTypeEnum.CREDIT,
           status: WalletStatusEnum.ACTIVE,
           freeBalance: 0,
@@ -655,86 +781,213 @@ export class CreditService {
           frozenLockedBalance: 0,
         });
       }
-      creditWallet.creditBalance = new Decimal(creditWallet.creditBalance || 0).plus(creditLimit).toNumber();
-      creditWallet.freeBalance = new Decimal(creditWallet.availableBalance || 0).plus(creditWallet.creditBalance).toNumber();
-      const savedCreditWallet = await manager.save(creditWallet);
+      baseCreditWallet.creditBalance = new Decimal(baseCreditWallet.creditBalance || 0).plus(sellCreditAmount).toNumber();
+      baseCreditWallet.freeBalance = new Decimal(baseCreditWallet.availableBalance || 0).plus(baseCreditWallet.creditBalance).toNumber();
+      const savedBaseWallet = await manager.save(baseCreditWallet);
+      sellCreditWalletId = savedBaseWallet.id;
       await manager.save(
         manager.create(TransactionEntity, {
-          walletId: savedCreditWallet.id,
+          walletId: savedBaseWallet.id,
           transactionId: crypto.randomUUID(),
           transactionType: TransactionTypeEnum.CREDIT_DEPOSIT,
           status: TransactionStatusEnum.COMPLETED,
-          amount: creditLimit.toNumber(),
+          amount: sellCreditAmount.toNumber(),
           fee: 0,
-          description: `Credit line issued on credit creation`,
-          metadata: { creditId: credit.id, leverage: credit.leverage, collateralPrice: unitPrice },
+          description: `Credit sell capacity issued on credit creation`,
+          metadata: { creditId: credit.id, leverage: credit.leverage, symbolId: credit.collateralSymbolId },
           completedAt: new Date(),
         }),
       );
+    }
 
-      let sellCreditWalletId: string | null = null;
-      if (sellCreditAmount.greaterThan(0)) {
-        let baseCreditWallet = await manager.findOne(WalletEntity, {
-          where: { userId, symbolId: credit.collateralSymbolId, walletType: WalletTypeEnum.CREDIT },
-          lock: { mode: "pessimistic_write" },
-        });
-        if (!baseCreditWallet) {
-          baseCreditWallet = manager.create(WalletEntity, {
-            userId,
-            symbolId: credit.collateralSymbolId,
-            walletType: WalletTypeEnum.CREDIT,
-            status: WalletStatusEnum.ACTIVE,
-            freeBalance: 0,
-            lockedBalance: 0,
-            availableBalance: 0,
-            creditBalance: 0,
-            frozenFreeBalance: 0,
-            frozenLockedBalance: 0,
-          });
-        }
-        baseCreditWallet.creditBalance = new Decimal(baseCreditWallet.creditBalance || 0).plus(sellCreditAmount).toNumber();
-        baseCreditWallet.freeBalance = new Decimal(baseCreditWallet.availableBalance || 0).plus(baseCreditWallet.creditBalance).toNumber();
-        const savedBaseWallet = await manager.save(baseCreditWallet);
-        sellCreditWalletId = savedBaseWallet.id;
-        await manager.save(
-          manager.create(TransactionEntity, {
-            walletId: savedBaseWallet.id,
-            transactionId: crypto.randomUUID(),
-            transactionType: TransactionTypeEnum.CREDIT_DEPOSIT,
-            status: TransactionStatusEnum.COMPLETED,
-            amount: sellCreditAmount.toNumber(),
-            fee: 0,
-            description: `Credit sell capacity issued on credit creation`,
-            metadata: { creditId: credit.id, leverage: credit.leverage, symbolId: credit.collateralSymbolId },
-            completedAt: new Date(),
-          }),
+    credit.metadata = {
+      ...(credit.metadata || {}),
+      creditWalletId: savedCreditWallet.id,
+      sellCreditWalletId,
+      sellCreditAmount: sellCreditAmount.toNumber(),
+      sellCreditSymbolId: credit.collateralSymbolId,
+      creditCalculatedAt: new Date().toISOString(),
+      collateralPriceAtCalculation: unitPrice,
+    };
+    return await manager.save(credit);
+  }
+
+  /**
+   * Approve a credit request a level held for admin sign-off.
+   *
+   * The collateral was already frozen when the user asked, so approval only
+   * issues the line and activates the facility. It re-prices the collateral at
+   * approval time: an approval that lands a day later must not hand out a limit
+   * computed against a stale price.
+   */
+  async approveCreditRequest(creditId: string, adminId?: string): Promise<CreditEntity> {
+    return await this.dataSource.transaction(async (manager) => {
+      const credit = await manager.findOne(CreditEntity, {
+        where: { id: creditId },
+        lock: { mode: "pessimistic_write" },
+      });
+      if (!credit) throw new NotFoundException("Credit not found");
+      if (credit.status !== CreditStatusEnum.PENDING) {
+        throw new BadRequestException(
+          `Only a pending credit request can be approved (this one is ${credit.status})`,
         );
       }
 
-      savedCredit.metadata = {
-        ...(savedCredit.metadata || {}),
-        creditWalletId: savedCreditWallet.id,
-        sellCreditWalletId,
-        sellCreditAmount: sellCreditAmount.toNumber(),
-        sellCreditSymbolId: credit.collateralSymbolId,
-        creditCalculatedAt: new Date().toISOString(),
-        collateralPriceAtCalculation: unitPrice,
+      const unitPrice = await this.priceCollateralUnit(credit);
+      // Re-derive the limit from the price now, keeping the frozen amount and
+      // the leverage the user asked for.
+      const collateralValue = new Decimal(credit.collateralAmount || 0).mul(unitPrice);
+      const creditLimit = collateralValue.mul(credit.leverage || 1);
+      credit.creditLimit = creditLimit.toNumber();
+      credit.amount = creditLimit.toNumber();
+      credit.initialCollateralValue = collateralValue.toNumber();
+      credit.currentCollateralValue = collateralValue.toNumber();
+      credit.status = CreditStatusEnum.ACTIVE;
+      credit.activatedAt = new Date();
+      credit.adminId = adminId ?? null;
+      credit.metadata = {
+        ...(credit.metadata || {}),
+        approvedAt: new Date().toISOString(),
+        approvedByAdminId: adminId ?? null,
       };
-      await manager.save(savedCredit);
 
-      const notification = manager.create(CreditNotificationEntity, {
-        userId: savedCredit.userId,
-        creditId: savedCredit.id,
-        type: CreditNotificationTypeEnum.SETTLEMENT,
-        message:
-          `Credit ${savedCredit.creditCode} opened with leverage ${dto.leverage}x. ` +
-          `Credit limit ${creditLimit.toFixed(0)} ${level.creditBaseSymbolId}.`,
-        isRead: false,
-      });
-      await manager.save(notification);
+      const issued = await this.issueCreditLine(manager, credit, unitPrice);
 
-      return savedCredit;
+      await manager.save(
+        manager.create(CreditNotificationEntity, {
+          userId: issued.userId,
+          creditId: issued.id,
+          type: CreditNotificationTypeEnum.SETTLEMENT,
+          message:
+            `Credit ${issued.creditCode} was approved. ` +
+            `Credit limit ${creditLimit.toFixed(0)} is now available.`,
+          isRead: false,
+        }),
+      );
+      return issued;
     });
+  }
+
+  /**
+   * Decline a credit request held for admin sign-off, returning the collateral
+   * the user froze when they asked. No credit line was ever issued, so there is
+   * nothing to claw back.
+   */
+  async rejectCreditRequest(
+    creditId: string,
+    adminId?: string,
+    reason?: string,
+  ): Promise<CreditEntity> {
+    return await this.dataSource.transaction(async (manager) => {
+      const credit = await manager.findOne(CreditEntity, {
+        where: { id: creditId },
+        lock: { mode: "pessimistic_write" },
+      });
+      if (!credit) throw new NotFoundException("Credit not found");
+      if (credit.status !== CreditStatusEnum.PENDING) {
+        throw new BadRequestException(
+          `Only a pending credit request can be rejected (this one is ${credit.status})`,
+        );
+      }
+
+      await this.returnFrozenCollateral(manager, credit, "Credit request rejected");
+
+      credit.status = CreditStatusEnum.CANCELLED;
+      credit.adminId = adminId ?? null;
+      credit.notes = reason ?? credit.notes;
+      credit.metadata = {
+        ...(credit.metadata || {}),
+        rejectedAt: new Date().toISOString(),
+        rejectedByAdminId: adminId ?? null,
+        rejectionReason: reason ?? null,
+      };
+      const saved = await manager.save(credit);
+
+      await manager.save(
+        manager.create(CreditNotificationEntity, {
+          userId: saved.userId,
+          creditId: saved.id,
+          type: CreditNotificationTypeEnum.SETTLEMENT,
+          message:
+            `Credit request ${saved.creditCode} was declined` +
+            (reason ? `: ${reason}` : ".") +
+            ` Your collateral has been returned to your deposit wallet.`,
+          isRead: false,
+        }),
+      );
+      return saved;
+    });
+  }
+
+  /** Price one unit of a facility's collateral in its credit currency. */
+  private async priceCollateralUnit(credit: CreditEntity): Promise<number> {
+    if (credit.collateralSymbolId === credit.creditBaseSymbolId) return 1;
+    const pair = await this.pricePairRepository.findOne({
+      where: {
+        baseId: credit.collateralSymbolId,
+        quoteId: credit.creditBaseSymbolId,
+        isValid: true,
+      },
+    });
+    const price = pair ? Number(pair.bestSellGramPrice) : null;
+    if (!price || price <= 0) {
+      throw new BadRequestException(
+        "No active price pair to value this collateral against the credit base symbol",
+      );
+    }
+    return price;
+  }
+
+  /** Move a facility's frozen collateral back to the deposit wallet it came from. */
+  private async returnFrozenCollateral(
+    manager: EntityManager,
+    credit: CreditEntity,
+    description: string,
+  ): Promise<void> {
+    const amount = new Decimal(credit.collateralAmount || 0);
+    if (!amount.greaterThan(0)) return;
+
+    const collateralWallet = await manager.findOne(WalletEntity, {
+      where: {
+        userId: credit.userId,
+        symbolId: credit.collateralSymbolId,
+        walletType: WalletTypeEnum.COLLATERAL,
+      },
+      lock: { mode: "pessimistic_write" },
+    });
+    const depositWallet = await manager.findOne(WalletEntity, {
+      where: {
+        userId: credit.userId,
+        symbolId: credit.collateralSymbolId,
+        walletType: WalletTypeEnum.DEPOSIT,
+      },
+      lock: { mode: "pessimistic_write" },
+    });
+    if (!collateralWallet || !depositWallet) {
+      throw new BadRequestException("Collateral or deposit wallet is missing for this credit");
+    }
+
+    collateralWallet.freeBalance = Decimal.max(
+      0,
+      new Decimal(collateralWallet.freeBalance || 0).minus(amount),
+    ).toNumber();
+    depositWallet.freeBalance = new Decimal(depositWallet.freeBalance || 0).plus(amount).toNumber();
+    await manager.save(collateralWallet);
+    await manager.save(depositWallet);
+
+    await manager.save(
+      manager.create(TransactionEntity, {
+        walletId: depositWallet.id,
+        transactionId: crypto.randomUUID(),
+        transactionType: TransactionTypeEnum.CREDIT_DEPOSIT,
+        status: TransactionStatusEnum.COMPLETED,
+        amount: amount.toNumber(),
+        fee: 0,
+        description,
+        metadata: { creditId: credit.id, collateralWalletId: collateralWallet.id },
+        completedAt: new Date(),
+      }),
+    );
   }
 
   /**
@@ -2595,7 +2848,23 @@ export class CreditService {
     }
   }
 
+  /**
+   * The pair a facility's risk is measured on: its collateral valued in the
+   * credit currency. That is the pair whose per-pair credit rules govern the
+   * margin ladder, so it is resolved once per evaluation.
+   */
+  private async resolveRiskPairId(credit: CreditEntity): Promise<string | null> {
+    if (!credit.collateralSymbolId || !credit.creditBaseSymbolId) return null;
+    if (credit.collateralSymbolId === credit.creditBaseSymbolId) return null;
+    const pair = await this.pricePairRepository.findOne({
+      where: { baseId: credit.collateralSymbolId, quoteId: credit.creditBaseSymbolId },
+      select: { id: true },
+    });
+    return pair?.id ?? null;
+  }
+
   private async evaluateRiskState(credit: CreditEntity): Promise<void> {
+    const riskPairId = await this.resolveRiskPairId(credit);
     // Value the facility at the current mark price using the settlement engine.
     let state: SettlementState;
     try {
@@ -2635,10 +2904,23 @@ export class CreditService {
       }
     }
 
-    // Margin ratio is a decimal (e.g. 0.238 = 23.8%).
+    // Margin ratio is a decimal (e.g. 0.238 = 23.8%). The ladder is configured
+    // as percentages per level and per pair; a facility trading gold against
+    // rial does not warn at the same margin as one trading dollars, so the
+    // rungs are read from the rules of the pair the collateral is valued on.
     const marginRatio = state.marginRatio;
-    const WARNING_THRESHOLD = 0.15; // 15%
-    const MARGIN_CALL_THRESHOLD = 0.075; // 7.5%
+    const rules = resolveFacilityPairConfig(credit, riskPairId);
+    const asRatio = (percent: number | null, fallback: number): number =>
+      percent != null && percent > 0 ? percent / 100 : fallback;
+    const WARNING_THRESHOLD = asRatio(rules.creditWarningMarginPercent, DEFAULT_WARNING_MARGIN_RATIO);
+    const MARGIN_CALL_THRESHOLD = asRatio(
+      rules.creditMarginCallPercent,
+      DEFAULT_MARGIN_CALL_RATIO,
+    );
+    const LIQUIDATION_THRESHOLD =
+      rules.creditLiquidationMarginPercent != null && rules.creditLiquidationMarginPercent > 0
+        ? rules.creditLiquidationMarginPercent / 100
+        : null;
 
     let newRiskState: RiskStateEnum | null = null;
 
@@ -2650,6 +2932,30 @@ export class CreditService {
       newRiskState = RiskStateEnum.WARNING;
     } else if (marginRatio > WARNING_THRESHOLD && credit.riskState === RiskStateEnum.WARNING) {
       newRiskState = RiskStateEnum.NORMAL;
+    }
+
+    // The bottom rung is a hard stop rather than a state: once equity falls
+    // through it there is nothing left to margin-call, so the facility is
+    // liquidated instead of being notified again.
+    if (
+      LIQUIDATION_THRESHOLD != null &&
+      marginRatio != null &&
+      marginRatio <= LIQUIDATION_THRESHOLD &&
+      credit.riskState !== RiskStateEnum.LIQUIDATING &&
+      credit.riskState !== RiskStateEnum.LIQUIDATED
+    ) {
+      credit.riskState = RiskStateEnum.LIQUIDATING;
+      await this.creditRepository.save(credit);
+      this.logger.warn(
+        `Credit ${credit.creditCode} margin ratio ${(marginRatio * 100).toFixed(2)}% ` +
+          `fell through the liquidation rung (${(LIQUIDATION_THRESHOLD * 100).toFixed(2)}%)`,
+      );
+      await this.settlementService.liquidate(credit.id, "MARGIN_CALL_LIQUIDATION", {
+        reason:
+          `MARGIN_RATIO_BELOW_LIQUIDATION_THRESHOLD ` +
+          `(${(marginRatio * 100).toFixed(2)}% ≤ ${(LIQUIDATION_THRESHOLD * 100).toFixed(2)}%)`,
+      });
+      return;
     }
 
     if (newRiskState) {
@@ -2879,6 +3185,22 @@ export class CreditService {
       where: { id: creditId, userId, status: CreditStatusEnum.ACTIVE },
     });
     if (!credit) throw new BadRequestException("Credit not found or not active");
+
+    // Some levels close facilities through an operator only; others require the
+    // settlement to be approved before anything moves. Both are snapshotted on
+    // the facility, so an open credit keeps the terms it was granted under.
+    const abilities = (credit.metadata?.abilities ?? {}) as { allowUserSettlement?: boolean };
+    if (abilities.allowUserSettlement === false) {
+      throw new BadRequestException(
+        "CREDIT_USER_SETTLEMENT_DISABLED: settlement on this level is handled by an admin",
+      );
+    }
+    if (credit.requireAdminApprovalForSettlement) {
+      throw new BadRequestException(
+        "CREDIT_SETTLEMENT_REQUIRES_APPROVAL: request settlement so an admin can approve it first",
+      );
+    }
+
     return this.settlementService.settleCredit(creditId, {
       mode: "USER_SELF",
       reason: "USER_SETTLEMENT",
@@ -2919,7 +3241,13 @@ export class CreditService {
           const credit = await this.dataSource.manager.findOne(CreditEntity, {
             where: { userId: order.userId, status: CreditStatusEnum.ACTIVE },
           });
-          if (credit?.enforceRequestDeadline) {
+          // Whether an overdue request is force-closed or only flagged is a
+          // per-pair rule: the pair sets the deadline, so it also decides what
+          // happens when the deadline passes.
+          const deadlineRules = credit
+            ? resolveFacilityPairConfig(credit, order.pricePairId)
+            : null;
+          if (deadlineRules?.creditEnforceRequestDeadline) {
             // Release the credit balance frozen for this request, then cancel.
             try {
               if (order.pricePair) {
@@ -2950,6 +3278,20 @@ export class CreditService {
                 creditId: credit.id,
                 type: CreditNotificationTypeEnum.EXPIRY_WARNING,
                 message: `Order ${order.orderCode} was auto-cancelled: pend deadline expired.`,
+                sentAt: now,
+              }),
+            );
+          } else if (credit) {
+            // ALERT-only: the request stands, but somebody has to know it is
+            // past its grace so an operator can settle it by hand.
+            await this.creditNotificationRepository.save(
+              this.creditNotificationRepository.create({
+                userId: order.userId,
+                creditId: credit.id,
+                type: CreditNotificationTypeEnum.EXPIRY_WARNING,
+                message:
+                  `Order ${order.orderCode} passed its settlement deadline and needs to be ` +
+                  `resolved. It was left open because this pair does not auto-close.`,
                 sentAt: now,
               }),
             );
