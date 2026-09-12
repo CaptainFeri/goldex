@@ -479,13 +479,24 @@ export interface CreditCashout {
   /** Credit repaid (credit currency). */
   amount: number;
   feePercent: number;
+  /**
+   * Fee charged, in the symbol named by feeSymbolId — the traded asset, since
+   * commissions are taken in kind. Rows written before that carry the credit
+   * currency, so never render this against a fixed unit.
+   */
   feeAmount: number;
+  feeSymbolId: string | null;
+  /** The fee valued in the credit currency. */
+  feeValue: number;
   /** Conversion commission booked in collateral units. */
   spreadProfit: number;
   /** Total platform profit, valued in the credit currency. */
   systemProfitValue: number;
   assetSymbolId: string | null;
+  /** Asset taken out of the credit wallet, before the fee. */
   assetAmount: number;
+  /** What the deposit wallet received: assetAmount less the in-kind fee. */
+  netAssetAmount: number;
   collateralConsumed: number;
   markPrice: number;
   creditLimitReduction: number;
@@ -500,6 +511,7 @@ export interface CreditCashout {
 export interface CashoutTotals {
   count: number;
   volume: number;
+  /** Fees earned, valued in the credit currency (they are collected in-kind). */
   fees: number;
   spreadProfit: number;
   systemProfit: number;
@@ -517,12 +529,19 @@ export interface CashoutTradeOption {
   executedAt: string | null;
   amount: number;
   feePercent: number;
+  /** Fee on this trade, in the purchased asset — withheld from it, not charged in currency. */
   feeAmount: number;
+  /** The fee valued in the credit currency. */
+  feeValue: number;
+  /** What the chosen source is charged: the credit repaid, the fee being in-kind. */
   totalDue: number;
   systemProfitValue: number;
   assetSymbolId: string | null;
   assetSymbolSlug: string;
+  /** Asset leaving the credit wallet, before the fee. */
   assetAmount: number;
+  /** Asset the deposit wallet receives. */
+  netAssetAmount: number;
   assetHeld: number;
   eligible: boolean;
   reason: string | null;

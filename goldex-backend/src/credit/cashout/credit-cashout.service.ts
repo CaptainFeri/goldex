@@ -15,6 +15,7 @@ import { CreditNotificationEntity } from "../entity/credit-notification.entity";
 import { CollateralLockEntity } from "../entity/collateral-lock.entity";
 import { CreditStatusEnum } from "../enum/credit-status.enum";
 import { computeCreditUsage } from "../util/credit-usage.util";
+import { computeCashoutFee } from "../util/cashout-fee.util";
 import { CreditOrderStatusEnum } from "../enum/credit-order-status.enum";
 import { CashoutSourceEnum } from "../enum/cashout-source.enum";
 import { CreditNotificationTypeEnum } from "../enum/credit-notification-type.enum";
@@ -50,16 +51,23 @@ export interface CashoutTradeOption {
   amount: number;
   /** Facility cash-out fee rate (%). */
   feePercent: number;
-  /** Platform cash-out fee on this trade (credit currency). */
+  /**
+   * Platform cash-out fee on this trade, in the purchased asset — grams of gold
+   * on a gold trade, not currency. Taken out of the asset released below.
+   */
   feeAmount: number;
-  /** amount + feeAmount — what the chosen source is charged. */
+  /** The fee valued in the credit currency at this trade's price. */
+  feeValue: number;
+  /** What the chosen source is charged: the credit repaid, the fee being in-kind. */
   totalDue: number;
   /** Platform profit this cash-out books, valued in the credit currency. */
   systemProfitValue: number;
   assetSymbolId: string | null;
   assetSymbolSlug: string;
-  /** Purchased asset released to the deposit wallet. */
+  /** Purchased asset leaving the credit wallet, before the fee. */
   assetAmount: number;
+  /** Purchased asset the deposit wallet actually receives: assetAmount − feeAmount. */
+  netAssetAmount: number;
   /** Purchased asset still held in the CREDIT wallet. */
   assetHeld: number;
   eligible: boolean;
@@ -99,7 +107,11 @@ export interface CashoutTotals {
   count: number;
   /** Credit repaid through cash-outs (credit currency). */
   volume: number;
-  /** Cash-out fees earned (credit currency). */
+  /**
+   * Cash-out fees earned, valued in the credit currency. The fees themselves are
+   * collected in the traded asset and can span symbols, so only the valuation
+   * sums to one meaningful figure.
+   */
   fees: number;
   /** Conversion commission earned (collateral units). */
   spreadProfit: number;
@@ -217,8 +229,13 @@ export class CreditCashoutService {
       const priced = this.priceTrade(co);
       const assetHeld = priced.assetSymbolId ? heldBySymbol.get(priced.assetSymbolId) ?? 0 : 0;
 
-      const feeAmount = new Decimal(priced.amount).mul(feePercent).div(100);
-      const totalDue = new Decimal(priced.amount).plus(feeAmount);
+      // The fee is kept from the asset, so the source only owes the credit repaid.
+      const { feeAsset, netAssetAmount, feeValue } = computeCashoutFee(
+        priced.assetAmount,
+        priced.price,
+        feePercent,
+      );
+      const totalDue = new Decimal(priced.amount);
       const requiredUnits = markPrice > 0 ? totalDue.div(markPrice).toNumber() : 0;
       const spreadProfit = new Decimal(requiredUnits).mul(conversionPercent).div(100).toNumber();
       const ratio =
@@ -241,12 +258,14 @@ export class CreditCashoutService {
         executedAt: co.order?.completedAt ?? null,
         amount: priced.amount,
         feePercent,
-        feeAmount: feeAmount.toNumber(),
+        feeAmount: feeAsset.toNumber(),
+        feeValue: feeValue.toNumber(),
         totalDue: totalDue.toNumber(),
-        systemProfitValue: feeAmount.plus(new Decimal(spreadProfit).mul(markPrice)).toNumber(),
+        systemProfitValue: feeValue.plus(new Decimal(spreadProfit).mul(markPrice)).toNumber(),
         assetSymbolId: priced.assetSymbolId,
         assetSymbolSlug: priced.assetSymbolSlug,
         assetAmount: priced.assetAmount,
+        netAssetAmount: netAssetAmount.toNumber(),
         assetHeld,
         eligible: assetSufficient,
         reason: assetSufficient ? null : "CASHOUT_ASSET_NOT_HELD",
@@ -312,7 +331,7 @@ export class CreditCashoutService {
     return {
       count: items.length,
       volume: sum((i) => i.amount),
-      fees: sum((i) => i.feeAmount),
+      fees: sum((i) => i.feeValue),
       spreadProfit: sum((i) => i.spreadProfit),
       systemProfit: sum((i) => i.systemProfitValue),
       collateralConsumed: sum((i) => i.collateralConsumed),
@@ -382,8 +401,14 @@ export class CreditCashoutService {
       }
 
       const feePercent = Number(credit.cashoutFeePercent) || 0;
-      const feeAmount = new Decimal(priced.amount).mul(feePercent).div(100);
-      const totalDue = new Decimal(priced.amount).plus(feeAmount);
+      // Commission is taken in the asset, so the source pays only the credit
+      // repaid; the fee comes out of the gold before it reaches the user.
+      const { feeAsset, netAssetAmount, feeValue } = computeCashoutFee(
+        priced.assetAmount,
+        priced.price,
+        feePercent,
+      );
+      const totalDue = new Decimal(priced.amount);
 
       const now = new Date();
       const wallets = new Map<string, WalletEntity>();
@@ -450,9 +475,9 @@ export class CreditCashoutService {
           new Decimal(depositQuoteWallet.freeBalance || 0).lessThan(totalDue)
         ) {
           throw new BadRequestException(
-            `CASHOUT_INSUFFICIENT_DEPOSIT_BALANCE: ${totalDue.toFixed(2)} required ` +
-              `(${priced.amount} purchase + ${feeAmount.toFixed(2)} fee), ` +
-              `${Number(depositQuoteWallet?.freeBalance) || 0} available`,
+            `CASHOUT_INSUFFICIENT_DEPOSIT_BALANCE: ${totalDue.toFixed(2)} required to repay the ` +
+              `credit drawn on this purchase, ${Number(depositQuoteWallet?.freeBalance) || 0} available ` +
+              `(the ${feePercent}% fee is taken from the asset, not from this wallet)`,
           );
         }
         depositQuoteWallet.freeBalance = new Decimal(depositQuoteWallet.freeBalance)
@@ -461,12 +486,13 @@ export class CreditCashoutService {
         await manager.save(depositQuoteWallet);
         await this.saveWalletTxn(manager, depositQuoteWallet, {
           amount: -totalDue.toNumber(),
-          fee: feeAmount.toNumber(),
           description: `Credit ${credit.creditCode} cash-out of order ${priced.orderCode} paid from deposit wallet`,
           metadata: {
             creditId: credit.id,
             creditOrderId: co.id,
-            fee: feeAmount.toNumber(),
+            // The fee is in-kind — see the asset release below, not this wallet.
+            feeAsset: feeAsset.toNumber(),
+            feeSymbolId: priced.assetSymbolId,
             feePercent,
             type: "CASHOUT_PAYMENT_DEPOSIT",
           },
@@ -544,7 +570,8 @@ export class CreditCashoutService {
             creditId: credit.id,
             creditOrderId: co.id,
             markPrice,
-            fee: feeAmount.toNumber(),
+            feeAsset: feeAsset.toNumber(),
+            feeSymbolId: priced.assetSymbolId,
             feePercent,
             type: "CASHOUT_PAYMENT_COLLATERAL",
           },
@@ -615,15 +642,18 @@ export class CreditCashoutService {
       });
 
       // ── 3b. Book the platform's profit on this cash-out ───────────────────
-      if (feeAmount.greaterThan(0)) {
+      if (feeAsset.greaterThan(0)) {
+        // Booked in the asset it was charged in, so platform revenue is held as
+        // gold rather than as a currency amount derived from a price.
         await manager.save(SystemLedgerEntity, {
-          symbolId: credit.creditBaseSymbolId,
+          symbolId: priced.assetSymbolId,
           type: SystemLedgerType.CREDIT_CASHOUT_FEE,
-          amount: feeAmount.toNumber(),
+          amount: feeAsset.toNumber(),
           orderId: co.orderId,
           userId: credit.userId,
           description:
-            `Cash-out fee ${feePercent}% on credit ${credit.creditCode} trade ${priced.orderCode}`,
+            `Cash-out fee ${feePercent}% on credit ${credit.creditCode} trade ` +
+            `${priced.orderCode}: ${feeAsset.toFixed(8)} ${priced.assetSymbolSlug}`,
         });
       }
       if (spreadProfit > 0) {
@@ -650,18 +680,25 @@ export class CreditCashoutService {
         true,
       );
       depositAssetWallet.freeBalance = new Decimal(depositAssetWallet.freeBalance || 0)
-        .plus(priced.assetAmount)
+        .plus(netAssetAmount)
         .toNumber();
       await manager.save(depositAssetWallet);
       await this.saveWalletTxn(manager, depositAssetWallet, {
-        amount: priced.assetAmount,
+        amount: netAssetAmount.toNumber(),
+        fee: feeAsset.toNumber(),
         description:
-          `Credit purchase ${priced.orderCode} cashed out: ${priced.assetAmount} ` +
-          `${priced.assetSymbolSlug} released to your deposit wallet`,
+          `Credit purchase ${priced.orderCode} cashed out: ${netAssetAmount.toFixed(8)} ` +
+          `${priced.assetSymbolSlug} released to your deposit wallet` +
+          (feeAsset.greaterThan(0)
+            ? ` (${feeAsset.toFixed(8)} ${priced.assetSymbolSlug} cash-out fee withheld)`
+            : ""),
         metadata: {
           creditId: credit.id,
           creditOrderId: co.id,
           source: params.source,
+          grossAssetAmount: priced.assetAmount,
+          feeAsset: feeAsset.toNumber(),
+          feePercent,
           type: "CASHOUT_ASSET_RELEASED",
         },
       });
@@ -682,13 +719,16 @@ export class CreditCashoutService {
           source: params.source,
           amount: priced.amount,
           feePercent,
-          feeAmount: feeAmount.toNumber(),
+          feeAmount: feeAsset.toNumber(),
+          feeSymbolId: priced.assetSymbolId,
+          feeValue: feeValue.toNumber(),
           spreadProfit,
-          systemProfitValue: feeAmount
+          systemProfitValue: feeValue
             .plus(new Decimal(spreadProfit).mul(markPrice || 0))
             .toNumber(),
           assetSymbolId: priced.assetSymbolId,
           assetAmount: priced.assetAmount,
+          netAssetAmount: netAssetAmount.toNumber(),
           collateralConsumed,
           markPrice,
           creditLimitReduction,
@@ -719,14 +759,18 @@ export class CreditCashoutService {
           actionType: CreditActionEnum.CREDIT_CASHED_OUT,
           description:
             `Credit ${credit.creditCode}: purchase ${priced.orderCode} cashed out for ` +
-            `${priced.amount} from ${params.source}. Released ${priced.assetAmount} ` +
-            `${priced.assetSymbolSlug} to the deposit wallet.`,
+            `${priced.amount} from ${params.source}. Released ${netAssetAmount.toFixed(8)} ` +
+            `${priced.assetSymbolSlug} to the deposit wallet, fee ${feeAsset.toFixed(8)} ` +
+            `${priced.assetSymbolSlug}.`,
           metadata: {
             source: params.source,
             amount: priced.amount,
-            feeAmount: feeAmount.toNumber(),
+            feeAsset: feeAsset.toNumber(),
+            feeSymbolId: priced.assetSymbolId,
+            feeValue: feeValue.toNumber(),
             spreadProfit,
             assetAmount: priced.assetAmount,
+            netAssetAmount: netAssetAmount.toNumber(),
             collateralConsumed,
             creditLimitReduction,
             sellCapacityReduction,
@@ -741,9 +785,13 @@ export class CreditCashoutService {
           creditId: credit.id,
           type: CreditNotificationTypeEnum.SETTLEMENT,
           message:
-            `Purchase ${priced.orderCode} was cashed out: ${priced.assetAmount} ` +
-            `${priced.assetSymbolSlug} moved to your deposit wallet and ${priced.amount} of credit ` +
-            `was repaid from your ${params.source === CashoutSourceEnum.DEPOSIT ? "deposit wallet" : "collateral"}.`,
+            `Purchase ${priced.orderCode} was cashed out: ${netAssetAmount.toFixed(8)} ` +
+            `${priced.assetSymbolSlug} moved to your deposit wallet` +
+            (feeAsset.greaterThan(0)
+              ? ` (after a ${feePercent}% fee of ${feeAsset.toFixed(8)} ${priced.assetSymbolSlug})`
+              : "") +
+            ` and ${priced.amount} of credit was repaid from your ` +
+            `${params.source === CashoutSourceEnum.DEPOSIT ? "deposit wallet" : "collateral"}.`,
           sentAt: now,
         }),
       );
@@ -754,13 +802,13 @@ export class CreditCashoutService {
         creditOrderId: co.id,
         source: params.source,
         amount: priced.amount,
-        assetAmount: priced.assetAmount,
+        assetAmount: netAssetAmount.toNumber(),
       });
 
       this.logger.log(
         `Credit ${credit.creditCode}: cashed out trade ${priced.orderCode} for ${priced.amount} ` +
-          `from ${params.source} (asset ${priced.assetAmount} ${priced.assetSymbolSlug}, ` +
-          `collateral consumed ${collateralConsumed})`,
+          `from ${params.source} (released ${netAssetAmount} of ${priced.assetAmount} ` +
+          `${priced.assetSymbolSlug}, fee ${feeAsset}, collateral consumed ${collateralConsumed})`,
       );
 
       return cashout;
