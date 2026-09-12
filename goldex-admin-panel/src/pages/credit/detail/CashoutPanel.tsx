@@ -144,7 +144,7 @@ export function CashoutPanel({ credit, onChanged }: { credit: Credit; onChanged?
                       <th>معامله</th>
                       <th>مقدار</th>
                       <th>مبلغ قابل پرداخت</th>
-                      <th>کارمزد</th>
+                      <th>کارمزد (به دارایی)</th>
                       <th>دارایی آزادشده</th>
                       <th>سود سیستم</th>
                       <th>اقدام</th>
@@ -159,8 +159,19 @@ export function CashoutPanel({ credit, onChanged }: { credit: Credit; onChanged?
                         </td>
                         <td className="mono">{fmtNum(t.executedQuantity)}</td>
                         <td className="mono">{fmtNum(t.totalDue)}</td>
-                        <td className="mono">{fmtNum(t.feeAmount)}</td>
-                        <td className="mono">{fmtNum(t.assetAmount)} {t.assetSymbolSlug}</td>
+                        {/* The fee is withheld from the asset, so the released
+                            figure is the net and the gross is the reference. */}
+                        <td className="mono">
+                          {fmtNum(t.feeAmount)} {t.assetSymbolSlug}
+                        </td>
+                        <td className="mono">
+                          {fmtNum(t.netAssetAmount)} {t.assetSymbolSlug}
+                          {Number(t.feeAmount) > 0 && (
+                            <div style={{ fontSize: 11, color: "var(--text-faint)" }}>
+                              از {fmtNum(t.assetAmount)}
+                            </div>
+                          )}
+                        </td>
                         <td className="mono" style={{ color: "var(--gold)" }}>{fmtNum(t.systemProfitValue)}</td>
                         <td>
                           {!t.eligible ? (
@@ -217,7 +228,7 @@ export function CashoutPanel({ credit, onChanged }: { credit: Credit; onChanged?
                   <th>تاریخ</th>
                   <th>منبع پرداخت</th>
                   <th>مبلغ</th>
-                  <th>کارمزد</th>
+                  <th>کارمزد (به دارایی)</th>
                   <th>کمیسیون وثیقه</th>
                   <th>سود سیستم</th>
                   <th>دارایی آزادشده</th>
@@ -237,7 +248,7 @@ export function CashoutPanel({ credit, onChanged }: { credit: Credit; onChanged?
                     <td className="mono">{fmtNum(h.feeAmount)}</td>
                     <td className="mono">{fmtNum(h.spreadProfit)}</td>
                     <td className="mono" style={{ color: "var(--gold)", fontWeight: 600 }}>{fmtNum(h.systemProfitValue)}</td>
-                    <td className="mono">{fmtNum(h.assetAmount)}</td>
+                    <td className="mono">{fmtNum(h.netAssetAmount ?? h.assetAmount)}</td>
                     <td className="mono">{fmtNum(h.creditLimitReduction)}</td>
                   </tr>
                 ))}

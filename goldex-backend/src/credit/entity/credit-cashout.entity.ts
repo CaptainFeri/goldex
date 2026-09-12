@@ -47,9 +47,25 @@ export class CreditCashoutEntity extends myBaseEntity {
   @Column({ type: "decimal", precision: 5, scale: 2, default: 0, name: "fee_percent" })
   feePercent: number;
 
-  /** Cash-out fee charged to the user, in the credit currency. */
+  /**
+   * Cash-out fee charged to the user, in the symbol named by `feeSymbolId` —
+   * the traded asset for cash-outs taken after the commission rule changed,
+   * the credit currency for older rows.
+   */
   @Column({ type: "decimal", precision: 20, scale: 8, default: 0, name: "fee_amount" })
   feeAmount: number;
+
+  /**
+   * What `feeAmount` is denominated in. Commissions are charged in the asset
+   * being liquidated, so this is normally the traded asset; rows written before
+   * that rule carry the credit currency and must not be read as asset units.
+   */
+  @Column({ name: "fee_symbol_id", type: "uuid", nullable: true })
+  feeSymbolId: string | null;
+
+  /** The fee valued in the credit currency, so revenue sums across symbols. */
+  @Column({ type: "decimal", precision: 20, scale: 8, default: 0, name: "fee_value" })
+  feeValue: number;
 
   /** Conversion commission booked when collateral was used (collateral units). */
   @Column({ type: "decimal", precision: 20, scale: 8, default: 0, name: "spread_profit" })
@@ -63,9 +79,13 @@ export class CreditCashoutEntity extends myBaseEntity {
   @Column({ name: "asset_symbol_id", type: "uuid", nullable: true })
   assetSymbolId: string | null;
 
-  /** Amount of the purchased asset released to the deposit wallet. */
+  /** Purchased asset taken out of the credit wallet, before the fee. */
   @Column({ type: "decimal", precision: 20, scale: 8, default: 0, name: "asset_amount" })
   assetAmount: number;
+
+  /** What the deposit wallet received: `assetAmount` less the in-kind fee. */
+  @Column({ type: "decimal", precision: 20, scale: 8, default: 0, name: "net_asset_amount" })
+  netAssetAmount: number;
 
   /** Collateral consumed (in collateral units) when paying from collateral. */
   @Column({ type: "decimal", precision: 20, scale: 8, default: 0, name: "collateral_consumed" })

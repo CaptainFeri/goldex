@@ -717,7 +717,8 @@
     "quantity": "Quantity",
     "entryPrice": "Entry price",
     "markPrice": "Market price",
-    "pnl": "P&L"
+    "pnl": "P&L",
+    "cashoutGross": "of {{amount}} purchased"
   },
   "level": {
     "title": "Account Level",

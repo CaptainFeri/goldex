@@ -717,7 +717,8 @@
     "quantity": "مقدار",
     "entryPrice": "قیمت ورود",
     "markPrice": "قیمت بازار",
-    "pnl": "سود/زیان"
+    "pnl": "سود/زیان",
+    "cashoutGross": "از {{amount}} خریداری‌شده"
   },
   "level": {
     "title": "سطح حساب",
