@@ -2,7 +2,7 @@ import { Injectable } from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
 import { Between, LessThanOrEqual, MoreThanOrEqual, Repository } from "typeorm";
 import * as ExcelJS from "exceljs";
-import { PassThrough, Readable } from "stream";
+import { Readable } from "stream";
 import { OrderEntity } from "../order/order.entity";
 import { UserEntity } from "../user/entity/user.entity";
 import { WithdrawEntity } from "../withdraw/withdraw.entity";
@@ -212,19 +212,24 @@ export class ReportBuilderService {
     worksheet.views = [{ rightToLeft: true }];
     worksheet.addRows(sheet.rows);
 
-    const out = new PassThrough();
+    // Rendered to a buffer, not written into a stream the caller has not started
+    // reading yet. ExcelJS's CSV writer honours backpressure, so once a
+    // PassThrough's 16KB had filled with nobody draining it the write never
+    // resolved and any CSV past a few hundred rows hung the job for good.
     if (format === ReportFormatEnum.CSV) {
+      const csv = await workbook.csv.writeBuffer();
       // A BOM, so Excel opens a UTF-8 CSV of Persian headers without mojibake.
-      out.write("﻿");
-      await workbook.csv.write(out);
-      out.end();
-      return { stream: out, contentType: "text/csv; charset=utf-8", extension: "csv" };
+      const withBom = Buffer.concat([Buffer.from("\ufeff", "utf8"), Buffer.from(csv as ArrayBuffer)]);
+      return {
+        stream: Readable.from(withBom),
+        contentType: "text/csv; charset=utf-8",
+        extension: "csv",
+      };
     }
 
-    await workbook.xlsx.write(out);
-    out.end();
+    const xlsx = await workbook.xlsx.writeBuffer();
     return {
-      stream: out,
+      stream: Readable.from(Buffer.from(xlsx as ArrayBuffer)),
       contentType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
       extension: "xlsx",
     };
