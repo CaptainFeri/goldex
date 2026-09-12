@@ -15,6 +15,8 @@ import { MESQAL_TO_GRAM } from "../src/common/constants";
  */
 
 const SCHEMA = "backfill_spec";
+/** Holds the enum that has not learned CASHED_OUT yet — see the transaction test. */
+const TX_SCHEMA = "backfill_tx_spec";
 
 interface Leg {
   side: "BUY" | "SELL";
@@ -149,11 +151,25 @@ describe("used-credit backfill migration", () => {
         id uuid PRIMARY KEY,
         used_credit numeric(20,8) NOT NULL DEFAULT 0
       )`);
+    // Real Postgres enums, as production has them — not text columns. The
+    // difference matters: an enum literal in the migration has to be resolved
+    // against the type, and that is what fails when the label was added earlier
+    // in the same transaction. CASHED_OUT is deliberately left out here and
+    // added below, reproducing a database catching up through 1000000000089 and
+    // this migration in one run.
+    await q.query(`CREATE TYPE order_side_enum AS ENUM ('BUY', 'SELL')`);
+    await q.query(`
+      CREATE TYPE order_status_enum AS ENUM
+        ('PENDING', 'PARTIALLY_COMPLETED', 'COMPLETED', 'CANCELLED', 'REJECTED')`);
+    await q.query(`
+      CREATE TYPE credit_order_status_enum AS ENUM
+        ('ACTIVE', 'MARGIN_CALLED', 'COMPLETED', 'CANCELLED', 'CLOSED')`);
+
     await q.query(`
       CREATE TABLE "order" (
         id uuid PRIMARY KEY,
-        side text NOT NULL,
-        status text NOT NULL,
+        side order_side_enum NOT NULL,
+        status order_status_enum NOT NULL,
         quantity numeric(20,8),
         executed_quantity numeric(20,8) DEFAULT 0,
         price numeric(20,8),
@@ -164,9 +180,52 @@ describe("used-credit backfill migration", () => {
         id uuid PRIMARY KEY,
         credit_id uuid NOT NULL,
         order_id uuid,
-        status text NOT NULL,
+        status credit_order_status_enum NOT NULL,
         price_at_order_time numeric(20,8)
       )`);
+    await q.query(`ALTER TYPE credit_order_status_enum ADD VALUE 'CASHED_OUT'`);
+
+    // A second schema whose credit_order_status_enum is committed *without*
+    // CASHED_OUT, so the transaction test below can add that very label and then
+    // run the migration — which is the production sequence. Postgres only
+    // restricts the label it just added, and only on a type that already
+    // existed, so both halves have to be true for the reproduction to bite.
+    await q.query(`DROP SCHEMA IF EXISTS ${TX_SCHEMA} CASCADE`);
+    await q.query(`CREATE SCHEMA ${TX_SCHEMA}`);
+    await q.query(`CREATE TYPE ${TX_SCHEMA}.order_side_enum AS ENUM ('BUY', 'SELL')`);
+    await q.query(`
+      CREATE TYPE ${TX_SCHEMA}.order_status_enum AS ENUM
+        ('PENDING', 'PARTIALLY_COMPLETED', 'COMPLETED', 'CANCELLED', 'REJECTED')`);
+    await q.query(`
+      CREATE TYPE ${TX_SCHEMA}.credit_order_status_enum AS ENUM
+        ('ACTIVE', 'MARGIN_CALLED', 'COMPLETED', 'CANCELLED', 'CLOSED')`);
+    await q.query(`
+      CREATE TABLE ${TX_SCHEMA}.credit (
+        id uuid PRIMARY KEY,
+        used_credit numeric(20,8) NOT NULL DEFAULT 0
+      )`);
+    await q.query(`
+      CREATE TABLE ${TX_SCHEMA}."order" (
+        id uuid PRIMARY KEY,
+        side ${TX_SCHEMA}.order_side_enum NOT NULL,
+        status ${TX_SCHEMA}.order_status_enum NOT NULL,
+        quantity numeric(20,8),
+        executed_quantity numeric(20,8) DEFAULT 0,
+        price numeric(20,8),
+        mesghal_price numeric(20,8)
+      )`);
+    await q.query(`
+      CREATE TABLE ${TX_SCHEMA}.credit_order (
+        id uuid PRIMARY KEY,
+        credit_id uuid NOT NULL,
+        order_id uuid,
+        status ${TX_SCHEMA}.credit_order_status_enum NOT NULL,
+        price_at_order_time numeric(20,8)
+      )`);
+    await q.query(
+      `INSERT INTO ${TX_SCHEMA}.credit (id, used_credit) VALUES ($1, 999999)`,
+      [creditIdFor(NAMES[0])],
+    );
 
     let seq = 0;
     for (const name of NAMES) {
@@ -193,9 +252,29 @@ describe("used-credit backfill migration", () => {
   afterAll(async () => {
     if (q) {
       await q.query(`DROP SCHEMA IF EXISTS ${SCHEMA} CASCADE`);
+      await q.query(`DROP SCHEMA IF EXISTS ${TX_SCHEMA} CASCADE`);
       await q.release();
     }
     if (ds?.isInitialized) await ds.destroy();
+  });
+
+  // The whole run is one transaction in production, and CASHED_OUT was added in
+  // it. Proving the migration survives that is the point of the enum setup
+  // above: with enum literals instead of text casts, this throws
+  // "unsafe use of new value".
+  it("runs in a transaction that just added an enum label it compares against", async () => {
+    const tx = ds.createQueryRunner();
+    await tx.connect();
+    await tx.startTransaction();
+    try {
+      await tx.query(`SET search_path TO ${TX_SCHEMA}`);
+      // Exactly what 1000000000089 does, in the run this migration shares.
+      await tx.query(`ALTER TYPE credit_order_status_enum ADD VALUE 'CASHED_OUT'`);
+      await expect(migration.up(tx)).resolves.not.toThrow();
+      await tx.rollbackTransaction();
+    } finally {
+      await tx.release();
+    }
   });
 
   const usedCredit = async (name: string): Promise<number> => {
