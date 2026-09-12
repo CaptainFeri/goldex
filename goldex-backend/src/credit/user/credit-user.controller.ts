@@ -135,8 +135,9 @@ export class CreditUserController {
   @Post(":id/settlement/:settlementId/deliver")
   @ApiOperation({
     summary:
-      "Declare delivery of the required asset (partial allowed). An admin verifies the " +
-      "delivery before the settlement can clear.",
+      "Deliver the asset the settlement requires from your deposit wallet (partial allowed). " +
+      "The amount leaves the wallet immediately; an admin verifies sufficiency before the " +
+      "settlement can clear.",
   })
   async deliverAsset(@Req() req: any, @Param("id") id: string, @Param("settlementId") settlementId: string, @Body() dto: ReceiveSettlementAssetDto) {
     await this.assertOwned(req.user.id, id, settlementId);

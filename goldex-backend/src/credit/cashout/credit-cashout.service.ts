@@ -14,6 +14,7 @@ import { CreditCashoutEntity } from "../entity/credit-cashout.entity";
 import { CreditNotificationEntity } from "../entity/credit-notification.entity";
 import { CollateralLockEntity } from "../entity/collateral-lock.entity";
 import { CreditStatusEnum } from "../enum/credit-status.enum";
+import { computeCreditUsage } from "../util/credit-usage.util";
 import { CreditOrderStatusEnum } from "../enum/credit-order-status.enum";
 import { CashoutSourceEnum } from "../enum/cashout-source.enum";
 import { CreditNotificationTypeEnum } from "../enum/credit-notification-type.enum";
@@ -906,22 +907,13 @@ export class CreditCashoutService {
     }
   }
 
-  /** Used credit of the facility, excluding cashed-out trades. */
+  /** Net used credit of the facility, excluding cashed-out trades. */
   private async recomputeUsedCredit(manager: any, creditId: string): Promise<number> {
     const rows = await manager.find(CreditOrderEntity, {
       where: { creditId },
       relations: { order: true },
     });
-    let total = new Decimal(0);
-    for (const row of rows) {
-      const o = row.order;
-      if (!o || String(o.status) !== "COMPLETED") continue;
-      if (row.status === CreditOrderStatusEnum.CASHED_OUT) continue;
-      const price = Number(o.price) || Number(row.priceAtOrderTime) || 0;
-      const qty = Number(o.executedQuantity) > 0 ? Number(o.executedQuantity) : Number(o.quantity || 0);
-      total = total.plus(new Decimal(qty).mul(price));
-    }
-    return total.toNumber();
+    return computeCreditUsage(rows).usedCredit;
   }
 
   private async saveWalletTxn(

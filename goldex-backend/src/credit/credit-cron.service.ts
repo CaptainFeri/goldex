@@ -19,6 +19,18 @@ export class CreditCronService {
   }
 
   @Cron(CronExpression.EVERY_30_MINUTES)
+  async handleStalePendingRequests() {
+    this.logger.log("Running stale credit-request approval check...");
+    try {
+      await this.creditService.processStalePendingRequests();
+    } catch (error) {
+      this.logger.error(
+        `Error processing stale credit requests: ${(error as Error).message}`,
+      );
+    }
+  }
+
+  @Cron(CronExpression.EVERY_30_MINUTES)
   async handleExpiredCredits() {
     this.logger.log("Running expired credits check...");
     try {

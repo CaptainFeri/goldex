@@ -188,6 +188,7 @@ export class CreditSettlementWorkflowService {
         );
       }
       await this.refundEscrow(manager, s, "settlement rejected");
+      await this.refundDelivery(manager, s, "settlement rejected");
       s.status = SettlementWorkflowStatusEnum.REJECTED;
       s.rejectedBy = adminId;
       s.rejectedAt = new Date();
@@ -443,6 +444,12 @@ export class CreditSettlementWorkflowService {
         throw new BadRequestException("Received amount must be greater than zero");
       }
 
+      // Take the asset. A delivery is a real transfer out of the user's deposit
+      // wallet in the symbol they owe — gold arriving physically is credited
+      // there by the warehouse flow first, so this is the same handover either
+      // way — and it is held against the settlement until the engine consumes it.
+      await this.collectDelivery(manager, s, amount);
+
       const received = new Decimal(s.receivedAmount || 0).plus(amount);
       s.receivedAmount = received.toNumber();
       s.receivedAt = s.receivedAt || new Date();
@@ -532,6 +539,8 @@ export class CreditSettlementWorkflowService {
       });
       if (!credit) throw new NotFoundException("Credit not found");
 
+      const collected = this.collectedForEngine(s, credit);
+
       // Delegate the value transfer to the settlement engine inside the same
       // transaction. The engine releases the collateral locks and marks the
       // facility settled.
@@ -540,10 +549,10 @@ export class CreditSettlementWorkflowService {
         adminId: opts.adminId ?? null,
         reason: `SETTLEMENT_WORKFLOW:${s.id}`,
         allowDepositTopUp: s.settlementMethod === SettlementMethodEnum.TOPUP ? true : opts.mode !== "ADMIN",
-        // Funding already collected at the funding step covers the deficit
-        // first, so the engine neither consumes collateral for it nor debits
-        // the deposit wallet for it a second time.
-        preFundedAmount: Number(s.fundedAmount) || 0,
+        // Everything the workflow already took from the user's deposit wallet,
+        // so the engine neither consumes collateral for it, nor debits the
+        // wallet again, nor buys back a position it already holds.
+        ...collected,
         force: opts.mode === "ADMIN" ? opts.force : false,
       });
 
@@ -551,11 +560,21 @@ export class CreditSettlementWorkflowService {
       s.status = SettlementWorkflowStatusEnum.LIABILITY_CLEARED;
       s.liabilityClearedAt = new Date();
 
-      // The escrow has now been spent, so it must not be refunded if this
-      // workflow is later failed. The engine recomputes the deficit at the
-      // current mark price, which can be smaller than the shortfall the user
-      // funded against — whatever it did not need goes straight back.
-      const escrow = new Decimal(s.fundedAmount || 0);
+      // What the engine consumed must not be refunded if this workflow is later
+      // failed. A delivered asset is always consumed in full — the engine
+      // returns any surplus to the deposit wallet as part of the settlement.
+      if (new Decimal(s.receivedAmount || 0).greaterThan(0)) {
+        s.metadata = {
+          ...(s.metadata || {}),
+          deliveryConsumedAt: new Date().toISOString(),
+          deliveryConsumedAmount: Number(s.receivedAmount) || 0,
+        };
+      }
+
+      // Cash is different: the engine recomputes the deficit at the current mark
+      // price, which can be below the shortfall the user funded against, so
+      // whatever it did not need goes straight back.
+      const escrow = new Decimal(collected.preFundedAmount);
       if (escrow.greaterThan(0)) {
         const applied = new Decimal(Number(report.appliedPreFunding) || 0);
         const unused = Decimal.max(0, escrow.minus(applied));
@@ -676,6 +695,7 @@ export class CreditSettlementWorkflowService {
         throw new BadRequestException(`Settlement is already ${s.status}`);
       }
       await this.refundEscrow(manager, s, `settlement failed: ${reason}`);
+      await this.refundDelivery(manager, s, `settlement failed: ${reason}`);
       s.status = SettlementWorkflowStatusEnum.FAILED;
       s.notes = reason;
       return manager.save(s);
@@ -751,6 +771,149 @@ export class CreditSettlementWorkflowService {
     this.logger.log(
       `Settlement ${s.id}: collected ${amount} from deposit wallet ${deposit.id} as escrow`,
     );
+  }
+
+  /**
+   * Split what the settlement has collected into the two forms the engine takes.
+   *
+   * A SELL leg owes base asset, which closes the short it was delivered against.
+   * A BUY leg owes the credit currency it borrowed — that is cash, identical in
+   * effect to funding a shortfall, so it is added to the cash escrow rather than
+   * handed over as a position (the engine would otherwise value the credit
+   * currency at the collateral mark price).
+   */
+  private collectedForEngine(
+    s: CreditSettlementEntity,
+    credit: CreditEntity,
+  ): { preFundedAmount: number; preDeliveredAssets: Record<string, number> } {
+    const funded = Number(s.fundedAmount) || 0;
+    const delivered = Number(s.receivedAmount) || 0;
+    if (!(delivered > 0) || !s.requiredAssetSymbolId) {
+      return { preFundedAmount: funded, preDeliveredAssets: {} };
+    }
+    if (s.requiredAssetSymbolId === credit.creditBaseSymbolId) {
+      return { preFundedAmount: funded + delivered, preDeliveredAssets: {} };
+    }
+    return {
+      preFundedAmount: funded,
+      preDeliveredAssets: { [s.requiredAssetSymbolId]: delivered },
+    };
+  }
+
+  /**
+   * Take a delivered asset out of the user's deposit wallet in the symbol the
+   * settlement requires, and hold it against the settlement.
+   *
+   * Delivery in the credit currency is the same thing as funding, so it is not
+   * routed here — `requiredAssetSymbolId` for a BUY leg is the credit currency
+   * and `fund()` already collects that.
+   */
+  private async collectDelivery(
+    manager: any,
+    s: CreditSettlementEntity,
+    amount: number,
+  ): Promise<void> {
+    if (!s.requiredAssetSymbolId) {
+      throw new BadRequestException(
+        "This settlement has no asset to deliver — fund the shortfall instead",
+      );
+    }
+    const credit = await manager.findOne(CreditEntity, { where: { id: s.creditId } });
+    if (!credit) throw new NotFoundException("Credit not found");
+
+    const deposit = await manager.findOne(WalletEntity, {
+      where: {
+        userId: credit.userId,
+        symbolId: s.requiredAssetSymbolId,
+        walletType: WalletTypeEnum.DEPOSIT,
+      },
+      lock: { mode: "pessimistic_write" },
+    });
+    const available = new Decimal(deposit?.freeBalance || 0).minus(
+      deposit?.frozenFreeBalance || 0,
+    );
+    if (!deposit || available.lessThan(amount)) {
+      throw new BadRequestException(
+        `SETTLEMENT_INSUFFICIENT_ASSET: delivering ${amount} needs that much free balance in ` +
+          `your deposit wallet for this asset (available ${available.toFixed(8)}). ` +
+          `Deposit the difference first.`,
+      );
+    }
+
+    deposit.freeBalance = new Decimal(deposit.freeBalance).minus(amount).toNumber();
+    await manager.save(deposit);
+    await this.saveEscrowTxn(manager, deposit.id, amount, {
+      description: `Settlement ${s.id} asset delivery`,
+      metadata: {
+        creditId: credit.id,
+        settlementId: s.id,
+        direction: "DELIVER",
+        symbolId: s.requiredAssetSymbolId,
+      },
+    });
+    this.logger.log(
+      `Settlement ${s.id}: collected ${amount} of ${s.requiredAssetSymbolId} from deposit wallet ${deposit.id}`,
+    );
+  }
+
+  /**
+   * Return a delivered asset to the user's deposit wallet when a settlement ends
+   * without reaching `clearLiability`. Idempotent alongside the cash refund.
+   */
+  private async refundDelivery(
+    manager: any,
+    s: CreditSettlementEntity,
+    reason: string,
+  ): Promise<void> {
+    const delivered = new Decimal(s.receivedAmount || 0);
+    if (!delivered.greaterThan(0) || !s.requiredAssetSymbolId) return;
+    if (s.metadata?.deliveryConsumedAt || s.metadata?.deliveryRefundedAt) return;
+
+    const credit = await manager.findOne(CreditEntity, { where: { id: s.creditId } });
+    if (!credit) return;
+
+    let deposit = await manager.findOne(WalletEntity, {
+      where: {
+        userId: credit.userId,
+        symbolId: s.requiredAssetSymbolId,
+        walletType: WalletTypeEnum.DEPOSIT,
+      },
+      lock: { mode: "pessimistic_write" },
+    });
+    if (!deposit) {
+      deposit = manager.create(WalletEntity, {
+        userId: credit.userId,
+        symbolId: s.requiredAssetSymbolId,
+        walletType: WalletTypeEnum.DEPOSIT,
+        status: WalletStatusEnum.ACTIVE,
+        freeBalance: 0,
+        lockedBalance: 0,
+        availableBalance: 0,
+        creditBalance: 0,
+        frozenFreeBalance: 0,
+        frozenLockedBalance: 0,
+      });
+    }
+    deposit.freeBalance = new Decimal(deposit.freeBalance || 0).plus(delivered).toNumber();
+    const savedDeposit = await manager.save(deposit);
+
+    await this.saveEscrowTxn(manager, savedDeposit.id, delivered.toNumber(), {
+      description: `Settlement ${s.id} delivered asset returned (${reason})`,
+      metadata: {
+        creditId: credit.id,
+        settlementId: s.id,
+        direction: "DELIVER_REFUND",
+        symbolId: s.requiredAssetSymbolId,
+        reason,
+      },
+    });
+
+    s.metadata = {
+      ...(s.metadata || {}),
+      deliveryRefundedAt: new Date().toISOString(),
+      deliveryRefundedAmount: delivered.toNumber(),
+    };
+    this.logger.log(`Settlement ${s.id}: returned delivered asset ${delivered} (${reason})`);
   }
 
   /**

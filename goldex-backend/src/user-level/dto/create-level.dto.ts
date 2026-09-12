@@ -175,6 +175,18 @@ export class CreateLevelDto {
   creditRequireAdminApprovalForCreation?: boolean;
 
   @IsOptional()
+  @IsNumber()
+  @Min(0)
+  @Type(() => Number)
+  @ApiProperty({
+    required: false,
+    description:
+      "Hours a credit request may await approval before it is auto-declined and the " +
+      "collateral returned (0/omitted = no deadline)",
+  })
+  creditRequestApprovalTtlHours?: number;
+
+  @IsOptional()
   @IsBoolean()
   @ApiProperty({ required: false, description: "Settling a facility requires admin approval" })
   creditRequireAdminApprovalForSettlement?: boolean;
