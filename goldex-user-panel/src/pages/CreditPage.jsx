@@ -251,6 +251,8 @@ export default function CreditPage() {
               />
             )}
 
+            <CreditTradePnl creditId={activeCredit.id} />
+
             <SettlementWorkflows creditId={activeCredit.id} nettingEnabled={!!activeCredit.nettingEnabled} onChanged={load} />
           </div>
         ) : pendingCredit ? (
@@ -349,6 +351,73 @@ export default function CreditPage() {
             )}
           </div>
         )}
+      </div>
+    </div>
+  )
+}
+
+/**
+ * Profit or loss on each credit trade at the current market price. The figures
+ * come from the server so the user sees the same valuation the settlement engine
+ * will use, rather than a number the page worked out from a stale price.
+ */
+function CreditTradePnl({ creditId }) {
+  const { t } = useTranslation()
+  const [pnl, setPnl] = useState(null)
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    let alive = true
+    setLoading(true)
+    creditApi.getPnl(creditId)
+      .then((d) => { if (alive) setPnl(d) })
+      .catch(() => { if (alive) setPnl(null) })
+      .finally(() => { if (alive) setLoading(false) })
+    return () => { alive = false }
+  }, [creditId])
+
+  if (loading) return null
+  const orders = (pnl?.orders || []).filter((o) => Number(o.executedQuantity) > 0)
+  if (orders.length === 0) return null
+
+  const tone = (v) => (Number(v) > 0 ? 'txt-buy' : Number(v) < 0 ? 'txt-sell' : '')
+
+  return (
+    <div style={{ marginTop: '1.25rem' }}>
+      <div style={{ display: 'flex', alignItems: 'baseline', gap: '0.75rem', marginBottom: '0.5rem', flexWrap: 'wrap' }}>
+        <span style={{ fontWeight: 600, fontSize: '0.9rem', color: 'var(--text-primary)' }}>{t('credit.tradePnlTitle')}</span>
+        <span className={tone(pnl?.totalPnL)} style={{ fontSize: '0.85rem', fontWeight: 600 }}>
+          {t('credit.totalPnl')}: {fmtNum(pnl?.totalPnL)}
+        </span>
+        <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>
+          {t('credit.unrealizedPnl')}: {fmtNum(pnl?.unrealizedPnL)}
+        </span>
+      </div>
+      <div className="table-wrap">
+        <table className="order-table">
+          <thead>
+            <tr>
+              <th>{t('credit.pair')}</th>
+              <th>{t('credit.side')}</th>
+              <th>{t('credit.quantity')}</th>
+              <th>{t('credit.entryPrice')}</th>
+              <th>{t('credit.markPrice')}</th>
+              <th>{t('credit.pnl')}</th>
+            </tr>
+          </thead>
+          <tbody>
+            {orders.map((o) => (
+              <tr key={o.orderId}>
+                <td>{o.pairKey}</td>
+                <td className={o.side === 'BUY' ? 'txt-buy' : 'txt-sell'}>{o.side}</td>
+                <td>{fmtNum(o.executedQuantity)}</td>
+                <td>{fmtNum(o.entryPrice)}</td>
+                <td>{o.currentPrice != null ? fmtNum(o.currentPrice) : '—'}</td>
+                <td className={tone(o.pnl)}>{fmtNum(o.pnl)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
       </div>
     </div>
   )

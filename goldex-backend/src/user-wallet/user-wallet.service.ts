@@ -11,6 +11,10 @@ import { WalletTypeEnum } from "../wallet/enum/wallet-type.enum";
 import { TransactionEntity } from "../wallet/entities/transaction.entity";
 import { UserLevelService } from "../user-level/user-level.service";
 import { SymbolCapabilitiesService } from "../admin-symbol/symbol-capabilities.service";
+import { CreditEntity } from "../credit/entity/credit.entity";
+import { CollateralLockEntity } from "../credit/entity/collateral-lock.entity";
+import { CreditStatusEnum } from "../credit/enum/credit-status.enum";
+import { CollateralLockStatusEnum } from "../credit/enum/collateral-lock-status.enum";
 
 @Injectable()
 export class UserWalletService {
@@ -25,6 +29,10 @@ export class UserWalletService {
     private readonly userMarketTypeRepo: Repository<UserMarketTypeEntity>,
     @InjectRepository(UserEntity)
     private readonly userRepo: Repository<UserEntity>,
+    @InjectRepository(CreditEntity)
+    private readonly creditRepo: Repository<CreditEntity>,
+    @InjectRepository(CollateralLockEntity)
+    private readonly collateralLockRepo: Repository<CollateralLockEntity>,
     private readonly userLevelService: UserLevelService,
     private readonly capabilities: SymbolCapabilitiesService,
   ) {}
@@ -74,7 +82,10 @@ export class UserWalletService {
     });
     const filtered = await this.filterWalletsByMarketType(userId, wallets);
     const labels = await this.gatewayLabels();
-    return filtered.map((w) => this.toWalletView(w, labels));
+    const lockedCollateral = filtered.some((w) => w.walletType === WalletTypeEnum.COLLATERAL)
+      ? await this.lockedCollateralBySymbol(userId)
+      : {};
+    return filtered.map((w) => this.toWalletView(w, labels, lockedCollateral));
   }
 
   async getWalletById(userId: string, walletId: string) {
@@ -85,7 +96,11 @@ export class UserWalletService {
     if (!wallet) throw new NotFoundException("Wallet not found");
     const filtered = await this.filterWalletsByMarketType(userId, [wallet]);
     if (filtered.length === 0) throw new NotFoundException("Wallet not found");
-    return this.toWalletView(filtered[0], await this.gatewayLabels());
+    const lockedCollateral =
+      filtered[0].walletType === WalletTypeEnum.COLLATERAL
+        ? await this.lockedCollateralBySymbol(userId)
+        : {};
+    return this.toWalletView(filtered[0], await this.gatewayLabels(), lockedCollateral);
   }
 
   // Paginated transactions across the user's wallets (optionally one wallet).
@@ -157,7 +172,48 @@ export class UserWalletService {
     return filtered;
   }
 
-  private toWalletView(w: WalletEntity, gatewayLabels: Record<string, string> = {}) {
+  /**
+   * Collateral each of the user's open credit trades is holding, per symbol.
+   *
+   * A COLLATERAL wallet's balance sits entirely in freeBalance while the
+   * per-trade `collateral_lock` rows record what is actually committed to open
+   * trades, so without this the user sees their whole collateral as available
+   * when part of it is backing a position. Derived on read rather than mirrored
+   * onto the wallet, so the locks remain the only place the figure is authored.
+   */
+  private async lockedCollateralBySymbol(userId: string): Promise<Record<string, number>> {
+    const credits = await this.creditRepo.find({
+      where: { userId, status: In([CreditStatusEnum.ACTIVE, CreditStatusEnum.SUSPENDED]) },
+      select: { id: true, collateralSymbolId: true },
+    });
+    if (!credits.length) return {};
+
+    const locks = await this.collateralLockRepo.find({
+      where: {
+        creditId: In(credits.map((c) => c.id)),
+        status: In([
+          CollateralLockStatusEnum.CREATED,
+          CollateralLockStatusEnum.ACTIVE,
+          CollateralLockStatusEnum.RELEASE_PENDING,
+        ]),
+      },
+    });
+
+    const symbolByCredit = new Map(credits.map((c) => [c.id, c.collateralSymbolId]));
+    const bySymbol: Record<string, number> = {};
+    for (const lock of locks) {
+      const symbolId = symbolByCredit.get(lock.creditId);
+      if (!symbolId) continue;
+      bySymbol[symbolId] = (bySymbol[symbolId] || 0) + (Number(lock.amount) || 0);
+    }
+    return bySymbol;
+  }
+
+  private toWalletView(
+    w: WalletEntity,
+    gatewayLabels: Record<string, string> = {},
+    lockedCollateral: Record<string, number> = {},
+  ) {
     const free = Number(w.freeBalance);
     const locked = Number(w.lockedBalance);
     const frozenFree = Number(w.frozenFreeBalance);
@@ -194,6 +250,18 @@ export class UserWalletService {
       frozenLockedBalance: frozenLocked,
       totalBalance: free + locked + frozenFree + frozenLocked,
       availableBalance: free,
+      // Only a COLLATERAL wallet carries these: how much of the frozen
+      // collateral is committed to open credit trades and how much is still
+      // free to back a new one.
+      ...(w.walletType === WalletTypeEnum.COLLATERAL
+        ? (() => {
+            const committed = Math.min(free, lockedCollateral[w.symbolId] || 0);
+            return {
+              collateralLocked: committed,
+              collateralAvailable: Math.max(0, free - committed),
+            };
+          })()
+        : {}),
       updatedAt: w.updateAt,
     };
   }

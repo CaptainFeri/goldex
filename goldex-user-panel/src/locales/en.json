@@ -330,7 +330,9 @@
     "maxPartAmount": "Maximum amount per part",
     "optionalPlaceholder": "Optional",
     "destinationIbanLabel": "Destination IBAN",
-    "destinationIbanHint": "Depositors will transfer to this IBAN. It need not be in your own name."
+    "destinationIbanHint": "Depositors will transfer to this IBAN. It need not be in your own name.",
+    "collateralLocked": "Backing open trades",
+    "collateralAvailable": "Free to trade against"
   },
   "warehouse": {
     "title": "Warehouse",
@@ -706,7 +708,16 @@
     "requestWithdrawn": "Request withdrawn and collateral returned",
     "requestWithdrawFailed": "Could not withdraw the request",
     "approvalDeadline": "Decision due by",
-    "pendingDeadlineNote": "If it is not decided by then, the request is declined automatically and your collateral is returned."
+    "pendingDeadlineNote": "If it is not decided by then, the request is declined automatically and your collateral is returned.",
+    "tradePnlTitle": "Profit and loss per trade",
+    "totalPnl": "Total",
+    "unrealizedPnl": "Open",
+    "pair": "Pair",
+    "side": "Side",
+    "quantity": "Quantity",
+    "entryPrice": "Entry price",
+    "markPrice": "Market price",
+    "pnl": "P&L"
   },
   "level": {
     "title": "Account Level",

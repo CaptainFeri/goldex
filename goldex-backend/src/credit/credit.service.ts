@@ -2116,6 +2116,29 @@ export class CreditService {
   }
 
   /**
+   * Current mark price per traded pair across a facility's credit orders, keyed
+   * by pair id. One query for all the pairs involved rather than one per trade.
+   */
+  private async markPricesForCreditOrders(credit: CreditEntity): Promise<Record<string, number>> {
+    const pairIds = [
+      ...new Set(
+        (credit.creditOrders || [])
+          .map((co) => co.order?.pricePair?.id || co.order?.pricePairId)
+          .filter((id): id is string => !!id),
+      ),
+    ];
+    if (!pairIds.length) return {};
+
+    const pairs = await this.pricePairRepository.find({ where: { id: In(pairIds) } });
+    const prices: Record<string, number> = {};
+    for (const pair of pairs) {
+      const price = Number(pair.bestSellGramPrice) || Number(pair.bestSellPrice) || 0;
+      if (price > 0) prices[pair.id] = price;
+    }
+    return prices;
+  }
+
+  /**
    * Collateral required to back a notional exposure (handoff §4.2):
    *   requiredCollateral = exposure / leverage
    * expressed in collateral units (e.g. grams). Example: selling 500g XAU at
@@ -2634,11 +2657,17 @@ export class CreditService {
   }
 
   /**
-   * Calculate profit/loss for a credit based on its orders.
-   * For BUY orders: PnL = (currentPrice - entryPrice) * quantity
-   * For SELL orders: PnL = (entryPrice - currentPrice) * quantity
+   * Per-trade profit/loss for a credit, priced against the live market.
+   *
+   * For BUY orders: PnL = (mark − entry) × executed quantity
+   * For SELL orders: PnL = (entry − mark) × executed quantity
+   *
+   * The mark price is resolved per traded pair rather than read from the credit
+   * order's `currentPrice` column: that column is only written by the margin-call
+   * check, which returns early for a facility without call margin, so reading it
+   * reported zero P&L for every trade on most facilities.
    */
-  calculateCreditPnL(credit: CreditEntity): {
+  async calculateCreditPnL(credit: CreditEntity): Promise<{
     totalPnL: number;
     realizedPnL: number;
     unrealizedPnL: number;
@@ -2653,7 +2682,8 @@ export class CreditService {
       status: string;
       pairKey: string;
     }>;
-  } {
+  }> {
+    const markPrices = await this.markPricesForCreditOrders(credit);
     let realizedPnL = 0;
     let unrealizedPnL = 0;
     const orderDetails: Array<{
@@ -2673,7 +2703,10 @@ export class CreditService {
       if (!order) continue;
 
       const entryPrice = Number(co.priceAtOrderTime) || 0;
-      const currentPrice = co.currentPrice ? Number(co.currentPrice) : null;
+      const pairId = order.pricePair?.id || order.pricePairId;
+      const currentPrice =
+        (pairId ? markPrices[pairId] : null) ??
+        (co.currentPrice ? Number(co.currentPrice) : null);
       const quantity = Number(order.quantity) || 0;
       const executedQuantity = Number(order.executedQuantity) || 0;
       const pairKey = order.pricePair
