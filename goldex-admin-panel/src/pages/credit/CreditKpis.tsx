@@ -1,12 +1,19 @@
 import { KpiCard } from "./KpiCard";
 
 export interface CreditStats {
-  totals: { credits: number; active: number; settled: number; cancelled: number; expired: number };
+  totals: { credits: number; active: number; settled: number; cancelled: number; expired: number; pendingRequests?: number };
   exposure: { activeCreditLimit: number; activeUsedCredit: number; activeCollateralValue: number; activeCollateralAmount: number };
   risk: { inDefault: number; marginCall: number; warning: number; adminReview: number; suspended: number };
   settlementDistribution: Record<string, number>;
   riskDistribution: Record<string, number>;
+  /** Settlements sitting in PENDING_ADMIN_REVIEW. */
   pendingApproval: number;
+  /** Credit requests awaiting sign-off — collateral frozen, nothing lent yet. */
+  pendingRequests?: {
+    count: number;
+    frozenCollateral: number;
+    projectedCreditLimit: number;
+  };
   /** Cash-out volume and the platform profit booked on it. */
   cashout?: {
     count: number;
@@ -25,6 +32,13 @@ export function CreditKpis({ stats, onPendingApprovalClick }: { stats: CreditSta
   return (
     <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 12, marginBottom: 16 }}>
       <KpiCard label="کل اعتبارات" value={stats.totals.credits} tone="blue" />
+      {stats.pendingRequests && (
+        <KpiCard
+          label="درخواست در انتظار تأیید"
+          value={stats.pendingRequests.count}
+          tone={stats.pendingRequests.count > 0 ? "gold" : "gray"}
+        />
+      )}
       <KpiCard label="فعال" value={stats.totals.active} tone="green" />
       <KpiCard label="تسویه‌شده" value={stats.totals.settled} tone="gray" />
       <KpiCard label="لغو شده" value={stats.totals.cancelled} tone="gray" />
@@ -48,12 +62,12 @@ export function CreditKpis({ stats, onPendingApprovalClick }: { stats: CreditSta
           type="button"
           onClick={onPendingApprovalClick}
           style={{ all: "unset", cursor: stats.pendingApproval > 0 ? "pointer" : "default" }}
-          title={stats.pendingApproval > 0 ? "مشاهده صف تأیید ادمین" : undefined}
+          title={stats.pendingApproval > 0 ? "مشاهده صف تأیید تسویه" : undefined}
         >
-          <KpiCard label="در انتظار تأیید ادمین" value={stats.pendingApproval} tone={stats.pendingApproval > 0 ? "gold" : "gray"} />
+          <KpiCard label="تسویه در انتظار تأیید" value={stats.pendingApproval} tone={stats.pendingApproval > 0 ? "gold" : "gray"} />
         </button>
       ) : (
-        <KpiCard label="در انتظار تأیید ادمین" value={stats.pendingApproval} tone={stats.pendingApproval > 0 ? "gold" : "gray"} />
+        <KpiCard label="تسویه در انتظار تأیید" value={stats.pendingApproval} tone={stats.pendingApproval > 0 ? "gold" : "gray"} />
       )}
     </div>
   );

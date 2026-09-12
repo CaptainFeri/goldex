@@ -338,10 +338,14 @@ export class CreditSettlementService {
       //     deficit here — before collateral is touched and before the deposit
       //     top-up below, which would otherwise charge the same shortfall twice.
       const escrow = Number(opts.preFundedAmount) || 0;
+      // What the escrow actually had to cover. The deficit is recomputed here at
+      // the current mark price, so it can be smaller than the shortfall the user
+      // funded against — the caller refunds the difference.
+      let appliedPreFunding = 0;
       if (escrow > 0 && deficit > 0) {
-        const applied = Math.min(escrow, deficit);
+        appliedPreFunding = Math.min(escrow, deficit);
         ({ deficit, consumedCollateral, shortfall } = splitDeficit(
-          deficit - applied,
+          deficit - appliedPreFunding,
           result.collateralValue,
           markPrice,
         ));
@@ -350,8 +354,8 @@ export class CreditSettlementService {
           userId: credit.userId,
           creditId: credit.id,
           actionType: CreditActionEnum.CREDIT_SETTLED,
-          description: `Credit ${credit.creditCode} deficit of ${applied} covered from settlement funding`,
-          metadata: { coveredFromSettlementFunding: applied, escrowCollected: escrow },
+          description: `Credit ${credit.creditCode} deficit of ${appliedPreFunding} covered from settlement funding`,
+          metadata: { coveredFromSettlementFunding: appliedPreFunding, escrowCollected: escrow },
         });
       }
 
@@ -500,6 +504,9 @@ export class CreditSettlementService {
           deficit,
           consumedCollateral,
           shortfall,
+          // How much of a settlement-workflow escrow this settlement consumed;
+          // the workflow refunds anything it did not need.
+          appliedPreFunding,
           positions: result.positions,
         },
       };
