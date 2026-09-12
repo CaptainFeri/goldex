@@ -27,9 +27,15 @@ export class CreditUsedCreditNetMig1000000000108 implements MigrationInterface {
    * taken in gold rather than currency — the pure price carried per mesghal.
    */
   private static legs(): string {
+    // Every enum column is compared as text on purpose. TypeORM runs all pending
+    // migrations in one transaction, and Postgres refuses to resolve an enum
+    // label that was added earlier in that same transaction — CASHED_OUT is
+    // added by 1000000000089, so on a database catching up through both this
+    // query would fail with "unsafe use of new value". Casting to text never
+    // resolves the label against the type, so it holds either way.
     return `
       SELECT co.credit_id,
-             o.side AS side,
+             o.side::text AS side,
              CASE WHEN COALESCE(o.executed_quantity, 0) > 0
                   THEN o.executed_quantity
                   ELSE COALESCE(o.quantity, 0)
@@ -41,8 +47,8 @@ export class CreditUsedCreditNetMig1000000000108 implements MigrationInterface {
              END AS pure_price
         FROM credit_order co
         JOIN "order" o ON o.id = co.order_id
-       WHERE o.status = 'COMPLETED'
-         AND co.status <> 'CASHED_OUT'
+       WHERE o.status::text = 'COMPLETED'
+         AND co.status::text <> 'CASHED_OUT'
     `;
   }
 
@@ -82,8 +88,8 @@ export class CreditUsedCreditNetMig1000000000108 implements MigrationInterface {
              FROM credit_order co
              JOIN "order" o ON o.id = co.order_id
             WHERE co.credit_id = c.id
-              AND o.status = 'COMPLETED'
-              AND co.status <> 'CASHED_OUT'
+              AND o.status::text = 'COMPLETED'
+              AND co.status::text <> 'CASHED_OUT'
          )
     `);
   }
