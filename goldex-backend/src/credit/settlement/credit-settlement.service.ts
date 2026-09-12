@@ -55,6 +55,14 @@ export interface SettlementOptions {
    */
   preFundedAmount?: number;
   /**
+   * Base-symbol quantities the settlement workflow already took from the user's
+   * deposit wallet when they delivered the asset they owed, keyed by symbol id.
+   * They close the short position they were delivered against, so the engine
+   * must not also buy that quantity back at mark price and charge the
+   * collateral for it.
+   */
+  preDeliveredAssets?: Record<string, number>;
+  /**
    * Bypasses the "no outstanding shortfall" gate on voluntary settlement
    * (USER_SELF/ADMIN). Only meaningful for ADMIN mode — never honoured for
    * USER_SELF, so a user can never self-settle into default. Every use is
@@ -326,7 +334,13 @@ export class CreditSettlementService {
 
       // 2. Compute the economic state from executed orders.
       const markPrices = await this.resolveBaseMarkPrices(manager, credit, creditOrders, markPrice);
-      const result = this.computeFromOrders(credit, creditOrders, markPrice, markPrices);
+      const result = this.computeFromOrders(
+        credit,
+        creditOrders,
+        markPrice,
+        markPrices,
+        opts.preDeliveredAssets || {},
+      );
       let deficit = result.deficit;
       let consumedCollateral = result.consumedCollateral;
       let shortfall = result.shortfall;
@@ -668,6 +682,7 @@ export class CreditSettlementService {
     creditOrders: CreditOrderEntity[],
     markPrice: number,
     markPrices: Record<string, number>,
+    deliveredAssets: Record<string, number> = {},
   ): SettlementResult {
     let borrowedIr = new Decimal(0);
     let sellRevenueIr = new Decimal(0);
@@ -711,6 +726,18 @@ export class CreditSettlementService {
         price: buyPrice,
         pairKey: pair ? `${pair.baseSymbol?.slug}/${pair.quoteSymbol?.slug}` : "?",
       });
+    }
+
+    // Asset the user has already handed over closes the position it was
+    // delivered against: it reduces both the net position (so the engine does
+    // not buy it back at mark price) and the borrowed quantity that gross
+    // exposure is measured from.
+    for (const [symbolId, delivered] of Object.entries(deliveredAssets)) {
+      const qty = new Decimal(delivered || 0);
+      if (!qty.greaterThan(0)) continue;
+      netXauByBase.set(symbolId, (netXauByBase.get(symbolId) || new Decimal(0)).plus(qty));
+      const borrowed = borrowedXauByBase.get(symbolId);
+      if (borrowed) borrowedXauByBase.set(symbolId, Decimal.max(0, borrowed.minus(qty)));
     }
 
     const netIr = sellRevenueIr.minus(borrowedIr);

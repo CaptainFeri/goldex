@@ -21,6 +21,8 @@ import {
   resolveFacilityPairConfig,
   snapshotCreditLevelDefaults,
 } from "./util/credit-pair-config.util";
+import { computeCreditUsage, groupCreditUsage } from "./util/credit-usage.util";
+import { pendingApprovalDeadline } from "./util/pending-approval.util";
 import { CreditPairConfig } from "./dto/credit-pair-config.dto";
 import { CreateCreditDto } from "./dto/create-credit.dto";
 import { RequestCreditDto } from "./dto/request-credit.dto";
@@ -712,6 +714,12 @@ export class CreditService {
           // The level's credit rules as they stood at creation; the per-pair
           // resolver layers `creditConfigs` over these on every order.
           creditLevelDefaults: snapshotCreditLevelDefaults(level),
+          // Snapshotted so re-configuring the level cannot move the deadline of
+          // a request that is already waiting.
+          approvalTtlHours:
+            level.creditRequestApprovalTtlHours != null
+              ? Number(level.creditRequestApprovalTtlHours)
+              : null,
           abilities: {
             requiredAdminApprovalForCreation: needsApproval,
             allowUserSettlement: level.creditAllowUserSettlement !== false,
@@ -1339,6 +1347,44 @@ export class CreditService {
     }
   }
 
+  /**
+   * Decline credit requests that have waited past their level's approval
+   * deadline, returning the collateral they froze.
+   *
+   * Without this a request nobody decides on holds the user's collateral for
+   * good: the facility is PENDING so no settlement path touches it, and the
+   * collateral is out of the deposit wallet. The deadline is the one snapshotted
+   * on the request, so re-configuring the level never moves it.
+   */
+  async processStalePendingRequests(): Promise<void> {
+    const pending = await this.creditRepository.find({
+      where: { status: CreditStatusEnum.PENDING },
+    });
+    const now = Date.now();
+
+    for (const credit of pending) {
+      const deadline = pendingApprovalDeadline(credit);
+      if (!deadline || now < deadline.getTime()) continue;
+      const ttlHours = Number(credit.metadata?.approvalTtlHours) || 0;
+
+      try {
+        await this.rejectCreditRequest(
+          credit.id,
+          undefined,
+          `Automatically declined: not approved within ${ttlHours} hours`,
+        );
+        this.logger.log(
+          `Credit request ${credit.creditCode} auto-declined after ${ttlHours}h awaiting approval`,
+        );
+      } catch (error) {
+        // One stuck request must not stop the rest of the sweep.
+        this.logger.error(
+          `Could not auto-decline credit request ${credit.creditCode}: ${(error as Error).message}`,
+        );
+      }
+    }
+  }
+
   async processExpiredCredits(): Promise<void> {
     const now = new Date();
     const expiredCredits = await this.creditRepository.find({
@@ -1891,11 +1937,13 @@ export class CreditService {
    * only frozen collateral — so the panels must present it as a waiting state,
    * not as a facility and not as "no credit".
    */
-  async getUserPendingCredit(userId: string): Promise<CreditEntity | null> {
-    return await this.creditRepository.findOne({
+  async getUserPendingCredit(userId: string): Promise<any | null> {
+    const credit = await this.creditRepository.findOne({
       where: { userId, status: CreditStatusEnum.PENDING },
       relations: { creditBaseSymbol: true, collateralSymbol: true },
     });
+    if (!credit) return null;
+    return { ...credit, approvalDeadlineAt: pendingApprovalDeadline(credit) };
   }
 
   /**
@@ -1917,74 +1965,42 @@ export class CreditService {
   }
 
   /**
-   * Sum the IRR value of all COMPLETED credit-linked orders. This is the
-   * facility's "used credit" per the product rule:
-   *   available = creditLimit (credit created at price) − all orders completed
-   * Pending orders are not included here — their amount is locked by the wallet
-   * freeze (freeBalance → lockedBalance), which reduces the available wallet
-   * capacity independently.
+   * The facility's live used credit — the net open position in the credit
+   * currency, so selling a position back out frees the line again:
+   *   available = creditLimit − max(0, borrowed − sell revenue)
+   * See `computeCreditUsage` for why pending and cashed-out trades are excluded.
    */
   async computeUsedCredit(creditId: string): Promise<number> {
     const rows = await this.creditOrderRepository.find({
       where: { creditId },
       relations: { order: true },
     });
-    let total = new Decimal(0);
-    for (const co of rows) {
-      const o = co.order;
-      if (!o) continue;
-      if (o.status !== "COMPLETED") continue;
-      // Cashed-out trades repaid their credit — they no longer use the line.
-      if (co.status === CreditOrderStatusEnum.CASHED_OUT) continue;
-      const price = Number(o.price) || Number(co.priceAtOrderTime) || 0;
-      const qty = Number(o.executedQuantity) > 0 ? Number(o.executedQuantity) : Number(o.quantity || 0);
-      total = total.plus(new Decimal(qty).mul(price));
-    }
-    return total.toNumber();
+    return computeCreditUsage(rows).usedCredit;
   }
 
   /**
-   * Sum the completed-order IRR usage across a set of credits in a single query
-   * (used by the admin dashboard stats to avoid N+1 computeUsedCredit calls).
+   * Net usage summed across a set of credits in a single query (used by the
+   * admin dashboard stats to avoid N+1 computeUsedCredit calls).
    */
   private async sumCompletedCreditUsage(creditIds: string[]): Promise<number> {
     if (!creditIds.length) return 0;
-    const rows = await this.creditOrderRepository.find({
-      where: { creditId: In(creditIds) },
-      relations: { order: true },
-    });
-    let total = new Decimal(0);
-    for (const co of rows) {
-      const o = co.order;
-      if (!o || o.status !== "COMPLETED") continue;
-      if (co.status === CreditOrderStatusEnum.CASHED_OUT) continue;
-      const price = Number(o.price) || Number(co.priceAtOrderTime) || 0;
-      const qty = Number(o.executedQuantity) > 0 ? Number(o.executedQuantity) : Number(o.quantity || 0);
-      total = total.plus(new Decimal(qty).mul(price));
-    }
-    return total.toNumber();
+    const map = await this.computeUsedCreditMap(creditIds);
+    // Summed per facility, not across all rows at once: one facility's sell
+    // revenue must not net off another facility's borrowing.
+    return Object.values(map).reduce((total, used) => total + used, 0);
   }
 
   /**
-   * Per-credit completed-order IRR usage (single query) — used by the CSV export
-   * so every row reflects live usage rather than the stale usedCredit column.
+   * Net usage per credit (single query) — used by the CSV export so every row
+   * reflects live usage rather than the stale usedCredit column.
    */
   private async computeUsedCreditMap(creditIds: string[]): Promise<Record<string, number>> {
-    const map: Record<string, number> = {};
-    if (!creditIds.length) return map;
+    if (!creditIds.length) return {};
     const rows = await this.creditOrderRepository.find({
       where: { creditId: In(creditIds) },
       relations: { order: true },
     });
-    for (const co of rows) {
-      const o = co.order;
-      if (!o || o.status !== "COMPLETED") continue;
-      if (co.status === CreditOrderStatusEnum.CASHED_OUT) continue;
-      const price = Number(o.price) || Number(co.priceAtOrderTime) || 0;
-      const qty = Number(o.executedQuantity) > 0 ? Number(o.executedQuantity) : Number(o.quantity || 0);
-      map[co.creditId] = new Decimal(map[co.creditId] || 0).plus(new Decimal(qty).mul(price)).toNumber();
-    }
-    return map;
+    return groupCreditUsage(rows);
   }
 
   /**
@@ -2273,9 +2289,10 @@ export class CreditService {
 
     // ── max_credit_notional (nominal exposure cap) ──────────────────
     if (credit.maxCreditNotional != null && Number(credit.maxCreditNotional) > 0) {
-      // Current exposure = IRR value of completed credit orders (the real open
-      // notional), not the placement-time `usedCredit` bump which also counts
-      // pending/rejected orders.
+      // Current exposure = the facility's net open position in the credit
+      // currency, so a position the user has already sold back out does not keep
+      // counting against the cap. Not the placement-time `usedCredit` column,
+      // which also counts pending and rejected orders.
       const usedNotional = await this.computeUsedCredit(credit.id);
       const projected = new Decimal(usedNotional).plus(opts.notionalIr || 0);
       if (projected.greaterThan(Number(credit.maxCreditNotional))) {
@@ -2747,10 +2764,18 @@ export class CreditService {
     const total = await qb.getCount();
     const page = query?.page || 1;
     const limit = query?.limit || 20;
-    const items = await qb
+    const rows = await qb
       .skip((page - 1) * limit)
       .take(limit)
       .getMany();
+
+    // A pending request carries the instant it gets auto-declined, so the panel
+    // can count down to it without re-deriving the rule.
+    const items = rows.map((credit) =>
+      credit.status === CreditStatusEnum.PENDING
+        ? Object.assign(credit, { approvalDeadlineAt: pendingApprovalDeadline(credit) })
+        : credit,
+    );
 
     return { items, total, page, limit };
   }

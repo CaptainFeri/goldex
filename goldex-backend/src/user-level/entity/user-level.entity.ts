@@ -153,6 +153,16 @@ export class UserLevelEntity extends myBaseEntity {
   })
   creditRequireAdminApprovalForCreation: boolean;
 
+  // How long a request may sit awaiting that sign-off before the system
+  // declines it and returns the collateral. Null/0 = no deadline, which leaves
+  // the user's collateral frozen until someone decides.
+  @Column({
+    type: "int",
+    nullable: true,
+    name: "credit_request_approval_ttl_hours",
+  })
+  creditRequestApprovalTtlHours: number;
+
   // Whether settling needs an admin to approve it before anything moves.
   @Column({
     type: "boolean",
