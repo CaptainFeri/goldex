@@ -44,6 +44,198 @@ const WALLET_TYPE_META: Record<string, { label: string; kind: "gold" | "gray" | 
 const walletTypeMeta = (w: any) =>
   WALLET_TYPE_META[w.walletType] ?? { label: w.walletType || "—", kind: "gray" as const };
 
+/** Categories the accounting voucher may be filed under. */
+const VOUCHER_CATEGORIES = [
+  { value: "deposit_entry", label: "ثبت واریز" },
+  { value: "withdraw_entry", label: "ثبت برداشت" },
+  { value: "account_correction", label: "اصلاح حساب" },
+  { value: "customer_settlement", label: "تسویه مشتری" },
+  { value: "fee", label: "کارمزد" },
+  { value: "operating_cost", label: "هزینه عملیاتی" },
+];
+
+export interface VoucherDraft {
+  category: string;
+  description: string;
+  customerType: string;
+  extraDescription: string;
+}
+
+export const emptyVoucher = (category = "deposit_entry"): VoucherDraft => ({
+  category,
+  description: "",
+  customerType: "informal",
+  extraDescription: "",
+});
+
+/**
+ * The accounting entry the operator files with a balance change. No deposit or
+ * withdrawal is accepted without one, so this sits in the same form as the
+ * amount rather than being a separate step someone could skip.
+ *
+ * It asks only for what the server cannot derive — the customer, asset, amount,
+ * wallet and direction all come from the operation itself.
+ */
+function VoucherFields({
+  value,
+  onChange,
+}: {
+  value: VoucherDraft;
+  onChange: (patch: Partial<VoucherDraft>) => void;
+}) {
+  return (
+    <>
+      <div style={{ borderTop: "1px solid var(--line)", marginTop: 14, paddingTop: 10 }}>
+        <div style={{ fontSize: "0.85rem", fontWeight: 600, color: "var(--text-muted)" }}>
+          سند حسابداری (الزامی)
+        </div>
+      </div>
+      <div className="field">
+        <label>نوع سند</label>
+        <select
+          className="select"
+          value={value.category}
+          onChange={(e) => onChange({ category: e.target.value })}
+        >
+          {VOUCHER_CATEGORIES.map((o) => (
+            <option key={o.value} value={o.value}>{o.label}</option>
+          ))}
+        </select>
+      </div>
+      <div className="field">
+        <label>شرح سند</label>
+        <textarea
+          className="input"
+          rows={2}
+          minLength={3}
+          required
+          placeholder="علت این تغییر موجودی را بنویسید…"
+          value={value.description}
+          onChange={(e) => onChange({ description: e.target.value })}
+        />
+      </div>
+      <div className="field">
+        <label>نوع طرف حساب</label>
+        <select
+          className="select"
+          value={value.customerType}
+          onChange={(e) => onChange({ customerType: e.target.value })}
+        >
+          <option value="informal">غیررسمی</option>
+          <option value="formal">رسمی</option>
+        </select>
+      </div>
+      <div className="field">
+        <label>شرح تکمیلی (اختیاری)</label>
+        <input
+          className="input"
+          value={value.extraDescription}
+          onChange={(e) => onChange({ extraDescription: e.target.value })}
+        />
+      </div>
+    </>
+  );
+}
+
+/** Only the fields the API takes, with the blanks dropped. */
+export function voucherPayload(v: VoucherDraft) {
+  return {
+    category: v.category,
+    description: v.description.trim(),
+    customerType: v.customerType,
+    extraDescription: v.extraDescription.trim() || undefined,
+  };
+}
+
+/**
+ * Credit or debit a wallet. This is a deposit or a withdrawal, so it always
+ * files an accounting voucher — which is why it is a form and no longer a pair
+ * of window prompts that had nowhere to put one.
+ */
+function BalanceModal({
+  wallet,
+  increase,
+  onClose,
+}: {
+  wallet: any;
+  increase: boolean;
+  onClose: () => void;
+}) {
+  const slug = wallet.symbol?.slug;
+  const qc = useQueryClient();
+  const [amount, setAmount] = useState("");
+  const [description, setDescription] = useState("");
+  const [voucher, setVoucher] = useState<VoucherDraft>(
+    emptyVoucher(increase ? "deposit_entry" : "withdraw_entry"),
+  );
+
+  const submitMutation = useMutation({
+    mutationFn: (p: any) => api.post("/admin/wallets/update-balance", p),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["wallets"] });
+      onClose();
+    },
+  });
+
+  function submit(e: React.FormEvent) {
+    e.preventDefault();
+    // Balances show in the wallet's display unit (toman for rial), so convert
+    // back or the operator posts a tenth of what they typed.
+    const n = toApiAmount(amount, slug);
+    if (n === null || n <= 0) return;
+    submitMutation.mutate({
+      walletId: wallet.id,
+      actionType: increase ? "CREDIT" : "DEBIT",
+      transactionType: increase ? "DEPOSIT" : "WITHDRAWAL",
+      amount: n,
+      description: description || undefined,
+      voucher: voucherPayload(voucher),
+    });
+  }
+
+  return (
+    <Modal title={increase ? "افزایش موجودی" : "کاهش موجودی"} onClose={onClose}>
+      <form onSubmit={submit}>
+        <div className="kv" style={{ marginBottom: 12 }}>
+          <span className="k">کیف‌پول</span>
+          <span className="mono" style={{ fontSize: 12 }}>{wallet.id}</span>
+          <span className="k">دارایی</span>
+          <span>{symbolLabel(wallet.symbol)}</span>
+          <span className="k">موجودی فعلی</span>
+          <span className="mono">
+            {fmtBySymbol(num(wallet.freeBalance, wallet.free), slug, { digits: 6 })}
+          </span>
+        </div>
+        <div className="field">
+          <label>مقدار ({unitLabel(slug)})</label>
+          <input
+            className="input mono"
+            dir="ltr"
+            type="number"
+            step="0.00000001"
+            value={amount}
+            onChange={(e) => setAmount(e.target.value)}
+            required
+            autoFocus
+          />
+        </div>
+        <div className="field">
+          <label>توضیحات تراکنش (اختیاری)</label>
+          <input className="input" value={description} onChange={(e) => setDescription(e.target.value)} />
+        </div>
+        <VoucherFields value={voucher} onChange={(patch) => setVoucher((v) => ({ ...v, ...patch }))} />
+        {submitMutation.isError && <div className="error-text">{apiError(submitMutation.error)}</div>}
+        <div className="row" style={{ justifyContent: "flex-end", gap: 10, marginTop: 12 }}>
+          <button type="button" className="btn ghost" onClick={onClose}>انصراف</button>
+          <button className="btn primary" disabled={submitMutation.isPending}>
+            {submitMutation.isPending ? <span className="spin" /> : "ثبت سند و اعمال"}
+          </button>
+        </div>
+      </form>
+    </Modal>
+  );
+}
+
 function AdjustModal({ wallet, onClose }: { wallet: any; onClose: () => void }) {
   // Balances and the amount field are shown in the wallet's display unit —
   // toman for rial wallets — so the submit has to convert back or the operator
@@ -53,6 +245,11 @@ function AdjustModal({ wallet, onClose }: { wallet: any; onClose: () => void }) 
   const [adjustType, setAdjustType] = useState("INCREASE_FREE");
   const [amount, setAmount] = useState("");
   const [reason, setReason] = useState("");
+  const [voucher, setVoucher] = useState<VoucherDraft>(emptyVoucher());
+
+  // Locking and unlocking move value between buckets of one wallet, so they are
+  // neither a deposit nor a withdrawal and the server does not demand an entry.
+  const needsVoucher = adjustType === "INCREASE_FREE" || adjustType === "DECREASE_FREE";
 
   const adjust = useMutation({
     mutationFn: (p: any) => api.post("/admin/wallets/adjust-balance", p),
@@ -71,6 +268,7 @@ function AdjustModal({ wallet, onClose }: { wallet: any; onClose: () => void }) 
       adjustType,
       amount: n,
       reason: reason || undefined,
+      voucher: needsVoucher ? voucherPayload(voucher) : undefined,
     });
   }
 
@@ -103,6 +301,9 @@ function AdjustModal({ wallet, onClose }: { wallet: any; onClose: () => void }) 
           <label>دلیل</label>
           <textarea className="input" rows={2} value={reason} onChange={(e) => setReason(e.target.value)} />
         </div>
+        {needsVoucher && (
+          <VoucherFields value={voucher} onChange={(patch) => setVoucher((v) => ({ ...v, ...patch }))} />
+        )}
         {adjust.isError && <div className="error-text">{apiError(adjust.error)}</div>}
         <div className="row" style={{ justifyContent: "flex-end", gap: 10, marginTop: 12 }}>
           <button type="button" className="btn ghost" onClick={onClose}>انصراف</button>
@@ -284,6 +485,7 @@ export default function WalletsPage() {
   const [q, setQ] = useState("");
   const [txWallet, setTxWallet] = useState<string | null>(null);
   const [adjustWallet, setAdjustWallet] = useState<any | null>(null);
+  const [balanceWallet, setBalanceWallet] = useState<{ wallet: any; increase: boolean } | null>(null);
   const [freezeWallet, setFreezeWallet] = useState<any | null>(null);
 
   const list = useQuery({
@@ -292,18 +494,6 @@ export default function WalletsPage() {
   });
 
   const invalidate = () => qc.invalidateQueries({ queryKey: ["wallets"] });
-  // Increase/decrease via update-balance: CREDIT pairs with DEPOSIT, DEBIT with WITHDRAWAL.
-  const adjustLegacy = useMutation({
-    mutationFn: (p: { walletId: string; actionType: "CREDIT" | "DEBIT"; amount: number; description?: string }) =>
-      api.post("/admin/wallets/update-balance", {
-        walletId: p.walletId,
-        actionType: p.actionType,
-        transactionType: p.actionType === "CREDIT" ? "DEPOSIT" : "WITHDRAWAL",
-        amount: p.amount,
-        description: p.description,
-      }),
-    onSuccess: invalidate,
-  });
   // Freeze/unfreeze via wallet status.
   const setStatus = useMutation({
     mutationFn: (p: { walletId: string; status: string; note?: string }) =>
@@ -317,18 +507,6 @@ export default function WalletsPage() {
     wallets = wallets.filter((w) => JSON.stringify(w).toLowerCase().includes(s));
   }
 
-  function onAdjustLegacy(wallet: any, increase: boolean) {
-    // The prompt names the unit because it is the only label the operator gets,
-    // and the value is converted back before it goes to the API.
-    const slug = wallet.symbol?.slug;
-    const raw = window.prompt(`${increase ? "افزایش" : "کاهش"} موجودی — مقدار (${unitLabel(slug)}):`);
-    if (raw === null) return;
-    const amount = toApiAmount(raw, slug);
-    if (amount === null || amount <= 0) return;
-    const description = window.prompt("توضیحات:") || undefined;
-    adjustLegacy.mutate({ walletId: wallet.id, actionType: increase ? "CREDIT" : "DEBIT", amount, description });
-  }
-
   function isFrozen(w: any) {
     return w.status && w.status !== "ACTIVE";
   }
@@ -340,7 +518,7 @@ export default function WalletsPage() {
         <input className="input" style={{ width: 220 }} placeholder="جستجو…" value={q} onChange={(e) => setQ(e.target.value)} />
       }
     >
-      {(adjustLegacy.isError || setStatus.isError) && <div className="error-text">{apiError(adjustLegacy.error || setStatus.error)}</div>}
+      {setStatus.isError && <div className="error-text">{apiError(setStatus.error)}</div>}
       {list.isLoading ? (
         <Loading />
       ) : list.isError ? (
@@ -402,11 +580,11 @@ export default function WalletsPage() {
                         <button className="btn sm" onClick={() => setAdjustWallet(w)}>
                           تعدیل دقیق
                         </button>
-                        <button className="btn sm" disabled={adjustLegacy.isPending} onClick={() => onAdjustLegacy(w, true)}>
-                          + افزایش سریع
+                        <button className="btn sm" onClick={() => setBalanceWallet({ wallet: w, increase: true })}>
+                          + افزایش
                         </button>
-                        <button className="btn sm" disabled={adjustLegacy.isPending} onClick={() => onAdjustLegacy(w, false)}>
-                          − کاهش سریع
+                        <button className="btn sm" onClick={() => setBalanceWallet({ wallet: w, increase: false })}>
+                          − کاهش
                         </button>
                         <button
                           className="btn sm"
@@ -436,6 +614,13 @@ export default function WalletsPage() {
 
       {txWallet && <TxModal walletId={txWallet} onClose={() => setTxWallet(null)} />}
       {adjustWallet && <AdjustModal wallet={adjustWallet} onClose={() => setAdjustWallet(null)} />}
+      {balanceWallet && (
+        <BalanceModal
+          wallet={balanceWallet.wallet}
+          increase={balanceWallet.increase}
+          onClose={() => setBalanceWallet(null)}
+        />
+      )}
       {freezeWallet && <FreezeModal wallet={freezeWallet} onClose={() => setFreezeWallet(null)} />}
     </Card>
   );

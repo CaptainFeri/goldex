@@ -1,5 +1,6 @@
 import { BadRequestException, ForbiddenException, NotFoundException } from "@nestjs/common";
 import { AdminAccountingService, sideForMovement } from "./admin-accounting.service";
+import { AccountingVoucherWriter } from "./accounting-voucher.writer";
 import {
   AccountingGranularity,
   AccountingMetric,
@@ -36,7 +37,7 @@ const voucher = (over: Record<string, unknown> = {}) => ({
 
 function build(current = voucher()) {
   const state = { row: current as any };
-  const vouchers = {
+  const vouchers: any = {
     findOne: jest.fn(async () => state.row),
     create: jest.fn((v) => v),
     save: jest.fn(async (v) => {
@@ -74,9 +75,26 @@ function build(current = voucher()) {
     findOne: jest.fn(async () => ({ id: "sym-1", slug: "IRR" })),
     find: jest.fn(async () => [{ id: "sym-1", slug: "IRR" }]),
   };
+  // The writer writes through the repository's manager, so the mock stands in
+  // for both: `create`/`save` land on the same spies the assertions read, and
+  // `query` answers the voucher-number lookup.
+  vouchers.manager = {
+    create: (_entity: unknown, v: any) => vouchers.create(v),
+    save: (_entity: unknown, v: any) => vouchers.save(v),
+  };
+  vouchers.query = jest.fn(async () => [{ max: null }]);
+  const writer = new AccountingVoucherWriter();
+  (writer as any).nextVoucherCode = jest.fn(async () => "DOC-14050001");
+
   return {
-    service: new AdminAccountingService(ledger as any, vouchers as any, symbols as any),
+    service: new AdminAccountingService(
+      ledger as any,
+      vouchers as any,
+      symbols as any,
+      writer,
+    ),
     vouchers,
+    writer,
     state,
   };
 }
