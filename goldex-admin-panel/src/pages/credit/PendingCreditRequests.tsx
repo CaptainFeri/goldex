@@ -8,6 +8,31 @@ import { fmtBySymbol } from "../../lib/money";
 import type { Credit } from "../../api/types";
 
 /**
+ * How long is left before the level's approval deadline auto-declines a request
+ * and returns its collateral. `approvalDeadlineAt` comes from the server so the
+ * panel and the cron agree on the instant; a level with no deadline sends null
+ * and the request waits indefinitely.
+ */
+function DeadlineCell({ deadline }: { deadline?: string | null }) {
+  if (!deadline) return <span style={{ color: "var(--text-faint)" }}>بدون مهلت</span>;
+
+  const msLeft = new Date(deadline).getTime() - Date.now();
+  if (!Number.isFinite(msLeft)) return <span style={{ color: "var(--text-faint)" }}>—</span>;
+  if (msLeft <= 0) {
+    return <span style={{ color: "var(--red)" }}>گذشته — رد خودکار</span>;
+  }
+
+  const hours = Math.floor(msLeft / 3_600_000);
+  const minutes = Math.floor((msLeft % 3_600_000) / 60_000);
+  const urgent = msLeft < 6 * 3_600_000;
+  return (
+    <span className="mono" style={{ color: urgent ? "var(--gold)" : "inherit", fontSize: 12 }}>
+      {hours > 0 ? `${hours} ساعت` : `${minutes} دقیقه`}
+    </span>
+  );
+}
+
+/**
  * Credit requests waiting on admin sign-off — levels with
  * creditRequireAdminApprovalForCreation turned on create the facility PENDING
  * with the user's collateral already frozen and no credit line issued.
@@ -105,6 +130,7 @@ export function PendingCreditRequests({ onOpenCredit }: { onOpenCredit: (credit:
                 <th>اهرم</th>
                 <th>حد اعتبار درخواستی</th>
                 <th>ثبت‌شده در</th>
+                <th>مهلت تأیید</th>
                 <th>عملیات</th>
               </tr>
             </thead>
@@ -129,6 +155,7 @@ export function PendingCreditRequests({ onOpenCredit }: { onOpenCredit: (credit:
                     <td className="mono">{c.leverage != null ? `${c.leverage}x` : "—"}</td>
                     <td className="mono">{fmtBySymbol(c.creditLimit, c.creditBaseSymbol?.slug)}</td>
                     <td>{fmtDate(c.createAt)}</td>
+                    <td><DeadlineCell deadline={c.approvalDeadlineAt} /></td>
                     <td>
                       <div className="row" style={{ gap: 4 }}>
                         <button className="btn sm" disabled={busyId === c.id} onClick={() => approve(c)}>

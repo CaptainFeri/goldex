@@ -613,10 +613,16 @@ function PendingRequestCard({ request, onChanged }) {
           value={`${fmtNum(request.creditLimit)} ${baseSlug}`}
         />
         <KV label={t('credit.submittedAt')} value={fmtDate(request.createAt)} />
+        {/* The level may cap how long a request can wait; after that it is
+            auto-declined and the collateral comes back on its own. */}
+        {request.approvalDeadlineAt && (
+          <KV label={t('credit.approvalDeadline')} value={fmtDate(request.approvalDeadlineAt)} />
+        )}
       </div>
 
       <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginTop: '0.75rem' }}>
         {t('credit.pendingRepriceNote')}
+        {request.approvalDeadlineAt ? ` ${t('credit.pendingDeadlineNote')}` : ''}
       </p>
 
       <div style={{ marginTop: '1rem' }}>

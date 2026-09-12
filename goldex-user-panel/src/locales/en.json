@@ -704,7 +704,9 @@
     "withdrawRequest": "Withdraw request",
     "withdrawConfirm": "Withdraw this request? Your {{amount}} of frozen collateral returns to your deposit wallet and you can submit a new request.",
     "requestWithdrawn": "Request withdrawn and collateral returned",
-    "requestWithdrawFailed": "Could not withdraw the request"
+    "requestWithdrawFailed": "Could not withdraw the request",
+    "approvalDeadline": "Decision due by",
+    "pendingDeadlineNote": "If it is not decided by then, the request is declined automatically and your collateral is returned."
   },
   "level": {
     "title": "Account Level",
