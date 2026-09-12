@@ -19,7 +19,7 @@ import { computeCashoutFee } from "../util/cashout-fee.util";
 import { CreditOrderStatusEnum } from "../enum/credit-order-status.enum";
 import { CashoutSourceEnum } from "../enum/cashout-source.enum";
 import { CreditNotificationTypeEnum } from "../enum/credit-notification-type.enum";
-import { CreditActionEnum } from "../enum/credit-action.enum";
+import { FinanceActionEnum } from "../../finance-log/enum/finance-action.enum";
 import { RiskStateEnum } from "../enum/risk-state.enum";
 import { CollateralLockStatusEnum } from "../enum/collateral-lock-status.enum";
 import { WalletEntity } from "../../wallet/entities/wallet.entity";
@@ -756,7 +756,7 @@ export class CreditCashoutService {
           userId: credit.userId,
           creditId: credit.id,
           orderId: co.orderId,
-          actionType: CreditActionEnum.CREDIT_CASHED_OUT,
+          actionType: FinanceActionEnum.CREDIT_CASHED_OUT,
           description:
             `Credit ${credit.creditCode}: purchase ${priced.orderCode} cashed out for ` +
             `${priced.amount} from ${params.source}. Released ${netAssetAmount.toFixed(8)} ` +

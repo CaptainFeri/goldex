@@ -7,12 +7,13 @@ import { AccountingVoucherEntity } from "./entity/accounting-voucher.entity";
 import { AdminAccountingController } from "./admin-accounting.controller";
 import { AdminAccountingService } from "./admin-accounting.service";
 import { AccountingExportService } from "./accounting-export.service";
+import { AccountingVoucherWriter } from "./accounting-voucher.writer";
 
 @Module({
   imports: [
     OperationOtpModule,TypeOrmModule.forFeature([SystemLedgerEntity, AccountingVoucherEntity, SymbolEntity])],
   controllers: [AdminAccountingController],
-  providers: [AdminAccountingService, AccountingExportService],
-  exports: [AdminAccountingService],
+  providers: [AdminAccountingService, AccountingExportService, AccountingVoucherWriter],
+  exports: [AdminAccountingService, AccountingVoucherWriter],
 })
 export class AdminAccountingModule {}

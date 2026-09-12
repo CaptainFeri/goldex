@@ -8,6 +8,7 @@ import { WalletTypeEnum } from "../wallet/enum/wallet-type.enum";
 import { RIAL_SYMBOL_SLUG } from "../shared/constants/currency.constants";
 import { PaginatedDto, paginate } from "../shared/dto/paginated.dto";
 import { AccountingVoucherEntity } from "./entity/accounting-voucher.entity";
+import { AccountingVoucherWriter } from "./accounting-voucher.writer";
 import {
   AccountingGranularity,
   AccountingMetric,
@@ -46,9 +47,8 @@ const JALALI_MONTHS = ["فرو", "ارد", "خرد", "تیر", "مرد", "شهر
  * its own `side` would be ignored, because a voucher whose stated side
  * disagreed with its movement reconciles to nothing.
  */
-export function sideForMovement(movement: VoucherMovement): VoucherSide {
-  return movement === VoucherMovement.DEPOSIT ? VoucherSide.CREDITOR : VoucherSide.DEBTOR;
-}
+/** Re-exported from the voucher writer, which derives it on every write. */
+export { sideFor as sideForMovement } from "./accounting-voucher.writer";
 
 @Injectable()
 export class AdminAccountingService {
@@ -56,6 +56,7 @@ export class AdminAccountingService {
     @InjectRepository(SystemLedgerEntity) private readonly ledger: Repository<SystemLedgerEntity>,
     @InjectRepository(AccountingVoucherEntity) private readonly vouchers: Repository<AccountingVoucherEntity>,
     @InjectRepository(SymbolEntity) private readonly symbols: Repository<SymbolEntity>,
+    private readonly voucherWriter: AccountingVoucherWriter,
   ) {}
 
   // ── §5.21 Accounting ────────────────────────────────────────────────────
@@ -320,28 +321,24 @@ export class AdminAccountingService {
     const documentDate = new Date(dto.documentDate);
     if (Number.isNaN(documentDate.getTime())) throw new BadRequestException("VOUCHER.INVALID_DATE");
 
-    const saved = await this.vouchers.save(
-      this.vouchers.create({
-        voucherCode: await this.nextVoucherCode(),
-        customerId: dto.customerId ?? null,
-        customerName: dto.customerName,
-        customerType: dto.customerType,
-        category: dto.category,
-        movement: dto.movement,
-        // Derived here, never taken from the request.
-        side: sideForMovement(dto.movement),
-        symbolId: dto.symbolId,
-        amount: dto.amount,
-        walletType: dto.walletType,
-        walletSubset: dto.walletSubset,
-        description: dto.description,
-        extraDescription: dto.extraDescription ?? null,
-        documentDate,
-        // Always born a draft: booking is a separate, reviewed step.
-        status: VoucherStatus.DRAFT,
-        createdBy: adminId,
-      }),
-    );
+    // Always born a draft: booking is a separate, reviewed step. The writer owns
+    // the voucher numbering, which this shares with vouchers filed alongside a
+    // wallet operation — one series, no duplicate generator.
+    const saved = await this.voucherWriter.createDraft(this.vouchers.manager, {
+      customerId: dto.customerId ?? null,
+      customerName: dto.customerName,
+      customerType: dto.customerType,
+      category: dto.category,
+      movement: dto.movement,
+      symbolId: dto.symbolId,
+      amount: dto.amount,
+      walletType: dto.walletType,
+      walletSubset: dto.walletSubset,
+      description: dto.description,
+      extraDescription: dto.extraDescription ?? null,
+      documentDate,
+      createdBy: adminId,
+    });
     return this.findVoucher(saved.id);
   }
 
@@ -407,16 +404,6 @@ export class AdminAccountingService {
    * Sequenced within the Jalali month so the reference reads the way an
    * accountant files it, and taken from the count of that month's rows.
    */
-  private async nextVoucherCode(): Promise<string> {
-    const now = jMoment();
-    const prefix = `DOC-${now.jYear()}${String(now.jMonth() + 1).padStart(2, "0")}`;
-    const used = await this.vouchers
-      .createQueryBuilder("v")
-      .where("v.voucher_code LIKE :p", { p: `${prefix}%` })
-      .getCount();
-    return `${prefix}${String(used + 1).padStart(4, "0")}`;
-  }
-
   private toVoucherDto(v: any): VoucherDto {
     return {
       id: v.id,

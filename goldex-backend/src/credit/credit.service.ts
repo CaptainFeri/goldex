@@ -43,7 +43,7 @@ import { KycStatusEnum } from "../baseinfo/enum/kycStatus.enum";
 import { OrderEntity } from "../order/order.entity";
 import { OrderStatusEnum } from "../order/enum/order.status.enum";
 import { FinanceLogEntity } from "../finance-log/entity/finance-log.entity";
-import { CreditActionEnum } from "./enum/credit-action.enum";
+import { FinanceActionEnum } from "../finance-log/enum/finance-action.enum";
 import { WalletStatusEnum } from "../wallet/enum/wallet-status.enum";
 import { WalletOrderService } from "../wallet/services/wallet-order.service";
 import { CreditSettlementService, SettlementState } from "./settlement/credit-settlement.service";
@@ -170,7 +170,7 @@ export class CreditService {
             await this.logFinanceAction(manager, {
               adminId,
               userId: dto.userId,
-              actionType: CreditActionEnum.MATERIAL_FREEZE,
+              actionType: FinanceActionEnum.MATERIAL_FREEZE,
               description: `Frozen ${freezeAmount.toString()} of ${symbol?.name || wallet.symbolId} (Material) for credit`,
               metadata: { symbolId: wallet.symbolId, amount: freezeAmount.toString(), walletId: wallet.id },
             });
@@ -215,7 +215,7 @@ export class CreditService {
             await this.logFinanceAction(manager, {
               adminId,
               userId: dto.userId,
-              actionType: CreditActionEnum.MATERIAL_FREEZE,
+              actionType: FinanceActionEnum.MATERIAL_FREEZE,
               description: `Frozen ${available.toString()} of ${symbol.name} (Material) for credit`,
               metadata: { symbolId: symbol.id, symbolName: symbol.name, amount: available.toString(), walletId: wallet.id },
             });
@@ -403,7 +403,7 @@ export class CreditService {
         userId: dto.userId,
         creditId: savedCredit.id,
         walletId: primaryWallet.id,
-        actionType: CreditActionEnum.CREDIT_CREATED,
+        actionType: FinanceActionEnum.CREDIT_CREATED,
         description: `Credit created for ${totalAmount} ${primarySymbolName} on wallet, expireAt: ${dto.expireAt}`,
         metadata: {
           creditCode: savedCredit.creditCode,
@@ -424,7 +424,7 @@ export class CreditService {
           userId: dto.userId,
           creditId: savedCredit.id,
           walletId: a.wallet.id,
-          actionType: CreditActionEnum.BALANCE_INCREASED,
+          actionType: FinanceActionEnum.BALANCE_INCREASED,
           description: `Balance increased by ${a.amount} ${a.symbolName} for credit ${savedCredit.creditCode}`,
           metadata: { amount: a.amount, creditCode: savedCredit.creditCode },
         });
@@ -1272,7 +1272,7 @@ export class CreditService {
               userId: order.userId,
               creditId: creditOrder.creditId,
               orderId: order.id,
-              actionType: CreditActionEnum.LIQUIDATION,
+              actionType: FinanceActionEnum.LIQUIDATION,
               description: `Partial order refund of ${refundAmount.toString()} to Rial wallet due to margin call`,
               metadata: { partialQuantity: partialQty.toString(), refundAmount: refundAmount.toString() },
             });
@@ -1332,7 +1332,7 @@ export class CreditService {
         adminId: null,
         userId: credit.userId,
         creditId: credit.id,
-        actionType: CreditActionEnum.REMINDER_SENT,
+        actionType: FinanceActionEnum.REMINDER_SENT,
         description: message,
         metadata: { daysRemaining, hoursRemaining: diffHours, reminderTimerHours: credit.reminderTimerHours },
         actionTime: now,
@@ -1667,7 +1667,7 @@ export class CreditService {
       await this.logFinanceAction(manager, {
         adminId: adminId ?? null,
         userId,
-        actionType: CreditActionEnum.WALLET_UNFROZEN,
+        actionType: FinanceActionEnum.WALLET_UNFROZEN,
         description: `All wallets unfrozen after credit ${creditCode} settlement`,
         metadata: { walletCount: wallets.length },
       });
@@ -1745,7 +1745,7 @@ export class CreditService {
           userId: credit.userId,
           creditId: credit.id,
           walletId: wallet.id,
-          actionType: CreditActionEnum.CREDIT_CANCELLED,
+          actionType: FinanceActionEnum.CREDIT_CANCELLED,
           description: `Credit ${credit.creditCode} amount of ${clawback.toString()} clawed back on cancellation`,
           metadata: { creditCode: credit.creditCode, clawback: clawback.toNumber(), reason },
         });
@@ -1802,7 +1802,7 @@ export class CreditService {
         adminId,
         userId: credit.userId,
         creditId: credit.id,
-        actionType: CreditActionEnum.CREDIT_CANCELLED,
+        actionType: FinanceActionEnum.CREDIT_CANCELLED,
         description: reason || `Credit ${credit.creditCode} cancelled`,
         metadata: { creditCode: credit.creditCode, reason },
       });
@@ -1918,7 +1918,7 @@ export class CreditService {
       userId: credit.userId,
       creditId: credit.id,
       walletId: depositWallet.id,
-      actionType: CreditActionEnum.CREDIT_CANCELLED,
+      actionType: FinanceActionEnum.CREDIT_CANCELLED,
       description: `Collateral of ${returned.toString()} returned after credit ${credit.creditCode} cancellation`,
       metadata: { creditCode: credit.creditCode, returned: returned.toNumber(), reason },
     });
@@ -2482,7 +2482,7 @@ export class CreditService {
         adminId,
         userId: credit.userId,
         creditId: credit.id,
-        actionType: CreditActionEnum.CREDIT_SUSPENDED,
+        actionType: FinanceActionEnum.CREDIT_SUSPENDED,
         description: `Credit ${credit.creditCode} suspended${reason ? `: ${reason}` : ""}. All wallets frozen.`,
         metadata: { reason },
       });
@@ -2511,7 +2511,7 @@ export class CreditService {
         adminId,
         userId: credit.userId,
         creditId: credit.id,
-        actionType: CreditActionEnum.CREDIT_REACTIVATED,
+        actionType: FinanceActionEnum.CREDIT_REACTIVATED,
         description: `Credit ${credit.creditCode} reactivated${reason ? `: ${reason}` : ""}. Wallets unfrozen.`,
         metadata: { reason },
       });
@@ -2543,7 +2543,7 @@ export class CreditService {
         adminId,
         userId: credit.userId,
         creditId: credit.id,
-        actionType: CreditActionEnum.CREDIT_EXTENDED,
+        actionType: FinanceActionEnum.CREDIT_EXTENDED,
         description: `Credit ${credit.creditCode} settlement extended by ${hours}h${reason ? ` (${reason})` : ""}`,
         metadata: { hours, reason },
       });
@@ -2605,7 +2605,7 @@ export class CreditService {
         userId: credit.userId,
         creditId: credit.id,
         walletId: creditWallet.id,
-        actionType: CreditActionEnum.CREDIT_LIMIT_ADJUSTED,
+        actionType: FinanceActionEnum.CREDIT_LIMIT_ADJUSTED,
         description: `Credit ${credit.creditCode} limit adjusted ${oldLimit} → ${newLimit}${reason ? ` (${reason})` : ""}`,
         metadata: { oldLimit, newLimit, delta: delta.toNumber(), reason },
       });
@@ -2879,7 +2879,7 @@ export class CreditService {
       creditId?: string;
       walletId?: string;
       orderId?: string;
-      actionType: CreditActionEnum;
+      actionType: FinanceActionEnum;
       description: string;
       metadata?: any;
     },
@@ -2951,7 +2951,7 @@ export class CreditService {
         adminId: null,
         userId,
         creditId,
-        actionType: CreditActionEnum.ALL_WALLETS_FROZEN,
+        actionType: FinanceActionEnum.ALL_WALLETS_FROZEN,
         description: `All wallets frozen due to margin call on credit ${creditId}`,
         metadata: { walletCount: wallets.length },
       });
@@ -3370,7 +3370,7 @@ export class CreditService {
         adminId,
         userId: credit.userId,
         creditId: credit.id,
-        actionType: CreditActionEnum.CREDIT_LIMIT_ADJUSTED,
+        actionType: FinanceActionEnum.CREDIT_LIMIT_ADJUSTED,
         description:
           `Credit ${credit.creditCode} settlement policy updated` +
           (reason ? `: ${reason}` : ""),

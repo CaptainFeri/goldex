@@ -20,7 +20,7 @@ import { CreditNotificationTypeEnum } from "../enum/credit-notification-type.enu
 import { SettlementStateEnum } from "../enum/settlement-state.enum";
 import { RiskStateEnum } from "../enum/risk-state.enum";
 import { splitDeficit } from "../util/deficit-split.util";
-import { CreditActionEnum } from "../enum/credit-action.enum";
+import { FinanceActionEnum } from "../../finance-log/enum/finance-action.enum";
 import { WalletEntity } from "../../wallet/entities/wallet.entity";
 import { WalletTypeEnum } from "../../wallet/enum/wallet-type.enum";
 import { WalletStatusEnum } from "../../wallet/enum/wallet-status.enum";
@@ -367,7 +367,7 @@ export class CreditSettlementService {
           adminId: opts.adminId ?? null,
           userId: credit.userId,
           creditId: credit.id,
-          actionType: CreditActionEnum.CREDIT_SETTLED,
+          actionType: FinanceActionEnum.CREDIT_SETTLED,
           description: `Credit ${credit.creditCode} deficit of ${appliedPreFunding} covered from settlement funding`,
           metadata: { coveredFromSettlementFunding: appliedPreFunding, escrowCollected: escrow },
         });
@@ -388,7 +388,7 @@ export class CreditSettlementService {
             adminId: opts.adminId ?? null,
             userId: credit.userId,
             creditId: credit.id,
-            actionType: CreditActionEnum.CREDIT_SETTLED,
+            actionType: FinanceActionEnum.CREDIT_SETTLED,
             description: `Credit ${credit.creditCode} deficit of ${deficit} covered from deposit wallet`,
             metadata: { coveredFromDeposit: deficit },
           });
@@ -530,7 +530,7 @@ export class CreditSettlementService {
         adminId: opts.adminId ?? null,
         userId: credit.userId,
         creditId: credit.id,
-        actionType: CreditActionEnum.CREDIT_SETTLED,
+        actionType: FinanceActionEnum.CREDIT_SETTLED,
         description:
           `Credit ${credit.creditCode} settled (${opts.mode}${opts.force ? ", FORCED past shortfall gate" : ""}). ` +
           `netIr ${result.netIr}, netEquity ${result.netEquity}, surplus ${releaseIr}, deficit ${deficit}, ` +
@@ -650,7 +650,7 @@ export class CreditSettlementService {
       adminId: opts.adminId ?? null,
       userId: credit.userId,
       creditId: credit.id,
-      actionType: CreditActionEnum.CREDIT_SETTLED,
+      actionType: FinanceActionEnum.CREDIT_SETTLED,
       description: `Credit ${credit.creditCode} settled (legacy, ${opts.mode}). Residual ${residual} left for review.`,
       metadata: { mode: opts.mode, legacy: true, residual },
     });
@@ -890,7 +890,7 @@ export class CreditSettlementService {
           adminId: opts.adminId ?? null,
           userId: credit.userId,
           creditId: credit.id,
-          actionType: CreditActionEnum.LIQUIDATION,
+          actionType: FinanceActionEnum.LIQUIDATION,
           description:
             `Credit ${credit.creditCode} collateral of ${consume.toString()} consumed ` +
             `to cover settlement deficit of ${deficit}`,
@@ -1041,7 +1041,7 @@ export class CreditSettlementService {
       adminId: string | null;
       userId: string;
       creditId?: string;
-      actionType: CreditActionEnum;
+      actionType: FinanceActionEnum;
       description: string;
       metadata?: any;
     },

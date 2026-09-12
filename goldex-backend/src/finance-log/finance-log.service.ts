@@ -4,7 +4,6 @@ import { Repository, In } from "typeorm";
 import * as ExcelJS from "exceljs";
 import { FinanceLogEntity } from "./entity/finance-log.entity";
 import { FinanceLogQueryDto } from "./dto/finance-log-query.dto";
-import { CreditActionEnum } from "../credit/enum/credit-action.enum";
 import { AdminEntity } from "../admin/entity/admin.entity";
 import { UserEntity } from "../user/entity/user.entity";
 import { CreditEntity } from "../credit/entity/credit.entity";
@@ -29,6 +28,33 @@ const ACTION_LABELS: Record<string, string> = {
   USER_STATUS_CHANGED: "تغییر وضعیت کاربر",
   ALL_WALLETS_FROZEN: "مسدود همه کیف‌پول‌ها",
   REMINDER_SENT: "ارسال یادآوری",
+  CREDIT_SUSPENDED: "تعلیق اعتبار",
+  CREDIT_REACTIVATED: "رفع تعلیق اعتبار",
+  CREDIT_EXTENDED: "تمدید مهلت اعتبار",
+  CREDIT_LIMIT_ADJUSTED: "تغییر حد اعتبار",
+  CREDIT_FORCE_LIQUIDATED: "نقد اجباری اعتبار",
+  CREDIT_CASHED_OUT: "نقد کردن خرید اعتباری",
+  DEPOSIT: "واریز",
+  WITHDRAWAL: "برداشت",
+  MATERIAL_DEPOSIT: "واریز کالا",
+  MATERIAL_WITHDRAW: "برداشت کالا",
+  ORDER_PLACED: "ثبت سفارش",
+  ORDER_BUY: "خرید",
+  ORDER_SELL: "فروش",
+  ORDER_CANCELLED: "لغو سفارش",
+  ORDER_REJECTED: "رد سفارش",
+  COMMISSION: "کارمزد",
+  REFERRAL: "پاداش معرفی",
+  ADMIN_ADJUSTMENT: "اصلاح توسط مدیر",
+  CREDIT_DEPOSIT: "واریز به کیف اعتبار",
+  CREDIT_WITHDRAWAL: "برداشت از کیف اعتبار",
+  MATERIAL_UNFREEZE: "رفع مسدودی کالا",
+  P2P_WITHDRAW_LOCK: "مسدودسازی برداشت همتا",
+  P2P_WITHDRAW_SETTLE: "تسویه برداشت همتا",
+  P2P_WITHDRAW_RELEASE: "آزادسازی برداشت همتا",
+  P2P_DEPOSIT_SETTLE: "تسویه واریز همتا",
+  P2P_ADMIN_SETTLE: "تسویه همتا توسط مدیر",
+  OTHER: "سایر",
 };
 
 function persianDate(d: Date): string {
