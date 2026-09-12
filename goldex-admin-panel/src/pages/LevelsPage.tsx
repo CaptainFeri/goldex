@@ -4,6 +4,7 @@ import { api, unwrap, apiError } from "../api/client";
 import { Card, Badge, Loading, ErrorState, Empty, Modal } from "../components/ui";
 import { pairLabel } from "../lib/format";
 import { fmtBySymbol, toApiAmount, toFormAmount, unitLabel } from "../lib/money";
+import type { UserLevel } from "../api/types";
 import DateField from "../components/DateField";
 
 const fmtDate = (d: string | null) =>
@@ -62,7 +63,7 @@ export default function LevelsPage() {
 
   const list = useQuery({
     queryKey: ["user-levels"],
-    queryFn: async () => unwrap<any[]>((await api.get("/admin/user-levels")).data),
+    queryFn: async () => unwrap<UserLevel[]>((await api.get("/admin/user-levels")).data),
   });
 
   const create = useMutation({

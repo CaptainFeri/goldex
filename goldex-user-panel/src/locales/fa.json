@@ -330,7 +330,9 @@
     "maxPartAmount": "حداکثر مبلغ هر مرحله",
     "optionalPlaceholder": "اختیاری",
     "destinationIbanLabel": "شبای مقصد",
-    "destinationIbanHint": "واریزکنندگان مبلغ را به این شبا واریز می‌کنند. لازم نیست به نام خودتان باشد."
+    "destinationIbanHint": "واریزکنندگان مبلغ را به این شبا واریز می‌کنند. لازم نیست به نام خودتان باشد.",
+    "collateralLocked": "پشتوانه‌ی معاملات باز",
+    "collateralAvailable": "قابل استفاده برای معامله"
   },
   "warehouse": {
     "title": "انبار",
@@ -706,7 +708,16 @@
     "requestWithdrawn": "درخواست لغو شد و وثیقه بازگشت",
     "requestWithdrawFailed": "لغو درخواست انجام نشد",
     "approvalDeadline": "مهلت تصمیم‌گیری",
-    "pendingDeadlineNote": "اگر تا آن زمان تصمیمی گرفته نشود، درخواست خودکار رد می‌شود و وثیقه‌ی شما برمی‌گردد."
+    "pendingDeadlineNote": "اگر تا آن زمان تصمیمی گرفته نشود، درخواست خودکار رد می‌شود و وثیقه‌ی شما برمی‌گردد.",
+    "tradePnlTitle": "سود و زیان هر معامله",
+    "totalPnl": "مجموع",
+    "unrealizedPnl": "باز",
+    "pair": "جفت‌ارز",
+    "side": "سمت",
+    "quantity": "مقدار",
+    "entryPrice": "قیمت ورود",
+    "markPrice": "قیمت بازار",
+    "pnl": "سود/زیان"
   },
   "level": {
     "title": "سطح حساب",

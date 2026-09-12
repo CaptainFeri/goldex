@@ -210,6 +210,9 @@ export const creditApi = {
   settleCredit: async (id) =>
     unwrap(await http.post(`/credits/${id}/settle`)),
 
+  getPnl: async (id) =>
+    unwrap(await http.get(`/credits/${id}/pnl`)),
+
   // Delivery-based settlement workflow
   requestSettlement: async (creditId, data = {}) =>
     unwrap(await http.post(`/credits/${creditId}/settlement`, data)),

@@ -1977,3 +1977,61 @@ export interface PriceEngineConfig {
   refreshIntervalSec: number;
   updateAt: string | null;
 }
+
+// ---- User levels: credit configuration ----
+/**
+ * The credit rules a level sets and a per-pair entry in `creditConfigs` may
+ * override. Mirrors the backend's CreditLevelDefaults, so a rename there shows
+ * up here instead of silently turning a configured rule into a no-op.
+ *
+ * Null and undefined both mean "not set", which the resolver reads as the next
+ * layer down (pair → level → engine default), never as zero.
+ */
+export interface UserLevelCreditConfig {
+  creditTradingEnabled?: boolean | null;
+  creditMaxLeverage?: number | null;
+  creditDrawdownPercent?: number | null;
+  creditEnforceOnDrawdown?: CreditEnforceMode | null;
+  creditWarningMarginPercent?: number | null;
+  creditMarginCallPercent?: number | null;
+  creditLiquidationMarginPercent?: number | null;
+  creditReduceOnlyOnWarning?: boolean | null;
+  creditEnforceOnExpiry?: CreditEnforceMode | null;
+  creditEnforceRequestDeadline?: boolean | null;
+  creditMaxParallelRequests?: number | null;
+  creditMaxExecutionLevel?: number | null;
+  creditMaxNotional?: number | null;
+  creditMaxLockedCollateral?: number | null;
+  creditMinTradeSize?: number | null;
+  creditMaxTradeSize?: number | null;
+  creditRequireKyc?: boolean | null;
+  creditMaxAmount?: number | null;
+  creditMaxDurationDays?: number | null;
+}
+
+export type CreditEnforceMode = "ENFORCE" | "ALERT";
+
+export interface UserLevel extends UserLevelCreditConfig {
+  id: string;
+  name: string;
+  /** Credit currency; every level pair must be quoted in it. */
+  creditBaseSymbolId?: string | null;
+  /** Per-pair overrides of the fields above, keyed by price-pair id. */
+  creditConfigs?: Record<string, UserLevelCreditConfig> | null;
+
+  // Facility abilities, which no per-pair entry overrides.
+  creditRequireAdminApprovalForCreation?: boolean | null;
+  /** Hours a request may await approval before it is auto-declined (0 = never). */
+  creditRequestApprovalTtlHours?: number | null;
+  creditRequireAdminApprovalForSettlement?: boolean | null;
+  creditAllowUserSettlement?: boolean | null;
+  creditCashoutEnabled?: boolean | null;
+  creditCashoutFeePercent?: number | null;
+  creditAllowedCashoutSources?: CashoutSource[] | null;
+  creditSettlementMethods?: SettlementMethod[] | null;
+  creditNettingEnabled?: boolean | null;
+
+  features?: Record<string, any> | null;
+  pairs?: { id: string }[];
+  [k: string]: any;
+}

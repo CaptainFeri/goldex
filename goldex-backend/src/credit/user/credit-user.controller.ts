@@ -77,6 +77,17 @@ export class CreditUserController {
     return { data: await this.cashoutService.findByCredit(id) };
   }
 
+  @Get(":id/pnl")
+  @ApiOperation({
+    summary:
+      "Profit or loss on each of the facility's credit trades, priced against the current market",
+  })
+  async pnl(@Req() req: any, @Param("id") id: string) {
+    await this.assertCreditOwned(req.user.id, id);
+    const credit = await this.creditService.getCreditById(id);
+    return { data: await this.creditService.calculateCreditPnL(credit) };
+  }
+
   @Get(":id/settlement-eligibility")
   @ApiOperation({ summary: "Preview whether the facility can settle right now (credit wallets net to zero or positive)" })
   async settlementEligibility(@Req() req: any, @Param("id") id: string) {
