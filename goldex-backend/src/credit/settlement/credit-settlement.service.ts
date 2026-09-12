@@ -19,6 +19,7 @@ import { CollateralLockStatusEnum } from "../enum/collateral-lock-status.enum";
 import { CreditNotificationTypeEnum } from "../enum/credit-notification-type.enum";
 import { SettlementStateEnum } from "../enum/settlement-state.enum";
 import { RiskStateEnum } from "../enum/risk-state.enum";
+import { splitDeficit } from "../util/deficit-split.util";
 import { CreditActionEnum } from "../enum/credit-action.enum";
 import { WalletEntity } from "../../wallet/entities/wallet.entity";
 import { WalletTypeEnum } from "../../wallet/enum/wallet-type.enum";
@@ -46,6 +47,13 @@ export interface SettlementOptions {
   notes?: string;
   imagePath?: string;
   allowDepositTopUp?: boolean;
+  /**
+   * Cash the settlement workflow already collected from the user's deposit
+   * wallet when they funded a shortfall. It covers the deficit before any
+   * collateral is consumed, and before the `allowDepositTopUp` debit below —
+   * otherwise the user would pay the same shortfall twice.
+   */
+  preFundedAmount?: number;
   /**
    * Bypasses the "no outstanding shortfall" gate on voluntary settlement
    * (USER_SELF/ADMIN). Only meaningful for ADMIN mode — never honoured for
@@ -324,6 +332,28 @@ export class CreditSettlementService {
       let shortfall = result.shortfall;
       const releaseIr = result.releaseIr;
       const releaseXau = result.releaseXau;
+
+      // 2b. Settlement-workflow escrow. The workflow already debited this from
+      //     the user's deposit wallet at the funding step, so it covers the
+      //     deficit here — before collateral is touched and before the deposit
+      //     top-up below, which would otherwise charge the same shortfall twice.
+      const escrow = Number(opts.preFundedAmount) || 0;
+      if (escrow > 0 && deficit > 0) {
+        const applied = Math.min(escrow, deficit);
+        ({ deficit, consumedCollateral, shortfall } = splitDeficit(
+          deficit - applied,
+          result.collateralValue,
+          markPrice,
+        ));
+        await this.logFinanceAction(manager, {
+          adminId: opts.adminId ?? null,
+          userId: credit.userId,
+          creditId: credit.id,
+          actionType: CreditActionEnum.CREDIT_SETTLED,
+          description: `Credit ${credit.creditCode} deficit of ${applied} covered from settlement funding`,
+          metadata: { coveredFromSettlementFunding: applied, escrowCollected: escrow },
+        });
+      }
 
       // 3. USER_SELF: allow the user to top-up a deficit from their DEPOSIT IRR
       //    wallet before collateral is consumed.
@@ -751,19 +781,14 @@ export class CreditSettlementService {
     }
 
     const releaseIr = remainingNetIr.greaterThan(0) ? remainingNetIr.toNumber() : 0;
-    const deficit = new Decimal(state.netEquity).lessThan(0) ? -state.netEquity : 0;
+    const owed = new Decimal(state.netEquity).lessThan(0) ? -state.netEquity : 0;
 
     // Collateral consumption for the deficit.
-    let consumedCollateral = 0;
-    let shortfall = 0;
-    if (deficit > 0) {
-      const collateralAmount = new Decimal(state.collateralValue).div(state.markPrice || 1);
-      consumedCollateral = Decimal.min(collateralAmount, new Decimal(deficit).div(state.markPrice || 1)).toNumber();
-      const consumedValue = new Decimal(consumedCollateral).mul(state.markPrice || 1);
-      shortfall = new Decimal(deficit).minus(consumedValue).greaterThan(0)
-        ? new Decimal(deficit).minus(consumedValue).toNumber()
-        : 0;
-    }
+    const { deficit, consumedCollateral, shortfall } = splitDeficit(
+      owed,
+      state.collateralValue,
+      state.markPrice,
+    );
 
     return { ...state, releaseIr, releaseXau, deficit, consumedCollateral, shortfall };
   }

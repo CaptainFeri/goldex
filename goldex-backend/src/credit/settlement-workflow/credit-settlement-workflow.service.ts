@@ -18,6 +18,12 @@ import {
 import { CreditOrderStatusEnum } from "../enum/credit-order-status.enum";
 import { CreditStatusEnum } from "../enum/credit-status.enum";
 import { CreditSettlementService } from "../settlement/credit-settlement.service";
+import { WalletEntity } from "../../wallet/entities/wallet.entity";
+import { WalletTypeEnum } from "../../wallet/enum/wallet-type.enum";
+import { WalletStatusEnum } from "../../wallet/enum/wallet-status.enum";
+import { TransactionEntity } from "../../wallet/entities/transaction.entity";
+import { TransactionTypeEnum } from "../../wallet/enum/transaction.type.enum";
+import { TransactionStatusEnum } from "../../wallet/enum/transaction.status.enum";
 
 Decimal.set({ precision: 20, rounding: Decimal.ROUND_HALF_UP });
 
@@ -181,6 +187,7 @@ export class CreditSettlementWorkflowService {
           `Only a pending settlement can be rejected (current: ${s.status})`,
         );
       }
+      await this.refundEscrow(manager, s, "settlement rejected");
       s.status = SettlementWorkflowStatusEnum.REJECTED;
       s.rejectedBy = adminId;
       s.rejectedAt = new Date();
@@ -329,9 +336,17 @@ export class CreditSettlementWorkflowService {
   }
 
   /**
-   * Record funding toward the settlement shortfall (handoff §6.5). When the
-   * accumulated funding covers the shortfall, the workflow becomes READY
-   * (FULL/NET, still awaiting asset delivery) or ASSET_VERIFIED (TOPUP,
+   * Collect funding toward the settlement shortfall (handoff §6.5).
+   *
+   * This debits the amount from the user's deposit wallet in the credit
+   * currency and holds it as escrow on the settlement row — funding is a real
+   * payment, not a declaration. The escrow is applied to the deficit by the
+   * settlement engine at `clearLiability` (which is why the engine must not
+   * also top up from the deposit wallet for the same shortfall), and refunded
+   * if the workflow is failed or rejected before it gets there.
+   *
+   * When the accumulated funding covers the shortfall the workflow becomes
+   * READY (FULL/NET, still awaiting asset delivery) or ASSET_VERIFIED (TOPUP,
    * which has no delivery step — see selectMethod); otherwise it stays
    * FUNDING_REQUIRED (partial funding is allowed).
    */
@@ -355,6 +370,19 @@ export class CreditSettlementWorkflowService {
       if (new Decimal(s.shortfall || 0).lessThanOrEqualTo(0)) {
         throw new BadRequestException("This settlement has no shortfall to fund");
       }
+
+      // Collect the money. Funding beyond the outstanding shortfall is refused
+      // rather than escrowed — the engine would only hand it straight back.
+      const outstanding = Decimal.max(
+        0,
+        new Decimal(s.shortfall || 0).minus(s.fundedAmount || 0),
+      );
+      if (new Decimal(amount).greaterThan(outstanding)) {
+        throw new BadRequestException(
+          `Funding ${amount} exceeds the outstanding shortfall of ${outstanding.toFixed(2)}`,
+        );
+      }
+      await this.collectFunding(manager, s, amount, opts.fundedBy);
 
       const funded = new Decimal(s.fundedAmount || 0).plus(amount);
       s.fundedAmount = funded.toNumber();
@@ -383,7 +411,14 @@ export class CreditSettlementWorkflowService {
     });
   }
 
-  /** Record that the required asset was delivered to the settlement inventory. */
+  /**
+   * Record that the required asset was delivered to the settlement inventory.
+   *
+   * This only ever reaches ASSET_RECEIVED — a delivery is a claim until someone
+   * on the platform has seen the asset. `verifyAsset` (admin-only) makes the
+   * ASSET_VERIFIED transition that `clearLiability` gates on, so a user cannot
+   * declare their own delivery sufficient and unlock their collateral.
+   */
   async receiveAsset(settlementId: string, amount: number, notes?: string): Promise<CreditSettlementEntity> {
     return this.dataSource.transaction(async (manager) => {
       const s = await manager.findOne(CreditSettlementEntity, {
@@ -413,14 +448,16 @@ export class CreditSettlementWorkflowService {
       s.receivedAt = s.receivedAt || new Date();
       if (notes) s.notes = notes;
 
-      // Partial deliveries are allowed (handoff §18): keep ASSET_RECEIVED until
-      // the required amount is covered, then move to ASSET_VERIFIED.
-      if (received.greaterThanOrEqualTo(s.requiredAmount || 0)) {
-        s.status = SettlementWorkflowStatusEnum.ASSET_VERIFIED;
-        s.verifiedAt = new Date();
-      } else {
-        s.status = SettlementWorkflowStatusEnum.ASSET_RECEIVED;
-      }
+      // Partial deliveries are allowed (handoff §18) and the status stays
+      // ASSET_RECEIVED either way; an admin verifies sufficiency.
+      s.status = SettlementWorkflowStatusEnum.ASSET_RECEIVED;
+      s.metadata = {
+        ...(s.metadata || {}),
+        deliveries: [
+          ...(s.metadata?.deliveries || []),
+          { amount, at: new Date().toISOString(), notes },
+        ],
+      };
       return manager.save(s);
     });
   }
@@ -503,12 +540,25 @@ export class CreditSettlementWorkflowService {
         adminId: opts.adminId ?? null,
         reason: `SETTLEMENT_WORKFLOW:${s.id}`,
         allowDepositTopUp: s.settlementMethod === SettlementMethodEnum.TOPUP ? true : opts.mode !== "ADMIN",
+        // Funding already collected at the funding step covers the deficit
+        // first, so the engine neither consumes collateral for it nor debits
+        // the deposit wallet for it a second time.
+        preFundedAmount: Number(s.fundedAmount) || 0,
         force: opts.mode === "ADMIN" ? opts.force : false,
       });
 
       const report = settled.metadata?.settlement || {};
       s.status = SettlementWorkflowStatusEnum.LIABILITY_CLEARED;
       s.liabilityClearedAt = new Date();
+      // The escrow has now been spent — it must not be refunded if this
+      // workflow is later failed.
+      if (new Decimal(s.fundedAmount || 0).greaterThan(0)) {
+        s.metadata = {
+          ...(s.metadata || {}),
+          escrowConsumedAt: new Date().toISOString(),
+          escrowConsumedAmount: Number(s.fundedAmount) || 0,
+        };
+      }
       s.releaseAmount = Number(report.releaseIr || 0);
       s.realizedPnL = Number(report.netEquity || 0);
       s.finalCollateralState = {
@@ -594,7 +644,11 @@ export class CreditSettlementWorkflowService {
     });
   }
 
-  /** Mark the workflow failed (e.g. delivery insufficient, retry later). */
+  /**
+   * Mark the workflow failed (e.g. delivery insufficient, retry later). Any
+   * funding still held in escrow goes back to the user's deposit wallet —
+   * escrow the engine already spent at `clearLiability` stays spent.
+   */
   async fail(settlementId: string, reason: string): Promise<CreditSettlementEntity> {
     return this.dataSource.transaction(async (manager) => {
       const s = await manager.findOne(CreditSettlementEntity, {
@@ -605,6 +659,7 @@ export class CreditSettlementWorkflowService {
       if (!this.isActive(s.status)) {
         throw new BadRequestException(`Settlement is already ${s.status}`);
       }
+      await this.refundEscrow(manager, s, `settlement failed: ${reason}`);
       s.status = SettlementWorkflowStatusEnum.FAILED;
       s.notes = reason;
       return manager.save(s);
@@ -630,6 +685,132 @@ export class CreditSettlementWorkflowService {
       relations: { credit: { user: true } },
       order: { requestedAt: "ASC" },
     });
+  }
+
+  // ── funding escrow ───────────────────────────────────────────────────────
+
+  /**
+   * Debit settlement funding from the user's deposit wallet in the credit
+   * currency. The money is held as escrow against the settlement until
+   * `clearLiability` applies it to the deficit or the workflow refunds it.
+   */
+  private async collectFunding(
+    manager: any,
+    s: CreditSettlementEntity,
+    amount: number,
+    fundedBy?: string,
+  ): Promise<void> {
+    const credit = await manager.findOne(CreditEntity, { where: { id: s.creditId } });
+    if (!credit) throw new NotFoundException("Credit not found");
+    if (!credit.creditBaseSymbolId) {
+      throw new BadRequestException(
+        "This facility has no credit currency configured, so funding cannot be collected",
+      );
+    }
+
+    const deposit = await manager.findOne(WalletEntity, {
+      where: {
+        userId: credit.userId,
+        symbolId: credit.creditBaseSymbolId,
+        walletType: WalletTypeEnum.DEPOSIT,
+      },
+      lock: { mode: "pessimistic_write" },
+    });
+    const available = new Decimal(deposit?.freeBalance || 0).minus(
+      deposit?.frozenFreeBalance || 0,
+    );
+    if (!deposit || available.lessThan(amount)) {
+      throw new BadRequestException(
+        `SETTLEMENT_INSUFFICIENT_FUNDS: funding ${amount} needs that much free balance in your ` +
+          `deposit wallet (available ${available.toFixed(2)}). Deposit the difference first.`,
+      );
+    }
+
+    deposit.freeBalance = new Decimal(deposit.freeBalance).minus(amount).toNumber();
+    await manager.save(deposit);
+    await this.saveEscrowTxn(manager, deposit.id, amount, {
+      description: `Settlement ${s.id} shortfall funding`,
+      metadata: { creditId: credit.id, settlementId: s.id, direction: "COLLECT", fundedBy },
+    });
+    this.logger.log(
+      `Settlement ${s.id}: collected ${amount} from deposit wallet ${deposit.id} as escrow`,
+    );
+  }
+
+  /**
+   * Return escrowed funding to the user's deposit wallet when a settlement ends
+   * without reaching `clearLiability`. Idempotent: escrow that was already
+   * consumed by the engine or already refunded is left alone.
+   */
+  private async refundEscrow(
+    manager: any,
+    s: CreditSettlementEntity,
+    reason: string,
+  ): Promise<void> {
+    const escrow = new Decimal(s.fundedAmount || 0);
+    if (!escrow.greaterThan(0)) return;
+    if (s.metadata?.escrowConsumedAt || s.metadata?.escrowRefundedAt) return;
+
+    const credit = await manager.findOne(CreditEntity, { where: { id: s.creditId } });
+    if (!credit?.creditBaseSymbolId) return;
+
+    let deposit = await manager.findOne(WalletEntity, {
+      where: {
+        userId: credit.userId,
+        symbolId: credit.creditBaseSymbolId,
+        walletType: WalletTypeEnum.DEPOSIT,
+      },
+      lock: { mode: "pessimistic_write" },
+    });
+    if (!deposit) {
+      deposit = manager.create(WalletEntity, {
+        userId: credit.userId,
+        symbolId: credit.creditBaseSymbolId,
+        walletType: WalletTypeEnum.DEPOSIT,
+        status: WalletStatusEnum.ACTIVE,
+        freeBalance: 0,
+        lockedBalance: 0,
+        availableBalance: 0,
+        creditBalance: 0,
+        frozenFreeBalance: 0,
+        frozenLockedBalance: 0,
+      });
+    }
+    deposit.freeBalance = new Decimal(deposit.freeBalance || 0).plus(escrow).toNumber();
+    const savedDeposit = await manager.save(deposit);
+
+    await this.saveEscrowTxn(manager, savedDeposit.id, escrow.toNumber(), {
+      description: `Settlement ${s.id} funding refunded (${reason})`,
+      metadata: { creditId: credit.id, settlementId: s.id, direction: "REFUND", reason },
+    });
+
+    s.metadata = {
+      ...(s.metadata || {}),
+      escrowRefundedAt: new Date().toISOString(),
+      escrowRefundedAmount: escrow.toNumber(),
+    };
+    this.logger.log(`Settlement ${s.id}: refunded escrow ${escrow} (${reason})`);
+  }
+
+  private async saveEscrowTxn(
+    manager: any,
+    walletId: string,
+    amount: number,
+    params: { description: string; metadata: any },
+  ): Promise<void> {
+    await manager.save(
+      manager.create(TransactionEntity, {
+        walletId,
+        transactionId: crypto.randomUUID(),
+        transactionType: TransactionTypeEnum.CREDIT_SETTLEMENT,
+        status: TransactionStatusEnum.COMPLETED,
+        amount,
+        fee: 0,
+        description: params.description,
+        metadata: params.metadata,
+        completedAt: new Date(),
+      }),
+    );
   }
 
   // ── helpers ──────────────────────────────────────────────────────────────
@@ -745,8 +926,10 @@ export class CreditSettlementWorkflowService {
       status === SettlementWorkflowStatusEnum.METHOD_SELECTED ||
       status === SettlementWorkflowStatusEnum.FUNDING_REQUIRED ||
       status === SettlementWorkflowStatusEnum.READY ||
-      status === SettlementWorkflowStatusEnum.ASSET_RECEIVED ||
-      status === SettlementWorkflowStatusEnum.ASSET_VERIFIED
+      // Further deliveries may land while the first is still unverified, but
+      // never after verification — that would silently un-verify a settlement
+      // an admin has already signed off.
+      status === SettlementWorkflowStatusEnum.ASSET_RECEIVED
     );
   }
 }

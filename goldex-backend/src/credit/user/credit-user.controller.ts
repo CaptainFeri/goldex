@@ -26,6 +26,16 @@ export class CreditUserController {
     return { data: await this.creditService.requestCredit(req.user.id, dto) };
   }
 
+  @Post(":id/withdraw-request")
+  @ApiOperation({
+    summary:
+      "Withdraw your own credit request while it is still awaiting approval, releasing the " +
+      "collateral you froze back to your deposit wallet",
+  })
+  async withdrawRequest(@Req() req: any, @Param("id") id: string) {
+    return { data: await this.creditService.withdrawCreditRequest(req.user.id, id) };
+  }
+
   @Post(":id/settle")
   @ApiOperation({ summary: "User self-settle: repay credit and release assets to deposit wallet" })
   async settleCredit(@Req() req: any, @Param("id") id: string) {
@@ -112,14 +122,22 @@ export class CreditUserController {
   }
 
   @Post(":id/settlement/:settlementId/fund")
-  @ApiOperation({ summary: "Fund the settlement shortfall (partial funding allowed)" })
+  @ApiOperation({
+    summary:
+      "Pay the settlement shortfall from your deposit wallet (partial payments allowed). " +
+      "The amount is debited immediately and held against the settlement.",
+  })
   async fundSettlement(@Req() req: any, @Param("id") id: string, @Param("settlementId") settlementId: string, @Body() dto: FundSettlementDto) {
     await this.assertOwned(req.user.id, id, settlementId);
     return { data: await this.settlementWorkflowService.fund(settlementId, dto.amount, { fundedBy: req.user?.id, notes: dto.notes }) };
   }
 
   @Post(":id/settlement/:settlementId/deliver")
-  @ApiOperation({ summary: "Record delivery of the required asset (partial allowed)" })
+  @ApiOperation({
+    summary:
+      "Declare delivery of the required asset (partial allowed). An admin verifies the " +
+      "delivery before the settlement can clear.",
+  })
   async deliverAsset(@Req() req: any, @Param("id") id: string, @Param("settlementId") settlementId: string, @Body() dto: ReceiveSettlementAssetDto) {
     await this.assertOwned(req.user.id, id, settlementId);
     return { data: await this.settlementWorkflowService.receiveAsset(settlementId, dto.amount, dto.notes) };
@@ -145,6 +163,16 @@ export class CreditUserController {
   async getActiveCredit(@Req() req: any) {
     const credit = await this.creditService.getUserActiveCredit(req.user.id);
     return { data: credit };
+  }
+
+  @Get("pending")
+  @ApiOperation({
+    summary:
+      "Get the user's credit request awaiting admin approval, if any. The collateral is " +
+      "already frozen but no credit line has been issued yet.",
+  })
+  async getPendingCredit(@Req() req: any) {
+    return { data: await this.creditService.getUserPendingCredit(req.user.id) };
   }
 
   @Get("overview")
