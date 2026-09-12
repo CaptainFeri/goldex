@@ -92,12 +92,15 @@ export class ReportRunnerService {
       for await (const chunk of stream) chunks.push(Buffer.from(chunk));
       const buffer = Buffer.concat(chunks);
 
-      // Namespaced by job id, so two runs of the same report never collide and
-      // the key cannot be guessed from the report's type and date alone.
-      const objectName = `reports/${job.id}/${job.type}-${this.stamp()}.${extension}`;
-      await this.minio.uploadFile(
+      // `uploadFile` does not store the key it is handed: it mints its own from
+      // the target and a random suffix, deliberately, so a stored object cannot
+      // be named by guessing the report's type and date. The name it asks for
+      // only supplies the extension, and the key that comes back is the one that
+      // exists — persisting the requested name instead left every download
+      // pointing at an object that was never written.
+      const uploaded = await this.minio.uploadFile(
         {
-          objectName,
+          objectName: `${job.type}-${this.stamp()}.${extension}`,
           stream: buffer,
           size: buffer.length,
           contentType,
@@ -105,6 +108,7 @@ export class ReportRunnerService {
         },
         "report",
       );
+      const objectName = uploaded.name;
 
       const expiresAt = new Date();
       expiresAt.setDate(expiresAt.getDate() + ARTIFACT_RETENTION_DAYS);

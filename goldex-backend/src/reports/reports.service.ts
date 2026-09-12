@@ -177,8 +177,27 @@ export class ReportsService {
 
     return {
       url: this.signer.sign(job.objectName, DOWNLOAD_URL_TTL_SECONDS),
-      fileName: job.objectName.split("/").pop() ?? job.objectName,
+      fileName: this.downloadFileName(job),
     };
+  }
+
+  /**
+   * What the saved file is called.
+   *
+   * Built from the report rather than from the storage key: the key carries a
+   * random suffix so objects cannot be named by guessing, which makes it a poor
+   * thing to hand an operator who has just asked for the trades of a given week.
+   * The extension still comes from the key, since that is what was written.
+   */
+  private downloadFileName(job: ReportJobEntity): string {
+    const key = job.objectName ?? "";
+    const extension = key.includes(".") ? key.slice(key.lastIndexOf(".") + 1) : "xlsx";
+    const day = (job.completedAt ?? job.createAt ?? new Date()).toISOString().slice(0, 10);
+    const window = [job.fromDate, job.toDate]
+      .filter(Boolean)
+      .map((d) => new Date(d as Date).toISOString().slice(0, 10))
+      .join("_to_");
+    return [`goldex-${job.type}`, window, day].filter(Boolean).join("-") + `.${extension}`;
   }
 
   async stats(caller: ReportCaller): Promise<ReportStatsDto> {

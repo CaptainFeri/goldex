@@ -16,9 +16,13 @@ const completedJob = (over: Record<string, unknown> = {}) => ({
   format: ReportFormatEnum.XLSX,
   status: ReportStatusEnum.COMPLETED,
   createdBy: OPERATOR.adminId,
-  objectName: "reports/job-1/trades-2026-09-05.xlsx",
+  // The key storage actually minted: a target, a random suffix and the day it
+  // was written. Nothing in it is guessable, which is why the download name is
+  // built from the report instead.
+  objectName: "report-3f8a1c9d4b6e2057-2026-09-05.xlsx",
   artifactExpired: false,
-  createAt: new Date(),
+  createAt: new Date("2026-09-05T09:30:00.000Z"),
+  completedAt: new Date("2026-09-05T09:31:00.000Z"),
   ...over,
 });
 
@@ -120,10 +124,34 @@ describe("ReportsService download", () => {
     const { service, signer } = build();
     const result = await service.download(OPERATOR, "job-1");
     expect(signer.sign).toHaveBeenCalledWith(
-      "reports/job-1/trades-2026-09-05.xlsx",
+      "report-3f8a1c9d4b6e2057-2026-09-05.xlsx",
       DOWNLOAD_URL_TTL_SECONDS,
     );
-    expect(result.fileName).toBe("trades-2026-09-05.xlsx");
+    expect(result.fileName).toBe("goldex-trades-2026-09-05.xlsx");
+  });
+
+  it("names the file after the report and its window, not after the storage key", async () => {
+    // An operator asked for a week of trades; what lands in their downloads
+    // folder should say so. The key's random suffix is storage's business.
+    const { service } = build({
+      job: completedJob({
+        fromDate: new Date("2026-08-01T00:00:00.000Z"),
+        toDate: new Date("2026-08-31T00:00:00.000Z"),
+      }),
+    });
+    const result = await service.download(OPERATOR, "job-1");
+    expect(result.fileName).toBe("goldex-trades-2026-08-01_to_2026-08-31-2026-09-05.xlsx");
+  });
+
+  it("keeps the extension the artefact was written with", async () => {
+    const { service } = build({
+      job: completedJob({
+        format: ReportFormatEnum.CSV,
+        objectName: "report-3f8a1c9d4b6e2057-2026-09-05.csv",
+      }),
+    });
+    const result = await service.download(OPERATOR, "job-1");
+    expect(result.fileName.endsWith(".csv")).toBe(true);
   });
 
   it("records every download, since an export is the widest data path in the panel", async () => {

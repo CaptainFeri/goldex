@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, unwrap, apiError } from "../api/client";
 import { Card, Loading, ErrorState, Empty, Badge, Modal, Stat } from "../components/ui";
 import { fmtNum, fmtDate } from "../lib/format";
+import { downloadSignedFile } from "../lib/download";
 import type {
   Paginated,
   ReportDownload,
@@ -335,10 +336,10 @@ export default function ReportsPage() {
     setDownloadError(null);
     try {
       const res = unwrap<ReportDownload>((await api.get(`/admin/reports/${job.id}/download`)).data);
-      const a = document.createElement("a");
-      a.href = res.url;
-      a.download = res.fileName;
-      a.click();
+      // Fetched rather than navigated to, so a missing artefact or an expired
+      // token shows as an error here instead of landing in the downloads folder
+      // as an error body named `.xlsx`.
+      await downloadSignedFile(res.url, res.fileName);
       qc.invalidateQueries({ queryKey: ["report-stats"] });
       qc.invalidateQueries({ queryKey: ["reports"] });
     } catch (err) {
