@@ -695,7 +695,16 @@
       "CREDIT_NO_MARK_PRICE": "No live price for your collateral right now.",
       "CASHOUT_COLLATERAL_BLOCKED_MARGIN_CALL": "Your credit is under a margin call — collateral can't be used until that clears.",
       "CASHOUT_COLLATERAL_BLOCKED_DEFAULT": "Your credit has an outstanding shortfall — collateral can't be used."
-    }
+    },
+    "pendingApprovalTitle": "Credit request awaiting approval",
+    "pendingApprovalMessage": "Your request has been submitted and is waiting for an administrator to review it. Your collateral is frozen until it is decided, and no credit has been issued yet.",
+    "frozenCollateral": "Frozen collateral",
+    "submittedAt": "Submitted",
+    "pendingRepriceNote": "The final credit limit is recalculated at the price in force when your request is approved, so it may differ from the figure above.",
+    "withdrawRequest": "Withdraw request",
+    "withdrawConfirm": "Withdraw this request? Your {{amount}} of frozen collateral returns to your deposit wallet and you can submit a new request.",
+    "requestWithdrawn": "Request withdrawn and collateral returned",
+    "requestWithdrawFailed": "Could not withdraw the request"
   },
   "level": {
     "title": "Account Level",

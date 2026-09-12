@@ -51,6 +51,7 @@ export default function CreditPage() {
   const { t } = useTranslation()
   const toast = useToast()
   const [activeCredit, setActiveCredit] = useState(null)
+  const [pendingCredit, setPendingCredit] = useState(null)
   const [overview, setOverview] = useState(null)
   const [history, setHistory] = useState([])
   const [notifications, setNotifications] = useState([])
@@ -65,13 +66,15 @@ export default function CreditPage() {
     setLoading(true)
     setError('')
     try {
-      const [active, all, notifs, ovw] = await Promise.all([
+      const [active, pending, all, notifs, ovw] = await Promise.all([
         creditApi.getActiveCredit(),
+        creditApi.getPendingCredit().catch(() => null),
         creditApi.getCredits(),
         creditApi.getNotifications(),
         creditApi.getOverview().catch(() => null),
       ])
       setActiveCredit(active)
+      setPendingCredit(pending)
       setHistory(Array.isArray(all) ? all : [])
       setNotifications(Array.isArray(notifs) ? notifs : [])
       setOverview(ovw || null)
@@ -250,6 +253,8 @@ export default function CreditPage() {
 
             <SettlementWorkflows creditId={activeCredit.id} nettingEnabled={!!activeCredit.nettingEnabled} onChanged={load} />
           </div>
+        ) : pendingCredit ? (
+          <PendingRequestCard request={pendingCredit} onChanged={load} />
         ) : (
           <CreditRequestForm onCreated={load} />
         )}
@@ -550,6 +555,89 @@ function SettlementActionDialog({ kind, currentMethod, nettingEnabled, submittin
           </div>
         </form>
       </div>
+    </div>
+  )
+}
+
+/**
+ * A credit request waiting on admin sign-off. The collateral is already frozen
+ * and no credit line exists yet, so this replaces both the facility dashboard
+ * and the request form — otherwise the form reappears and the user submits
+ * again, freezing more collateral for a facility they cannot get.
+ */
+function PendingRequestCard({ request, onChanged }) {
+  const { t } = useTranslation()
+  const toast = useToast()
+  const [confirm, setConfirm] = useState(false)
+  const [busy, setBusy] = useState(false)
+
+  const collateralSlug = request.collateralSymbol?.slug || ''
+  const baseSlug = request.creditBaseSymbol?.slug || ''
+
+  async function withdraw() {
+    setBusy(true)
+    try {
+      await creditApi.withdrawRequest(request.id)
+      toast.success(t('credit.requestWithdrawn'))
+      setConfirm(false)
+      await onChanged()
+    } catch (err) {
+      toast.error(err?.response?.data?.message || err.message || t('credit.requestWithdrawFailed'))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <div className="card animate-fade-up" style={{ border: '2px solid rgba(224,179,65,0.45)' }}>
+      <div className="card-title">
+        <div className="gold-dot" />
+        {t('credit.pendingApprovalTitle')}
+        <span className="badge badge-warning" style={{ marginInlineStart: '0.5rem' }}>
+          {statusLabel(t, 'PENDING')}
+        </span>
+      </div>
+
+      <Alert type="warning">{t('credit.pendingApprovalMessage')}</Alert>
+
+      <div style={{ marginTop: '1rem' }}>
+        <KV label={t('credit.code')} value={<code>{request.creditCode}</code>} />
+        <KV
+          label={t('credit.frozenCollateral')}
+          value={`${fmtNum(request.collateralAmount)} ${collateralSlug}`}
+          accent
+        />
+        {request.leverage != null && <KV label={t('credit.leverage')} value={`${request.leverage}x`} />}
+        <KV
+          label={t('credit.projectedCreditLimit')}
+          value={`${fmtNum(request.creditLimit)} ${baseSlug}`}
+        />
+        <KV label={t('credit.submittedAt')} value={fmtDate(request.createAt)} />
+      </div>
+
+      <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginTop: '0.75rem' }}>
+        {t('credit.pendingRepriceNote')}
+      </p>
+
+      <div style={{ marginTop: '1rem' }}>
+        <Button variant="ghost" onClick={() => setConfirm(true)} disabled={busy}>
+          {t('credit.withdrawRequest')}
+        </Button>
+      </div>
+
+      {confirm && (
+        <ConfirmDialog
+          title={t('credit.withdrawRequest')}
+          message={t('credit.withdrawConfirm', {
+            amount: `${fmtNum(request.collateralAmount)} ${collateralSlug}`,
+          })}
+          confirmLabel={t('credit.withdrawRequest')}
+          cancelLabel={t('common.cancel')}
+          loading={busy}
+          onCancel={() => setConfirm(false)}
+          onConfirm={withdraw}
+        />
+      )}
     </div>
   )
 }

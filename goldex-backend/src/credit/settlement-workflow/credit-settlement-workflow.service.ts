@@ -550,14 +550,30 @@ export class CreditSettlementWorkflowService {
       const report = settled.metadata?.settlement || {};
       s.status = SettlementWorkflowStatusEnum.LIABILITY_CLEARED;
       s.liabilityClearedAt = new Date();
-      // The escrow has now been spent — it must not be refunded if this
-      // workflow is later failed.
-      if (new Decimal(s.fundedAmount || 0).greaterThan(0)) {
+
+      // The escrow has now been spent, so it must not be refunded if this
+      // workflow is later failed. The engine recomputes the deficit at the
+      // current mark price, which can be smaller than the shortfall the user
+      // funded against — whatever it did not need goes straight back.
+      const escrow = new Decimal(s.fundedAmount || 0);
+      if (escrow.greaterThan(0)) {
+        const applied = new Decimal(Number(report.appliedPreFunding) || 0);
+        const unused = Decimal.max(0, escrow.minus(applied));
         s.metadata = {
           ...(s.metadata || {}),
           escrowConsumedAt: new Date().toISOString(),
-          escrowConsumedAmount: Number(s.fundedAmount) || 0,
+          escrowConsumedAmount: applied.toNumber(),
         };
+        if (unused.greaterThan(0)) {
+          await this.creditDepositRefund(
+            manager,
+            credit,
+            unused.toNumber(),
+            `Settlement ${s.id} funding not needed at settlement price`,
+            { settlementId: s.id, escrowCollected: escrow.toNumber(), applied: applied.toNumber() },
+          );
+          s.metadata = { ...s.metadata, escrowUnusedRefund: unused.toNumber() };
+        }
       }
       s.releaseAmount = Number(report.releaseIr || 0);
       s.realizedPnL = Number(report.netEquity || 0);
@@ -754,6 +770,35 @@ export class CreditSettlementWorkflowService {
     const credit = await manager.findOne(CreditEntity, { where: { id: s.creditId } });
     if (!credit?.creditBaseSymbolId) return;
 
+    await this.creditDepositRefund(
+      manager,
+      credit,
+      escrow.toNumber(),
+      `Settlement ${s.id} funding refunded (${reason})`,
+      { settlementId: s.id, reason },
+    );
+
+    s.metadata = {
+      ...(s.metadata || {}),
+      escrowRefundedAt: new Date().toISOString(),
+      escrowRefundedAmount: escrow.toNumber(),
+    };
+    this.logger.log(`Settlement ${s.id}: refunded escrow ${escrow} (${reason})`);
+  }
+
+  /**
+   * Put money back into the user's deposit wallet in the credit currency,
+   * creating the wallet if the account never had one.
+   */
+  private async creditDepositRefund(
+    manager: any,
+    credit: CreditEntity,
+    amount: number,
+    description: string,
+    metadata: Record<string, unknown>,
+  ): Promise<void> {
+    if (!(amount > 0) || !credit.creditBaseSymbolId) return;
+
     let deposit = await manager.findOne(WalletEntity, {
       where: {
         userId: credit.userId,
@@ -776,20 +821,13 @@ export class CreditSettlementWorkflowService {
         frozenLockedBalance: 0,
       });
     }
-    deposit.freeBalance = new Decimal(deposit.freeBalance || 0).plus(escrow).toNumber();
+    deposit.freeBalance = new Decimal(deposit.freeBalance || 0).plus(amount).toNumber();
     const savedDeposit = await manager.save(deposit);
 
-    await this.saveEscrowTxn(manager, savedDeposit.id, escrow.toNumber(), {
-      description: `Settlement ${s.id} funding refunded (${reason})`,
-      metadata: { creditId: credit.id, settlementId: s.id, direction: "REFUND", reason },
+    await this.saveEscrowTxn(manager, savedDeposit.id, amount, {
+      description,
+      metadata: { creditId: credit.id, direction: "REFUND", ...metadata },
     });
-
-    s.metadata = {
-      ...(s.metadata || {}),
-      escrowRefundedAt: new Date().toISOString(),
-      escrowRefundedAmount: escrow.toNumber(),
-    };
-    this.logger.log(`Settlement ${s.id}: refunded escrow ${escrow} (${reason})`);
   }
 
   private async saveEscrowTxn(
