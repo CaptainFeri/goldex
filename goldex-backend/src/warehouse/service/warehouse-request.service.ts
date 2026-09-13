@@ -669,14 +669,24 @@ export class WarehouseRequestService {
       }
 
       if (dto.status === RequestStatusEnum.REJECTED) {
-        if (request.type === RequestTypeEnum.OUTPUT && request.packet) {
+        if (request.type === RequestTypeEnum.OUTPUT) {
+          // Unconditionally, and before anything else: the balance was locked
+          // the moment the user raised the request, so it has to come back
+          // whether or not a package was ever picked for them. This used to sit
+          // behind a `request.packet` check, which is only ever satisfied after
+          // an admin reserves one — so rejecting a request while it was still
+          // pending, the common case, left the user's gold locked with nothing
+          // left to release it.
           await this.unlockWalletForRejectedWithdraw(queryRunner, request);
-          await this.returnPacketToPool(queryRunner, request, request.packet);
-        } else if (request.type === RequestTypeEnum.INPUT && request.packet) {
+          await this.returnPacketToPool(queryRunner, request);
+        } else if (request.type === RequestTypeEnum.INPUT) {
           if (prevStatus === RequestStatusEnum.APPROVED) {
             await this.unlockWalletForRejectedDeposit(queryRunner, request);
           }
-          await queryRunner.manager.softDelete(PacketEntity, request.packet.id);
+          // The placeholder written at approval, for material that never came.
+          if (request.packet) {
+            await queryRunner.manager.softDelete(PacketEntity, request.packet.id);
+          }
         }
       }
 
@@ -827,11 +837,7 @@ export class WarehouseRequestService {
    * question of where a package came from — the pool is where every package
    * belongs, and the depositor's own claim lives in their wallet.
    */
-  private async returnPacketToPool(
-    queryRunner: any,
-    request: WarehouseRequestEntity,
-    _packet?: PacketEntity
-  ): Promise<void> {
+  private async returnPacketToPool(queryRunner: any, request: WarehouseRequestEntity): Promise<void> {
     const packets = await this.reservedPacketsFor(queryRunner, request);
     if (!packets.length) return;
 
@@ -1404,9 +1410,7 @@ export class WarehouseRequestService {
 
         if (locked.type === RequestTypeEnum.OUTPUT) {
           await this.unlockWalletForRejectedWithdraw(queryRunner, locked);
-          if (packet) {
-            await this.returnPacketToPool(queryRunner, locked, packet);
-          }
+          await this.returnPacketToPool(queryRunner, locked);
         } else if (locked.type === RequestTypeEnum.INPUT && packet) {
           await queryRunner.manager.softDelete(PacketEntity, packet.id);
         }
@@ -1521,9 +1525,7 @@ export class WarehouseRequestService {
         }
       } else if (request.type === RequestTypeEnum.OUTPUT) {
         await this.unlockWalletForRejectedWithdraw(queryRunner, request);
-        if (request.packet) {
-          await this.returnPacketToPool(queryRunner, request, request.packet);
-        }
+        await this.returnPacketToPool(queryRunner, request);
       }
 
       const saved = await queryRunner.manager.save(request);
