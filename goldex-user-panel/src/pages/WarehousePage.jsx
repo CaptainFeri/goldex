@@ -52,10 +52,13 @@ export default function WarehousePage() {
   const [depNotes, setDepNotes] = useState('')
   const [depSubmitting, setDepSubmitting] = useState(false)
 
+  const [wdWarehouseId, setWdWarehouseId] = useState('')
   const [wdWeight, setWdWeight] = useState('')
   const [wdSymbolId, setWdSymbolId] = useState('')
   const [wdNotes, setWdNotes] = useState('')
   const [wdSubmitting, setWdSubmitting] = useState(false)
+  const [wdOptions, setWdOptions] = useState([])
+  const [wdOptionsLoading, setWdOptionsLoading] = useState(false)
 
   const [requests, setRequests] = useState([])
   const [packets, setPackets] = useState([])
@@ -116,12 +119,13 @@ export default function WarehousePage() {
 
   const handleWithdraw = async (e) => {
     e.preventDefault()
-    if (!wdWeight || !wdSymbolId) return
+    if (!wdWarehouseId || !wdWeight || !wdSymbolId) return
     setWdSubmitting(true)
     setError('')
     setSuccess('')
     try {
       const result = await warehouseApi.createWithdraw({
+        warehouseId: wdWarehouseId,
         weight: Number(wdWeight),
         symbolId: wdSymbolId,
         notes: wdNotes || undefined,
@@ -135,9 +139,11 @@ export default function WarehousePage() {
       } else {
         setSuccess(t('warehouse.withdrawalPending'))
       }
+      setWdWarehouseId('')
       setWdWeight('')
       setWdSymbolId('')
       setWdNotes('')
+      setWdOptions([])
       loadAll(true)
     } catch (e) {
       setError(e?.response?.data?.message || e?.message || t('warehouse.withdrawalSubmitFailed'))
@@ -145,6 +151,34 @@ export default function WarehousePage() {
       setWdSubmitting(false)
     }
   }
+
+  // What the chosen warehouse could actually serve this request from. Only
+  // packages at or under the requested weight: whatever one falls short by
+  // comes back to the wallet, but the vault never hands over more metal than
+  // was asked for.
+  useEffect(() => {
+    if (tab !== 'withdraw' || !wdWarehouseId || !(Number(wdWeight) > 0)) {
+      setWdOptions([])
+      return
+    }
+    let cancelled = false
+    setWdOptionsLoading(true)
+    const timer = setTimeout(async () => {
+      try {
+        const options = await warehouseApi.getAllocationOptions({
+          warehouseId: wdWarehouseId,
+          weight: Number(wdWeight),
+          ...(wdSymbolId ? { symbolId: wdSymbolId } : {}),
+        })
+        if (!cancelled) setWdOptions(Array.isArray(options) ? options : [])
+      } catch (_) {
+        if (!cancelled) setWdOptions([])
+      } finally {
+        if (!cancelled) setWdOptionsLoading(false)
+      }
+    }, 350)
+    return () => { cancelled = true; clearTimeout(timer) }
+  }, [tab, wdWarehouseId, wdWeight, wdSymbolId])
 
   const handleCancel = async (id) => {
     try {
@@ -237,6 +271,15 @@ export default function WarehousePage() {
             </p>
             <form onSubmit={handleWithdraw} style={{ display: 'flex', flexDirection: 'column', gap: '1rem', maxWidth: 480 }}>
               <div className="field">
+                <label>{t('warehouse.warehouse')}</label>
+                <select className="form-input" value={wdWarehouseId} onChange={(e) => setWdWarehouseId(e.target.value)} required>
+                  <option value="">{t('warehouse.warehousePlaceholder')}</option>
+                  {warehouses.map((w) => (
+                    <option key={w.id} value={w.id}>{w.name}</option>
+                  ))}
+                </select>
+              </div>
+              <div className="field">
                 <label>{t('warehouse.weightGrams')}</label>
                 <input className="form-input" type="number" step="0.00000001" min="0.00000001"
                   value={wdWeight} onChange={(e) => setWdWeight(e.target.value)} required placeholder={t('warehouse.weightPlaceholder')} />
@@ -257,6 +300,34 @@ export default function WarehousePage() {
                 <textarea className="form-input" value={wdNotes} onChange={(e) => setWdNotes(e.target.value)}
                   rows={2} placeholder={t('warehouse.notesPlaceholder')} />
               </div>
+              {wdWarehouseId && Number(wdWeight) > 0 && (
+                <div className="field">
+                  <label>{t('warehouse.availablePackets')}</label>
+                  {wdOptionsLoading ? (
+                    <Spinner light />
+                  ) : wdOptions.length === 0 ? (
+                    <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>
+                      {t('warehouse.noPacketsAvailable')}
+                    </p>
+                  ) : (
+                    <ul style={{ listStyle: 'none', padding: 0, margin: 0, display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
+                      {wdOptions.map((option) => (
+                        <li key={option.packetId} style={{
+                          display: 'flex', justifyContent: 'space-between', gap: '0.75rem',
+                          padding: '0.5rem 0.75rem', borderRadius: 8, background: 'var(--surface-2, rgba(255,255,255,0.04))',
+                        }}>
+                          <span>{option.idSecure} — {fmt(option.pureWeight)} g</span>
+                          <span style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>
+                            {option.isExactMatch
+                              ? t('warehouse.exactMatch')
+                              : t('warehouse.refundToWallet', { amount: fmt(option.refundWeight) })}
+                          </span>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+              )}
               <Button type="submit" disabled={wdSubmitting} style={{ alignSelf: 'flex-start' }}>
                 {wdSubmitting ? t('warehouse.submitting') : t('warehouse.submitWithdrawal')}
               </Button>

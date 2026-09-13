@@ -167,6 +167,12 @@ export const warehouseApi = {
   createWithdraw: async (payload) =>
     unwrap(await http.post('/warehouse/withdraw', payload)),
 
+  // Packages the chosen warehouse could serve a withdrawal of this weight
+  // from. At or under the requested weight only — the difference comes back
+  // to the wallet at delivery.
+  getAllocationOptions: async (params) =>
+    unwrap(await http.get('/warehouse/allocation-options', { params })),
+
   getRequests: async (params = {}) =>
     unwrap(await http.get('/warehouse/requests', { params })),
 

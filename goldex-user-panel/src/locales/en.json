@@ -384,7 +384,11 @@
     "balance": "Balance: {{balance}}g",
     "unknown": "Unknown",
     "apparent": "Apparent",
-    "wastage": "Wastage"
+    "wastage": "Wastage",
+    "availablePackets": "Available packages in this warehouse",
+    "noPacketsAvailable": "No package in this warehouse is at or under the requested weight yet.",
+    "exactMatch": "exact match",
+    "refundToWallet": "{{amount}} g returns to your wallet"
   },
   "settings": {
     "title": "Settings",

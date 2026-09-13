@@ -176,10 +176,20 @@ export class PacketService {
     status?: PacketStatusEnum;
     warehouseId?: string;
     userId?: string;
+    /**
+     * Packages this user has a history with: ones they handed in, and ones
+     * they took away.
+     *
+     * Distinct from `userId`, which asks who currently holds a package and is
+     * now only ever answered by the pool. Since a deposited package joins that
+     * pool and may be released to somebody else, "my packages" can only mean
+     * the ones a user actually touched.
+     */
+    involvingUserId?: string;
     limit?: string;
     offset?: string;
   }): Promise<{ packets: PacketEntity[]; total: number }> {
-    const { status, warehouseId, userId, limit = "10", offset = "0" } = query;
+    const { status, warehouseId, userId, involvingUserId, limit = "10", offset = "0" } = query;
 
     const queryBuilder = this.packetRepository
       .createQueryBuilder("packet")
@@ -196,6 +206,13 @@ export class PacketService {
 
     if (userId) {
       queryBuilder.andWhere("packet.user_id = :userId", { userId });
+    }
+
+    if (involvingUserId) {
+      queryBuilder.andWhere(
+        "(packet.sender_user_id = :involvingUserId OR packet.delivered_to_user_id = :involvingUserId)",
+        { involvingUserId }
+      );
     }
 
     queryBuilder.orderBy("packet.created_at", "DESC").skip(Number(offset)).take(Number(limit));
@@ -275,7 +292,13 @@ export class PacketService {
   async remove(id: string): Promise<void> {
     const packet = await this.findById(id);
 
-    if (packet.status === PacketStatusEnum.IN_WAREHOUSE) {
+    // Anything still physically in the vault, whether free, held for a
+    // withdrawal, or left over from the pre-pool model.
+    if (
+      packet.status === PacketStatusEnum.ORPHAN ||
+      packet.status === PacketStatusEnum.RESERVED ||
+      packet.status === PacketStatusEnum.IN_WAREHOUSE
+    ) {
       throw new BadRequestException("Cannot delete a packet that is in warehouse. Release it first.");
     }
 
@@ -326,8 +349,12 @@ export class PacketService {
         lock: { mode: "pessimistic_write" },
       });
       if (!parent) throw new NotFoundException("Packet not found");
-      if (parent.status !== PacketStatusEnum.IN_WAREHOUSE && parent.status !== PacketStatusEnum.ORPHAN) {
-        throw new BadRequestException("Only IN_WAREHOUSE or ORPHAN packets can be split");
+      // A reserved package is spoken for by a withdrawal in progress; splitting
+      // it would change what that request was approved against.
+      if (parent.status !== PacketStatusEnum.ORPHAN && parent.status !== PacketStatusEnum.IN_WAREHOUSE) {
+        throw new BadRequestException(
+          `Only packages on the shelf can be split (status: ${parent.status})`
+        );
       }
 
       const parentWeight = new Decimal(parent.pureWeight);
@@ -350,18 +377,28 @@ export class PacketService {
         const part = parts[i];
         const child = queryRunner.manager.create(PacketEntity, {
           warehouseId: parent.warehouseId,
-          userId: parent.userId,
+          symbolId: parent.symbolId,
           pureWeight: Number(part.weight),
           apparentWeight: Number(part.weight),
           idSecure: `${parent.idSecure}-${i + 1}-${idGen()}`,
           dateTime: now,
-          status: parent.isOrphan ? PacketStatusEnum.ORPHAN : PacketStatusEnum.IN_WAREHOUSE,
+          // Splitting a package changes its shape, not where it belongs: the
+          // pieces go back on the same shelf, free to allocate.
+          status: PacketStatusEnum.ORPHAN,
           ang: part.ang ?? parent.ang,
           ayar: part.ayar ?? parent.ayar,
           warehouseIndexPosition: part.position ?? parent.warehouseIndexPosition,
           batchNumber: parent.batchNumber,
           parentId: parent.id,
-          isOrphan: parent.isOrphan,
+          isOrphan: true,
+          userId: null,
+          // Provenance survives the split: each piece still came from whoever
+          // handed the parent in, via whichever admin took it.
+          senderUserId: parent.senderUserId,
+          receivedByAdminId: parent.receivedByAdminId,
+          sourceRequestId: parent.sourceRequestId,
+          providerKey: parent.providerKey,
+          settlementId: parent.settlementId,
         });
         children.push(await queryRunner.manager.save(child));
       }
