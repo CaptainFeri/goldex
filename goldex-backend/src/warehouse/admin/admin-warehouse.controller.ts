@@ -16,6 +16,7 @@ import {
   Req,
   Res,
   StreamableFile,
+  BadRequestException,
 } from "@nestjs/common";
 import { Response } from "express";
 import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth, ApiConsumes, ApiBody } from "@nestjs/swagger";
@@ -24,7 +25,8 @@ import { AdminAuthGuard } from "../../admin/auth/Guard/admin.guard";
 import { AdminWorkTimeGuard } from "../../admin-schedule/admin-work-time.guard";
 import { WarehouseService } from "../service/warehouse.service";
 import { PacketService } from "../service/packet.service";
-import { WarehouseRequestService } from "../service/warehouse-request.service";
+import { ConfirmMaterialInput, WarehouseRequestService } from "../service/warehouse-request.service";
+import { ConfirmMaterialPartDto } from "./dto/confirm-material.dto";
 import { AdminCreateWarehouseDto } from "./dto/admin-create-warehouse.dto";
 import { AdminUpdateWarehouseDto } from "./dto/admin-update-warehouse.dto";
 import { AdminCreatePacketDto } from "./dto/admin-create-packet.dto";
@@ -208,12 +210,20 @@ export class AdminWarehouseController {
     @UploadedFile() picture?: Express.Multer.File
   ) {
     const adminId = req.admin["id"];
-    const materialData: any = {};
+    const materialData: ConfirmMaterialInput = {};
     if (body.ang !== undefined && body.ang !== "") materialData.ang = Number(body.ang);
     if (body.ayar !== undefined && body.ayar !== "") materialData.ayar = Number(body.ayar);
     if (body.apparentWeight !== undefined && body.apparentWeight !== "") materialData.apparentWeight = Number(body.apparentWeight);
     if (body.wastage !== undefined && body.wastage !== "") materialData.wastage = Number(body.wastage);
     if (body.warehouseIndexPosition) materialData.warehouseIndexPosition = body.warehouseIndexPosition;
+
+    // Multipart carries no nested objects, so a split delivery arrives as a
+    // JSON string. Rejected loudly rather than silently shelved as one package:
+    // the admin who typed three packages must not get one.
+    if (body.parts !== undefined && body.parts !== "") {
+      materialData.parts = this.parseIntakeParts(body.parts);
+    }
+
     if (picture) {
       const fileInfo = await this.packetService.uploadPictureBuffer(
         `confirm-${id}-${Date.now()}`,
@@ -222,6 +232,26 @@ export class AdminWarehouseController {
       materialData.picture = fileInfo.url;
     }
     return { data: await this.requestService.confirmDepositMaterial(id, adminId, materialData) };
+  }
+
+  /**
+   * `parts` as it arrives over multipart: already an array when the request was
+   * JSON, a string when it was a form.
+   */
+  private parseIntakeParts(raw: unknown): ConfirmMaterialPartDto[] {
+    if (Array.isArray(raw)) return raw as ConfirmMaterialPartDto[];
+
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(String(raw));
+    } catch {
+      throw new BadRequestException("INVALID_PARTS: `parts` must be a JSON array of packages");
+    }
+
+    if (!Array.isArray(parsed) || parsed.length === 0) {
+      throw new BadRequestException("INVALID_PARTS: `parts` must be a non-empty JSON array of packages");
+    }
+    return parsed as ConfirmMaterialPartDto[];
   }
 
   @Post("requests/:id/assign-packet/:packetId")
