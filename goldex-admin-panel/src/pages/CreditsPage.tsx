@@ -8,10 +8,11 @@ import { STATUS_LABELS, SETTLEMENT_STATE_LABELS, RISK_STATE_LABELS } from "./cre
 import { CreditKpis, type CreditStats } from "./credit/CreditKpis";
 import { CreditCharts } from "./credit/CreditCharts";
 import { PendingApprovals } from "./credit/PendingApprovals";
+import { PendingCreditRequests } from "./credit/PendingCreditRequests";
 import { CreditsTable, type CreditModalKind } from "./credit/CreditsTable";
 import {
   CreateCreditModal, SettleCreditModal, CancelCreditModal,
-  LiquidateCreditModal, ExtendCreditModal, AdjustLimitModal,
+  LiquidateCreditModal, ExtendCreditModal, AdjustLimitModal, RejectRequestModal,
 } from "./credit/modals";
 import { UserCreditsModal } from "./credit/UserCreditsModal";
 import { CreditDetailModal } from "./credit/CreditDetailModal";
@@ -138,6 +139,32 @@ export default function CreditsPage() {
     onError: (e: any) => notify({ title: "خطا در تمدید", body: apiError(e), kind: "error" }),
   });
 
+  // A pending request is also actionable from its own row, not just the queue
+  // at the top — an admin who filtered to PENDING shouldn't have to scroll back.
+  const approveRequest = useMutation({
+    mutationFn: (id: string) => api.post(`/admin/credits/${id}/approve`, {}),
+    onSuccess: () => {
+      notify({ title: "درخواست اعتبار تأیید و صادر شد", kind: "success" });
+      qc.invalidateQueries({ queryKey: ["credits"] });
+      qc.invalidateQueries({ queryKey: ["credit-requests-pending"] });
+      qc.invalidateQueries({ queryKey: ["credit-stats"] });
+    },
+    onError: (e: any) => notify({ title: "خطا در تأیید درخواست", body: apiError(e), kind: "error" }),
+  });
+
+  const rejectRequest = useMutation({
+    mutationFn: ({ id, reason }: { id: string; reason: string }) =>
+      api.post(`/admin/credits/${id}/reject`, { reason }),
+    onSuccess: () => {
+      notify({ title: "درخواست رد شد و وثیقه بازگشت", kind: "success" });
+      qc.invalidateQueries({ queryKey: ["credits"] });
+      qc.invalidateQueries({ queryKey: ["credit-requests-pending"] });
+      qc.invalidateQueries({ queryKey: ["credit-stats"] });
+      closeModal();
+    },
+    onError: (e: any) => notify({ title: "خطا در رد درخواست", body: apiError(e), kind: "error" }),
+  });
+
   const adjustLimit = useMutation({
     mutationFn: ({ id, ...body }: any) => api.post(`/admin/credits/${id}/adjust-limit`, body),
     onSuccess: () => {
@@ -213,6 +240,8 @@ export default function CreditsPage() {
       {stats.data && <CreditKpis stats={stats.data} />}
       {stats.data && <CreditCharts stats={stats.data} />}
 
+      <PendingCreditRequests onOpenCredit={(c) => openModal(c, "detail")} />
+
       <PendingApprovals onOpenCredit={(c) => openModal(c, "detail")} />
 
       <CreditsTable
@@ -222,6 +251,8 @@ export default function CreditsPage() {
         onOpen={openModal}
         onSuspend={(c) => suspend.mutate({ id: c.id, reason: "suspend" })}
         onReactivate={(c) => reactivate.mutate({ id: c.id, reason: "reactivate" })}
+        onApproveRequest={(c) => approveRequest.mutate(c.id)}
+        busyId={approveRequest.isPending ? (approveRequest.variables as string) : null}
       />
 
       {/* Pagination */}
@@ -237,6 +268,14 @@ export default function CreditsPage() {
       {modal === "create" && <CreateCreditModal onClose={() => setModal(null)} onSave={(d) => create.mutate(d)} loading={create.isPending} />}
       {modal === "settle" && selected && (
         <SettleCreditModal credit={selected} onClose={closeModal} onSave={(d) => settle.mutate({ id: selected.id, creditId: selected.id, ...d })} loading={settle.isPending} />
+      )}
+      {modal === "reject" && selected && (
+        <RejectRequestModal
+          credit={selected}
+          onClose={closeModal}
+          onSave={(d) => rejectRequest.mutate({ id: selected.id, reason: d.reason })}
+          loading={rejectRequest.isPending}
+        />
       )}
       {modal === "cancel" && selected && (
         <CancelCreditModal credit={selected} onClose={closeModal} onSave={(d) => cancel.mutate({ id: selected.id, creditId: selected.id, ...d })} loading={cancel.isPending} />

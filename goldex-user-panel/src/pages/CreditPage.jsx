@@ -51,6 +51,7 @@ export default function CreditPage() {
   const { t } = useTranslation()
   const toast = useToast()
   const [activeCredit, setActiveCredit] = useState(null)
+  const [pendingCredit, setPendingCredit] = useState(null)
   const [overview, setOverview] = useState(null)
   const [history, setHistory] = useState([])
   const [notifications, setNotifications] = useState([])
@@ -65,13 +66,15 @@ export default function CreditPage() {
     setLoading(true)
     setError('')
     try {
-      const [active, all, notifs, ovw] = await Promise.all([
+      const [active, pending, all, notifs, ovw] = await Promise.all([
         creditApi.getActiveCredit(),
+        creditApi.getPendingCredit().catch(() => null),
         creditApi.getCredits(),
         creditApi.getNotifications(),
         creditApi.getOverview().catch(() => null),
       ])
       setActiveCredit(active)
+      setPendingCredit(pending)
       setHistory(Array.isArray(all) ? all : [])
       setNotifications(Array.isArray(notifs) ? notifs : [])
       setOverview(ovw || null)
@@ -248,8 +251,12 @@ export default function CreditPage() {
               />
             )}
 
+            <CreditTradePnl creditId={activeCredit.id} />
+
             <SettlementWorkflows creditId={activeCredit.id} nettingEnabled={!!activeCredit.nettingEnabled} onChanged={load} />
           </div>
+        ) : pendingCredit ? (
+          <PendingRequestCard request={pendingCredit} onChanged={load} />
         ) : (
           <CreditRequestForm onCreated={load} />
         )}
@@ -344,6 +351,73 @@ export default function CreditPage() {
             )}
           </div>
         )}
+      </div>
+    </div>
+  )
+}
+
+/**
+ * Profit or loss on each credit trade at the current market price. The figures
+ * come from the server so the user sees the same valuation the settlement engine
+ * will use, rather than a number the page worked out from a stale price.
+ */
+function CreditTradePnl({ creditId }) {
+  const { t } = useTranslation()
+  const [pnl, setPnl] = useState(null)
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    let alive = true
+    setLoading(true)
+    creditApi.getPnl(creditId)
+      .then((d) => { if (alive) setPnl(d) })
+      .catch(() => { if (alive) setPnl(null) })
+      .finally(() => { if (alive) setLoading(false) })
+    return () => { alive = false }
+  }, [creditId])
+
+  if (loading) return null
+  const orders = (pnl?.orders || []).filter((o) => Number(o.executedQuantity) > 0)
+  if (orders.length === 0) return null
+
+  const tone = (v) => (Number(v) > 0 ? 'txt-buy' : Number(v) < 0 ? 'txt-sell' : '')
+
+  return (
+    <div style={{ marginTop: '1.25rem' }}>
+      <div style={{ display: 'flex', alignItems: 'baseline', gap: '0.75rem', marginBottom: '0.5rem', flexWrap: 'wrap' }}>
+        <span style={{ fontWeight: 600, fontSize: '0.9rem', color: 'var(--text-primary)' }}>{t('credit.tradePnlTitle')}</span>
+        <span className={tone(pnl?.totalPnL)} style={{ fontSize: '0.85rem', fontWeight: 600 }}>
+          {t('credit.totalPnl')}: {fmtNum(pnl?.totalPnL)}
+        </span>
+        <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>
+          {t('credit.unrealizedPnl')}: {fmtNum(pnl?.unrealizedPnL)}
+        </span>
+      </div>
+      <div className="table-wrap">
+        <table className="order-table">
+          <thead>
+            <tr>
+              <th>{t('credit.pair')}</th>
+              <th>{t('credit.side')}</th>
+              <th>{t('credit.quantity')}</th>
+              <th>{t('credit.entryPrice')}</th>
+              <th>{t('credit.markPrice')}</th>
+              <th>{t('credit.pnl')}</th>
+            </tr>
+          </thead>
+          <tbody>
+            {orders.map((o) => (
+              <tr key={o.orderId}>
+                <td>{o.pairKey}</td>
+                <td className={o.side === 'BUY' ? 'txt-buy' : 'txt-sell'}>{o.side}</td>
+                <td>{fmtNum(o.executedQuantity)}</td>
+                <td>{fmtNum(o.entryPrice)}</td>
+                <td>{o.currentPrice != null ? fmtNum(o.currentPrice) : '—'}</td>
+                <td className={tone(o.pnl)}>{fmtNum(o.pnl)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
       </div>
     </div>
   )
@@ -550,6 +624,95 @@ function SettlementActionDialog({ kind, currentMethod, nettingEnabled, submittin
           </div>
         </form>
       </div>
+    </div>
+  )
+}
+
+/**
+ * A credit request waiting on admin sign-off. The collateral is already frozen
+ * and no credit line exists yet, so this replaces both the facility dashboard
+ * and the request form — otherwise the form reappears and the user submits
+ * again, freezing more collateral for a facility they cannot get.
+ */
+function PendingRequestCard({ request, onChanged }) {
+  const { t } = useTranslation()
+  const toast = useToast()
+  const [confirm, setConfirm] = useState(false)
+  const [busy, setBusy] = useState(false)
+
+  const collateralSlug = request.collateralSymbol?.slug || ''
+  const baseSlug = request.creditBaseSymbol?.slug || ''
+
+  async function withdraw() {
+    setBusy(true)
+    try {
+      await creditApi.withdrawRequest(request.id)
+      toast.success(t('credit.requestWithdrawn'))
+      setConfirm(false)
+      await onChanged()
+    } catch (err) {
+      toast.error(err?.response?.data?.message || err.message || t('credit.requestWithdrawFailed'))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <div className="card animate-fade-up" style={{ border: '2px solid rgba(224,179,65,0.45)' }}>
+      <div className="card-title">
+        <div className="gold-dot" />
+        {t('credit.pendingApprovalTitle')}
+        <span className="badge badge-warning" style={{ marginInlineStart: '0.5rem' }}>
+          {statusLabel(t, 'PENDING')}
+        </span>
+      </div>
+
+      <Alert type="warning">{t('credit.pendingApprovalMessage')}</Alert>
+
+      <div style={{ marginTop: '1rem' }}>
+        <KV label={t('credit.code')} value={<code>{request.creditCode}</code>} />
+        <KV
+          label={t('credit.frozenCollateral')}
+          value={`${fmtNum(request.collateralAmount)} ${collateralSlug}`}
+          accent
+        />
+        {request.leverage != null && <KV label={t('credit.leverage')} value={`${request.leverage}x`} />}
+        <KV
+          label={t('credit.projectedCreditLimit')}
+          value={`${fmtNum(request.creditLimit)} ${baseSlug}`}
+        />
+        <KV label={t('credit.submittedAt')} value={fmtDate(request.createAt)} />
+        {/* The level may cap how long a request can wait; after that it is
+            auto-declined and the collateral comes back on its own. */}
+        {request.approvalDeadlineAt && (
+          <KV label={t('credit.approvalDeadline')} value={fmtDate(request.approvalDeadlineAt)} />
+        )}
+      </div>
+
+      <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginTop: '0.75rem' }}>
+        {t('credit.pendingRepriceNote')}
+        {request.approvalDeadlineAt ? ` ${t('credit.pendingDeadlineNote')}` : ''}
+      </p>
+
+      <div style={{ marginTop: '1rem' }}>
+        <Button variant="ghost" onClick={() => setConfirm(true)} disabled={busy}>
+          {t('credit.withdrawRequest')}
+        </Button>
+      </div>
+
+      {confirm && (
+        <ConfirmDialog
+          title={t('credit.withdrawRequest')}
+          message={t('credit.withdrawConfirm', {
+            amount: `${fmtNum(request.collateralAmount)} ${collateralSlug}`,
+          })}
+          confirmLabel={t('credit.withdrawRequest')}
+          cancelLabel={t('common.cancel')}
+          loading={busy}
+          onCancel={() => setConfirm(false)}
+          onConfirm={withdraw}
+        />
+      )}
     </div>
   )
 }

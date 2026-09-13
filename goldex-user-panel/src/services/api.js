@@ -205,8 +205,19 @@ export const creditApi = {
   requestCredit: async (data) =>
     unwrap(await http.post('/credits/request', data)),
 
+  // A request on a level that needs admin sign-off: the collateral is already
+  // frozen but no credit line exists yet, so it is neither "active" nor absent.
+  getPendingCredit: async () =>
+    unwrap(await http.get('/credits/pending')),
+
+  withdrawRequest: async (id) =>
+    unwrap(await http.post(`/credits/${id}/withdraw-request`)),
+
   settleCredit: async (id) =>
     unwrap(await http.post(`/credits/${id}/settle`)),
+
+  getPnl: async (id) =>
+    unwrap(await http.get(`/credits/${id}/pnl`)),
 
   // Delivery-based settlement workflow
   requestSettlement: async (creditId, data = {}) =>

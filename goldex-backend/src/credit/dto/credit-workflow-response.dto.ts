@@ -92,8 +92,23 @@ export class CreditCashoutDto {
   @ApiProperty({ example: "0.50", description: "Fee rate, percent" })
   feePercent: string;
 
-  @ApiProperty({ example: "600000.00000000", description: "Fee charged, in the credit currency" })
+  @ApiProperty({
+    example: "0.06000000",
+    description:
+      "Fee charged, in the symbol named by feeSymbolId — the traded asset, since " +
+      "commissions are taken in kind (older rows carry the credit currency)",
+  })
   feeAmount: string;
+
+  @ApiPropertyOptional({
+    format: "uuid",
+    nullable: true,
+    description: "What feeAmount is denominated in",
+  })
+  feeSymbolId?: string | null;
+
+  @ApiProperty({ example: "600000.00000000", description: "The fee valued in the credit currency" })
+  feeValue: string;
 
   @ApiProperty({ example: "0.02000000", description: "Conversion commission earned, in collateral units" })
   spreadProfit: string;
@@ -104,8 +119,17 @@ export class CreditCashoutDto {
   @ApiPropertyOptional({ format: "uuid", nullable: true })
   assetSymbolId?: string | null;
 
-  @ApiProperty({ example: "1.50000000", description: "Purchased asset released, in the asset symbol" })
+  @ApiProperty({
+    example: "1.50000000",
+    description: "Purchased asset taken out of the credit wallet, before the fee",
+  })
   assetAmount: string;
+
+  @ApiProperty({
+    example: "1.44000000",
+    description: "What the deposit wallet received: assetAmount less the in-kind fee",
+  })
+  netAssetAmount: string;
 
   @ApiProperty({ example: "0.30000000", description: "Collateral consumed, in collateral units" })
   collateralConsumed: string;
@@ -155,10 +179,19 @@ export class CashoutTradeOptionDto {
   @ApiProperty({ example: 0.5, description: "Fee rate, percent" })
   feePercent: number;
 
-  @ApiProperty({ example: 559701, description: "Fee on this trade, in the credit currency" })
+  @ApiProperty({
+    example: 0.06,
+    description: "Fee on this trade, in the purchased asset — taken from the asset, not charged in currency",
+  })
   feeAmount: number;
 
-  @ApiProperty({ example: 112499999, description: "amount + feeAmount — what the chosen source is charged" })
+  @ApiProperty({ example: 559701, description: "The fee valued in the credit currency" })
+  feeValue: number;
+
+  @ApiProperty({
+    example: 111940298,
+    description: "What the chosen source is charged: the credit repaid, the fee being in-kind",
+  })
   totalDue: number;
 
   @ApiProperty({ example: 559701, description: "Platform profit this books, in the credit currency" })
@@ -170,8 +203,11 @@ export class CashoutTradeOptionDto {
   @ApiProperty({ example: "XAU" })
   assetSymbolSlug: string;
 
-  @ApiProperty({ example: 1.5, description: "Purchased asset released to the deposit wallet" })
+  @ApiProperty({ example: 1.5, description: "Purchased asset leaving the credit wallet, before the fee" })
   assetAmount: number;
+
+  @ApiProperty({ example: 1.44, description: "Purchased asset the deposit wallet receives" })
+  netAssetAmount: number;
 }
 
 /**

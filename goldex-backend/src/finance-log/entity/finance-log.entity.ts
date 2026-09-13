@@ -1,7 +1,7 @@
 import { Entity, Column, ManyToOne, JoinColumn } from "typeorm";
 import { myBaseEntity } from "../../shared/entity/base.entity";
 import { AdminEntity } from "../../admin/entity/admin.entity";
-import { CreditActionEnum } from "../../credit/enum/credit-action.enum";
+import { FinanceActionEnum } from "../enum/finance-action.enum";
 
 @Entity("finance_log")
 export class FinanceLogEntity extends myBaseEntity {
@@ -24,8 +24,12 @@ export class FinanceLogEntity extends myBaseEntity {
   @Column({ name: "order_id", type: "uuid", nullable: true })
   orderId: string;
 
-  @Column({ type: "enum", enum: CreditActionEnum, name: "action_type" })
-  actionType: CreditActionEnum;
+  /**
+   * Every money movement on the platform lands here, so this spans far more
+   * than the credit actions the log started with — see FinanceActionEnum.
+   */
+  @Column({ type: "enum", enum: FinanceActionEnum, name: "action_type" })
+  actionType: FinanceActionEnum;
 
   @Column({ type: "text", nullable: true })
   description: string;

@@ -1,6 +1,6 @@
 import { IsOptional, IsEnum, IsUUID, IsString, IsDateString } from "class-validator";
 import { ApiProperty } from "@nestjs/swagger";
-import { CreditActionEnum } from "../../credit/enum/credit-action.enum";
+import { FinanceActionEnum } from "../enum/finance-action.enum";
 
 export class FinanceLogQueryDto {
   @ApiProperty({ required: false })
@@ -13,10 +13,10 @@ export class FinanceLogQueryDto {
   @IsDateString()
   endDate?: string;
 
-  @ApiProperty({ required: false, enum: CreditActionEnum })
+  @ApiProperty({ required: false, enum: FinanceActionEnum })
   @IsOptional()
-  @IsEnum(CreditActionEnum)
-  actionType?: CreditActionEnum;
+  @IsEnum(FinanceActionEnum)
+  actionType?: FinanceActionEnum;
 
   @ApiProperty({ required: false })
   @IsOptional()

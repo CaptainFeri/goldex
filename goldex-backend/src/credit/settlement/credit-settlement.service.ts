@@ -19,7 +19,8 @@ import { CollateralLockStatusEnum } from "../enum/collateral-lock-status.enum";
 import { CreditNotificationTypeEnum } from "../enum/credit-notification-type.enum";
 import { SettlementStateEnum } from "../enum/settlement-state.enum";
 import { RiskStateEnum } from "../enum/risk-state.enum";
-import { CreditActionEnum } from "../enum/credit-action.enum";
+import { splitDeficit } from "../util/deficit-split.util";
+import { FinanceActionEnum } from "../../finance-log/enum/finance-action.enum";
 import { WalletEntity } from "../../wallet/entities/wallet.entity";
 import { WalletTypeEnum } from "../../wallet/enum/wallet-type.enum";
 import { WalletStatusEnum } from "../../wallet/enum/wallet-status.enum";
@@ -46,6 +47,21 @@ export interface SettlementOptions {
   notes?: string;
   imagePath?: string;
   allowDepositTopUp?: boolean;
+  /**
+   * Cash the settlement workflow already collected from the user's deposit
+   * wallet when they funded a shortfall. It covers the deficit before any
+   * collateral is consumed, and before the `allowDepositTopUp` debit below —
+   * otherwise the user would pay the same shortfall twice.
+   */
+  preFundedAmount?: number;
+  /**
+   * Base-symbol quantities the settlement workflow already took from the user's
+   * deposit wallet when they delivered the asset they owed, keyed by symbol id.
+   * They close the short position they were delivered against, so the engine
+   * must not also buy that quantity back at mark price and charge the
+   * collateral for it.
+   */
+  preDeliveredAssets?: Record<string, number>;
   /**
    * Bypasses the "no outstanding shortfall" gate on voluntary settlement
    * (USER_SELF/ADMIN). Only meaningful for ADMIN mode — never honoured for
@@ -318,12 +334,44 @@ export class CreditSettlementService {
 
       // 2. Compute the economic state from executed orders.
       const markPrices = await this.resolveBaseMarkPrices(manager, credit, creditOrders, markPrice);
-      const result = this.computeFromOrders(credit, creditOrders, markPrice, markPrices);
+      const result = this.computeFromOrders(
+        credit,
+        creditOrders,
+        markPrice,
+        markPrices,
+        opts.preDeliveredAssets || {},
+      );
       let deficit = result.deficit;
       let consumedCollateral = result.consumedCollateral;
       let shortfall = result.shortfall;
       const releaseIr = result.releaseIr;
       const releaseXau = result.releaseXau;
+
+      // 2b. Settlement-workflow escrow. The workflow already debited this from
+      //     the user's deposit wallet at the funding step, so it covers the
+      //     deficit here — before collateral is touched and before the deposit
+      //     top-up below, which would otherwise charge the same shortfall twice.
+      const escrow = Number(opts.preFundedAmount) || 0;
+      // What the escrow actually had to cover. The deficit is recomputed here at
+      // the current mark price, so it can be smaller than the shortfall the user
+      // funded against — the caller refunds the difference.
+      let appliedPreFunding = 0;
+      if (escrow > 0 && deficit > 0) {
+        appliedPreFunding = Math.min(escrow, deficit);
+        ({ deficit, consumedCollateral, shortfall } = splitDeficit(
+          deficit - appliedPreFunding,
+          result.collateralValue,
+          markPrice,
+        ));
+        await this.logFinanceAction(manager, {
+          adminId: opts.adminId ?? null,
+          userId: credit.userId,
+          creditId: credit.id,
+          actionType: FinanceActionEnum.CREDIT_SETTLED,
+          description: `Credit ${credit.creditCode} deficit of ${appliedPreFunding} covered from settlement funding`,
+          metadata: { coveredFromSettlementFunding: appliedPreFunding, escrowCollected: escrow },
+        });
+      }
 
       // 3. USER_SELF: allow the user to top-up a deficit from their DEPOSIT IRR
       //    wallet before collateral is consumed.
@@ -340,7 +388,7 @@ export class CreditSettlementService {
             adminId: opts.adminId ?? null,
             userId: credit.userId,
             creditId: credit.id,
-            actionType: CreditActionEnum.CREDIT_SETTLED,
+            actionType: FinanceActionEnum.CREDIT_SETTLED,
             description: `Credit ${credit.creditCode} deficit of ${deficit} covered from deposit wallet`,
             metadata: { coveredFromDeposit: deficit },
           });
@@ -470,6 +518,9 @@ export class CreditSettlementService {
           deficit,
           consumedCollateral,
           shortfall,
+          // How much of a settlement-workflow escrow this settlement consumed;
+          // the workflow refunds anything it did not need.
+          appliedPreFunding,
           positions: result.positions,
         },
       };
@@ -479,7 +530,7 @@ export class CreditSettlementService {
         adminId: opts.adminId ?? null,
         userId: credit.userId,
         creditId: credit.id,
-        actionType: CreditActionEnum.CREDIT_SETTLED,
+        actionType: FinanceActionEnum.CREDIT_SETTLED,
         description:
           `Credit ${credit.creditCode} settled (${opts.mode}${opts.force ? ", FORCED past shortfall gate" : ""}). ` +
           `netIr ${result.netIr}, netEquity ${result.netEquity}, surplus ${releaseIr}, deficit ${deficit}, ` +
@@ -599,7 +650,7 @@ export class CreditSettlementService {
       adminId: opts.adminId ?? null,
       userId: credit.userId,
       creditId: credit.id,
-      actionType: CreditActionEnum.CREDIT_SETTLED,
+      actionType: FinanceActionEnum.CREDIT_SETTLED,
       description: `Credit ${credit.creditCode} settled (legacy, ${opts.mode}). Residual ${residual} left for review.`,
       metadata: { mode: opts.mode, legacy: true, residual },
     });
@@ -631,6 +682,7 @@ export class CreditSettlementService {
     creditOrders: CreditOrderEntity[],
     markPrice: number,
     markPrices: Record<string, number>,
+    deliveredAssets: Record<string, number> = {},
   ): SettlementResult {
     let borrowedIr = new Decimal(0);
     let sellRevenueIr = new Decimal(0);
@@ -674,6 +726,18 @@ export class CreditSettlementService {
         price: buyPrice,
         pairKey: pair ? `${pair.baseSymbol?.slug}/${pair.quoteSymbol?.slug}` : "?",
       });
+    }
+
+    // Asset the user has already handed over closes the position it was
+    // delivered against: it reduces both the net position (so the engine does
+    // not buy it back at mark price) and the borrowed quantity that gross
+    // exposure is measured from.
+    for (const [symbolId, delivered] of Object.entries(deliveredAssets)) {
+      const qty = new Decimal(delivered || 0);
+      if (!qty.greaterThan(0)) continue;
+      netXauByBase.set(symbolId, (netXauByBase.get(symbolId) || new Decimal(0)).plus(qty));
+      const borrowed = borrowedXauByBase.get(symbolId);
+      if (borrowed) borrowedXauByBase.set(symbolId, Decimal.max(0, borrowed.minus(qty)));
     }
 
     const netIr = sellRevenueIr.minus(borrowedIr);
@@ -751,19 +815,14 @@ export class CreditSettlementService {
     }
 
     const releaseIr = remainingNetIr.greaterThan(0) ? remainingNetIr.toNumber() : 0;
-    const deficit = new Decimal(state.netEquity).lessThan(0) ? -state.netEquity : 0;
+    const owed = new Decimal(state.netEquity).lessThan(0) ? -state.netEquity : 0;
 
     // Collateral consumption for the deficit.
-    let consumedCollateral = 0;
-    let shortfall = 0;
-    if (deficit > 0) {
-      const collateralAmount = new Decimal(state.collateralValue).div(state.markPrice || 1);
-      consumedCollateral = Decimal.min(collateralAmount, new Decimal(deficit).div(state.markPrice || 1)).toNumber();
-      const consumedValue = new Decimal(consumedCollateral).mul(state.markPrice || 1);
-      shortfall = new Decimal(deficit).minus(consumedValue).greaterThan(0)
-        ? new Decimal(deficit).minus(consumedValue).toNumber()
-        : 0;
-    }
+    const { deficit, consumedCollateral, shortfall } = splitDeficit(
+      owed,
+      state.collateralValue,
+      state.markPrice,
+    );
 
     return { ...state, releaseIr, releaseXau, deficit, consumedCollateral, shortfall };
   }
@@ -831,7 +890,7 @@ export class CreditSettlementService {
           adminId: opts.adminId ?? null,
           userId: credit.userId,
           creditId: credit.id,
-          actionType: CreditActionEnum.LIQUIDATION,
+          actionType: FinanceActionEnum.LIQUIDATION,
           description:
             `Credit ${credit.creditCode} collateral of ${consume.toString()} consumed ` +
             `to cover settlement deficit of ${deficit}`,
@@ -982,7 +1041,7 @@ export class CreditSettlementService {
       adminId: string | null;
       userId: string;
       creditId?: string;
-      actionType: CreditActionEnum;
+      actionType: FinanceActionEnum;
       description: string;
       metadata?: any;
     },

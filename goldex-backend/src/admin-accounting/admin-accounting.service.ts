@@ -9,6 +9,7 @@ import { WalletTypeEnum } from "../wallet/enum/wallet-type.enum";
 import { RIAL_SYMBOL_SLUG } from "../shared/constants/currency.constants";
 import { PaginatedDto, paginate } from "../shared/dto/paginated.dto";
 import { AccountingVoucherEntity } from "./entity/accounting-voucher.entity";
+import { AccountingVoucherWriter } from "./accounting-voucher.writer";
 import {
   AccountingGranularity,
   AccountingMetric,
@@ -48,9 +49,8 @@ const JALALI_MONTHS = ["فرو", "ارد", "خرد", "تیر", "مرد", "شهر
  * its own `side` would be ignored, because a voucher whose stated side
  * disagreed with its movement reconciles to nothing.
  */
-export function sideForMovement(movement: VoucherMovement): VoucherSide {
-  return movement === VoucherMovement.DEPOSIT ? VoucherSide.CREDITOR : VoucherSide.DEBTOR;
-}
+/** Re-exported from the voucher writer, which derives it on every write. */
+export { sideFor as sideForMovement } from "./accounting-voucher.writer";
 
 /**
  * What a platform-raised voucher needs to know.
@@ -89,6 +89,7 @@ export class AdminAccountingService {
     @InjectRepository(SystemLedgerEntity) private readonly ledger: Repository<SystemLedgerEntity>,
     @InjectRepository(AccountingVoucherEntity) private readonly vouchers: Repository<AccountingVoucherEntity>,
     @InjectRepository(SymbolEntity) private readonly symbols: Repository<SymbolEntity>,
+    private readonly voucherWriter: AccountingVoucherWriter,
   ) {}
 
   // ── §5.21 Accounting ────────────────────────────────────────────────────
@@ -353,28 +354,24 @@ export class AdminAccountingService {
     const documentDate = new Date(dto.documentDate);
     if (Number.isNaN(documentDate.getTime())) throw new BadRequestException("VOUCHER.INVALID_DATE");
 
-    const saved = await this.vouchers.save(
-      this.vouchers.create({
-        voucherCode: await this.nextVoucherCode(),
-        customerId: dto.customerId ?? null,
-        customerName: dto.customerName,
-        customerType: dto.customerType,
-        category: dto.category,
-        movement: dto.movement,
-        // Derived here, never taken from the request.
-        side: sideForMovement(dto.movement),
-        symbolId: dto.symbolId,
-        amount: dto.amount,
-        walletType: dto.walletType,
-        walletSubset: dto.walletSubset,
-        description: dto.description,
-        extraDescription: dto.extraDescription ?? null,
-        documentDate,
-        // Always born a draft: booking is a separate, reviewed step.
-        status: VoucherStatus.DRAFT,
-        createdBy: adminId,
-      }),
-    );
+    // Always born a draft: booking is a separate, reviewed step. The writer owns
+    // the voucher numbering, which this shares with vouchers filed alongside a
+    // wallet operation — one series, no duplicate generator.
+    const saved = await this.voucherWriter.createDraft(this.vouchers.manager, {
+      customerId: dto.customerId ?? null,
+      customerName: dto.customerName,
+      customerType: dto.customerType,
+      category: dto.category,
+      movement: dto.movement,
+      symbolId: dto.symbolId,
+      amount: dto.amount,
+      walletType: dto.walletType,
+      walletSubset: dto.walletSubset,
+      description: dto.description,
+      extraDescription: dto.extraDescription ?? null,
+      documentDate,
+      createdBy: adminId,
+    });
     return this.findVoucher(saved.id);
   }
 
@@ -435,97 +432,56 @@ export class AdminAccountingService {
   }
 
   /**
-   * `DOC-<jYear><jMonth><sequence>`.
+   * Book a voucher the platform raised itself, for a movement that has already
+   * happened — a warehouse deposit, a warehouse withdrawal, a provider
+   * settlement.
    *
-   * Sequenced within the Jalali month so the reference reads the way an
-   * accountant files it.
+   * Delegates to the writer rather than inserting here, so these draw from the
+   * same number series as everything else: one generator, no second numbering
+   * path to drift from it.
    *
-   * The sequence comes from `accounting_voucher_counters` rather than from a
-   * count of that month's rows. A count is read-then-write: two vouchers raised
-   * in the same instant both saw the same total, built the same code, and the
-   * second one lost to the unique index. That was survivable while an
-   * accountant entered them one at a time, but warehouse deposits, warehouse
-   * withdrawals and provider settlements now raise vouchers of their own, so
-   * the collision became reachable. `ON CONFLICT DO UPDATE … RETURNING` bumps
-   * and returns the value in a single statement, which hands concurrent callers
-   * distinct numbers. It also survives a deleted voucher, where a count would
-   * hand out a code already in use.
-   *
-   * Runs on the caller's transaction when one is passed, so a voucher that
-   * rolls back does not strand its number.
-   */
-  private async nextVoucherCode(manager?: EntityManager): Promise<string> {
-    const now = jMoment();
-    const prefix = `DOC-${now.jYear()}${String(now.jMonth() + 1).padStart(2, "0")}`;
-    const runner = manager ?? this.vouchers.manager;
-
-    const [{ last_value: sequence }] = await runner.query(
-      `INSERT INTO "accounting_voucher_counters" ("prefix", "last_value")
-            VALUES ($1, 1)
-       ON CONFLICT ("prefix")
-     DO UPDATE SET "last_value" = "accounting_voucher_counters"."last_value" + 1
-         RETURNING "last_value"`,
-      [prefix],
-    );
-
-    return `${prefix}${String(sequence).padStart(4, "0")}`;
-  }
-
-  /**
-   * Book a voucher the platform raised itself.
-   *
-   * Written straight to FINALIZED, which is the one place the two-operator
-   * control in `assertReviewable` does not apply. That is deliberate: the
-   * movement being recorded has already happened — the gold is in the vault,
-   * the wallet is credited — so there is nothing for a second operator to
-   * approve or refuse, and holding the entry in draft would leave the ledger
-   * disagreeing with the vault until someone noticed. `source` keeps these
+   * Booked FINALIZED, which is the one place the two-operator control in
+   * `assertReviewable` does not apply. The gold is already in the vault and the
+   * wallet is already credited, so there is nothing for a reviewer to approve
+   * or refuse, and holding the entry in draft would leave the ledger
+   * disagreeing with the vault until somebody noticed. `source` keeps these
    * separable from entries that did go through review.
    *
    * `adminId` is the operator whose action produced the movement, and is
    * required: every caller reaches this from an authenticated admin route, and
-   * a voucher with no one behind it cannot be followed up.
+   * a voucher with nobody behind it cannot be followed up.
    *
    * Takes the caller's `EntityManager` so the voucher commits or rolls back
    * with the movement it records. A deposit that failed halfway must not leave
    * a booked voucher behind claiming it happened.
    */
-  async issueSystemVoucher(input: SystemVoucherInput, manager?: EntityManager): Promise<AccountingVoucherEntity> {
+  async issueSystemVoucher(
+    input: SystemVoucherInput,
+    manager?: EntityManager,
+  ): Promise<AccountingVoucherEntity> {
     if (!input.adminId) throw new BadRequestException("VOUCHER.SYSTEM_VOUCHER_NEEDS_ADMIN");
     if (!input.symbolId) throw new BadRequestException("VOUCHER.UNKNOWN_SYMBOL");
 
     const amount = new Decimal(input.amount ?? 0);
     if (amount.lessThanOrEqualTo(0)) throw new BadRequestException("VOUCHER.AMOUNT_MUST_BE_POSITIVE");
 
-    const repo = manager ? manager.getRepository(AccountingVoucherEntity) : this.vouchers;
-    const now = new Date();
-
-    return repo.save(
-      repo.create({
-        voucherCode: await this.nextVoucherCode(manager),
-        customerId: input.customerId ?? null,
-        customerName: input.customerName,
-        customerType: input.customerType ?? CustomerType.INFORMAL,
-        category: input.category,
-        movement: input.movement,
-        // Derived here, exactly as it is for a manual voucher.
-        side: sideForMovement(input.movement),
-        symbolId: input.symbolId,
-        amount: amount.toString(),
-        walletType: input.walletType ?? WalletTypeEnum.DEPOSIT,
-        walletSubset: input.walletSubset ?? WalletSubset.CASH,
-        description: input.description,
-        extraDescription: input.extraDescription ?? null,
-        documentDate: input.documentDate ?? now,
-        status: VoucherStatus.FINALIZED,
-        source: input.source,
-        referenceId: input.referenceId ?? null,
-        createdBy: input.adminId,
-        reviewedBy: input.adminId,
-        reviewedAt: now,
-        reviewNote: null,
-      }),
-    );
+    return this.voucherWriter.recordOperation(manager ?? this.vouchers.manager, {
+      customerId: input.customerId ?? null,
+      customerName: input.customerName,
+      customerType: input.customerType ?? CustomerType.INFORMAL,
+      category: input.category,
+      movement: input.movement,
+      symbolId: input.symbolId,
+      amount: amount.toString(),
+      walletType: input.walletType ?? WalletTypeEnum.DEPOSIT,
+      walletSubset: input.walletSubset ?? WalletSubset.CASH,
+      description: input.description,
+      extraDescription: input.extraDescription ?? null,
+      documentDate: input.documentDate ?? new Date(),
+      createdBy: input.adminId,
+      source: input.source,
+      referenceId: input.referenceId ?? null,
+    });
   }
 
   private toVoucherDto(v: any): VoucherDto {

@@ -15,6 +15,16 @@ import { AdjustBalanceDto } from "./dtos/adjust-balance.dto";
 import { FreezeWalletDto } from "./dtos/freeze-wallet.dto";
 import { WalletActionDto } from "./dtos/wallet-action.dto";
 import { TransactionStatusEnum } from "../wallet/enum/transaction.status.enum";
+import { UserEntity } from "../user/entity/user.entity";
+import { FinanceLogEntity } from "../finance-log/entity/finance-log.entity";
+import { FinanceActionEnum } from "../finance-log/enum/finance-action.enum";
+import { AccountingVoucherWriter } from "../admin-accounting/accounting-voucher.writer";
+import {
+  CustomerType,
+  VoucherMovement,
+  WalletSubset,
+} from "../admin-accounting/accounting.enums";
+import { OperationVoucherDto } from "./dtos/operation-voucher.dto";
 
 Decimal.set({
   precision: 20,
@@ -32,11 +42,22 @@ export class AdminWalletService {
     private transactionRepository: Repository<TransactionEntity>,
     @InjectRepository(AdminWalletLogEntity)
     private adminLogRepository: Repository<AdminWalletLogEntity>,
+    private readonly voucherWriter: AccountingVoucherWriter,
     private dataSource: DataSource
   ) {}
 
   async updateBalance(adminId: string, updateBalanceDto: UpdateBalanceDto) {
-    const { walletId, actionType, transactionType, amount, description, metadata } = updateBalanceDto;
+    const { walletId, actionType, transactionType, amount, description, metadata, voucher } =
+      updateBalanceDto;
+
+    // Belt as well as the DTO's braces: this endpoint only ever credits or
+    // debits, so a request that reached the service without an entry must not
+    // move money.
+    if (!voucher) {
+      throw new BadRequestException(
+        "An accounting voucher is required: no deposit or withdrawal is recorded without one",
+      );
+    }
 
     return await this.dataSource.transaction(async (manager) => {
       const wallet = await this.getWalletForUpdate(manager, walletId);
@@ -100,10 +121,30 @@ export class AdminWalletService {
           ? newFreeBalance.minus(decimalAmount)
           : newFreeBalance.plus(decimalAmount);
 
+      const booked = await this.recordAccounting(manager, {
+        adminId,
+        wallet,
+        amount: decimalAmount,
+        movement:
+          actionType === BalanceActionTypeEnum.CREDIT
+            ? VoucherMovement.DEPOSIT
+            : VoucherMovement.WITHDRAW,
+        subset: WalletSubset.CASH,
+        voucher,
+        action:
+          actionType === BalanceActionTypeEnum.CREDIT
+            ? FinanceActionEnum.DEPOSIT
+            : FinanceActionEnum.WITHDRAWAL,
+        operation: "UPDATE_BALANCE",
+        details: { actionType, transactionType, transactionId: transaction.id },
+      });
+
       await this.logAdminAction(manager, adminId, walletId, "UPDATE_BALANCE", {
         actionType,
         transactionType,
         amount: decimalAmount.toString(),
+        voucherId: booked.voucherId,
+        voucherCode: booked.voucherCode,
         oldBalance: {
           free: oldFreeBalance.toNumber(),
           locked: wallet.lockedBalance,
@@ -121,6 +162,7 @@ export class AdminWalletService {
         wallet,
         transaction,
         message: `Balance ${actionType.toLowerCase()}ed successfully`,
+        voucher: booked,
         details: {
           oldBalance: oldFreeBalance.toNumber(),
           newBalance: wallet.freeBalance,
@@ -131,7 +173,20 @@ export class AdminWalletService {
   }
 
   async adjustBalance(adminId: string, adjustBalanceDto: AdjustBalanceDto) {
-    const { walletId, adjustType, amount, reason, metadata } = adjustBalanceDto;
+    const { walletId, adjustType, amount, reason, metadata, voucher } = adjustBalanceDto;
+
+    // Increasing or decreasing the free balance changes what the user holds, so
+    // it is a deposit or a withdrawal and needs its entry. Locking and unlocking
+    // only move value between buckets of the same wallet.
+    const changesHoldings =
+      adjustType === BalanceAdjustTypeEnum.INCREASE_FREE ||
+      adjustType === BalanceAdjustTypeEnum.DECREASE_FREE;
+    if (changesHoldings && !voucher) {
+      throw new BadRequestException(
+        `An accounting voucher is required for ${adjustType}: no deposit or withdrawal is ` +
+          `recorded without one`,
+      );
+    }
 
     return await this.dataSource.transaction(async (manager) => {
       const wallet = await this.getWalletForUpdate(manager, walletId);
@@ -210,9 +265,33 @@ export class AdminWalletService {
       );
       await manager.save(transaction);
 
+      const booked = voucher
+        ? await this.recordAccounting(manager, {
+            adminId,
+            wallet,
+            amount: decimalAmount,
+            movement:
+              adjustType === BalanceAdjustTypeEnum.INCREASE_FREE ||
+              adjustType === BalanceAdjustTypeEnum.DECREASE_LOCKED
+                ? VoucherMovement.DEPOSIT
+                : VoucherMovement.WITHDRAW,
+            subset: changesHoldings ? WalletSubset.CASH : WalletSubset.FROZEN,
+            voucher,
+            action: changesHoldings
+              ? adjustType === BalanceAdjustTypeEnum.INCREASE_FREE
+                ? FinanceActionEnum.DEPOSIT
+                : FinanceActionEnum.WITHDRAWAL
+              : FinanceActionEnum.ADMIN_ADJUSTMENT,
+            operation: "ADJUST_BALANCE",
+            details: { adjustType, transactionId: transaction.id },
+          })
+        : null;
+
       await this.logAdminAction(manager, adminId, walletId, "ADJUST_BALANCE", {
         adjustType,
         amount: decimalAmount.toString(),
+        voucherId: booked?.voucherId ?? null,
+        voucherCode: booked?.voucherCode ?? null,
         oldBalance: {
           free: oldFreeBalance.toNumber(),
           locked: oldLockedBalance.toNumber(),
@@ -234,6 +313,7 @@ export class AdminWalletService {
         wallet,
         transaction,
         message: `Balance adjusted successfully`,
+        voucher: booked,
         details: {
           oldBalance: { free: oldFreeBalance.toNumber(), locked: oldLockedBalance.toNumber() },
           newBalance: { free: wallet.freeBalance, locked: wallet.lockedBalance },
@@ -567,6 +647,13 @@ export class AdminWalletService {
     }));
   }
 
+  /**
+   * Several credits or debits under one transaction.
+   *
+   * Each entry carries its own voucher: a batch is still a set of deposits and
+   * withdrawals, and one entry per voucher is what keeps the books reconcilable
+   * against the wallets.
+   */
   async batchUpdateBalances(
     adminId: string,
     updates: Array<{
@@ -575,6 +662,7 @@ export class AdminWalletService {
       actionType: BalanceActionTypeEnum;
       transactionType: TransactionTypeEnum;
       reason?: string;
+      voucher: OperationVoucherDto;
     }>
   ) {
     return await this.dataSource.transaction(async (manager) => {
@@ -590,6 +678,7 @@ export class AdminWalletService {
             amount: update.amount,
             description: update.reason,
             metadata: { batch: true, timestamp: new Date() },
+            voucher: update.voucher,
           });
           results.push(result);
         } catch (error) {
@@ -797,6 +886,83 @@ export class AdminWalletService {
     };
     transaction.completedAt = new Date();
     return transaction;
+  }
+
+  /**
+   * File the accounting voucher for a balance change, in the same transaction as
+   * the change, and record the operation in the finance log under the admin who
+   * made it.
+   *
+   * Nothing here is optional for a movement that changes what the user holds:
+   * the voucher is the rule ("no deposit or withdrawal without an entry"), and
+   * the finance log is what names the admin — the subscriber on the wallet
+   * transaction cannot know who acted, only that something moved.
+   */
+  private async recordAccounting(
+    manager: EntityManager,
+    params: {
+      adminId: string;
+      wallet: WalletEntity;
+      amount: Decimal;
+      movement: VoucherMovement;
+      subset: WalletSubset;
+      voucher: OperationVoucherDto;
+      action: FinanceActionEnum;
+      operation: string;
+      details: Record<string, unknown>;
+    },
+  ): Promise<{ voucherId: string; voucherCode: string }> {
+    const { wallet, voucher } = params;
+    const user = wallet.userId
+      ? await manager.findOne(UserEntity, { where: { id: wallet.userId } })
+      : null;
+    const customerName =
+      [user?.firstName, user?.lastName].filter(Boolean).join(" ").trim() ||
+      user?.phone ||
+      user?.email ||
+      wallet.userId ||
+      "—";
+
+    const booked = await this.voucherWriter.recordOperation(manager, {
+      customerId: wallet.userId ?? null,
+      customerName,
+      customerType: voucher.customerType ?? CustomerType.INFORMAL,
+      category: voucher.category,
+      movement: params.movement,
+      symbolId: wallet.symbolId,
+      amount: params.amount.toString(),
+      walletType: wallet.walletType ?? "DEPOSIT",
+      walletSubset: params.subset,
+      description: voucher.description,
+      extraDescription: voucher.extraDescription ?? null,
+      documentDate: voucher.documentDate ? new Date(voucher.documentDate) : new Date(),
+      createdBy: params.adminId,
+    });
+
+    await manager.save(
+      manager.create(FinanceLogEntity, {
+        adminId: params.adminId,
+        userId: wallet.userId ?? null,
+        walletId: wallet.id,
+        actionType: params.action,
+        description:
+          `${params.operation}: ${params.amount.toString()} on wallet ${wallet.id} — ` +
+          `${voucher.description} (voucher ${booked.voucherCode})`,
+        metadata: {
+          source: "admin-wallet",
+          operation: params.operation,
+          voucherId: booked.id,
+          voucherCode: booked.voucherCode,
+          voucherCategory: voucher.category,
+          movement: params.movement,
+          walletSubset: params.subset,
+          ...params.details,
+        },
+        actionTime: new Date(),
+      }),
+    );
+
+    return { voucherId: booked.id, voucherCode: booked.voucherCode };
   }
 
   private async logAdminAction(
