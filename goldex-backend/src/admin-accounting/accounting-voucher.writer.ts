@@ -7,6 +7,7 @@ import {
   VoucherCategory,
   VoucherMovement,
   VoucherSide,
+  VoucherSource,
   VoucherStatus,
   WalletSubset,
 } from "./accounting.enums";
@@ -27,6 +28,13 @@ export interface OperationVoucherInput {
   extraDescription?: string | null;
   documentDate: Date;
   createdBy: string;
+  /**
+   * Who raised it. Defaults to a manual entry, because a caller that does not
+   * say is the accounting desk; the platform's own callers always name theirs.
+   */
+  source?: VoucherSource;
+  /** The record it was raised for — a warehouse request, a settlement row. */
+  referenceId?: string | null;
 }
 
 /**
@@ -57,6 +65,7 @@ export class AccountingVoucherWriter {
     return this.insertWithCode(manager, {
       ...input,
       side: sideFor(input.movement),
+      source: input.source ?? VoucherSource.MANUAL,
       status: VoucherStatus.FINALIZED,
       // The admin who moved the money is the authority for the entry, so it is
       // booked under them rather than waiting for a second pair of eyes.
@@ -74,6 +83,7 @@ export class AccountingVoucherWriter {
     return this.insertWithCode(manager, {
       ...input,
       side: sideFor(input.movement),
+      source: input.source ?? VoucherSource.MANUAL,
       status: VoucherStatus.DRAFT,
     });
   }
