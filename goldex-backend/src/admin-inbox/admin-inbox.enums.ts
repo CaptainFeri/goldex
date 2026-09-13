@@ -13,6 +13,7 @@ export enum InboxCategory {
   KYC = "kyc",
   ARBITRAGE = "arbitrage",
   USER = "user",
+  WAREHOUSE = "warehouse",
   SYSTEM = "system",
 }
 

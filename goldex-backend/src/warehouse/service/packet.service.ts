@@ -111,6 +111,20 @@ export class PacketService {
 
     try {
       const netWeight = this.resolveNetWeight(dto.apparentWeight, dto.ayar, dto.pureWeight);
+      const wastage = new Decimal(dto.wastage ?? 0);
+      // Wastage comes out of the same pile, so it counts against what is left
+      // to pack even though it never becomes a package.
+      const consumed = new Decimal(netWeight).plus(wastage);
+
+      // Packing more than was settled for would be inventing gold: the pile on
+      // the bench is finite and every package cut from it draws it down.
+      const unpacked = new Decimal(await this.warehouseService.getUnpackedMaterialFor(dto.providerKey));
+      if (consumed.greaterThan(unpacked)) {
+        throw new BadRequestException(
+          `Cannot pack ${consumed.toString()}g from ${dto.providerKey}: only ${unpacked.toString()}g of ` +
+            `settled material is still unpacked`
+        );
+      }
 
       await this.warehouseService.updateCapacity(dto.warehouseId, netWeight, queryRunner);
 
@@ -145,6 +159,11 @@ export class PacketService {
         picture: pictureUrl,
         isOrphan: true,
         batchNumber: dto.batchNumber || `STL-${dto.providerKey}-${Date.now()}`,
+        // Columns rather than a parse of `batchNumber`, which is free text an
+        // operator can overwrite — and what the unpacked balance counts on.
+        providerKey: dto.providerKey,
+        settlementId: dto.settlementId,
+        symbolId: dto.symbolId,
       });
 
       const saved = await queryRunner.manager.save(packet);
@@ -153,10 +172,19 @@ export class PacketService {
         warehouseId: dto.warehouseId,
         packetId: saved.id,
         action: "SETTLEMENT_PACKET_CREATED",
-        description: `Orphan packet ${saved.idSecure} created from settlement with provider ${dto.providerKey}, weight ${netWeight}`,
+        description:
+          `Orphan packet ${saved.idSecure} created from settlement with provider ${dto.providerKey}, ` +
+          `weight ${netWeight}g (+${wastage.toString()}g wastage), ` +
+          `${unpacked.minus(consumed).toString()}g of that provider's material still unpacked`,
         performedBy: adminId,
         performedRole: "ADMIN",
-        metadata: { providerKey: dto.providerKey, pureWeight: netWeight },
+        metadata: {
+          providerKey: dto.providerKey,
+          settlementId: dto.settlementId,
+          pureWeight: netWeight,
+          wastage: wastage.toString(),
+          unpackedRemaining: unpacked.minus(consumed).toString(),
+        },
       });
 
       await queryRunner.commitTransaction();
@@ -401,6 +429,14 @@ export class PacketService {
           settlementId: parent.settlementId,
         });
         children.push(await queryRunner.manager.save(child));
+      }
+
+      // The children replace the parent gram for gram, so the shelf only loses
+      // the wastage — metal that was physically consumed in the cut and is not
+      // on any shelf any more. Leaving it in would overstate the vault by a
+      // little more with every split.
+      if (wastageDec.greaterThan(0)) {
+        await this.warehouseService.updateCapacity(parent.warehouseId, -wastageDec.toNumber(), queryRunner);
       }
 
       // Archive parent, record wastage for the audit trail
