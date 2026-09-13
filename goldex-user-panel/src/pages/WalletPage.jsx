@@ -743,6 +743,20 @@ export default function WalletPage() {
                         </div>
                         <div className="wallet-total" style={{ color: 'var(--text-muted)' }}>{fmt(w.totalBalance)}</div>
                         <div className="wallet-bal-row"><span className="k">{t('wallet.frozenAmount')}</span><span className="v">{fmt(w.freeBalance)}</span></div>
+                        {/* Part of the frozen collateral may be committed to an
+                            open credit trade; the rest can still back a new one. */}
+                        {w.collateralLocked != null && (
+                          <>
+                            <div className="wallet-bal-row">
+                              <span className="k">{t('wallet.collateralLocked')}</span>
+                              <span className="v">{fmt(w.collateralLocked)}</span>
+                            </div>
+                            <div className="wallet-bal-row">
+                              <span className="k">{t('wallet.collateralAvailable')}</span>
+                              <span className="v">{fmt(w.collateralAvailable)}</span>
+                            </div>
+                          </>
+                        )}
                         <div style={{ marginTop: '0.5rem', fontSize: '0.75rem', color: 'var(--text-muted)' }}>
                           {t('wallet.collateralNote')}
                         </div>

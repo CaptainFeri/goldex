@@ -21,6 +21,8 @@ import {
   resolveFacilityPairConfig,
   snapshotCreditLevelDefaults,
 } from "./util/credit-pair-config.util";
+import { computeCreditUsage, groupCreditUsage } from "./util/credit-usage.util";
+import { pendingApprovalDeadline } from "./util/pending-approval.util";
 import { CreditPairConfig } from "./dto/credit-pair-config.dto";
 import { CreateCreditDto } from "./dto/create-credit.dto";
 import { RequestCreditDto } from "./dto/request-credit.dto";
@@ -41,7 +43,7 @@ import { KycStatusEnum } from "../baseinfo/enum/kycStatus.enum";
 import { OrderEntity } from "../order/order.entity";
 import { OrderStatusEnum } from "../order/enum/order.status.enum";
 import { FinanceLogEntity } from "../finance-log/entity/finance-log.entity";
-import { CreditActionEnum } from "./enum/credit-action.enum";
+import { FinanceActionEnum } from "../finance-log/enum/finance-action.enum";
 import { WalletStatusEnum } from "../wallet/enum/wallet-status.enum";
 import { WalletOrderService } from "../wallet/services/wallet-order.service";
 import { CreditSettlementService, SettlementState } from "./settlement/credit-settlement.service";
@@ -168,7 +170,7 @@ export class CreditService {
             await this.logFinanceAction(manager, {
               adminId,
               userId: dto.userId,
-              actionType: CreditActionEnum.MATERIAL_FREEZE,
+              actionType: FinanceActionEnum.MATERIAL_FREEZE,
               description: `Frozen ${freezeAmount.toString()} of ${symbol?.name || wallet.symbolId} (Material) for credit`,
               metadata: { symbolId: wallet.symbolId, amount: freezeAmount.toString(), walletId: wallet.id },
             });
@@ -213,7 +215,7 @@ export class CreditService {
             await this.logFinanceAction(manager, {
               adminId,
               userId: dto.userId,
-              actionType: CreditActionEnum.MATERIAL_FREEZE,
+              actionType: FinanceActionEnum.MATERIAL_FREEZE,
               description: `Frozen ${available.toString()} of ${symbol.name} (Material) for credit`,
               metadata: { symbolId: symbol.id, symbolName: symbol.name, amount: available.toString(), walletId: wallet.id },
             });
@@ -401,7 +403,7 @@ export class CreditService {
         userId: dto.userId,
         creditId: savedCredit.id,
         walletId: primaryWallet.id,
-        actionType: CreditActionEnum.CREDIT_CREATED,
+        actionType: FinanceActionEnum.CREDIT_CREATED,
         description: `Credit created for ${totalAmount} ${primarySymbolName} on wallet, expireAt: ${dto.expireAt}`,
         metadata: {
           creditCode: savedCredit.creditCode,
@@ -422,7 +424,7 @@ export class CreditService {
           userId: dto.userId,
           creditId: savedCredit.id,
           walletId: a.wallet.id,
-          actionType: CreditActionEnum.BALANCE_INCREASED,
+          actionType: FinanceActionEnum.BALANCE_INCREASED,
           description: `Balance increased by ${a.amount} ${a.symbolName} for credit ${savedCredit.creditCode}`,
           metadata: { amount: a.amount, creditCode: savedCredit.creditCode },
         });
@@ -483,6 +485,18 @@ export class CreditService {
       });
       if (existingActive) {
         throw new BadRequestException("User already has an active credit. Settle it first.");
+      }
+
+      // A request awaiting admin sign-off already holds frozen collateral, so a
+      // second one would freeze more of the user's balance for a facility they
+      // cannot get anyway (only one may be active).
+      const existingPending = await manager.findOne(CreditEntity, {
+        where: { userId, status: CreditStatusEnum.PENDING },
+      });
+      if (existingPending) {
+        throw new BadRequestException(
+          "You already have a credit request awaiting approval. Cancel it first to submit a new one.",
+        );
       }
 
       // Price the collateral symbol against the level base symbol (IRR).
@@ -700,6 +714,12 @@ export class CreditService {
           // The level's credit rules as they stood at creation; the per-pair
           // resolver layers `creditConfigs` over these on every order.
           creditLevelDefaults: snapshotCreditLevelDefaults(level),
+          // Snapshotted so re-configuring the level cannot move the deadline of
+          // a request that is already waiting.
+          approvalTtlHours:
+            level.creditRequestApprovalTtlHours != null
+              ? Number(level.creditRequestApprovalTtlHours)
+              : null,
           abilities: {
             requiredAdminApprovalForCreation: needsApproval,
             allowUserSettlement: level.creditAllowUserSettlement !== false,
@@ -857,7 +877,9 @@ export class CreditService {
    * The collateral was already frozen when the user asked, so approval only
    * issues the line and activates the facility. It re-prices the collateral at
    * approval time: an approval that lands a day later must not hand out a limit
-   * computed against a stale price.
+   * computed against a stale price. Because the price moved, the level's caps
+   * are re-checked against the new limit too — a gold rally between request and
+   * approval must not issue a facility the level would never have granted.
    */
   async approveCreditRequest(creditId: string, adminId?: string): Promise<CreditEntity> {
     return await this.dataSource.transaction(async (manager) => {
@@ -872,11 +894,23 @@ export class CreditService {
         );
       }
 
+      // The user may have opened a facility by another route since requesting.
+      const existingActive = await manager.findOne(CreditEntity, {
+        where: { userId: credit.userId, status: CreditStatusEnum.ACTIVE },
+      });
+      if (existingActive) {
+        throw new BadRequestException(
+          `This user already has an active credit (${existingActive.creditCode}). ` +
+            `Settle it before approving this request, or decline the request.`,
+        );
+      }
+
       const unitPrice = await this.priceCollateralUnit(credit);
       // Re-derive the limit from the price now, keeping the frozen amount and
       // the leverage the user asked for.
       const collateralValue = new Decimal(credit.collateralAmount || 0).mul(unitPrice);
       const creditLimit = collateralValue.mul(credit.leverage || 1);
+      await this.assertApprovalWithinLevelLimits(credit, creditLimit.toNumber());
       credit.creditLimit = creditLimit.toNumber();
       credit.amount = creditLimit.toNumber();
       credit.initialCollateralValue = collateralValue.toNumber();
@@ -916,6 +950,7 @@ export class CreditService {
     creditId: string,
     adminId?: string,
     reason?: string,
+    opts: { byUser?: boolean } = {},
   ): Promise<CreditEntity> {
     return await this.dataSource.transaction(async (manager) => {
       const credit = await manager.findOne(CreditEntity, {
@@ -929,7 +964,11 @@ export class CreditService {
         );
       }
 
-      await this.returnFrozenCollateral(manager, credit, "Credit request rejected");
+      await this.returnFrozenCollateral(
+        manager,
+        credit,
+        opts.byUser ? "Credit request withdrawn" : "Credit request rejected",
+      );
 
       credit.status = CreditStatusEnum.CANCELLED;
       credit.adminId = adminId ?? null;
@@ -939,6 +978,7 @@ export class CreditService {
         rejectedAt: new Date().toISOString(),
         rejectedByAdminId: adminId ?? null,
         rejectionReason: reason ?? null,
+        withdrawnByUser: opts.byUser === true,
       };
       const saved = await manager.save(credit);
 
@@ -947,15 +987,57 @@ export class CreditService {
           userId: saved.userId,
           creditId: saved.id,
           type: CreditNotificationTypeEnum.SETTLEMENT,
-          message:
-            `Credit request ${saved.creditCode} was declined` +
-            (reason ? `: ${reason}` : ".") +
-            ` Your collateral has been returned to your deposit wallet.`,
+          message: opts.byUser
+            ? `Credit request ${saved.creditCode} was withdrawn. ` +
+              `Your collateral has been returned to your deposit wallet.`
+            : `Credit request ${saved.creditCode} was declined` +
+              (reason ? `: ${reason}` : ".") +
+              ` Your collateral has been returned to your deposit wallet.`,
           isRead: false,
         }),
       );
       return saved;
     });
+  }
+
+  /**
+   * Re-check a pending request's terms against the limits it was granted under,
+   * using the limit recomputed at approval-time prices. The request passed these
+   * checks when it was submitted; the price it is priced against has since
+   * moved, so the derived credit limit has to clear the cap again.
+   */
+  private async assertApprovalWithinLevelLimits(
+    credit: CreditEntity,
+    creditLimit: number,
+  ): Promise<void> {
+    const collateralPair =
+      credit.collateralSymbolId &&
+      credit.creditBaseSymbolId &&
+      credit.collateralSymbolId !== credit.creditBaseSymbolId
+        ? await this.pricePairRepository.findOne({
+            where: {
+              baseId: credit.collateralSymbolId,
+              quoteId: credit.creditBaseSymbolId,
+              isValid: true,
+            },
+          })
+        : null;
+    const terms = resolveFacilityPairConfig(credit, collateralPair?.id);
+
+    const leverage = Number(credit.leverage) || 0;
+    if (terms.creditMaxLeverage != null && leverage > terms.creditMaxLeverage) {
+      throw new BadRequestException(
+        `Leverage ${leverage}x exceeds the maximum of ${terms.creditMaxLeverage}x for this collateral. ` +
+          `Decline this request and ask the user to resubmit.`,
+      );
+    }
+    if (terms.creditMaxAmount != null && terms.creditMaxAmount > 0 && creditLimit > terms.creditMaxAmount) {
+      throw new BadRequestException(
+        `At the current price this request would issue a credit limit of ${creditLimit.toFixed(0)}, ` +
+          `above the maximum of ${terms.creditMaxAmount.toFixed(0)}. Decline it, or raise the level's ` +
+          `maximum credit amount first.`,
+      );
+    }
   }
 
   /** Price one unit of a facility's collateral in its credit currency. */
@@ -1190,7 +1272,7 @@ export class CreditService {
               userId: order.userId,
               creditId: creditOrder.creditId,
               orderId: order.id,
-              actionType: CreditActionEnum.LIQUIDATION,
+              actionType: FinanceActionEnum.LIQUIDATION,
               description: `Partial order refund of ${refundAmount.toString()} to Rial wallet due to margin call`,
               metadata: { partialQuantity: partialQty.toString(), refundAmount: refundAmount.toString() },
             });
@@ -1250,7 +1332,7 @@ export class CreditService {
         adminId: null,
         userId: credit.userId,
         creditId: credit.id,
-        actionType: CreditActionEnum.REMINDER_SENT,
+        actionType: FinanceActionEnum.REMINDER_SENT,
         description: message,
         metadata: { daysRemaining, hoursRemaining: diffHours, reminderTimerHours: credit.reminderTimerHours },
         actionTime: now,
@@ -1262,6 +1344,44 @@ export class CreditService {
         creditId: credit.id,
         daysRemaining,
       });
+    }
+  }
+
+  /**
+   * Decline credit requests that have waited past their level's approval
+   * deadline, returning the collateral they froze.
+   *
+   * Without this a request nobody decides on holds the user's collateral for
+   * good: the facility is PENDING so no settlement path touches it, and the
+   * collateral is out of the deposit wallet. The deadline is the one snapshotted
+   * on the request, so re-configuring the level never moves it.
+   */
+  async processStalePendingRequests(): Promise<void> {
+    const pending = await this.creditRepository.find({
+      where: { status: CreditStatusEnum.PENDING },
+    });
+    const now = Date.now();
+
+    for (const credit of pending) {
+      const deadline = pendingApprovalDeadline(credit);
+      if (!deadline || now < deadline.getTime()) continue;
+      const ttlHours = Number(credit.metadata?.approvalTtlHours) || 0;
+
+      try {
+        await this.rejectCreditRequest(
+          credit.id,
+          undefined,
+          `Automatically declined: not approved within ${ttlHours} hours`,
+        );
+        this.logger.log(
+          `Credit request ${credit.creditCode} auto-declined after ${ttlHours}h awaiting approval`,
+        );
+      } catch (error) {
+        // One stuck request must not stop the rest of the sweep.
+        this.logger.error(
+          `Could not auto-decline credit request ${credit.creditCode}: ${(error as Error).message}`,
+        );
+      }
     }
   }
 
@@ -1547,7 +1667,7 @@ export class CreditService {
       await this.logFinanceAction(manager, {
         adminId: adminId ?? null,
         userId,
-        actionType: CreditActionEnum.WALLET_UNFROZEN,
+        actionType: FinanceActionEnum.WALLET_UNFROZEN,
         description: `All wallets unfrozen after credit ${creditCode} settlement`,
         metadata: { walletCount: wallets.length },
       });
@@ -1625,7 +1745,7 @@ export class CreditService {
           userId: credit.userId,
           creditId: credit.id,
           walletId: wallet.id,
-          actionType: CreditActionEnum.CREDIT_CANCELLED,
+          actionType: FinanceActionEnum.CREDIT_CANCELLED,
           description: `Credit ${credit.creditCode} amount of ${clawback.toString()} clawed back on cancellation`,
           metadata: { creditCode: credit.creditCode, clawback: clawback.toNumber(), reason },
         });
@@ -1682,7 +1802,7 @@ export class CreditService {
         adminId,
         userId: credit.userId,
         creditId: credit.id,
-        actionType: CreditActionEnum.CREDIT_CANCELLED,
+        actionType: FinanceActionEnum.CREDIT_CANCELLED,
         description: reason || `Credit ${credit.creditCode} cancelled`,
         metadata: { creditCode: credit.creditCode, reason },
       });
@@ -1798,7 +1918,7 @@ export class CreditService {
       userId: credit.userId,
       creditId: credit.id,
       walletId: depositWallet.id,
-      actionType: CreditActionEnum.CREDIT_CANCELLED,
+      actionType: FinanceActionEnum.CREDIT_CANCELLED,
       description: `Collateral of ${returned.toString()} returned after credit ${credit.creditCode} cancellation`,
       metadata: { creditCode: credit.creditCode, returned: returned.toNumber(), reason },
     });
@@ -1812,74 +1932,75 @@ export class CreditService {
   }
 
   /**
-   * Sum the IRR value of all COMPLETED credit-linked orders. This is the
-   * facility's "used credit" per the product rule:
-   *   available = creditLimit (credit created at price) − all orders completed
-   * Pending orders are not included here — their amount is locked by the wallet
-   * freeze (freeBalance → lockedBalance), which reduces the available wallet
-   * capacity independently.
+   * The user's credit request awaiting admin sign-off, if any. Separate from
+   * `getUserActiveCredit` because a pending request has no credit line yet —
+   * only frozen collateral — so the panels must present it as a waiting state,
+   * not as a facility and not as "no credit".
+   */
+  async getUserPendingCredit(userId: string): Promise<any | null> {
+    const credit = await this.creditRepository.findOne({
+      where: { userId, status: CreditStatusEnum.PENDING },
+      relations: { creditBaseSymbol: true, collateralSymbol: true },
+    });
+    if (!credit) return null;
+    return { ...credit, approvalDeadlineAt: pendingApprovalDeadline(credit) };
+  }
+
+  /**
+   * Let a user take back their own request while it is still pending, returning
+   * the collateral they froze. The same transition an admin decline makes, so it
+   * reuses that path rather than duplicating the unfreeze.
+   */
+  async withdrawCreditRequest(userId: string, creditId: string): Promise<CreditEntity> {
+    const credit = await this.creditRepository.findOne({ where: { id: creditId } });
+    if (!credit || credit.userId !== userId) {
+      throw new NotFoundException("Credit request not found");
+    }
+    if (credit.status !== CreditStatusEnum.PENDING) {
+      throw new BadRequestException(
+        `Only a request awaiting approval can be withdrawn (this one is ${credit.status})`,
+      );
+    }
+    return await this.rejectCreditRequest(creditId, undefined, undefined, { byUser: true });
+  }
+
+  /**
+   * The facility's live used credit — the net open position in the credit
+   * currency, so selling a position back out frees the line again:
+   *   available = creditLimit − max(0, borrowed − sell revenue)
+   * See `computeCreditUsage` for why pending and cashed-out trades are excluded.
    */
   async computeUsedCredit(creditId: string): Promise<number> {
     const rows = await this.creditOrderRepository.find({
       where: { creditId },
       relations: { order: true },
     });
-    let total = new Decimal(0);
-    for (const co of rows) {
-      const o = co.order;
-      if (!o) continue;
-      if (o.status !== "COMPLETED") continue;
-      // Cashed-out trades repaid their credit — they no longer use the line.
-      if (co.status === CreditOrderStatusEnum.CASHED_OUT) continue;
-      const price = Number(o.price) || Number(co.priceAtOrderTime) || 0;
-      const qty = Number(o.executedQuantity) > 0 ? Number(o.executedQuantity) : Number(o.quantity || 0);
-      total = total.plus(new Decimal(qty).mul(price));
-    }
-    return total.toNumber();
+    return computeCreditUsage(rows).usedCredit;
   }
 
   /**
-   * Sum the completed-order IRR usage across a set of credits in a single query
-   * (used by the admin dashboard stats to avoid N+1 computeUsedCredit calls).
+   * Net usage summed across a set of credits in a single query (used by the
+   * admin dashboard stats to avoid N+1 computeUsedCredit calls).
    */
   private async sumCompletedCreditUsage(creditIds: string[]): Promise<number> {
     if (!creditIds.length) return 0;
-    const rows = await this.creditOrderRepository.find({
-      where: { creditId: In(creditIds) },
-      relations: { order: true },
-    });
-    let total = new Decimal(0);
-    for (const co of rows) {
-      const o = co.order;
-      if (!o || o.status !== "COMPLETED") continue;
-      if (co.status === CreditOrderStatusEnum.CASHED_OUT) continue;
-      const price = Number(o.price) || Number(co.priceAtOrderTime) || 0;
-      const qty = Number(o.executedQuantity) > 0 ? Number(o.executedQuantity) : Number(o.quantity || 0);
-      total = total.plus(new Decimal(qty).mul(price));
-    }
-    return total.toNumber();
+    const map = await this.computeUsedCreditMap(creditIds);
+    // Summed per facility, not across all rows at once: one facility's sell
+    // revenue must not net off another facility's borrowing.
+    return Object.values(map).reduce((total, used) => total + used, 0);
   }
 
   /**
-   * Per-credit completed-order IRR usage (single query) — used by the CSV export
-   * so every row reflects live usage rather than the stale usedCredit column.
+   * Net usage per credit (single query) — used by the CSV export so every row
+   * reflects live usage rather than the stale usedCredit column.
    */
   private async computeUsedCreditMap(creditIds: string[]): Promise<Record<string, number>> {
-    const map: Record<string, number> = {};
-    if (!creditIds.length) return map;
+    if (!creditIds.length) return {};
     const rows = await this.creditOrderRepository.find({
       where: { creditId: In(creditIds) },
       relations: { order: true },
     });
-    for (const co of rows) {
-      const o = co.order;
-      if (!o || o.status !== "COMPLETED") continue;
-      if (co.status === CreditOrderStatusEnum.CASHED_OUT) continue;
-      const price = Number(o.price) || Number(co.priceAtOrderTime) || 0;
-      const qty = Number(o.executedQuantity) > 0 ? Number(o.executedQuantity) : Number(o.quantity || 0);
-      map[co.creditId] = new Decimal(map[co.creditId] || 0).plus(new Decimal(qty).mul(price)).toNumber();
-    }
-    return map;
+    return groupCreditUsage(rows);
   }
 
   /**
@@ -1992,6 +2113,29 @@ export class CreditService {
     });
     const price = pair ? Number(pair.bestSellGramPrice) || Number(pair.bestSellPrice) || 0 : 0;
     return price > 0 ? price : 0;
+  }
+
+  /**
+   * Current mark price per traded pair across a facility's credit orders, keyed
+   * by pair id. One query for all the pairs involved rather than one per trade.
+   */
+  private async markPricesForCreditOrders(credit: CreditEntity): Promise<Record<string, number>> {
+    const pairIds = [
+      ...new Set(
+        (credit.creditOrders || [])
+          .map((co) => co.order?.pricePair?.id || co.order?.pricePairId)
+          .filter((id): id is string => !!id),
+      ),
+    ];
+    if (!pairIds.length) return {};
+
+    const pairs = await this.pricePairRepository.find({ where: { id: In(pairIds) } });
+    const prices: Record<string, number> = {};
+    for (const pair of pairs) {
+      const price = Number(pair.bestSellGramPrice) || Number(pair.bestSellPrice) || 0;
+      if (price > 0) prices[pair.id] = price;
+    }
+    return prices;
   }
 
   /**
@@ -2168,9 +2312,10 @@ export class CreditService {
 
     // ── max_credit_notional (nominal exposure cap) ──────────────────
     if (credit.maxCreditNotional != null && Number(credit.maxCreditNotional) > 0) {
-      // Current exposure = IRR value of completed credit orders (the real open
-      // notional), not the placement-time `usedCredit` bump which also counts
-      // pending/rejected orders.
+      // Current exposure = the facility's net open position in the credit
+      // currency, so a position the user has already sold back out does not keep
+      // counting against the cap. Not the placement-time `usedCredit` column,
+      // which also counts pending and rejected orders.
       const usedNotional = await this.computeUsedCredit(credit.id);
       const projected = new Decimal(usedNotional).plus(opts.notionalIr || 0);
       if (projected.greaterThan(Number(credit.maxCreditNotional))) {
@@ -2204,6 +2349,9 @@ export class CreditService {
     const pendingApproval = await this.creditSettlementRepository.count({
       where: { status: SettlementWorkflowStatusEnum.PENDING_ADMIN_REVIEW },
     });
+    // Credit requests awaiting sign-off are a separate queue from settlements
+    // awaiting sign-off: these hold frozen collateral and no credit line yet.
+    const pendingRequests = all.filter((c) => c.status === CreditStatusEnum.PENDING);
 
     return {
       totals: {
@@ -2212,6 +2360,7 @@ export class CreditService {
         settled: all.filter((c) => c.status === CreditStatusEnum.SETTLED).length,
         cancelled: all.filter((c) => c.status === CreditStatusEnum.CANCELLED).length,
         expired: all.filter((c) => c.status === CreditStatusEnum.EXPIRED).length,
+        pendingRequests: pendingRequests.length,
       },
       exposure: {
         activeCreditLimit: sum(active, (c) => c.creditLimit),
@@ -2229,6 +2378,11 @@ export class CreditService {
       settlementDistribution: settlementDist,
       riskDistribution: riskDist,
       pendingApproval,
+      pendingRequests: {
+        count: pendingRequests.length,
+        frozenCollateral: sum(pendingRequests, (c) => c.collateralAmount),
+        projectedCreditLimit: sum(pendingRequests, (c) => c.creditLimit),
+      },
     };
   }
 
@@ -2328,7 +2482,7 @@ export class CreditService {
         adminId,
         userId: credit.userId,
         creditId: credit.id,
-        actionType: CreditActionEnum.CREDIT_SUSPENDED,
+        actionType: FinanceActionEnum.CREDIT_SUSPENDED,
         description: `Credit ${credit.creditCode} suspended${reason ? `: ${reason}` : ""}. All wallets frozen.`,
         metadata: { reason },
       });
@@ -2357,7 +2511,7 @@ export class CreditService {
         adminId,
         userId: credit.userId,
         creditId: credit.id,
-        actionType: CreditActionEnum.CREDIT_REACTIVATED,
+        actionType: FinanceActionEnum.CREDIT_REACTIVATED,
         description: `Credit ${credit.creditCode} reactivated${reason ? `: ${reason}` : ""}. Wallets unfrozen.`,
         metadata: { reason },
       });
@@ -2389,7 +2543,7 @@ export class CreditService {
         adminId,
         userId: credit.userId,
         creditId: credit.id,
-        actionType: CreditActionEnum.CREDIT_EXTENDED,
+        actionType: FinanceActionEnum.CREDIT_EXTENDED,
         description: `Credit ${credit.creditCode} settlement extended by ${hours}h${reason ? ` (${reason})` : ""}`,
         metadata: { hours, reason },
       });
@@ -2451,7 +2605,7 @@ export class CreditService {
         userId: credit.userId,
         creditId: credit.id,
         walletId: creditWallet.id,
-        actionType: CreditActionEnum.CREDIT_LIMIT_ADJUSTED,
+        actionType: FinanceActionEnum.CREDIT_LIMIT_ADJUSTED,
         description: `Credit ${credit.creditCode} limit adjusted ${oldLimit} → ${newLimit}${reason ? ` (${reason})` : ""}`,
         metadata: { oldLimit, newLimit, delta: delta.toNumber(), reason },
       });
@@ -2503,11 +2657,17 @@ export class CreditService {
   }
 
   /**
-   * Calculate profit/loss for a credit based on its orders.
-   * For BUY orders: PnL = (currentPrice - entryPrice) * quantity
-   * For SELL orders: PnL = (entryPrice - currentPrice) * quantity
+   * Per-trade profit/loss for a credit, priced against the live market.
+   *
+   * For BUY orders: PnL = (mark − entry) × executed quantity
+   * For SELL orders: PnL = (entry − mark) × executed quantity
+   *
+   * The mark price is resolved per traded pair rather than read from the credit
+   * order's `currentPrice` column: that column is only written by the margin-call
+   * check, which returns early for a facility without call margin, so reading it
+   * reported zero P&L for every trade on most facilities.
    */
-  calculateCreditPnL(credit: CreditEntity): {
+  async calculateCreditPnL(credit: CreditEntity): Promise<{
     totalPnL: number;
     realizedPnL: number;
     unrealizedPnL: number;
@@ -2522,7 +2682,8 @@ export class CreditService {
       status: string;
       pairKey: string;
     }>;
-  } {
+  }> {
+    const markPrices = await this.markPricesForCreditOrders(credit);
     let realizedPnL = 0;
     let unrealizedPnL = 0;
     const orderDetails: Array<{
@@ -2542,7 +2703,10 @@ export class CreditService {
       if (!order) continue;
 
       const entryPrice = Number(co.priceAtOrderTime) || 0;
-      const currentPrice = co.currentPrice ? Number(co.currentPrice) : null;
+      const pairId = order.pricePair?.id || order.pricePairId;
+      const currentPrice =
+        (pairId ? markPrices[pairId] : null) ??
+        (co.currentPrice ? Number(co.currentPrice) : null);
       const quantity = Number(order.quantity) || 0;
       const executedQuantity = Number(order.executedQuantity) || 0;
       const pairKey = order.pricePair
@@ -2633,10 +2797,18 @@ export class CreditService {
     const total = await qb.getCount();
     const page = query?.page || 1;
     const limit = query?.limit || 20;
-    const items = await qb
+    const rows = await qb
       .skip((page - 1) * limit)
       .take(limit)
       .getMany();
+
+    // A pending request carries the instant it gets auto-declined, so the panel
+    // can count down to it without re-deriving the rule.
+    const items = rows.map((credit) =>
+      credit.status === CreditStatusEnum.PENDING
+        ? Object.assign(credit, { approvalDeadlineAt: pendingApprovalDeadline(credit) })
+        : credit,
+    );
 
     return { items, total, page, limit };
   }
@@ -2707,7 +2879,7 @@ export class CreditService {
       creditId?: string;
       walletId?: string;
       orderId?: string;
-      actionType: CreditActionEnum;
+      actionType: FinanceActionEnum;
       description: string;
       metadata?: any;
     },
@@ -2779,7 +2951,7 @@ export class CreditService {
         adminId: null,
         userId,
         creditId,
-        actionType: CreditActionEnum.ALL_WALLETS_FROZEN,
+        actionType: FinanceActionEnum.ALL_WALLETS_FROZEN,
         description: `All wallets frozen due to margin call on credit ${creditId}`,
         metadata: { walletCount: wallets.length },
       });
@@ -3198,7 +3370,7 @@ export class CreditService {
         adminId,
         userId: credit.userId,
         creditId: credit.id,
-        actionType: CreditActionEnum.CREDIT_LIMIT_ADJUSTED,
+        actionType: FinanceActionEnum.CREDIT_LIMIT_ADJUSTED,
         description:
           `Credit ${credit.creditCode} settlement policy updated` +
           (reason ? `: ${reason}` : ""),

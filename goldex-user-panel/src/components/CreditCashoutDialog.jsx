@@ -106,9 +106,18 @@ export default function CreditCashoutDialog({ creditId, onClose, onDone }) {
                     </div>
                     <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginTop: 4, lineHeight: 1.8 }}>
                       <div>{t('credit.cashoutPurchase')}: {fmt(tr.executedQuantity, 4)} {tr.assetSymbolSlug} @ {fmt(tr.price)}</div>
-                      <div>{t('credit.cashoutAmountDue')}: <span style={{ color: 'var(--gold)', fontWeight: 600 }}>{fmt(tr.totalDue)}</span>
-                        {Number(tr.feeAmount) > 0 && ` (${t('credit.cashoutFee')} ${fmt(tr.feeAmount)})`}</div>
-                      <div>{t('credit.cashoutRelease')}: {fmt(tr.assetAmount, 4)} {tr.assetSymbolSlug}</div>
+                      <div>{t('credit.cashoutAmountDue')}: <span style={{ color: 'var(--gold)', fontWeight: 600 }}>{fmt(tr.totalDue)}</span></div>
+                      {/* The fee is withheld from the gold, so what the user
+                          receives is the net — showing the gross alone would
+                          overstate it. */}
+                      <div>{t('credit.cashoutRelease')}: <span style={{ color: 'var(--gold)', fontWeight: 600 }}>{fmt(tr.netAssetAmount, 4)} {tr.assetSymbolSlug}</span></div>
+                      {Number(tr.feeAmount) > 0 && (
+                        <div>
+                          {t('credit.cashoutFee')} ({fmt(tr.feePercent)}%): {fmt(tr.feeAmount, 4)} {tr.assetSymbolSlug}
+                          {' · '}
+                          {t('credit.cashoutGross', { amount: `${fmt(tr.assetAmount, 4)} ${tr.assetSymbolSlug}` })}
+                        </div>
+                      )}
                       {tr.executedAt && <div>{t('credit.cashoutTradedAt')}: {fmtDate(tr.executedAt)}</div>}
                     </div>
 
@@ -152,7 +161,7 @@ export default function CreditCashoutDialog({ creditId, onClose, onDone }) {
                 <div style={{ fontWeight: 600, fontSize: '0.85rem', marginBottom: 6 }}>{t('credit.cashoutHistory')}</div>
                 {history.items.map((h) => (
                   <div key={h.id} style={{ fontSize: '0.78rem', color: 'var(--text-muted)', lineHeight: 1.9 }}>
-                    {fmtDate(h.createAt)} · {fmt(h.amount)} · {t(`credit.cashoutSource.${h.source}`)} · {fmt(h.assetAmount, 4)} {t('credit.cashoutReleased')}
+                    {fmtDate(h.createAt)} · {fmt(h.amount)} · {t(`credit.cashoutSource.${h.source}`)} · {fmt(h.netAssetAmount ?? h.assetAmount, 4)} {t('credit.cashoutReleased')}
                   </div>
                 ))}
               </div>
@@ -172,11 +181,11 @@ export default function CreditCashoutDialog({ creditId, onClose, onDone }) {
                 {selected.source === 'DEPOSIT'
                   ? t('credit.cashoutConfirmDeposit', {
                       amount: fmt(selected.trade.totalDue),
-                      asset: `${fmt(selected.trade.assetAmount, 4)} ${selected.trade.assetSymbolSlug}`,
+                      asset: `${fmt(selected.trade.netAssetAmount, 4)} ${selected.trade.assetSymbolSlug}`,
                     })
                   : t('credit.cashoutConfirmCollateral', {
                       units: fmt(selected.trade.collateral.requiredUnits, 4),
-                      asset: `${fmt(selected.trade.assetAmount, 4)} ${selected.trade.assetSymbolSlug}`,
+                      asset: `${fmt(selected.trade.netAssetAmount, 4)} ${selected.trade.assetSymbolSlug}`,
                       limit: fmt(selected.trade.collateral.creditLimitReduction),
                     })}
               </p>

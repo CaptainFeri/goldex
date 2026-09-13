@@ -8,7 +8,7 @@ import {
 } from "./labels";
 import { fmtBySymbol } from "../../lib/money";
 
-export type CreditModalKind = "detail" | "user" | "settle" | "liquidate" | "extend" | "adjust" | "cancel";
+export type CreditModalKind = "detail" | "user" | "settle" | "liquidate" | "extend" | "adjust" | "cancel" | "reject";
 
 export function CreditsTable({
   items,
@@ -17,6 +17,8 @@ export function CreditsTable({
   onOpen,
   onSuspend,
   onReactivate,
+  onApproveRequest,
+  busyId,
 }: {
   items: Credit[];
   loading: boolean;
@@ -24,6 +26,9 @@ export function CreditsTable({
   onOpen: (c: Credit, modal: CreditModalKind) => void;
   onSuspend: (c: Credit) => void;
   onReactivate: (c: Credit) => void;
+  onApproveRequest: (c: Credit) => void;
+  /** Credit whose approval is in flight, so its row can disable both buttons. */
+  busyId: string | null;
 }) {
   if (loading) return <Loading />;
   if (error) return <ErrorState message={error} />;
@@ -125,6 +130,16 @@ export function CreditsTable({
                 <div className="row" style={{ gap: 4, flexWrap: "wrap" }}>
                   <button className="btn sm" onClick={() => onOpen(c, "detail")}>جزئیات</button>
                   <button className="btn sm" onClick={() => onOpen(c, "user")}>کاربر</button>
+                  {/* A pending request has no credit line yet — the only two
+                      moves are issuing it or returning the frozen collateral. */}
+                  {c.status === "PENDING" && (
+                    <>
+                      <button className="btn sm" disabled={busyId === c.id} onClick={() => onApproveRequest(c)}>
+                        {busyId === c.id ? <span className="spin" /> : "تأیید و صدور"}
+                      </button>
+                      <button className="btn sm ghost" disabled={busyId === c.id} onClick={() => onOpen(c, "reject")}>رد</button>
+                    </>
+                  )}
                   {(c.status === "ACTIVE" || c.status === "SUSPENDED") && (
                     <>
                       <button className="btn sm" onClick={() => onOpen(c, "settle")}>تسویه</button>

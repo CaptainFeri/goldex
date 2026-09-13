@@ -4,6 +4,7 @@ import { api, unwrap, apiError } from "../api/client";
 import { Card, Badge, Loading, ErrorState, Empty, Modal } from "../components/ui";
 import { pairLabel } from "../lib/format";
 import { fmtBySymbol, toApiAmount, toFormAmount, unitLabel } from "../lib/money";
+import type { UserLevel } from "../api/types";
 import DateField from "../components/DateField";
 
 const fmtDate = (d: string | null) =>
@@ -62,7 +63,7 @@ export default function LevelsPage() {
 
   const list = useQuery({
     queryKey: ["user-levels"],
-    queryFn: async () => unwrap<any[]>((await api.get("/admin/user-levels")).data),
+    queryFn: async () => unwrap<UserLevel[]>((await api.get("/admin/user-levels")).data),
   });
 
   const create = useMutation({
@@ -222,6 +223,7 @@ function LevelFormModal({ title, initial, onClose, onSave, loading }: {
     creditMinTradeSize: initial?.creditMinTradeSize ?? "",
     creditMaxTradeSize: initial?.creditMaxTradeSize ?? "",
     creditRequireAdminApprovalForCreation: initial?.creditRequireAdminApprovalForCreation === true,
+    creditRequestApprovalTtlHours: initial?.creditRequestApprovalTtlHours ?? "",
     creditRequireAdminApprovalForSettlement:
       initial?.creditRequireAdminApprovalForSettlement === true,
     creditAllowUserSettlement: initial?.creditAllowUserSettlement !== false,
@@ -329,6 +331,7 @@ function LevelFormModal({ title, initial, onClose, onSave, loading }: {
       "creditMinTradeSize",
       "creditMaxTradeSize",
       "creditCashoutFeePercent",
+      "creditRequestApprovalTtlHours",
     ] as const) {
       if (form[key] !== "" && form[key] !== null) payload[key] = +form[key];
     }
@@ -653,6 +656,21 @@ function CreditAbilityFields({ value, onChange }: { value: any; onChange: (patch
           <input type="checkbox" checked={!!v.creditRequireAdminApprovalForCreation} onChange={(e) => onChange({ creditRequireAdminApprovalForCreation: e.target.checked })} />
           <span>ایجاد اعتبار نیازمند تأیید مدیر</span>
         </label>
+      </div>
+      {/* Only meaningful with the checkbox above: without a deadline an
+          undecided request keeps the user's collateral frozen for good. */}
+      <div className="field">
+        <label>مهلت تأیید درخواست (ساعت)</label>
+        <input
+          className="input mono"
+          type="number"
+          min={0}
+          disabled={!v.creditRequireAdminApprovalForCreation}
+          value={num(v.creditRequestApprovalTtlHours)}
+          onChange={(e) => onChange({ creditRequestApprovalTtlHours: e.target.value })}
+          placeholder="بدون مهلت"
+        />
+        <div style={{ fontSize: "0.65rem", color: "var(--text-faint)" }}>پس از این مدت، درخواست خودکار رد می‌شود و وثیقه برمی‌گردد.</div>
       </div>
       <div className="field">
         <label className="checkbox-label">

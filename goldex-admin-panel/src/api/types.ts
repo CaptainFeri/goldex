@@ -479,13 +479,24 @@ export interface CreditCashout {
   /** Credit repaid (credit currency). */
   amount: number;
   feePercent: number;
+  /**
+   * Fee charged, in the symbol named by feeSymbolId — the traded asset, since
+   * commissions are taken in kind. Rows written before that carry the credit
+   * currency, so never render this against a fixed unit.
+   */
   feeAmount: number;
+  feeSymbolId: string | null;
+  /** The fee valued in the credit currency. */
+  feeValue: number;
   /** Conversion commission booked in collateral units. */
   spreadProfit: number;
   /** Total platform profit, valued in the credit currency. */
   systemProfitValue: number;
   assetSymbolId: string | null;
+  /** Asset taken out of the credit wallet, before the fee. */
   assetAmount: number;
+  /** What the deposit wallet received: assetAmount less the in-kind fee. */
+  netAssetAmount: number;
   collateralConsumed: number;
   markPrice: number;
   creditLimitReduction: number;
@@ -500,6 +511,7 @@ export interface CreditCashout {
 export interface CashoutTotals {
   count: number;
   volume: number;
+  /** Fees earned, valued in the credit currency (they are collected in-kind). */
   fees: number;
   spreadProfit: number;
   systemProfit: number;
@@ -517,12 +529,19 @@ export interface CashoutTradeOption {
   executedAt: string | null;
   amount: number;
   feePercent: number;
+  /** Fee on this trade, in the purchased asset — withheld from it, not charged in currency. */
   feeAmount: number;
+  /** The fee valued in the credit currency. */
+  feeValue: number;
+  /** What the chosen source is charged: the credit repaid, the fee being in-kind. */
   totalDue: number;
   systemProfitValue: number;
   assetSymbolId: string | null;
   assetSymbolSlug: string;
+  /** Asset leaving the credit wallet, before the fee. */
   assetAmount: number;
+  /** Asset the deposit wallet receives. */
+  netAssetAmount: number;
   assetHeld: number;
   eligible: boolean;
   reason: string | null;
@@ -1976,4 +1995,62 @@ export interface PriceEngineConfig {
   /** Seconds. The cadence this client should poll at. */
   refreshIntervalSec: number;
   updateAt: string | null;
+}
+
+// ---- User levels: credit configuration ----
+/**
+ * The credit rules a level sets and a per-pair entry in `creditConfigs` may
+ * override. Mirrors the backend's CreditLevelDefaults, so a rename there shows
+ * up here instead of silently turning a configured rule into a no-op.
+ *
+ * Null and undefined both mean "not set", which the resolver reads as the next
+ * layer down (pair → level → engine default), never as zero.
+ */
+export interface UserLevelCreditConfig {
+  creditTradingEnabled?: boolean | null;
+  creditMaxLeverage?: number | null;
+  creditDrawdownPercent?: number | null;
+  creditEnforceOnDrawdown?: CreditEnforceMode | null;
+  creditWarningMarginPercent?: number | null;
+  creditMarginCallPercent?: number | null;
+  creditLiquidationMarginPercent?: number | null;
+  creditReduceOnlyOnWarning?: boolean | null;
+  creditEnforceOnExpiry?: CreditEnforceMode | null;
+  creditEnforceRequestDeadline?: boolean | null;
+  creditMaxParallelRequests?: number | null;
+  creditMaxExecutionLevel?: number | null;
+  creditMaxNotional?: number | null;
+  creditMaxLockedCollateral?: number | null;
+  creditMinTradeSize?: number | null;
+  creditMaxTradeSize?: number | null;
+  creditRequireKyc?: boolean | null;
+  creditMaxAmount?: number | null;
+  creditMaxDurationDays?: number | null;
+}
+
+export type CreditEnforceMode = "ENFORCE" | "ALERT";
+
+export interface UserLevel extends UserLevelCreditConfig {
+  id: string;
+  name: string;
+  /** Credit currency; every level pair must be quoted in it. */
+  creditBaseSymbolId?: string | null;
+  /** Per-pair overrides of the fields above, keyed by price-pair id. */
+  creditConfigs?: Record<string, UserLevelCreditConfig> | null;
+
+  // Facility abilities, which no per-pair entry overrides.
+  creditRequireAdminApprovalForCreation?: boolean | null;
+  /** Hours a request may await approval before it is auto-declined (0 = never). */
+  creditRequestApprovalTtlHours?: number | null;
+  creditRequireAdminApprovalForSettlement?: boolean | null;
+  creditAllowUserSettlement?: boolean | null;
+  creditCashoutEnabled?: boolean | null;
+  creditCashoutFeePercent?: number | null;
+  creditAllowedCashoutSources?: CashoutSource[] | null;
+  creditSettlementMethods?: SettlementMethod[] | null;
+  creditNettingEnabled?: boolean | null;
+
+  features?: Record<string, any> | null;
+  pairs?: { id: string }[];
+  [k: string]: any;
 }

@@ -1,6 +1,7 @@
 import { Module } from "@nestjs/common";
 import { TypeOrmModule } from "@nestjs/typeorm";
 import { FinanceLogService } from "./finance-log.service";
+import { FinanceLogSubscriber } from "./finance-log.subscriber";
 import { FinanceLogController } from "./finance-log.controller";
 import { FinanceLogEntity } from "./entity/finance-log.entity";
 import { AdminEntity } from "../admin/entity/admin.entity";
@@ -23,7 +24,7 @@ import { AdminScheduleModule } from "../admin-schedule/admin-schedule.module";
     ]),
   ],
   controllers: [FinanceLogController],
-  providers: [FinanceLogService],
+  providers: [FinanceLogService, FinanceLogSubscriber],
   exports: [FinanceLogService],
 })
 export class FinanceLogModule {}

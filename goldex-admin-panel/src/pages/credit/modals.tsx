@@ -386,3 +386,47 @@ export function AdjustLimitModal({ credit, onClose, onSave, loading }: { credit:
     </Modal>
   );
 }
+
+/**
+ * Decline a credit request a level held for sign-off. Distinct from cancelling
+ * an open facility: nothing was lent, so the whole transaction is returning the
+ * collateral the user froze when they asked — and the reason is required,
+ * because it is the only thing the user is told.
+ */
+export function RejectRequestModal({ credit, onClose, onSave, loading }: { credit: Credit; onClose: () => void; onSave: (d: any) => void; loading: boolean }) {
+  const [reason, setReason] = useState("");
+
+  return (
+    <Modal title={`رد درخواست اعتبار ${credit.creditCode}`} onClose={onClose}>
+      <form className="modal-form" onSubmit={(e) => { e.preventDefault(); onSave({ reason: reason.trim() }); }}>
+        <div style={{ background: "var(--bg)", padding: 12, borderRadius: 8, marginBottom: 16, fontSize: 13, color: "var(--text-faint)", lineHeight: 1.6 }}>
+          هنوز هیچ اعتباری صادر نشده است. با رد درخواست،
+          {" "}{fmtBySymbol(credit.collateralAmount ?? 0, credit.collateralSymbol?.slug)}{" "}
+          وثیقه‌ی فریزشده به کیف‌پول واریزی کاربر برمی‌گردد.
+        </div>
+
+        <div className="form-grid">
+          <div className="field" style={{ gridColumn: "1 / -1" }}>
+            <label>دلیل رد</label>
+            <textarea
+              className="input"
+              rows={3}
+              autoFocus
+              placeholder="دلیل رد را برای کاربر وارد کنید…"
+              value={reason}
+              onChange={(e) => setReason(e.target.value)}
+              required
+            />
+          </div>
+        </div>
+
+        <div className="modal-actions">
+          <button type="button" className="btn ghost" onClick={onClose}>انصراف</button>
+          <button type="submit" className="btn" disabled={loading || !reason.trim()}>
+            {loading ? <><span className="spin" /> در حال ثبت…</> : "رد و بازگشت وثیقه"}
+          </button>
+        </div>
+      </form>
+    </Modal>
+  );
+}

@@ -1,5 +1,6 @@
 import { BadRequestException, ForbiddenException, NotFoundException } from "@nestjs/common";
 import { AdminAccountingService, sideForMovement } from "./admin-accounting.service";
+import { AccountingVoucherWriter } from "./accounting-voucher.writer";
 import {
   AccountingGranularity,
   AccountingMetric,
@@ -37,13 +38,7 @@ const voucher = (over: Record<string, unknown> = {}) => ({
 
 function build(current = voucher()) {
   const state = { row: current as any };
-  // The voucher code now comes from an atomic counter row rather than a count
-  // of the month's vouchers, so the repository has to expose a manager.
-  const counter = { value: 0 };
-  const vouchers = {
-    manager: {
-      query: jest.fn(async () => [{ last_value: ++counter.value }]),
-    },
+  const vouchers: any = {
     findOne: jest.fn(async () => state.row),
     create: jest.fn((v) => v),
     save: jest.fn(async (v) => {
@@ -81,9 +76,26 @@ function build(current = voucher()) {
     findOne: jest.fn(async () => ({ id: "sym-1", slug: "IRR" })),
     find: jest.fn(async () => [{ id: "sym-1", slug: "IRR" }]),
   };
+  // The writer writes through the repository's manager, so the mock stands in
+  // for both: `create`/`save` land on the same spies the assertions read, and
+  // `query` answers the voucher-number lookup.
+  vouchers.manager = {
+    create: (_entity: unknown, v: any) => vouchers.create(v),
+    save: (_entity: unknown, v: any) => vouchers.save(v),
+  };
+  vouchers.query = jest.fn(async () => [{ max: null }]);
+  const writer = new AccountingVoucherWriter();
+  (writer as any).nextVoucherCode = jest.fn(async () => "DOC-14050001");
+
   return {
-    service: new AdminAccountingService(ledger as any, vouchers as any, symbols as any),
+    service: new AdminAccountingService(
+      ledger as any,
+      vouchers as any,
+      symbols as any,
+      writer,
+    ),
     vouchers,
+    writer,
     state,
   };
 }
@@ -161,27 +173,24 @@ describe("system-raised vouchers", () => {
     await expect(service.issueSystemVoucher(input({ amount: -5 }))).rejects.toBeInstanceOf(BadRequestException);
   });
 
-  it("takes a distinct code per voucher instead of re-reading a count", async () => {
-    // The old COUNT(*) handed concurrent callers the same number; the counter
-    // bumps and returns in one statement, so two calls cannot collide.
-    const { service, vouchers } = build();
+  it("draws its number from the same writer the accounting desk uses", async () => {
+    // One generator, one series. A second numbering path here would drift from
+    // the desk's and eventually hand out a code already in use.
+    const { service, writer } = build();
+    // spyOn calls through, so this still exercises the real writer.
+    const record = jest.spyOn(writer, "recordOperation");
     await service.issueSystemVoucher(input());
-    await service.issueSystemVoucher(input());
-    const codes = vouchers.create.mock.calls.map((c: any[]) => c[0].voucherCode);
-    expect(codes[0]).not.toEqual(codes[1]);
-    expect(new Set(codes).size).toBe(codes.length);
+    expect(record).toHaveBeenCalled();
   });
 
-  it("runs the counter on the caller's transaction when one is given", async () => {
-    // A voucher that rolls back must not strand its number.
-    const { service } = build();
-    const manager = {
-      query: jest.fn(async () => [{ last_value: 7 }]),
-      getRepository: jest.fn(() => ({ create: (v: any) => v, save: async (v: any) => v })),
-    } as any;
-    const saved = await service.issueSystemVoucher(input(), manager);
-    expect(manager.query).toHaveBeenCalled();
-    expect(saved.voucherCode).toMatch(/0007$/);
+  it("books through the caller's transaction when one is given", async () => {
+    // A deposit that fails after this point must not leave an entry behind
+    // claiming the gold arrived.
+    const { service, writer } = build();
+    const record = jest.spyOn(writer, "recordOperation").mockResolvedValue({} as any);
+    const manager = { marker: "caller-tx" } as any;
+    await service.issueSystemVoucher(input(), manager);
+    expect(record).toHaveBeenCalledWith(manager, expect.anything());
   });
 });
 

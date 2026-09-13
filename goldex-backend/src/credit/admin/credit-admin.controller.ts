@@ -211,7 +211,7 @@ export class CreditAdminController {
   @ApiEnvelopeResponse(CreditPnlDto)
   async getPnL(@Param("id") id: string) {
     const credit = await this.creditService.getCreditById(id);
-    return { data: this.creditService.calculateCreditPnL(credit) };
+    return { data: await this.creditService.calculateCreditPnL(credit) };
   }
 
   // ── Delivery-based settlement workflow (handoff §7) ────────────────────
