@@ -56,6 +56,25 @@ export class WarehouseRequestEntity extends myBaseEntity {
   @Column({ type: "decimal", precision: 20, scale: 8 })
   weight: number;
 
+  /**
+   * What the user asked for, kept apart from what the admin confirmed.
+   *
+   * A user may declare 100g and the material actually weigh 96g net once it is
+   * on the scale and its fineness is known. The wallet is credited with
+   * `actualWeight` — the admin-confirmed figure is authoritative — and the
+   * declared one is retained only so the variance stays auditable.
+   */
+  @Column({ type: "decimal", precision: 20, scale: 8, name: "declared_weight", nullable: true })
+  declaredWeight: number;
+
+  /** Net weight (750) actually taken in or released, set when the admin confirms. */
+  @Column({ type: "decimal", precision: 20, scale: 8, name: "actual_weight", nullable: true })
+  actualWeight: number;
+
+  /** The accounting voucher issued for this movement. */
+  @Column({ type: "uuid", name: "voucher_id", nullable: true })
+  voucherId: string;
+
   @Column({ type: "uuid", name: "symbol_id", nullable: true })
   symbolId: string;
 
