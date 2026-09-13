@@ -144,6 +144,17 @@ export class PacketEntity extends myBaseEntity {
   @Column({ name: "settlement_id", type: "uuid", nullable: true })
   settlementId: string;
 
+  /**
+   * The withdrawal request currently holding this package, while its status is
+   * RESERVED.
+   *
+   * A reverse pointer rather than relying on `warehouse_request.packet_id`,
+   * because a combination allocation ties several packages to one request and
+   * that column can only name one of them.
+   */
+  @Column({ name: "reserved_for_request_id", type: "uuid", nullable: true })
+  reservedForRequestId: string;
+
   @Column({ type: "jsonb", nullable: true })
   metadata: any;
 }
