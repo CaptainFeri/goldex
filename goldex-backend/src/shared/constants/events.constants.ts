@@ -72,3 +72,14 @@ export const P2pEvents = {
   NO_MATCH: "p2p.no_match",
   WITHDRAW_COMPLETED: "p2p.withdraw_completed",
 } as const;
+
+export const WarehouseEvents = {
+  /**
+   * Gold has been settled for with a provider but is not yet a package.
+   *
+   * It physically exists from the moment the settlement is recorded, but it
+   * cannot be allocated to anyone until an operator weighs it and puts it on a
+   * shelf — so somebody has to be told it is waiting.
+   */
+  UNPACKED_MATERIAL: "warehouse.unpacked_material",
+} as const;
