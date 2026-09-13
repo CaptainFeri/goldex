@@ -54,6 +54,29 @@ export enum VoucherCategory {
   OPERATING_COST = "operating_cost",
 }
 
+/**
+ * Who raised the voucher.
+ *
+ * `MANUAL` is an accountant typing it in, and is the only source that goes
+ * through the draft → pending → finalized review. The rest are booked by the
+ * platform at the moment the movement completes and are finalized on the spot,
+ * so a report that must exclude un-reviewed entries can filter on this rather
+ * than trying to read intent out of the description.
+ */
+export enum VoucherSource {
+  MANUAL = "manual",
+  WAREHOUSE_DEPOSIT = "warehouse_deposit",
+  WAREHOUSE_WITHDRAW = "warehouse_withdraw",
+  PROVIDER_SETTLEMENT = "provider_settlement",
+}
+
+export const VOUCHER_SOURCE_LABELS: Record<VoucherSource, string> = {
+  [VoucherSource.MANUAL]: "دستی",
+  [VoucherSource.WAREHOUSE_DEPOSIT]: "واریز انبار",
+  [VoucherSource.WAREHOUSE_WITHDRAW]: "برداشت انبار",
+  [VoucherSource.PROVIDER_SETTLEMENT]: "تسویه تأمین‌کننده",
+};
+
 /** Which balance bucket of the wallet the entry touches. */
 export enum WalletSubset {
   /** نقد */
