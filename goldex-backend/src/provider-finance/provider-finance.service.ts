@@ -1,4 +1,4 @@
-import { Injectable } from "@nestjs/common";
+import { Injectable, Logger } from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
 import { Repository } from "typeorm";
 import { ProviderDealSnapshotEntity } from "../financial/entity/provider-deal-snapshot.entity";
@@ -7,6 +7,19 @@ import { SymbolEntity } from "../admin-symbol/entity/symbol.entity";
 import { ProviderSettlementEntity, SettlementDirection } from "./entity/provider-settlement.entity";
 import { SettleDto } from "./dto/settle.dto";
 import { RIAL_SYMBOL_SLUG } from "../shared/constants/currency.constants";
+import { EventEmitter2 } from "@nestjs/event-emitter";
+import { BadRequestException } from "@nestjs/common";
+import Decimal from "decimal.js";
+import { AdminAccountingService } from "../admin-accounting/admin-accounting.service";
+import {
+  CustomerType,
+  VoucherCategory,
+  VoucherMovement,
+  VoucherSource,
+} from "../admin-accounting/accounting.enums";
+import { SymbolTypeEnum } from "../admin-symbol/enum/symbol.type.enum";
+import { WarehouseService } from "../warehouse/service/warehouse.service";
+import { WarehouseEvents } from "../shared/constants/events.constants";
 
 // Signed contribution of a settlement to the running balance:
 //  RECEIVE (we take the asset from the provider) reduces what they owe us → negative.
@@ -17,6 +30,8 @@ function signedSettlement(direction: SettlementDirection, amount: number): numbe
 
 @Injectable()
 export class ProviderFinanceService {
+  private readonly logger = new Logger(ProviderFinanceService.name);
+
   constructor(
     @InjectRepository(ProviderDealSnapshotEntity)
     private readonly dealRepo: Repository<ProviderDealSnapshotEntity>,
@@ -26,6 +41,9 @@ export class ProviderFinanceService {
     private readonly ledgerRepo: Repository<SystemLedgerEntity>,
     @InjectRepository(SymbolEntity)
     private readonly symbolRepo: Repository<SymbolEntity>,
+    private readonly accounting: AdminAccountingService,
+    private readonly warehouse: WarehouseService,
+    private readonly events: EventEmitter2,
   ) {}
 
   // Accrued platform profit per provider, per symbol, from the system ledger.
@@ -113,16 +131,114 @@ export class ProviderFinanceService {
       .sort((a, b) => a.providerKey.localeCompare(b.providerKey));
   }
 
+  /**
+   * Records a physical settlement with a provider.
+   *
+   * Two things follow from the row, neither of which used to happen:
+   *
+   *  - The ledger gets an entry. Metal and money moved between the platform
+   *    and a counterparty, and until now nothing in the books said so.
+   *  - When the settlement brings material *in*, the warehouse is told. Gold
+   *    received from a provider exists the moment it is settled for, but it is
+   *    not a package yet and no withdrawal can be served from it until an
+   *    operator weighs it and shelves it. Nobody was being told it was waiting.
+   */
   async settle(dto: SettleDto, adminId?: string) {
-    const row = this.settlementRepo.create({
-      providerKey: dto.providerKey,
-      symbol: dto.symbol.toUpperCase(),
-      direction: dto.direction,
-      amount: dto.amount,
-      note: dto.note ?? null,
-      adminId: adminId ?? null,
+    const symbolSlug = dto.symbol.toUpperCase();
+    const symbol = await this.symbolRepo.findOne({ where: { slug: symbolSlug } });
+
+    if (!symbol) {
+      throw new BadRequestException(`Unknown symbol: ${symbolSlug}`);
+    }
+
+    const row = await this.settlementRepo.save(
+      this.settlementRepo.create({
+        providerKey: dto.providerKey,
+        symbol: symbolSlug,
+        direction: dto.direction,
+        amount: dto.amount,
+        note: dto.note ?? null,
+        adminId: adminId ?? null,
+      }),
+    );
+
+    await this.bookSettlementVoucher(row, symbol, adminId);
+    await this.announceUnpackedMaterial(row, symbol);
+
+    return row;
+  }
+
+  /**
+   * Books the settlement in the ledger.
+   *
+   * A settlement that cannot be booked is not recorded as having happened:
+   * this runs after the row is saved but its failure propagates, because a
+   * settlement the books do not know about is the thing the entry exists to
+   * prevent.
+   *
+   * Direction reads from the provider's side of the account, the same way a
+   * customer voucher does — material taken in from them increases what the
+   * platform owes them, so it books as a deposit.
+   */
+  private async bookSettlementVoucher(
+    row: ProviderSettlementEntity,
+    symbol: SymbolEntity,
+    adminId?: string,
+  ): Promise<void> {
+    if (!adminId) {
+      // Every route into settle() is admin-authenticated; a settlement with
+      // nobody behind it cannot be followed up and must not be booked.
+      throw new BadRequestException("SETTLEMENT.ADMIN_REQUIRED");
+    }
+
+    await this.accounting.issueSystemVoucher({
+      adminId,
+      source: VoucherSource.PROVIDER_SETTLEMENT,
+      category: VoucherCategory.CUSTOMER_SETTLEMENT,
+      movement:
+        row.direction === SettlementDirection.RECEIVE ? VoucherMovement.DEPOSIT : VoucherMovement.WITHDRAW,
+      symbolId: symbol.id,
+      amount: row.amount,
+      // A provider is a counterparty, not a platform user, so there is no
+      // customer id to hang this on — the key is the identity.
+      customerId: null,
+      customerName: row.providerKey,
+      customerType: CustomerType.FORMAL,
+      description: `تسویه با تأمین‌کننده ${row.providerKey} — ${row.amount} ${symbol.slug}`,
+      extraDescription: row.note ?? null,
+      referenceId: row.id,
     });
-    return await this.settlementRepo.save(row);
+  }
+
+  /**
+   * Tells the warehouse there is gold on the bench waiting to be packed.
+   *
+   * Only for material coming in: rial is money rather than something to put on
+   * a shelf, and material going out was packed long ago.
+   *
+   * Never allowed to fail the settlement. The settlement and its ledger entry
+   * are the record; a notification that did not send is a missed nudge, and
+   * the unpacked balance still shows the work on the warehouse screen.
+   */
+  private async announceUnpackedMaterial(row: ProviderSettlementEntity, symbol: SymbolEntity): Promise<void> {
+    if (symbol.symbolType !== SymbolTypeEnum.MATERIAL) return;
+    if (row.direction !== SettlementDirection.RECEIVE) return;
+
+    try {
+      const unpackedBalance = await this.warehouse.getUnpackedMaterialFor(row.providerKey);
+
+      this.events.emit(WarehouseEvents.UNPACKED_MATERIAL, {
+        providerKey: row.providerKey,
+        symbol: symbol.slug,
+        amount: new Decimal(row.amount).toNumber(),
+        unpackedBalance,
+        settlementId: row.id,
+      });
+    } catch (error) {
+      this.logger.warn(
+        `Settlement ${row.id} recorded, but the warehouse could not be notified: ${(error as Error).message}`,
+      );
+    }
   }
 
   async getSettlements(providerKey?: string) {

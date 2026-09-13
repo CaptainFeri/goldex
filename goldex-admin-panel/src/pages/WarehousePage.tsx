@@ -1830,6 +1830,21 @@ export default function WarehousePage() {
                 <div className="stat-label">خالص مانده</div>
                 <div className="stat-value">{fmtNum(settlementBal.data?.netBalance, 6)}g</div>
               </div>
+              <div className="stat-card">
+                <div className="stat-label">بسته‌بندی شده</div>
+                <div className="stat-value">{fmtNum(settlementBal.data?.totalPacked, 6)}g</div>
+              </div>
+              {/* Gold the platform owns that no withdrawal can be served from
+                  until somebody weighs it and puts it on a shelf. */}
+              <div className="stat-card">
+                <div className="stat-label">بسته‌بندی‌نشده — در انتظار اقدام</div>
+                <div
+                  className="stat-value"
+                  style={{ color: settlementBal.data?.totalUnpacked > 0 ? "var(--gold)" : undefined }}
+                >
+                  {fmtNum(settlementBal.data?.totalUnpacked, 6)}g
+                </div>
+              </div>
             </div>
           )}
 
@@ -1837,7 +1852,7 @@ export default function WarehousePage() {
             <div className="table-wrap">
               <table>
                 <thead>
-                  <tr><th>تامین‌کننده</th><th>دریافت</th><th>پرداخت</th><th>خالص</th></tr>
+                  <tr><th>تامین‌کننده</th><th>دریافت</th><th>پرداخت</th><th>خالص</th><th>بسته‌بندی شده</th><th>بسته‌بندی‌نشده</th></tr>
                 </thead>
                 <tbody>
                   {settlementBal.data.providers.map((p: any) => (
@@ -1846,6 +1861,10 @@ export default function WarehousePage() {
                       <td className="mono" style={{ color: "var(--green)" }}>{fmtNum(p.received, 6)}g</td>
                       <td className="mono" style={{ color: "var(--red)" }}>{fmtNum(p.paid, 6)}g</td>
                       <td className="mono">{fmtNum(p.netBalance, 6)}g</td>
+                      <td className="mono">{fmtNum(p.packed, 6)}g</td>
+                      <td className="mono" style={{ color: p.unpacked > 0 ? "var(--gold)" : undefined }}>
+                        {fmtNum(p.unpacked, 6)}g
+                      </td>
                     </tr>
                   ))}
                 </tbody>

@@ -386,7 +386,11 @@
     "balance": "موجودی: {{balance}} گرم",
     "unknown": "ناشناخته",
     "apparent": "وزن ظاهری",
-    "wastage": "افت"
+    "wastage": "افت",
+    "availablePackets": "بسته‌های موجود در این انبار",
+    "noPacketsAvailable": "در این انبار فعلاً بسته‌ای کمتر یا مساوی وزن درخواستی موجود نیست.",
+    "exactMatch": "تطابق دقیق",
+    "refundToWallet": "{{amount}} گرم به کیف پول بازمی‌گردد"
   },
   "settings": {
     "title": "تنظیمات",

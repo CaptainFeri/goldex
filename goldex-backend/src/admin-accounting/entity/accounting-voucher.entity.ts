@@ -8,6 +8,7 @@ import {
   VoucherCategory,
   VoucherMovement,
   VoucherSide,
+  VoucherSource,
   VoucherStatus,
   WalletSubset,
 } from "../accounting.enums";
@@ -100,4 +101,21 @@ export class AccountingVoucherEntity extends myBaseEntity {
 
   @Column({ name: "review_note", type: "varchar", length: 500, nullable: true })
   reviewNote?: string | null;
+
+  /**
+   * Whether an accountant raised this or the platform did.
+   *
+   * Only `MANUAL` passes through the draft → pending → finalized review. A
+   * voucher the platform raises is booked finalized at the moment the movement
+   * it records completes, because the movement has already happened and a
+   * warehouse deposit cannot wait on a second signature before the depositor's
+   * wallet reflects it. Reports that must exclude un-reviewed entries filter
+   * on this column.
+   */
+  @Column({ type: "varchar", length: 40, default: VoucherSource.MANUAL })
+  source: VoucherSource;
+
+  /** What the voucher was raised for — a warehouse request, a settlement row. */
+  @Column({ name: "reference_id", type: "uuid", nullable: true })
+  referenceId?: string | null;
 }

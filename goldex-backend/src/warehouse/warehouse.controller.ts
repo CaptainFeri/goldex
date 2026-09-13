@@ -11,6 +11,8 @@ import { PacketQueryDto } from "./dto/packet-query.dto";
 import { UserAuthGuard } from "../user/auth/Guard/user.guard";
 import { UserExpressRequest } from "../user/auth/types/user-express-request";
 import { WarehouseQueryDto } from "./dto/warehouse-query.dto";
+import { AllocationOptionsQueryDto } from "./dto/allocation-options-query.dto";
+import { AllocationService } from "./service/allocation.service";
 import { WarehouseStatusEnum } from "./enum/warehouse-status.enum";
 
 @ApiTags("Warehouse")
@@ -22,6 +24,7 @@ export class WarehouseController {
     private readonly packetService: PacketService,
     private readonly requestService: WarehouseRequestService,
     private readonly warehouseService: WarehouseService,
+    private readonly allocationService: AllocationService,
   ) {}
 
   @Get()
@@ -48,6 +51,18 @@ export class WarehouseController {
     return { data: await this.requestService.createWithdrawRequest(userId, dto) };
   }
 
+  @Get("allocation-options")
+  @ApiOperation({
+    summary: "List the packages a warehouse could serve a withdrawal of this weight from",
+  })
+  @ApiResponse({ status: HttpStatus.OK, description: "Packages at or under the requested weight" })
+  async getAllocationOptions(@Query() query: AllocationOptionsQueryDto) {
+    // At or under the requested weight only: handing over more metal than was
+    // asked for would give away gold the user has not paid for. What each
+    // choice falls short by comes back to their wallet at delivery.
+    return { data: await this.allocationService.listCandidates(query) };
+  }
+
   @Get("requests")
   @ApiOperation({ summary: "Get user requests" })
   @ApiResponse({ status: HttpStatus.OK, description: "Returns user requests" })
@@ -65,14 +80,20 @@ export class WarehouseController {
   }
 
   @Get("packets")
-  @ApiOperation({ summary: "Get user packets" })
-  @ApiResponse({ status: HttpStatus.OK, description: "Returns user packets" })
+  @ApiOperation({
+    summary: "Packages this user handed in or took away",
+    description:
+      "A package in the warehouse belongs to the pool, not to whoever deposited it — what a user " +
+      "holds is the balance in their wallet. This is their history with the metal: packages they " +
+      "brought in, and packages that were released to them.",
+  })
+  @ApiResponse({ status: HttpStatus.OK, description: "Returns the packets this user handed in or received" })
   async getUserPackets(@Req() req: UserExpressRequest, @Query() query: PacketQueryDto) {
     const userId = req.user["id"];
     return {
       data: await this.packetService.findAll({
         ...query,
-        userId,
+        involvingUserId: userId,
       } as any),
     };
   }
