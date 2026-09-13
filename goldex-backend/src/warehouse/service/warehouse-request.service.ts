@@ -28,6 +28,8 @@ import { TransactionStatusEnum } from "../../wallet/enum/transaction.status.enum
 import { PacketService } from "./packet.service";
 import { SmsService } from "../../sms/sms.service";
 import { AllocationService, AllocationOption } from "./allocation.service";
+import { WarehouseVoucherService } from "./warehouse-voucher.service";
+import { ConfirmMaterialDto, ConfirmMaterialPartDto } from "../admin/dto/confirm-material.dto";
 import { TOLERANCE_GRAMS, computeNetWeight } from "../constants/warehouse.constants";
 
 Decimal.set({
@@ -36,6 +38,18 @@ Decimal.set({
   toExpNeg: -7,
   toExpPos: 21,
 });
+
+/** One package as the admin described it on the confirm-material call. */
+export type ConfirmMaterialPart = ConfirmMaterialPartDto;
+
+/** The confirm-material payload, whether it names one package or several. */
+export type ConfirmMaterialInput = ConfirmMaterialDto;
+
+/** A part once its net weight has been settled from the scale readings. */
+interface IntakePart extends ConfirmMaterialPart {
+  netWeight: Decimal;
+  apparentWeight: number;
+}
 
 @Injectable()
 export class WarehouseRequestService {
@@ -56,6 +70,7 @@ export class WarehouseRequestService {
     private readonly packetService: PacketService,
     private readonly smsService: SmsService,
     private readonly allocationService: AllocationService,
+    private readonly voucherService: WarehouseVoucherService,
     private readonly dataSource: DataSource
   ) {}
 
@@ -73,6 +88,9 @@ export class WarehouseRequestService {
       warehouseId: dto.warehouseId,
       symbolId: dto.symbolId,
       weight: dto.weight,
+      // What the user says they are bringing. What is credited is what the
+      // admin confirms on the scale, which lands in `actualWeight`.
+      declaredWeight: dto.weight,
       notes: dto.notes,
     });
 
@@ -265,10 +283,32 @@ export class WarehouseRequestService {
     return request;
   }
 
+  /**
+   * Takes the delivery in: weighs it, shelves it as one or more packages, and
+   * credits the depositor.
+   *
+   * The amount credited is the net weight the admin confirmed on the scale,
+   * never the weight the user declared when they raised the request. A user
+   * may ask to deposit 100g and the metal come to 96g net once its fineness is
+   * known — 96 is what enters the vault, so 96 is what the wallet and the
+   * ledger get. The declared figure is kept beside it only so the variance
+   * stays auditable.
+   *
+   * A delivery may be shelved as several packages (`parts`). That changes how
+   * the metal is stored and nothing about what the depositor receives: the
+   * credit is the sum of the parts' confirmed net weights.
+   *
+   * The packages join the system pool rather than staying under the depositor.
+   * A package in the vault is a fungible unit — the one this user handed in
+   * may be released to someone else on their withdrawal — because the user's
+   * holding lives in their wallet, not in a particular piece of metal. Who
+   * handed it in and which admin took delivery are recorded on the row so the
+   * audit chain survives that.
+   */
   async confirmDepositMaterial(
     requestId: string,
     adminId: string,
-    materialData?: { ang?: number; ayar?: number; apparentWeight?: number; wastage?: number; picture?: string; warehouseIndexPosition?: string }
+    materialData?: ConfirmMaterialInput
   ): Promise<WarehouseRequestEntity> {
     const queryRunner = this.dataSource.createQueryRunner();
     await queryRunner.connect();
@@ -289,102 +329,122 @@ export class WarehouseRequestService {
       }
 
       if (request.status !== RequestStatusEnum.APPROVED) {
-        throw new BadRequestException(`Cannot confirm material for request with status: ${request.status}. Must be APPROVED first`);
+        throw new BadRequestException(
+          `Cannot confirm material for request with status: ${request.status}. Must be APPROVED first`
+        );
       }
 
-      let packet: PacketEntity | null = null;
-      if (request.packetId) {
-        packet = await queryRunner.manager.findOne(PacketEntity, {
-          where: { id: request.packetId },
-          lock: { mode: "pessimistic_write" },
-        });
-      }
+      const placeholder = request.packetId
+        ? await queryRunner.manager.findOne(PacketEntity, {
+            where: { id: request.packetId },
+            lock: { mode: "pessimistic_write" },
+          })
+        : null;
 
-      if (!packet) {
+      if (!placeholder) {
         throw new BadRequestException("No packet associated with this deposit request");
       }
 
-      if (packet.status !== PacketStatusEnum.PENDING) {
+      if (placeholder.status !== PacketStatusEnum.PENDING) {
         throw new BadRequestException("Packet already processed");
       }
 
-      if (materialData) {
-        if (materialData.ang !== undefined) packet.ang = materialData.ang;
-        if (materialData.ayar !== undefined) packet.ayar = materialData.ayar;
-        if (materialData.picture !== undefined) packet.picture = materialData.picture;
-        if (materialData.warehouseIndexPosition !== undefined) packet.warehouseIndexPosition = materialData.warehouseIndexPosition;
+      const declared = new Decimal(request.declaredWeight ?? request.weight);
+      const parts = this.resolveIntakeParts(materialData, declared);
+      const wastage = new Decimal(materialData?.wastage ?? 0);
 
-        // Packing & QC rule: when the scale reads apparent weight + fineness is measured,
-        // the REAL net weight is (apparent x fineness) / 750 regardless of declaration.
-        if (
-          materialData.apparentWeight !== undefined &&
-          materialData.apparentWeight > 0 &&
-          materialData.ayar !== undefined &&
-          materialData.ayar > 0
-        ) {
-          const qcNet = computeNetWeight(materialData.apparentWeight, materialData.ayar);
-          packet.pureWeight = qcNet;
-          packet.apparentWeight = materialData.apparentWeight;
-          if (materialData.wastage !== undefined) packet.wastage = materialData.wastage;
-        }
+      this.assertIntakeMassConserved(materialData, parts, wastage);
+
+      const confirmed = parts.reduce((sum, part) => sum.plus(part.netWeight), new Decimal(0));
+
+      if (confirmed.lessThanOrEqualTo(0)) {
+        throw new BadRequestException("Confirmed net weight must be greater than zero");
       }
 
-      packet.status = PacketStatusEnum.IN_WAREHOUSE;
-      packet.deliveryTime = new Date();
-      await queryRunner.manager.save(packet);
-      request.packet = packet;
+      // The first part reuses the package created at approval so the request
+      // keeps pointing at a row that exists; the rest are shelved beside it.
+      const packets = await this.shelveIntakeParts(queryRunner, request, placeholder, parts, wastage, adminId);
 
-      await this.warehouseService.updateCapacity(request.warehouseId, packet.pureWeight ?? request.weight, queryRunner);
+      await this.warehouseService.updateCapacity(request.warehouseId, confirmed.toNumber(), queryRunner);
 
       request.status = RequestStatusEnum.COMPLETED;
       request.adminId = adminId;
       request.processedAt = new Date();
-      await queryRunner.manager.save(request);
+      request.declaredWeight = declared.toNumber();
+      request.actualWeight = confirmed.toNumber();
+      request.packet = packets[0];
 
       const wallet = await this.getWalletForUpdate(queryRunner, request.userId, request.symbolId);
-      const decimalAmount = new Decimal(packet.pureWeight ?? request.weight);
+      const variance = confirmed.minus(declared);
 
-      if (packet.pureWeight !== request.weight) {
+      if (!variance.isZero()) {
         await this.addHistory(queryRunner, {
           warehouseId: request.warehouseId,
-          packetId: packet.id,
+          packetId: packets[0].id,
           requestId: request.id,
-          action: "QC_WEIGHT_RECALC",
+          action: "DEPOSIT_WEIGHT_VARIANCE",
           description:
-            `QC: apparent ${materialData?.apparentWeight}g x fineness ${materialData?.ayar} / 750 = net ${packet.pureWeight}g ` +
-            `(declared ${request.weight}g)`,
+            `Declared ${declared.toString()}g, confirmed ${confirmed.toString()}g ` +
+            `(${variance.greaterThan(0) ? "+" : ""}${variance.toString()}g). The confirmed weight is credited.`,
           performedBy: adminId,
           performedRole: "ADMIN",
-          metadata: { declaredWeight: request.weight, netWeight: packet.pureWeight, apparentWeight: materialData?.apparentWeight },
+          metadata: {
+            declaredWeight: declared.toString(),
+            confirmedWeight: confirmed.toString(),
+            variance: variance.toString(),
+            wastage: wastage.toString(),
+            parts: parts.map((part) => part.netWeight.toString()),
+          },
         });
       }
 
-      wallet.freeBalance = new Decimal(wallet.freeBalance).plus(decimalAmount).toNumber();
+      wallet.freeBalance = new Decimal(wallet.freeBalance).plus(confirmed).toNumber();
       await queryRunner.manager.save(wallet);
 
       const completedTx = this.createTransactionRecord(
         wallet,
         TransactionTypeEnum.MATERIAL_DEPOSIT,
-        decimalAmount.toNumber(),
+        confirmed.toNumber(),
         TransactionStatusEnum.COMPLETED,
-        `Deposit request ${request.id} completed: material received, ${decimalAmount.toString()} credited`,
-        { requestId: request.id, packetId: request.packetId, weight: decimalAmount.toString(), confirmedBy: adminId }
+        `Deposit request ${request.id} completed: material received, ${confirmed.toString()} credited`,
+        {
+          requestId: request.id,
+          packetIds: packets.map((packet) => packet.id),
+          declaredWeight: declared.toString(),
+          confirmedWeight: confirmed.toString(),
+          confirmedBy: adminId,
+        }
       );
       await queryRunner.manager.save(completedTx);
 
+      // Booked inside the transaction: a deposit that fails after this point
+      // must not leave an entry behind claiming the gold arrived.
+      request.voucherId = await this.voucherService.issueForDeposit(queryRunner, request, confirmed, adminId);
+
+      await queryRunner.manager.save(request);
+
       await this.addHistory(queryRunner, {
         requestId: request.id,
-        packetId: request.packetId,
+        packetId: packets[0].id,
         warehouseId: request.warehouseId,
         action: "DEPOSIT_MATERIAL_CONFIRMED",
-        description: `Material confirmed and deposit completed for request ${request.id}, packet ${request.packet.idSecure}, ${decimalAmount.toString()} credited`,
+        description:
+          `Material confirmed for request ${request.id} as ${packets.length} package(s), ` +
+          `${confirmed.toString()}g credited`,
         performedBy: adminId,
         performedRole: "ADMIN",
-        metadata: { ang: materialData?.ang, ayar: materialData?.ayar },
+        metadata: {
+          packetIds: packets.map((packet) => packet.id),
+          confirmedWeight: confirmed.toString(),
+          wastage: wastage.toString(),
+          voucherId: request.voucherId,
+        },
       });
 
       await queryRunner.commitTransaction();
-      this.logger.log(`Deposit material confirmed and completed for request ${requestId} by admin ${adminId}`);
+      this.logger.log(
+        `Deposit ${requestId} confirmed by admin ${adminId}: ${packets.length} package(s), ${confirmed.toString()}g credited`
+      );
 
       return request;
     } catch (error) {
@@ -395,6 +455,153 @@ export class WarehouseRequestService {
       await queryRunner.release();
     }
   }
+
+  /**
+   * Works out the net weight of each package the delivery is shelved as.
+   *
+   * Net weight is always re-derived as `(apparent x fineness) / 750` when both
+   * were measured, whatever weight anyone declared — that is the whole point of
+   * putting the metal on a scale. A part that carries neither falls back to the
+   * net weight the admin typed, and a delivery with no `parts` at all is one
+   * package whose figures come from the envelope.
+   */
+  private resolveIntakeParts(materialData: ConfirmMaterialInput | undefined, declared: Decimal): IntakePart[] {
+    const source: ConfirmMaterialPart[] = materialData?.parts?.length
+      ? materialData.parts
+      : [
+          {
+            apparentWeight: materialData?.apparentWeight,
+            ayar: materialData?.ayar,
+            ang: materialData?.ang,
+            warehouseIndexPosition: materialData?.warehouseIndexPosition,
+            picture: materialData?.picture,
+          },
+        ];
+
+    return source.map((part, index) => {
+      const apparent = Number(part.apparentWeight ?? 0);
+      const ayar = Number(part.ayar ?? 0);
+
+      const netWeight =
+        apparent > 0 && ayar > 0
+          ? new Decimal(computeNetWeight(apparent, ayar))
+          : new Decimal(part.pureWeight ?? (materialData?.parts?.length ? 0 : declared.toNumber()));
+
+      if (netWeight.lessThanOrEqualTo(0)) {
+        throw new BadRequestException(
+          `Package ${index + 1} has no usable weight: give either apparent weight and fineness, or a net weight`
+        );
+      }
+
+      return { ...part, netWeight, apparentWeight: apparent > 0 ? apparent : netWeight.toNumber() };
+    });
+  }
+
+  /**
+   * Mass conservation, checked only when there is something to conserve
+   * against (roadmap §4): the packages plus the wastage must come to the net
+   * weight of the material as a whole.
+   *
+   * Without a whole-consignment weighing there is no parent figure and nothing
+   * to compare to, so the admin's per-package numbers stand on their own.
+   */
+  private assertIntakeMassConserved(
+    materialData: ConfirmMaterialInput | undefined,
+    parts: IntakePart[],
+    wastage: Decimal
+  ): void {
+    const apparent = Number(materialData?.apparentWeight ?? 0);
+    const ayar = Number(materialData?.ayar ?? 0);
+    if (!materialData?.parts?.length || apparent <= 0 || ayar <= 0) return;
+
+    const whole = new Decimal(computeNetWeight(apparent, ayar));
+    const accounted = parts.reduce((sum, part) => sum.plus(part.netWeight), new Decimal(0)).plus(wastage);
+
+    if (accounted.minus(whole).absoluteValue().greaterThan(TOLERANCE_GRAMS)) {
+      throw new BadRequestException(
+        `Net weights do not add up: packages (${accounted.minus(wastage).toString()}g) + wastage ` +
+          `(${wastage.toString()}g) != consignment (${whole.toString()}g)`
+      );
+    }
+  }
+
+  /**
+   * Writes the packages to the shelf.
+   *
+   * They join the system pool — orphan, holderless — because a package in the
+   * vault is fungible and may be released to any user. `senderUserId` and
+   * `receivedByAdminId` record who handed it in and who took delivery, and are
+   * never rewritten afterwards; `userId` is the field that moves.
+   */
+  private async shelveIntakeParts(
+    queryRunner: any,
+    request: WarehouseRequestEntity,
+    placeholder: PacketEntity,
+    parts: IntakePart[],
+    wastage: Decimal,
+    adminId: string
+  ): Promise<PacketEntity[]> {
+    const now = new Date();
+    const batchNumber = `DEP-${request.id.split("-")[0].toUpperCase()}`;
+    const idGen = () => Math.random().toString(36).substring(2, 8).toUpperCase();
+    const packets: PacketEntity[] = [];
+
+    for (const [index, part] of parts.entries()) {
+      const packet =
+        index === 0
+          ? placeholder
+          : queryRunner.manager.create(PacketEntity, {
+              idSecure: `${placeholder.idSecure}-${index + 1}-${idGen()}`,
+              dateTime: now,
+            });
+
+      packet.warehouseId = request.warehouseId;
+      packet.symbolId = request.symbolId;
+      packet.pureWeight = part.netWeight.toNumber();
+      packet.apparentWeight = part.apparentWeight;
+      packet.status = PacketStatusEnum.ORPHAN;
+      packet.deliveryTime = now;
+      packet.batchNumber = batchNumber;
+      packet.sourceRequestId = request.id;
+      packet.senderUserId = request.userId;
+      packet.receivedByAdminId = adminId;
+      // Fungible from here on: the holder is the pool, not the depositor.
+      packet.userId = null;
+      packet.isOrphan = true;
+
+      if (part.ang !== undefined) packet.ang = part.ang;
+      if (part.ayar !== undefined) packet.ayar = part.ayar;
+      if (part.warehouseIndexPosition !== undefined) packet.warehouseIndexPosition = part.warehouseIndexPosition;
+      if (part.picture !== undefined) packet.picture = part.picture;
+      // The whole consignment's wastage belongs to the delivery, not to any one
+      // package, so it is recorded once on the package the request points at.
+      if (index === 0 && wastage.greaterThan(0)) packet.wastage = wastage.toNumber();
+
+      packets.push(await queryRunner.manager.save(packet));
+    }
+
+    await this.addHistory(queryRunner, {
+      requestId: request.id,
+      packetId: packets[0].id,
+      warehouseId: request.warehouseId,
+      action: parts.length > 1 ? "DEPOSIT_SPLIT_INTO_PACKETS" : "PACKET_STORED_FROM_DEPOSIT",
+      description:
+        `Deposit ${request.id} shelved as ${packets.length} system package(s) ` +
+        `[${packets.map((packet) => `${packet.idSecure}(${packet.pureWeight}g)`).join(", ")}]` +
+        (wastage.greaterThan(0) ? ` with ${wastage.toString()}g wastage` : ""),
+      performedBy: adminId,
+      performedRole: "ADMIN",
+      metadata: {
+        packetIds: packets.map((packet) => packet.id),
+        senderUserId: request.userId,
+        receivedByAdminId: adminId,
+        wastage: wastage.toString(),
+      },
+    });
+
+    return packets;
+  }
+
 
   async processRequest(
     requestId: string,
@@ -454,7 +661,7 @@ export class WarehouseRequestService {
 
       if (dto.status === RequestStatusEnum.COMPLETED) {
         if (request.type === RequestTypeEnum.INPUT) {
-          await this.processInputCompletion(queryRunner, request);
+          await this.processInputCompletion();
         } else if (request.type === RequestTypeEnum.OUTPUT) {
           await this.processOutputCompletion(queryRunner, request);
         }
@@ -505,13 +712,18 @@ export class WarehouseRequestService {
       where: { id: request.warehouseId },
     });
 
+    // A placeholder until the metal is on the scale: it holds the declared
+    // weight, belongs to nobody, and is not on a shelf. confirm-material is
+    // what turns it into a stored package with a confirmed weight.
     const packet = queryRunner.manager.create(PacketEntity, {
       warehouseId: request.warehouseId,
-      userId: request.userId,
+      symbolId: request.symbolId,
       pureWeight: request.weight,
       idSecure: `DEP-${Date.now()}-${Math.random().toString(36).substring(2, 8).toUpperCase()}`,
       dateTime: new Date(),
       status: PacketStatusEnum.PENDING,
+      sourceRequestId: request.id,
+      senderUserId: request.userId,
       isOrphan: false,
     });
 
@@ -536,56 +748,24 @@ export class WarehouseRequestService {
     });
   }
 
-  private async processInputCompletion(queryRunner: any, request: WarehouseRequestEntity): Promise<void> {
-    if (!request.packet) {
-      throw new BadRequestException("No packet associated with this deposit request");
-    }
-
-    request.packet.status = PacketStatusEnum.IN_WAREHOUSE;
-    request.packet.deliveryTime = new Date();
-    await queryRunner.manager.save(request.packet);
-
-    await this.warehouseService.updateCapacity(request.warehouseId, request.weight, queryRunner);
-
-    const wallet = await this.getWalletForUpdate(queryRunner, request.userId, request.symbolId);
-    const decimalAmount = new Decimal(request.weight);
-
-    const pendingTx = await queryRunner.manager.findOne(TransactionEntity, {
-      where: {
-        walletId: wallet.id,
-        transactionType: TransactionTypeEnum.MATERIAL_DEPOSIT,
-        status: TransactionStatusEnum.PENDING,
-      },
-      order: { createAt: "DESC" },
-      lock: { mode: "pessimistic_write" },
-    });
-
-    if (pendingTx) {
-      pendingTx.status = TransactionStatusEnum.COMPLETED;
-      pendingTx.completedAt = new Date();
-      pendingTx.metadata = {
-        ...pendingTx.metadata,
-        completedAt: new Date().toISOString(),
-        completedBy: request.adminId,
-      };
-      await queryRunner.manager.save(pendingTx);
-
-      wallet.lockedBalance = new Decimal(wallet.lockedBalance).minus(decimalAmount).toNumber();
-      await queryRunner.manager.save(wallet);
-    } else {
-      wallet.freeBalance = new Decimal(wallet.freeBalance).plus(decimalAmount).toNumber();
-      await queryRunner.manager.save(wallet);
-
-      const completedTx = this.createTransactionRecord(
-        wallet,
-        TransactionTypeEnum.MATERIAL_DEPOSIT,
-        decimalAmount.toNumber(),
-        TransactionStatusEnum.COMPLETED,
-        `Deposit request ${request.id} completed: ${decimalAmount.toString()} credited`,
-        { requestId: request.id, packetId: request.packetId, weight: decimalAmount.toString(), completedBy: request.adminId }
-      );
-      await queryRunner.manager.save(completedTx);
-    }
+  /**
+   * Completing a deposit is not a status change.
+   *
+   * This used to credit `request.weight` — the figure the user typed when they
+   * raised the request — while the confirm-material route credited what the
+   * admin actually weighed. The same deposit was therefore worth 100g or 96g
+   * depending on which button the admin pressed, and the warehouse capacity
+   * moved by whichever number came with it.
+   *
+   * There is only one credit basis now: the confirmed weight. A deposit cannot
+   * be completed without weighing the metal, because until it is weighed there
+   * is no figure to credit.
+   */
+  private async processInputCompletion(): Promise<void> {
+    throw new BadRequestException(
+      "CONFIRM_MATERIAL_REQUIRED: complete a deposit through requests/:id/confirm-material, " +
+        "which credits the weight the admin confirms on the scale"
+    );
   }
 
   private async processOutputApproval(

@@ -6,6 +6,7 @@ import { WarehouseService } from "./service/warehouse.service";
 import { PacketService } from "./service/packet.service";
 import { WarehouseRequestService } from "./service/warehouse-request.service";
 import { AllocationService } from "./service/allocation.service";
+import { WarehouseVoucherService } from "./service/warehouse-voucher.service";
 import { WarehouseCronService } from "./warehouse-cron.service";
 import { WarehouseEntity } from "./entity/warehouse.entity";
 import { PacketEntity } from "./entity/packet.entity";
@@ -14,6 +15,7 @@ import { WarehouseHistoryEntity } from "./entity/warehouse-history.entity";
 import { WalletEntity } from "../wallet/entities/wallet.entity";
 import { TransactionEntity } from "../wallet/entities/transaction.entity";
 import { ProviderSettlementEntity } from "../provider-finance/entity/provider-settlement.entity";
+import { AdminAccountingModule } from "../admin-accounting/admin-accounting.module";
 import { MinioModule } from "../minio/minio.module";
 import { SmsModule } from "../sms/sms.module";
 import { AdminWarehouseModule } from "./admin/admin-warehouse.module";
@@ -29,13 +31,14 @@ import { AdminWarehouseModule } from "./admin/admin-warehouse.module";
       TransactionEntity,
       ProviderSettlementEntity,
     ]),
+    AdminAccountingModule,
     MinioModule,
     SmsModule,
     ScheduleModule,
     AdminWarehouseModule,
   ],
   controllers: [WarehouseController],
-  providers: [WarehouseService, PacketService, WarehouseRequestService, AllocationService, WarehouseCronService],
-  exports: [WarehouseService, PacketService, WarehouseRequestService, AllocationService],
+  providers: [WarehouseService, PacketService, WarehouseRequestService, AllocationService, WarehouseVoucherService, WarehouseCronService],
+  exports: [WarehouseService, PacketService, WarehouseRequestService, AllocationService, WarehouseVoucherService],
 })
 export class WarehouseModule {}
