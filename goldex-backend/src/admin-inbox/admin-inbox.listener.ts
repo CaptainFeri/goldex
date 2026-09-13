@@ -1,7 +1,7 @@
 import { Injectable, Logger } from "@nestjs/common";
 import { OnEvent } from "@nestjs/event-emitter";
 import { AdminNotificationGateway } from "../notification/admin-notification.gateway";
-import { DepositEvents, P2pEvents, WithdrawEvents } from "../shared/constants/events.constants";
+import { DepositEvents, P2pEvents, WarehouseEvents, WithdrawEvents } from "../shared/constants/events.constants";
 import { AdminInboxService } from "./admin-inbox.service";
 import { InboxCategory, InboxSeverity } from "./admin-inbox.enums";
 
@@ -46,6 +46,43 @@ export class AdminInboxListener {
         body: "یک درخواست واریز ثبت شد و در انتظار بررسی است.",
         metadata: { depositId: p.depositId, amount: p.amount, type: p.type, userId: p.userId, link: "/deposits" },
         requiredPermission: "deposits",
+      },
+      this.gateway,
+    );
+  }
+
+  /**
+   * Gold settled for with a provider that is still sitting unpacked.
+   *
+   * Addressed to whoever holds `warehouse`: until an operator weighs this and
+   * shelves it, it is gold the platform owns that no withdrawal can be served
+   * from. WARNING rather than INFO for the same reason — it is not a record of
+   * something finished, it is work waiting.
+   */
+  @OnEvent(WarehouseEvents.UNPACKED_MATERIAL)
+  async onUnpackedMaterial(p: {
+    providerKey: string;
+    symbol: string;
+    amount: number;
+    unpackedBalance: number;
+    settlementId?: string;
+  }) {
+    await this.inbox.publish(
+      {
+        event: WarehouseEvents.UNPACKED_MATERIAL,
+        category: InboxCategory.WAREHOUSE,
+        severity: InboxSeverity.WARNING,
+        title: "طلای بسته‌بندی‌نشده در انتظار اقدام",
+        body: `تسویه با ${p.providerKey} ثبت شد. این مقدار تا زمان بسته‌بندی قابل تخصیص به هیچ برداشتی نیست.`,
+        metadata: {
+          providerKey: p.providerKey,
+          symbol: p.symbol,
+          amount: p.amount,
+          unpackedBalance: p.unpackedBalance,
+          settlementId: p.settlementId,
+          link: "/warehouse",
+        },
+        requiredPermission: "warehouse",
       },
       this.gateway,
     );

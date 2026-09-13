@@ -22,6 +22,37 @@ Decimal.set({
   toExpPos: 21,
 });
 
+/**
+ * The symbol provider settlements are denominated in when they move metal.
+ *
+ * Settlements also carry rial rows, which are money rather than something to
+ * put on a shelf, so the material balance looks at gold only.
+ */
+export const MATERIAL_SETTLEMENT_SYMBOL = "XAU";
+
+export interface ProviderMaterialBalance {
+  providerKey: string;
+  /** Taken in from the provider, per the settlement rows. */
+  received: number;
+  /** Handed back to the provider. */
+  paid: number;
+  /** received - paid. */
+  netBalance: number;
+  /** Already cut into packages, wastage included. */
+  packed: number;
+  /** Still waiting to be weighed and shelved. */
+  unpacked: number;
+}
+
+export interface SettlementMaterialBalance {
+  providers: ProviderMaterialBalance[];
+  totalReceived: number;
+  totalPaid: number;
+  netBalance: number;
+  totalPacked: number;
+  totalUnpacked: number;
+}
+
 @Injectable()
 export class WarehouseService {
   private readonly logger = new Logger(WarehouseService.name);
@@ -260,47 +291,84 @@ export class WarehouseService {
     };
   }
 
-  async getSettlementMaterialBalance(): Promise<{
-    providers: Array<{
-      providerKey: string;
-      received: number;
-      paid: number;
-      netBalance: number;
-    }>;
-    totalReceived: number;
-    totalPaid: number;
-    netBalance: number;
-  }> {
+  /**
+   * Provider settlement material, and how much of it is still unpacked.
+   *
+   * `received - paid` is what the settlement rows say the platform took in
+   * physically. That figure alone was what this used to return, and it never
+   * moved when an operator packed some of it — so the number on screen stayed
+   * at the full amount forever and "how much is left to pack" was unanswerable.
+   *
+   * `packed` closes that: every package cut from a provider's material carries
+   * its `provider_key`, and its net weight plus the wastage recorded against it
+   * is material that has left the pile. What remains is `unpacked` — gold the
+   * platform owns that no withdrawal can be served from yet, because it is not
+   * a package and cannot be allocated.
+   *
+   * Read from the `provider_key` column rather than parsed back out of the
+   * `batch_number` string, which is free text an operator can overwrite.
+   */
+  async getSettlementMaterialBalance(): Promise<SettlementMaterialBalance> {
     const settlements = await this.settlementRepository
       .createQueryBuilder("s")
       .select("s.provider_key", "providerKey")
       .addSelect("COALESCE(SUM(CASE WHEN s.direction = :receive THEN s.amount ELSE 0 END), 0)", "received")
       .addSelect("COALESCE(SUM(CASE WHEN s.direction = :pay THEN s.amount ELSE 0 END), 0)", "paid")
-      .where("s.symbol = :symbol", { symbol: "XAU" })
+      .where("s.symbol = :symbol", { symbol: MATERIAL_SETTLEMENT_SYMBOL })
       .setParameters({ receive: SettlementDirection.RECEIVE, pay: SettlementDirection.PAY })
       .groupBy("s.provider_key")
       .getRawMany();
 
-    const providers = settlements.map((s: any) => {
-      const received = new Decimal(s.received || 0);
-      const paid = new Decimal(s.paid || 0);
+    const packedRows = await this.packetRepository
+      .createQueryBuilder("p")
+      .select("p.provider_key", "providerKey")
+      // Wastage counts as consumed: it came out of the pile and is gone.
+      .addSelect("COALESCE(SUM(p.pure_weight + COALESCE(p.wastage, 0)), 0)", "packed")
+      .where("p.provider_key IS NOT NULL")
+      .andWhere("p.deleted_at IS NULL")
+      .groupBy("p.provider_key")
+      .getRawMany();
+
+    const packedByProvider = new Map<string, Decimal>(
+      packedRows.map((row: any) => [row.providerKey, new Decimal(row.packed || 0)])
+    );
+
+    const providers = settlements.map((row: any) => {
+      const received = new Decimal(row.received || 0);
+      const paid = new Decimal(row.paid || 0);
+      const packed = packedByProvider.get(row.providerKey) ?? new Decimal(0);
+      const unpacked = received.minus(paid).minus(packed);
+
       return {
-        providerKey: s.providerKey,
+        providerKey: row.providerKey,
         received: received.toNumber(),
         paid: paid.toNumber(),
         netBalance: received.minus(paid).toNumber(),
+        packed: packed.toNumber(),
+        // Clamped at zero: a negative here would mean more was packed than was
+        // settled for, which is a data problem to investigate, not a negative
+        // amount of gold waiting on a bench.
+        unpacked: Decimal.max(0, unpacked).toNumber(),
       };
     });
 
-    const totalReceived = providers.reduce((sum, p) => sum.plus(p.received), new Decimal(0));
-    const totalPaid = providers.reduce((sum, p) => sum.plus(p.paid), new Decimal(0));
+    const sum = (pick: (p: (typeof providers)[number]) => number) =>
+      providers.reduce((acc, provider) => acc.plus(pick(provider)), new Decimal(0)).toNumber();
 
     return {
       providers,
-      totalReceived: totalReceived.toNumber(),
-      totalPaid: totalPaid.toNumber(),
-      netBalance: totalReceived.minus(totalPaid).toNumber(),
+      totalReceived: sum((p) => p.received),
+      totalPaid: sum((p) => p.paid),
+      netBalance: sum((p) => p.netBalance),
+      totalPacked: sum((p) => p.packed),
+      totalUnpacked: sum((p) => p.unpacked),
     };
+  }
+
+  /** What one provider still has sitting unpacked. */
+  async getUnpackedMaterialFor(providerKey: string): Promise<number> {
+    const balance = await this.getSettlementMaterialBalance();
+    return balance.providers.find((provider) => provider.providerKey === providerKey)?.unpacked ?? 0;
   }
 
   async updateCapacity(

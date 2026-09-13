@@ -968,9 +968,20 @@ export class WarehouseRequestService {
     });
   }
 
+  /**
+   * Reverses a rejected deposit.
+   *
+   * A deposit credits nothing until the metal is on the scale and confirmed,
+   * and locks nothing while it is pending, so a rejection has no balance to
+   * undo — only a stray pending transaction to close out.
+   *
+   * This used to subtract the amount from `lockedBalance` **and** from
+   * `freeBalance`, taking twice the deposit off a user whose deposit was
+   * turned away. It never fired in practice because the warehouse writes no
+   * pending MATERIAL_DEPOSIT row, which is the only reason it was survivable.
+   */
   private async unlockWalletForRejectedDeposit(queryRunner: any, request: WarehouseRequestEntity): Promise<void> {
     const wallet = await this.getWalletForUpdate(queryRunner, request.userId, request.symbolId);
-    const decimalAmount = new Decimal(request.weight);
 
     const pendingTx = await queryRunner.manager.findOne(TransactionEntity, {
       where: {
@@ -982,20 +993,16 @@ export class WarehouseRequestService {
       lock: { mode: "pessimistic_write" },
     });
 
-    if (pendingTx) {
-      pendingTx.status = TransactionStatusEnum.REFUNDED;
-      pendingTx.completedAt = new Date();
-      pendingTx.metadata = {
-        ...pendingTx.metadata,
-        rejectedAt: new Date().toISOString(),
-        rejectedBy: request.adminId,
-      };
-      await queryRunner.manager.save(pendingTx);
+    if (!pendingTx) return;
 
-      wallet.lockedBalance = new Decimal(wallet.lockedBalance).minus(decimalAmount).toNumber();
-      wallet.freeBalance = new Decimal(wallet.freeBalance).minus(decimalAmount).toNumber();
-      await queryRunner.manager.save(wallet);
-    }
+    pendingTx.status = TransactionStatusEnum.REFUNDED;
+    pendingTx.completedAt = new Date();
+    pendingTx.metadata = {
+      ...pendingTx.metadata,
+      rejectedAt: new Date().toISOString(),
+      rejectedBy: request.adminId,
+    };
+    await queryRunner.manager.save(pendingTx);
   }
 
   private async unlockWalletForRejectedWithdraw(queryRunner: any, request: WarehouseRequestEntity): Promise<void> {

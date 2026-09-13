@@ -58,4 +58,16 @@ export class CreateSettlementPacketDto {
   @IsString()
   @IsOptional()
   warehouseIndexPosition?: string;
+
+  @ApiPropertyOptional({ description: "ردیف تسویه‌ای که این بسته از آن بریده می‌شود" })
+  @IsUUID()
+  @IsOptional()
+  settlementId?: string;
+
+  @ApiPropertyOptional({
+    description: "نماد ماده داخل بسته. بدون آن، تخصیص نمی‌تواند این بسته را با درخواست هم‌نماد بخواند",
+  })
+  @IsUUID()
+  @IsOptional()
+  symbolId?: string;
 }
