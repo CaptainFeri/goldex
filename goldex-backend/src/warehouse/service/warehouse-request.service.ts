@@ -823,10 +823,14 @@ export class WarehouseRequestService {
    * `warehouse_request.packet_id` can only name one.
    */
   private async reservedPacketsFor(queryRunner: any, request: WarehouseRequestEntity): Promise<PacketEntity[]> {
+    // No `relations` here. A relation makes TypeORM LEFT JOIN the warehouse,
+    // and Postgres refuses `FOR UPDATE` on the nullable side of an outer join
+    // ("FOR UPDATE cannot be applied to the nullable side of an outer join").
+    // The row lock is the point of this read; callers that need the warehouse
+    // load it separately, where no lock is wanted anyway.
     return queryRunner.manager.find(PacketEntity, {
       where: { reservedForRequestId: request.id, status: PacketStatusEnum.RESERVED },
       lock: { mode: "pessimistic_write" },
-      relations: { warehouse: true },
     });
   }
 
@@ -1159,10 +1163,11 @@ export class WarehouseRequestService {
       let totalWeight = new Decimal(0);
 
       for (const packetId of packetIds) {
+        // Locked, and therefore joinless: see reservedPacketsFor. The warehouse
+        // is read once after the loop instead.
         const packet = await queryRunner.manager.findOne(PacketEntity, {
           where: { id: packetId },
           lock: { mode: "pessimistic_write" },
-          relations: { warehouse: true },
         });
 
         if (!packet) throw new NotFoundException(`Packet not found: ${packetId}`);
@@ -1225,7 +1230,9 @@ export class WarehouseRequestService {
         },
       };
 
-      const warehouse = packets[0].warehouse || null;
+      const warehouse = await queryRunner.manager.findOne(WarehouseEntity, {
+        where: { id: packets[0].warehouseId },
+      });
 
       if (qc?.deliveryDate) request.deliveryDate = new Date(qc.deliveryDate);
       if (qc?.deliveryTime) request.deliveryTime = qc.deliveryTime;
