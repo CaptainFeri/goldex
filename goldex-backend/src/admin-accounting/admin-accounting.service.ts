@@ -82,6 +82,36 @@ export interface SystemVoucherInput {
   documentDate?: Date;
 }
 
+/**
+ * What a platform-raised voucher needs to know.
+ *
+ * Deliberately not a `CreateVoucherDto`: that one is validated request input
+ * and carries a `status` the review flow owns. This is an internal contract
+ * between a domain service and the ledger, so it names its `source` and the
+ * record it refers back to, and takes the fields a caller genuinely varies
+ * while defaulting the rest.
+ */
+export interface SystemVoucherInput {
+  /** The operator whose action produced the movement. Required. */
+  adminId: string;
+  source: VoucherSource;
+  category: VoucherCategory;
+  movement: VoucherMovement;
+  symbolId: string;
+  /** Positive magnitude in the symbol's own units; direction lives in `movement`. */
+  amount: number | string;
+  customerName: string;
+  customerId?: string | null;
+  customerType?: CustomerType;
+  description: string;
+  extraDescription?: string | null;
+  /** The record this voucher was raised for — a warehouse request, a settlement. */
+  referenceId?: string | null;
+  walletType?: string;
+  walletSubset?: WalletSubset;
+  documentDate?: Date;
+}
+
 @Injectable()
 export class AdminAccountingService {
   constructor(
