@@ -1,6 +1,7 @@
 import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
-import { Between, Brackets, Repository } from "typeorm";
+import { Between, Brackets, EntityManager, Repository } from "typeorm";
+import Decimal from "decimal.js";
 import jMoment from "moment-jalaali";
 import { SystemLedgerEntity } from "../financial/entity/system-ledger.entity";
 import { SymbolEntity } from "../admin-symbol/entity/symbol.entity";
@@ -18,6 +19,7 @@ import {
   VoucherCategory,
   VoucherMovement,
   VoucherSide,
+  VoucherSource,
   VoucherStatus,
   WALLET_SUBSET_LABELS,
   WalletSubset,
@@ -49,6 +51,37 @@ const JALALI_MONTHS = ["فرو", "ارد", "خرد", "تیر", "مرد", "شهر
 export function sideForMovement(movement: VoucherMovement): VoucherSide {
   return movement === VoucherMovement.DEPOSIT ? VoucherSide.CREDITOR : VoucherSide.DEBTOR;
 }
+
+/**
+ * What a platform-raised voucher needs to know.
+ *
+ * Deliberately not a `CreateVoucherDto`: that one is validated request input
+ * and carries a `status` the review flow owns. This is an internal contract
+ * between a domain service and the ledger, so it names its `source` and the
+ * record it refers back to, and takes the fields a caller genuinely varies
+ * while defaulting the rest.
+ */
+export interface SystemVoucherInput {
+  /** The operator whose action produced the movement. Required. */
+  adminId: string;
+  source: VoucherSource;
+  category: VoucherCategory;
+  movement: VoucherMovement;
+  symbolId: string;
+  /** Positive magnitude in the symbol's own units; direction lives in `movement`. */
+  amount: number | string;
+  customerName: string;
+  customerId?: string | null;
+  customerType?: CustomerType;
+  description: string;
+  extraDescription?: string | null;
+  /** The record this voucher was raised for — a warehouse request, a settlement. */
+  referenceId?: string | null;
+  walletType?: string;
+  walletSubset?: WalletSubset;
+  documentDate?: Date;
+}
+
 
 @Injectable()
 export class AdminAccountingService {
@@ -405,16 +438,94 @@ export class AdminAccountingService {
    * `DOC-<jYear><jMonth><sequence>`.
    *
    * Sequenced within the Jalali month so the reference reads the way an
-   * accountant files it, and taken from the count of that month's rows.
+   * accountant files it.
+   *
+   * The sequence comes from `accounting_voucher_counters` rather than from a
+   * count of that month's rows. A count is read-then-write: two vouchers raised
+   * in the same instant both saw the same total, built the same code, and the
+   * second one lost to the unique index. That was survivable while an
+   * accountant entered them one at a time, but warehouse deposits, warehouse
+   * withdrawals and provider settlements now raise vouchers of their own, so
+   * the collision became reachable. `ON CONFLICT DO UPDATE … RETURNING` bumps
+   * and returns the value in a single statement, which hands concurrent callers
+   * distinct numbers. It also survives a deleted voucher, where a count would
+   * hand out a code already in use.
+   *
+   * Runs on the caller's transaction when one is passed, so a voucher that
+   * rolls back does not strand its number.
    */
-  private async nextVoucherCode(): Promise<string> {
+  private async nextVoucherCode(manager?: EntityManager): Promise<string> {
     const now = jMoment();
     const prefix = `DOC-${now.jYear()}${String(now.jMonth() + 1).padStart(2, "0")}`;
-    const used = await this.vouchers
-      .createQueryBuilder("v")
-      .where("v.voucher_code LIKE :p", { p: `${prefix}%` })
-      .getCount();
-    return `${prefix}${String(used + 1).padStart(4, "0")}`;
+    const runner = manager ?? this.vouchers.manager;
+
+    const [{ last_value: sequence }] = await runner.query(
+      `INSERT INTO "accounting_voucher_counters" ("prefix", "last_value")
+            VALUES ($1, 1)
+       ON CONFLICT ("prefix")
+     DO UPDATE SET "last_value" = "accounting_voucher_counters"."last_value" + 1
+         RETURNING "last_value"`,
+      [prefix],
+    );
+
+    return `${prefix}${String(sequence).padStart(4, "0")}`;
+  }
+
+  /**
+   * Book a voucher the platform raised itself.
+   *
+   * Written straight to FINALIZED, which is the one place the two-operator
+   * control in `assertReviewable` does not apply. That is deliberate: the
+   * movement being recorded has already happened — the gold is in the vault,
+   * the wallet is credited — so there is nothing for a second operator to
+   * approve or refuse, and holding the entry in draft would leave the ledger
+   * disagreeing with the vault until someone noticed. `source` keeps these
+   * separable from entries that did go through review.
+   *
+   * `adminId` is the operator whose action produced the movement, and is
+   * required: every caller reaches this from an authenticated admin route, and
+   * a voucher with no one behind it cannot be followed up.
+   *
+   * Takes the caller's `EntityManager` so the voucher commits or rolls back
+   * with the movement it records. A deposit that failed halfway must not leave
+   * a booked voucher behind claiming it happened.
+   */
+  async issueSystemVoucher(input: SystemVoucherInput, manager?: EntityManager): Promise<AccountingVoucherEntity> {
+    if (!input.adminId) throw new BadRequestException("VOUCHER.SYSTEM_VOUCHER_NEEDS_ADMIN");
+    if (!input.symbolId) throw new BadRequestException("VOUCHER.UNKNOWN_SYMBOL");
+
+    const amount = new Decimal(input.amount ?? 0);
+    if (amount.lessThanOrEqualTo(0)) throw new BadRequestException("VOUCHER.AMOUNT_MUST_BE_POSITIVE");
+
+    const repo = manager ? manager.getRepository(AccountingVoucherEntity) : this.vouchers;
+    const now = new Date();
+
+    return repo.save(
+      repo.create({
+        voucherCode: await this.nextVoucherCode(manager),
+        customerId: input.customerId ?? null,
+        customerName: input.customerName,
+        customerType: input.customerType ?? CustomerType.INFORMAL,
+        category: input.category,
+        movement: input.movement,
+        // Derived here, exactly as it is for a manual voucher.
+        side: sideForMovement(input.movement),
+        symbolId: input.symbolId,
+        amount: amount.toString(),
+        walletType: input.walletType ?? WalletTypeEnum.DEPOSIT,
+        walletSubset: input.walletSubset ?? WalletSubset.CASH,
+        description: input.description,
+        extraDescription: input.extraDescription ?? null,
+        documentDate: input.documentDate ?? now,
+        status: VoucherStatus.FINALIZED,
+        source: input.source,
+        referenceId: input.referenceId ?? null,
+        createdBy: input.adminId,
+        reviewedBy: input.adminId,
+        reviewedAt: now,
+        reviewNote: null,
+      }),
+    );
   }
 
   private toVoucherDto(v: any): VoucherDto {

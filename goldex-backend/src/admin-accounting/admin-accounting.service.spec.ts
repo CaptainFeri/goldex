@@ -7,6 +7,7 @@ import {
   VoucherCategory,
   VoucherMovement,
   VoucherSide,
+  VoucherSource,
   VoucherStatus,
   WalletSubset,
 } from "./accounting.enums";
@@ -36,7 +37,13 @@ const voucher = (over: Record<string, unknown> = {}) => ({
 
 function build(current = voucher()) {
   const state = { row: current as any };
+  // The voucher code now comes from an atomic counter row rather than a count
+  // of the month's vouchers, so the repository has to expose a manager.
+  const counter = { value: 0 };
   const vouchers = {
+    manager: {
+      query: jest.fn(async () => [{ last_value: ++counter.value }]),
+    },
     findOne: jest.fn(async () => state.row),
     create: jest.fn((v) => v),
     save: jest.fn(async (v) => {
@@ -101,6 +108,80 @@ describe("sideForMovement", () => {
     // A deposit increases what the platform owes; a withdrawal reduces it.
     expect(sideForMovement(VoucherMovement.DEPOSIT)).toBe(VoucherSide.CREDITOR);
     expect(sideForMovement(VoucherMovement.WITHDRAW)).toBe(VoucherSide.DEBTOR);
+  });
+});
+
+describe("system-raised vouchers", () => {
+  const input = (over: Record<string, unknown> = {}) =>
+    ({
+      adminId: AUTHOR,
+      source: VoucherSource.WAREHOUSE_DEPOSIT,
+      category: VoucherCategory.DEPOSIT_ENTRY,
+      movement: VoucherMovement.DEPOSIT,
+      symbolId: "sym-1",
+      amount: 96,
+      customerName: "کاربر تست",
+      description: "واریز انبار",
+      ...over,
+    }) as any;
+
+  it("books straight to finalized instead of waiting for a second operator", async () => {
+    // The movement has already happened — the gold is in the vault and the
+    // wallet is credited — so there is nothing left for a reviewer to refuse.
+    const { service, vouchers } = build();
+    await service.issueSystemVoucher(input());
+    expect(vouchers.create).toHaveBeenCalledWith(
+      expect.objectContaining({ status: VoucherStatus.FINALIZED, reviewedBy: AUTHOR }),
+    );
+  });
+
+  it("marks its source so reports can separate it from a reviewed entry", async () => {
+    const { service, vouchers } = build();
+    await service.issueSystemVoucher(input({ referenceId: "req-1" }));
+    expect(vouchers.create).toHaveBeenCalledWith(
+      expect.objectContaining({ source: VoucherSource.WAREHOUSE_DEPOSIT, referenceId: "req-1" }),
+    );
+  });
+
+  it("derives the side from the movement, exactly as a manual voucher does", async () => {
+    const { service, vouchers } = build();
+    await service.issueSystemVoucher(input({ movement: VoucherMovement.WITHDRAW }));
+    expect(vouchers.create).toHaveBeenCalledWith(expect.objectContaining({ side: VoucherSide.DEBTOR }));
+  });
+
+  it("refuses to book a voucher with no operator behind it", async () => {
+    // Finalized on sight and answerable to no one would be the worst of both.
+    const { service } = build();
+    await expect(service.issueSystemVoucher(input({ adminId: "" }))).rejects.toBeInstanceOf(BadRequestException);
+  });
+
+  it("refuses a non-positive amount", async () => {
+    const { service } = build();
+    await expect(service.issueSystemVoucher(input({ amount: 0 }))).rejects.toBeInstanceOf(BadRequestException);
+    await expect(service.issueSystemVoucher(input({ amount: -5 }))).rejects.toBeInstanceOf(BadRequestException);
+  });
+
+  it("takes a distinct code per voucher instead of re-reading a count", async () => {
+    // The old COUNT(*) handed concurrent callers the same number; the counter
+    // bumps and returns in one statement, so two calls cannot collide.
+    const { service, vouchers } = build();
+    await service.issueSystemVoucher(input());
+    await service.issueSystemVoucher(input());
+    const codes = vouchers.create.mock.calls.map((c: any[]) => c[0].voucherCode);
+    expect(codes[0]).not.toEqual(codes[1]);
+    expect(new Set(codes).size).toBe(codes.length);
+  });
+
+  it("runs the counter on the caller's transaction when one is given", async () => {
+    // A voucher that rolls back must not strand its number.
+    const { service } = build();
+    const manager = {
+      query: jest.fn(async () => [{ last_value: 7 }]),
+      getRepository: jest.fn(() => ({ create: (v: any) => v, save: async (v: any) => v })),
+    } as any;
+    const saved = await service.issueSystemVoucher(input(), manager);
+    expect(manager.query).toHaveBeenCalled();
+    expect(saved.voucherCode).toMatch(/0007$/);
   });
 });
 
