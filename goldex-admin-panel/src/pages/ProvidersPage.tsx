@@ -8,6 +8,7 @@ import {
   providerFormPayload,
 } from "../lib/provider-form";
 import { parseProviderAuth } from "../lib/provider-auth-paste";
+import BrowserSimulator from "./providers/BrowserSimulator";
 
 interface Provider {
   id: string;
@@ -312,12 +313,14 @@ function OtpPanel({
 }
 
 /**
- * The two ways a provider gets turned on, in one place.
+ * The three ways a provider gets turned on, in one place.
  *
- * They reach the same end — stored credentials and a running provider — and
+ * All reach the same end — stored credentials and a running provider — and
  * differ only in who performs the login. The OTP tab has the engine do it,
  * which works when the provider's login is a plain phone-for-code exchange.
- * The manual tab is for when it is not.
+ * The simulator has the admin do it in a real browser on the server, for a
+ * login behind a captcha. The manual tab takes a session the admin captured
+ * in their own browser, for when neither of the others fits.
  */
 function ActivationModal({
   provider,
@@ -326,7 +329,8 @@ function ActivationModal({
   provider: Provider;
   onClose: () => void;
 }) {
-  const [tab, setTab] = useState<"otp" | "manual">("otp");
+  const qc = useQueryClient();
+  const [tab, setTab] = useState<"otp" | "simulator" | "manual">("otp");
 
   return (
     <Modal title={`فعال‌سازی ${provider.persianName || provider.key}`} onClose={onClose} wide>
@@ -340,17 +344,31 @@ function ActivationModal({
         </button>
         <button
           type="button"
+          className={"btn sm " + (tab === "simulator" ? "primary" : "ghost")}
+          onClick={() => setTab("simulator")}
+        >
+          شبیه‌ساز مرورگر
+        </button>
+        <button
+          type="button"
           className={"btn sm " + (tab === "manual" ? "primary" : "ghost")}
           onClick={() => setTab("manual")}
         >
           ورود دستی توکن
         </button>
       </div>
-      {tab === "otp" ? (
-        <OtpPanel provider={provider} onClose={onClose} />
-      ) : (
-        <ManualAuthPanel provider={provider} onClose={onClose} />
+      {tab === "otp" && <OtpPanel provider={provider} onClose={onClose} />}
+      {tab === "simulator" && (
+        <BrowserSimulator
+          providerId={provider.id}
+          providerKey={provider.persianName || provider.key}
+          onActivated={() => {
+            qc.invalidateQueries({ queryKey: ["providers-admin"] });
+            onClose();
+          }}
+        />
       )}
+      {tab === "manual" && <ManualAuthPanel provider={provider} onClose={onClose} />}
     </Modal>
   );
 }

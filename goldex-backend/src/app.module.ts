@@ -72,6 +72,7 @@ import { PaymentCallbackModule } from "./payment-callback/payment-callback.modul
 import { ShahinModule } from "./shahin/shahin.module";
 import { CbpAdminModule } from "./cbp-admin/cbp-admin.module";
 import { ProviderModule } from "./provider/provider.module";
+import { ProviderBrowserModule } from "./provider-browser/provider-browser.module";
 import { MarketStatusModule } from "./market-status/market-status.module";
 import { AdminArbitrageModule } from "./admin-arbitrage/admin-arbitrage.module";
 import { ScheduleModule } from "@nestjs/schedule";
@@ -198,6 +199,7 @@ import { ScheduleModule } from "@nestjs/schedule";
     ShahinModule,
     CbpAdminModule,
     ProviderModule,
+    ProviderBrowserModule,
     MarketStatusModule,
     AdminArbitrageModule,
     FilesModule,
