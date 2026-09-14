@@ -133,15 +133,15 @@ function DepositModal({ symbolId, symbolSlug, depositTypes: allowedDepositTypes,
       const d = await depositApi.get(depositId)
       const pay = d?.metadata?.payment
       if (pay?.gatewayUrl) {
-        // The click that started this was seconds ago, so the browser no longer
-        // counts a new window as user-initiated and blocks it. When that
-        // happens window.open returns null and nothing at all appears — the
-        // gateway simply "does not open". Offer the link instead of guessing.
-        const opened = window.open(pay.gatewayUrl, '_blank', 'noopener')
-        if (!opened) {
-          gatewayUrlRef.current = pay.gatewayUrl
-          setGatewayUrl(pay.gatewayUrl)
-        }
+        // Navigate this tab rather than opening one. The click that started
+        // this was seconds ago, so a new window no longer counts as
+        // user-initiated and the browser blocks it silently — window.open
+        // returns null and the gateway simply never appears. Following the
+        // URL here is what "go straight to the gateway" means, and it is the
+        // way back that the gateway's own callback expects.
+        gatewayUrlRef.current = pay.gatewayUrl
+        setGatewayUrl(pay.gatewayUrl)
+        window.location.assign(pay.gatewayUrl)
         return
       }
       if (d.status === 'FAILED' || d.status === 'CANCELLED') {
@@ -258,8 +258,8 @@ function DepositModal({ symbolId, symbolSlug, depositTypes: allowedDepositTypes,
         {error && <Alert type="error">{error}</Alert>}
         {gatewayMsg && !error && !gatewayUrl && <Alert type="success">{gatewayMsg}</Alert>}
         {gatewayUrl && (
-          <Alert type="warning">
-            {t('wallet.gatewayPopupBlocked')}
+          <Alert type="success">
+            {t('wallet.gatewayRedirecting')}
             <a
               href={gatewayUrl}
               target="_blank"

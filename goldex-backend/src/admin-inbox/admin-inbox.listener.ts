@@ -1,7 +1,7 @@
 import { Injectable, Logger } from "@nestjs/common";
 import { OnEvent } from "@nestjs/event-emitter";
 import { AdminNotificationGateway } from "../notification/admin-notification.gateway";
-import { DepositEvents, P2pEvents, WarehouseEvents, WithdrawEvents } from "../shared/constants/events.constants";
+import { DepositEvents, P2pEvents, SymbolEvents, WarehouseEvents, WithdrawEvents } from "../shared/constants/events.constants";
 import { AdminInboxService } from "./admin-inbox.service";
 import { InboxCategory, InboxSeverity } from "./admin-inbox.enums";
 
@@ -59,6 +59,32 @@ export class AdminInboxListener {
    * from. WARNING rather than INFO for the same reason — it is not a record of
    * something finished, it is work waiting.
    */
+  /**
+   * A symbol edit that never reached the payment service.
+   *
+   * URGENT because the symbol is now configured two different ways on two
+   * services, and the difference shows up as a user unable to deposit or
+   * withdraw — with nothing on the admin's screen to suggest anything is
+   * wrong. It stays wrong until someone acts; nothing retries.
+   */
+  @OnEvent(SymbolEvents.SYNC_FAILED)
+  async onSymbolSyncFailed(p: { slug: string; reason: string }) {
+    await this.inbox.publish(
+      {
+        event: SymbolEvents.SYNC_FAILED,
+        category: InboxCategory.SYSTEM,
+        severity: InboxSeverity.URGENT,
+        title: `تنظیمات نماد ${p.slug} به سرویس پرداخت نرسید`,
+        body:
+          "سرویس پرداخت این تنظیمات را نپذیرفت، پس نماد آنجا با تنظیمات قبلی باقی مانده و " +
+          "واریز و برداشت درگاهی آن کار نخواهد کرد. تا زمانی که رفع نشود خودکار تکرار نمی‌شود.",
+        metadata: { slug: p.slug, reason: p.reason, link: "/symbols" },
+        requiredPermission: "settings",
+      },
+      this.gateway,
+    );
+  }
+
   @OnEvent(WarehouseEvents.UNPACKED_MATERIAL)
   async onUnpackedMaterial(p: {
     providerKey: string;

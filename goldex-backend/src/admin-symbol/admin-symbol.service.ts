@@ -304,11 +304,32 @@ export class AdminSymbolService {
   }
 
   async remove(id: string): Promise<void> {
+    const symbol = await this.findOne(id);
     const result = await this.symbolRepository.delete(id);
 
     if (result.affected === 0) {
       throw new NotFoundException(`Symbol with ID ${id} not found`);
     }
+
+    // cbp has no delete: a symbol it never hears about again stays exactly as
+    // it was, still accepting payments for something that no longer exists
+    // here. Deactivating it there is the removal cbp understands.
+    this.paymentBus.syncSymbol({ ...symbol, isActive: false } as SymbolEntity);
+  }
+
+  /**
+   * Re-publishes every symbol to the payment service.
+   *
+   * A sync is fire-and-forget and does not retry, so one that cbp refused — or
+   * one lost while it was down — leaves the two disagreeing with no way back
+   * short of re-saving each symbol by hand. This is that way back.
+   */
+  async resyncAll(): Promise<{ synced: number }> {
+    const symbols = await this.symbolRepository.find();
+    for (const symbol of symbols) {
+      this.paymentBus.syncSymbol(symbol);
+    }
+    return { synced: symbols.length };
   }
 
   async findByType(symbolType: SymbolTypeEnum): Promise<SymbolEntity[]> {

@@ -4,6 +4,7 @@ export enum CbpMessagePatterns {
   PAYMENT_REQUEST_WITHDRAW = "payment.request.withdraw",
   PAYMENT_REQUEST_WITHDRAW_APPROVE = "payment.request.withdraw.approve",
   SYMBOL_SYNC = "symbol.sync",
+  SYMBOL_SYNC_FAILED = "symbol.sync.failed",
   PAYMENT_CALLBACK = "payment.callback",
 
   // Admin queries from goldex-backend (RabbitMQ RPC: request -> response)

@@ -27,6 +27,8 @@ export enum MessagePatterns {
   PAYMENT_REQUEST_WITHDRAW = 'payment.request.withdraw',
   PAYMENT_REQUEST_WITHDRAW_APPROVE = 'payment.request.withdraw.approve',
   SYMBOL_SYNC = 'symbol.sync',
+  /** cbp refused a sync: its rules disagree with ours, and a person must look. */
+  SYMBOL_SYNC_FAILED = 'symbol.sync.failed',
   PAYMENT_CALLBACK = 'payment.callback',
   PAYMENT_PROCESSING = 'payment.processing',
   PAYMENT_SUCCEEDED = 'payment.succeeded',
