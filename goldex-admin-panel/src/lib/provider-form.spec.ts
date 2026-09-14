@@ -78,6 +78,7 @@ describe("provider form", () => {
         priceUnit: "IRR",
         sendOtpUrl: "https://example.ir/api/send",
         verifyCodeUrl: "https://example.ir/api/verify",
+        useProxy: false,
       };
       expect(providerFormPayload(providerFormInitial(provider))).toEqual(provider);
     });
@@ -87,6 +88,35 @@ describe("provider form", () => {
       expect(form).toEqual(emptyProviderForm);
       expect(form.category).toBe("zaryar");
       expect(form.priceUnit).toBe("TOMAN");
+    });
+  });
+
+  describe("the proxy declaration", () => {
+    /**
+     * The point of the flag: reachability is a fact about the provider, so it
+     * is stated when the provider is defined rather than being one setting for
+     * the whole engine.
+     */
+    it("is sent with the definition", () => {
+      expect(providerFormPayload({ ...filled, useProxy: true }).useProxy).toBe(true);
+      expect(providerFormPayload({ ...filled, useProxy: false }).useProxy).toBe(false);
+    });
+
+    it("defaults on for a new provider, which is how every provider was reached before", () => {
+      expect(providerFormInitial().useProxy).toBe(true);
+    });
+
+    it("keeps an opt-out visible when the provider is reopened", () => {
+      expect(providerFormInitial({ key: "global", useProxy: false }).useProxy).toBe(false);
+    });
+
+    it("reads a provider from before the flag as proxied", () => {
+      expect(providerFormInitial({ key: "legacy" }).useProxy).toBe(true);
+    });
+
+    it("is sent as false, not omitted — false is a real declaration", () => {
+      const body = providerFormPayload({ ...emptyProviderForm, key: "k", baseUrl: "b", useProxy: false });
+      expect(body).toHaveProperty("useProxy", false);
     });
   });
 

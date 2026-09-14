@@ -14,6 +14,10 @@ import { ProviderManagerService } from './provider-manage.service';
 import { OtpHandler } from './types/otp.types';
 import { RedisService } from '../redis/redis.service';
 import { RabbitMQService, MessagePatterns } from '../rabbitmq/rabbitmq.module';
+import {
+  clearProxyRoutes,
+  registerProxyRoute,
+} from '../common/http/proxy-route.registry';
 
 @Injectable()
 export class ProviderService implements OnApplicationBootstrap {
@@ -29,11 +33,50 @@ export class ProviderService implements OnApplicationBootstrap {
   ) {}
 
   async onApplicationBootstrap(): Promise<void> {
+    // Routes first: a provider that starts connecting before its hosts are
+    // declared would be routed by the process-wide default instead of its own
+    // `useProxy`, and a wrongly-routed first connection just fails.
+    await this.syncProxyRoutes().catch(() => undefined);
+
     // Keep the admin panel's provider registry fresh regardless of whether any
     // RabbitMQ reconcile message arrives. Written directly to the shared pricing
     // Redis so the backend can list ALL providers (active AND inactive).
     await this.publishRegistry().catch(() => undefined);
     setInterval(() => void this.publishRegistry().catch(() => undefined), 30000);
+  }
+
+  /**
+   * Republishes every provider's `useProxy` to the host registry the HTTP and
+   * WebSocket agents consult.
+   *
+   * Rebuilt whole rather than patched, so a host stops being routed once the
+   * provider that claimed it stops claiming it — an edited baseUrl would
+   * otherwise leave its old host behind, declared forever.
+   */
+  async syncProxyRoutes(): Promise<void> {
+    const entities = await this.providerRepo.find();
+    clearProxyRoutes();
+    for (const entity of entities) {
+      this.registerProxyRoutes(entity);
+    }
+  }
+
+  /** Declares every host one provider talks to, all under its own flag. */
+  private registerProxyRoutes(provider: ProviderEntity): void {
+    const urls = [
+      provider.baseUrl,
+      provider.apiBaseUrl,
+      provider.sendOtpUrl,
+      provider.verifyCodeUrl,
+      provider.webPanelUrl,
+      provider.config?.originUrl as string | undefined,
+    ];
+    for (const url of urls) {
+      if (!url) continue;
+      registerProxyRoute(url, provider.useProxy ?? true, (message) =>
+        this.formatter.warn('ProviderService', message),
+      );
+    }
   }
 
   /**
@@ -71,6 +114,7 @@ export class ProviderService implements OnApplicationBootstrap {
       config: clean.config ?? {},
     });
     const saved = await this.providerRepo.save(provider);
+    this.registerProxyRoutes(saved);
     if (this.rabbitMQService) {
       await this.rabbitMQService.publish(MessagePatterns.PROVIDER_CREATED, saved, saved.key);
     }
@@ -118,6 +162,9 @@ export class ProviderService implements OnApplicationBootstrap {
 
     Object.assign(provider, this.stripOwnedFields(data));
     const saved = await this.providerRepo.save(provider);
+    // Rebuilt, not added to: this edit may have moved the provider off a host
+    // it previously claimed, and that host must stop being routed.
+    await this.syncProxyRoutes();
 
     if (data.auth !== undefined && isRunning) {
       this.formatter.log('ProviderService', `restart-${provider.key} (auth changed)`);

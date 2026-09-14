@@ -21,6 +21,7 @@ export interface ProviderFormFields {
   priceUnit: string;
   sendOtpUrl: string;
   verifyCodeUrl: string;
+  useProxy: boolean;
 }
 
 export interface ProviderFormSource {
@@ -34,6 +35,7 @@ export interface ProviderFormSource {
   priceUnit?: string;
   sendOtpUrl?: string;
   verifyCodeUrl?: string;
+  useProxy?: boolean;
 }
 
 export const emptyProviderForm: ProviderFormFields = {
@@ -47,6 +49,10 @@ export const emptyProviderForm: ProviderFormFields = {
   priceUnit: "TOMAN",
   sendOtpUrl: "",
   verifyCodeUrl: "",
+  // On by default: every provider defined so far is only reachable from inside
+  // Iran, and a provider that needs the proxy and does not get it simply never
+  // connects, while one that takes a proxy it did not need still arrives.
+  useProxy: true,
 };
 
 /** Fills the form from a provider, so an edit starts at what is stored. */
@@ -63,6 +69,7 @@ export function providerFormInitial(provider?: ProviderFormSource): ProviderForm
     priceUnit: provider.priceUnit ?? "TOMAN",
     sendOtpUrl: provider.sendOtpUrl ?? "",
     verifyCodeUrl: provider.verifyCodeUrl ?? "",
+    useProxy: provider.useProxy ?? true,
   };
 }
 
@@ -83,6 +90,7 @@ export function providerFormPayload(form: ProviderFormFields): Record<string, un
     priceUnit: form.priceUnit,
     sendOtpUrl: optional(form.sendOtpUrl),
     verifyCodeUrl: optional(form.verifyCodeUrl),
+    useProxy: form.useProxy,
   };
 }
 

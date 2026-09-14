@@ -21,6 +21,8 @@ interface Provider {
   phone?: string;
   /** Unit the provider quotes in; the engine converts everything to Rial. */
   priceUnit?: "IRR" | "TOMAN";
+  /** Whether the engine reaches this provider through the outbound proxy. */
+  useProxy?: boolean;
   active: boolean;
   status: string;
   lastStatusChangeAt?: string;
@@ -140,6 +142,19 @@ function ProviderForm({
           </select>
           <div className="muted" style={{ fontSize: 12, marginTop: 4 }}>
             واحدی که این تأمین‌کننده قیمت‌ها را با آن اعلام می‌کند. قیمت‌های تومانی هنگام دریافت در ۱۰ ضرب و به ریال تبدیل می‌شوند؛ کل حسابداری سامانه بر مبنای ریال است.
+          </div>
+        </div>
+        <div className="field">
+          <label>
+            <input
+              type="checkbox"
+              checked={form.useProxy}
+              onChange={(e) => setForm({ ...form, useProxy: e.target.checked })}
+            />
+            <span style={{ marginRight: 6 }}>عبور از پروکسی</span>
+          </label>
+          <div className="muted" style={{ fontSize: 12, marginTop: 4 }}>
+            اگر این تأمین‌کننده فقط از داخل ایران در دسترس است، این گزینه را روشن بگذارید؛ همه ترافیک آن — دریافت و تایید کد، سفارش‌ها، موجودی و سوکت قیمت — از پروکسی خروجی موتور عبور می‌کند. برای تأمین‌کننده‌ای که مستقیم در دسترس است خاموشش کنید.
           </div>
         </div>
         {save.isError && <div className="error-text">{apiError(save.error)}</div>}
@@ -266,6 +281,7 @@ export default function ProvidersPage() {
                   <th>کلید</th>
                   <th>دسته</th>
                   <th>واحد قیمت</th>
+                  <th>پروکسی</th>
                   <th>تلفن</th>
                   <th>وضعیت</th>
                   <th>فعال</th>
@@ -282,6 +298,11 @@ export default function ProvidersPage() {
                       <Badge kind={p.priceUnit === "IRR" ? "green" : "gold"}>
                         {PRICE_UNIT_LABEL[p.priceUnit ?? "TOMAN"]}
                       </Badge>
+                    </td>
+                    <td>
+                      {p.useProxy === false
+                        ? <Badge kind="gray">مستقیم</Badge>
+                        : <Badge kind="gold">از پروکسی</Badge>}
                     </td>
                     <td className="mono" dir="ltr">{p.phone || "—"}</td>
                     <td>

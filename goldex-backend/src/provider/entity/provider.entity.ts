@@ -55,6 +55,14 @@ export class ProviderEntity extends myBaseEntity {
   @Column({ type: 'jsonb', default: {} })
   config?: Record<string, any>;
 
+  /**
+   * Whether the engine tunnels this provider's traffic through the configured
+   * outbound proxy. Declared when the provider is defined, because reachability
+   * is a fact about the provider rather than about the deployment.
+   */
+  @Column({ type: 'boolean', default: true, name: 'use_proxy' })
+  useProxy: boolean;
+
   @Column({ default: false })
   active: boolean;
 

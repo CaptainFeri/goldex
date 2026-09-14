@@ -53,6 +53,17 @@ export class ProviderEntity {
   @Column({ type: 'jsonb', default: {} })
   config!: Record<string, any>;
 
+  /**
+   * Whether this provider's traffic is tunnelled through the configured proxy.
+   *
+   * Declared when the provider is defined, because reachability is a fact about
+   * the provider: the Iranian ones answer only to an egress inside Iran. Covers
+   * everything the engine says to it — OTP, REST and the price socket alike.
+   * Defaults on, which is how every provider was reached before the flag.
+   */
+  @Column({ type: 'boolean', default: true, name: 'use_proxy' })
+  useProxy!: boolean;
+
   @Column({ default: false })
   active!: boolean;
 

@@ -42,6 +42,12 @@ export class ProviderDto {
   @ApiPropertyOptional({ nullable: true })
   verifyCodeUrl?: string | null;
 
+  @ApiProperty({
+    example: true,
+    description: "Whether the engine tunnels this provider's traffic through the outbound proxy",
+  })
+  useProxy: boolean;
+
   @ApiProperty({ example: true, description: "Whether the engine should connect to it" })
   active: boolean;
 

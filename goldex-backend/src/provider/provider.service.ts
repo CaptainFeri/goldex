@@ -70,6 +70,7 @@ export class ProviderService {
       auth: dto.auth ?? {},
       config: dto.config ?? {},
       priceUnit: resolvePriceUnit(dto.priceUnit),
+      useProxy: dto.useProxy ?? true,
       active: dto.active ?? false,
       metadataRefreshIntervalMs: dto.metadataRefreshIntervalMs ?? 60000,
       status: 'inactive',
@@ -174,6 +175,7 @@ export class ProviderService {
         auth: reg.auth ?? m?.auth ?? {},
         config: reg.config ?? m?.config ?? {},
         priceUnit: resolvePriceUnit(reg.priceUnit ?? m?.priceUnit),
+        useProxy: reg.useProxy ?? m?.useProxy ?? true,
         active: reg.active ?? m?.active ?? false,
         metadataRefreshIntervalMs:
           reg.metadataRefreshIntervalMs ?? m?.metadataRefreshIntervalMs ?? 60000,
@@ -360,6 +362,7 @@ export class ProviderService {
       auth: payload.auth ?? existing?.auth ?? {},
       config: payload.config ?? existing?.config ?? {},
       priceUnit: resolvePriceUnit(payload.priceUnit ?? existing?.priceUnit),
+      useProxy: payload.useProxy ?? existing?.useProxy ?? true,
       active: payload.active ?? existing?.active ?? false,
       metadataRefreshIntervalMs:
         payload.metadataRefreshIntervalMs ?? existing?.metadataRefreshIntervalMs ?? 60000,
@@ -390,6 +393,7 @@ export class ProviderService {
       auth: p.auth ?? {},
       config: p.config ?? {},
       priceUnit: resolvePriceUnit(p.priceUnit),
+      useProxy: p.useProxy ?? true,
       active: p.active,
       metadataRefreshIntervalMs: p.metadataRefreshIntervalMs,
     };

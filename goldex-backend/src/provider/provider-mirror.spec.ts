@@ -86,6 +86,50 @@ describe('provider admin mirror', () => {
     });
   });
 
+  describe('the proxy declaration reaches the engine', () => {
+    // The engine owns the routing; this mirror only has to carry the flag there
+    // intact, and show the engine's own value back to the panel.
+    it('ships useProxy on the create command', async () => {
+      const { service, rmq } = build([]);
+      await service.create({
+        key: 'global',
+        category: 'zaryar',
+        baseUrl: 'https://global.example.com',
+        phone: '0912',
+        useProxy: false,
+      } as any);
+      const [, payload] = rmq.publishCommand.mock.calls.at(-1)!;
+      expect(payload).toMatchObject({ key: 'global', useProxy: false });
+    });
+
+    it('defaults a provider defined without the flag to proxied', async () => {
+      const { service, rmq } = build([]);
+      await service.create({
+        key: 'zaryar',
+        category: 'zaryar',
+        baseUrl: 'https://a.ir',
+        phone: '0912',
+      } as any);
+      const [, payload] = rmq.publishCommand.mock.calls.at(-1)!;
+      expect(payload).toMatchObject({ useProxy: true });
+    });
+
+    it("shows the engine's value rather than a stale mirrored one", async () => {
+      const { service } = build(
+        [{ id: 'mine', key: 'zaryar', category: 'zaryar', baseUrl: 'https://a.ir', useProxy: true }],
+        [{ key: 'zaryar', category: 'zaryar', baseUrl: 'https://a.ir', useProxy: false }],
+      );
+      const [row] = await service.findAll();
+      expect(row.useProxy).toBe(false);
+    });
+
+    it('reads a provider from before the column as proxied', async () => {
+      const { service } = build([], [{ key: 'legacy', category: 'zaryar', baseUrl: 'https://a.ir' }]);
+      const [row] = await service.findAll();
+      expect(row.useProxy).toBe(true);
+    });
+  });
+
   describe('commands carry no identity', () => {
     // The engine resolves every command by `key` and holds a different UUID for
     // the same provider. Sending this mirror's id let it be assigned over the

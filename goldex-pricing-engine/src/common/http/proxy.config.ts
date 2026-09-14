@@ -3,6 +3,7 @@ import * as https from 'https';
 import { HttpProxyAgent } from 'http-proxy-agent';
 import { HttpsProxyAgent } from 'https-proxy-agent';
 import type { Agent } from 'http';
+import { hostFromUrl, lookupProxyRoute } from './proxy-route.registry';
 
 /**
  * Outbound HTTP(S) proxy used to reach Iranian gold providers (talaab,
@@ -55,22 +56,23 @@ export function isProxyBypassHost(host: string): boolean {
   return false;
 }
 
-function hostFromUrl(url: string): string {
-  const clean = url.replace(/^[a-zA-Z][a-zA-Z0-9+.-]*:\/\//, '');
-  const slash = clean.indexOf('/');
-  const authority = slash === -1 ? clean : clean.slice(0, slash);
-  const at = authority.lastIndexOf('@');
-  const hostPort = at === -1 ? authority : authority.slice(at + 1);
-  const colons = hostPort.split(':');
-  return colons.length > 2 ? colons.slice(0, colons.length - 1).join(':') : colons[0];
+/**
+ * Whether a connection to this host should be tunnelled.
+ *
+ * Three rules, in order. Loopback, private ranges and docker service names are
+ * never proxied — the Iran squid proxy only tunnels CONNECT to :443 and cannot
+ * reach an internal `mock:5000`, so this stays ahead of everything else. Then a
+ * provider's own `useProxy` declaration, if it claimed this host. Otherwise the
+ * long-standing default: if a proxy is configured, use it.
+ */
+export function shouldProxyHost(host: string): boolean {
+  if (isProxyBypassHost(host)) return false;
+  return lookupProxyRoute(host) ?? true;
 }
 
 /**
- * An agent that routes each connection either through the configured proxy (for
- * public Iranian providers) or directly (for loopback / docker `mock` / private
- * hosts). This keeps mock & local traffic off the Iran squid proxy, which only
- * tunnels HTTPS CONNECT to :443 and cannot reach internal `mock:5000` (hence the
- * spurious 503 the engine surfaced).
+ * An agent that routes each connection either through the configured proxy or
+ * directly, per `shouldProxyHost`.
  */
 class RoutingHttpAgent extends http.Agent {
   private readonly proxyAgent: HttpProxyAgent<string>;
@@ -82,8 +84,8 @@ class RoutingHttpAgent extends http.Agent {
   }
   addRequest(req: any, options: any): void {
     const host = String(options.hostname ?? options.host ?? '');
-    if (isProxyBypassHost(host)) (this.directAgent as any).addRequest(req, options);
-    else (this.proxyAgent as any).addRequest(req, options);
+    if (shouldProxyHost(host)) (this.proxyAgent as any).addRequest(req, options);
+    else (this.directAgent as any).addRequest(req, options);
   }
 }
 
@@ -97,8 +99,8 @@ class RoutingHttpsAgent extends https.Agent {
   }
   addRequest(req: any, options: any): void {
     const host = String(options.hostname ?? options.host ?? '');
-    if (isProxyBypassHost(host)) (this.directAgent as any).addRequest(req, options);
-    else (this.proxyAgent as any).addRequest(req, options);
+    if (shouldProxyHost(host)) (this.proxyAgent as any).addRequest(req, options);
+    else (this.directAgent as any).addRequest(req, options);
   }
 }
 
@@ -131,7 +133,7 @@ export function buildWebSocketAgent(url: string): Agent | undefined {
   if (!proxy) {
     return undefined;
   }
-  if (isProxyBypassHost(hostFromUrl(url))) {
+  if (!shouldProxyHost(hostFromUrl(url))) {
     return undefined;
   }
   const auth = proxyAuth(proxy);

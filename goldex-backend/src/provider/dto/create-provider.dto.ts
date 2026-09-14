@@ -69,6 +69,15 @@ export class CreateProviderDto {
   @IsOptional()
   config?: Record<string, any>;
 
+  @ApiPropertyOptional({
+    default: true,
+    description:
+      "Route this provider's traffic through the engine's outbound proxy. Leave on for providers only reachable from inside Iran.",
+  })
+  @IsBoolean()
+  @IsOptional()
+  useProxy?: boolean;
+
   @IsBoolean()
   @IsOptional()
   active?: boolean;
