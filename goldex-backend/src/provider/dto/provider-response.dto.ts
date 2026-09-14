@@ -1,4 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from "@nestjs/swagger";
+import { CurrencyUnit } from "../../shared/currency/currency-unit";
 
 /**
  * A pricing provider, as the admin panel sees it.
@@ -41,6 +42,14 @@ export class ProviderDto {
 
   @ApiPropertyOptional({ nullable: true })
   verifyCodeUrl?: string | null;
+
+  @ApiProperty({
+    enum: CurrencyUnit,
+    example: CurrencyUnit.TOMAN,
+    description:
+      "Unit this provider quotes in. Toman quotes are multiplied by ten on ingest so the books stay Rial-only.",
+  })
+  priceUnit: CurrencyUnit;
 
   @ApiProperty({
     example: true,
@@ -221,4 +230,14 @@ export class ProviderPriceItemDto {
 
   @ApiPropertyOptional()
   sellPricePerGram?: number;
+}
+
+export class ProviderProxyStatusDto {
+  @ApiProperty({
+    type: Boolean,
+    nullable: true,
+    description:
+      "True when the pricing engine has an outbound proxy configured, false when it has none, null when it has not reported yet.",
+  })
+  configured: boolean | null;
 }

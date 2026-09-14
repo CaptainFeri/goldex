@@ -286,4 +286,44 @@ describe('provider admin mirror', () => {
       expect(row.active).toBeFalsy();
     });
   });
+
+  describe('whether the proxy setting can take effect at all', () => {
+    /**
+     * Only the pricing engine knows whether it has a proxy — that is its
+     * environment, not this one's. Without that fact the panel would offer a
+     * "use proxy" tick that quietly does nothing on a deployment with no proxy
+     * configured.
+     */
+    const redis = (raw: string | null) => ({
+      get: jest.fn().mockResolvedValue(raw),
+    });
+
+    const read = async (raw: string | null) => {
+      const { PricingRedisService } = await import(
+        '../admin-monitoring/pricing-redis.service'
+      );
+      const service = Object.create(PricingRedisService.prototype);
+      Object.defineProperty(service, 'client', { value: redis(raw) });
+      return service.getProxyConfigured();
+    };
+
+    it('reports a configured proxy', async () => {
+      await expect(read(JSON.stringify({ configured: true }))).resolves.toBe(true);
+    });
+
+    it('reports the absence of one', async () => {
+      await expect(read(JSON.stringify({ configured: false }))).resolves.toBe(false);
+    });
+
+    // Not the same as "no": the engine may simply not have published yet, and
+    // telling the admin there is no proxy would be a guess presented as fact.
+    it('says it does not know when the engine has not reported', async () => {
+      await expect(read(null)).resolves.toBeNull();
+    });
+
+    it('says it does not know rather than trusting a malformed value', async () => {
+      await expect(read('not json')).resolves.toBeNull();
+      await expect(read(JSON.stringify({ configured: 'yes' }))).resolves.toBeNull();
+    });
+  });
 });

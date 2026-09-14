@@ -203,6 +203,11 @@ services:
       GOLDEX_PRICING_REDIS_HOST: redis
       GOLDEX_PRICING_REDIS_PORT: 6379
       GOLDEX_RABBITMQ_HOST: rabbitmq
+      # Reaching the provider-activation browser. Stated here rather than left
+      # to env_file because the backend refuses to drive it without the token,
+      # and a missing one should be obvious in the compose file, not a 503.
+      PROVIDER_BROWSER_URL: http://goldex-provider-browser:3000
+      BROWSER_SERVICE_TOKEN: ${BROWSER_SERVICE_TOKEN:?BROWSER_SERVICE_TOKEN must be set}
       BASE_APP_POSTGRES_URL: postgres
       GOLDEX_AUTH_POSTGRES_URL: postgres
       GOLDEX_AUTH_POSTGRES_USERNAME: ${GOLDEX_APP_POSTGRES_USERNAME:-goldex_app}

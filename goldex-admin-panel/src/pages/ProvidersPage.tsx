@@ -67,6 +67,19 @@ function ProviderForm({
   const editing = !!initial?.id;
   const [form, setForm] = useState(() => providerFormInitial(initial));
 
+  // Whether a proxy exists at all is the engine's environment, not something
+  // this panel can know. Null means it has not reported yet — which is not the
+  // same as "there is none", so nothing is claimed in that case.
+  const proxyStatus = useQuery({
+    queryKey: ["providers-proxy-status"],
+    queryFn: async () =>
+      unwrap<{ configured: boolean | null }>(
+        (await api.get("/admin/providers/proxy-status")).data,
+      ),
+    staleTime: 60_000,
+  });
+  const proxyMissing = proxyStatus.data?.configured === false;
+
   const save = useMutation({
     mutationFn: (p: any) =>
       editing
@@ -158,6 +171,11 @@ function ProviderForm({
           <div className="muted" style={{ fontSize: 12, marginTop: 4 }}>
             اگر این تأمین‌کننده فقط از داخل ایران در دسترس است، این گزینه را روشن بگذارید؛ همه ترافیک آن — دریافت و تایید کد، سفارش‌ها، موجودی و سوکت قیمت — از پروکسی خروجی موتور عبور می‌کند. برای تأمین‌کننده‌ای که مستقیم در دسترس است خاموشش کنید.
           </div>
+          {proxyMissing && form.useProxy && (
+            <div className="error-text" style={{ fontSize: 12, marginTop: 4 }}>
+              ⚠ روی این استقرار هیچ پروکسی‌ای تنظیم نشده (<span dir="ltr">PROXY_HOST</span> خالی است)، پس این گزینه فعلاً بی‌اثر است و ترافیک مستقیم می‌رود. تنظیم آن با مدیر سرور است.
+            </div>
+          )}
         </div>
         {save.isError && <div className="error-text">{apiError(save.error)}</div>}
         <div className="row" style={{ justifyContent: "flex-end", gap: 10 }}>

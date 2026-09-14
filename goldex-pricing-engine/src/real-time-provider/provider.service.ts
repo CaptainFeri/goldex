@@ -18,6 +18,7 @@ import {
   clearProxyRoutes,
   registerProxyRoute,
 } from '../common/http/proxy-route.registry';
+import { readProxyOptions } from '../common/http/proxy.config';
 
 @Injectable()
 export class ProviderService implements OnApplicationBootstrap {
@@ -87,6 +88,15 @@ export class ProviderService implements OnApplicationBootstrap {
   async publishRegistry(): Promise<void> {
     const entities = await this.providerRepo.find();
     await this.redisService.setJson('providers:registry', entities, 3600);
+
+    // Whether a proxy exists at all is this process's knowledge, and the panel
+    // needs it: a provider's `useProxy` is inert without one, and an admin
+    // ticking a box that does nothing has no way to tell.
+    await this.redisService.setJson(
+      'engine:proxy',
+      { configured: !!readProxyOptions() },
+      3600,
+    );
   }
 
   /**

@@ -20,6 +20,7 @@ import {
   ProviderDealSnapshotDto,
   ProviderDto,
   ProviderPriceItemDto,
+  ProviderProxyStatusDto,
   ProviderStatusDto,
 } from './dto/provider-response.dto';
 import { InjectRepository } from '@nestjs/typeorm';
@@ -64,6 +65,17 @@ export class ProviderController {
   @ApiEnvelopeResponse(ProviderDto, { isArray: true })
   async findAll() {
     return { data: await this.providerService.findAll() };
+  }
+
+  @Get('proxy-status')
+  @ApiOperation({
+    summary: 'Whether the pricing engine has an outbound proxy at all',
+    description:
+      "Without one, a provider's \"use proxy\" setting cannot take effect. Null means the engine has not reported yet, which is not the same as no.",
+  })
+  @ApiEnvelopeResponse(ProviderProxyStatusDto)
+  async proxyStatus() {
+    return { data: { configured: await this.pricingRedis.getProxyConfigured() } };
   }
 
   @Get(':id')

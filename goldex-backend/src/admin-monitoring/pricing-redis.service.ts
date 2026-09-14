@@ -84,6 +84,26 @@ export class PricingRedisService implements OnModuleDestroy {
     }
   }
 
+  /**
+   * Whether the pricing-engine has an outbound proxy configured at all, key
+   * `engine:proxy`.
+   *
+   * Only that process knows — the proxy is its environment, not this one's. A
+   * provider's `useProxy` does nothing without it, so the panel shows this
+   * rather than letting an admin tick a box that cannot take effect. Unknown
+   * when the engine has not published yet, which is not the same as "no".
+   */
+  async getProxyConfigured(): Promise<boolean | null> {
+    const raw = await this.client.get("engine:proxy");
+    if (!raw) return null;
+    try {
+      const parsed = JSON.parse(raw) as { configured?: unknown };
+      return typeof parsed?.configured === "boolean" ? parsed.configured : null;
+    } catch {
+      return null;
+    }
+  }
+
   /** Most-recent-first price history for a single (provider, itemId). */
   async getHistory(providerKey: string, itemId: number, limit = 200): Promise<ProviderPriceData[]> {
     const key = `price:history:${providerKey}:${itemId}`;
