@@ -6,6 +6,7 @@ import {
   Logger,
   NotFoundException,
   OnModuleDestroy,
+  ServiceUnavailableException,
 } from '@nestjs/common';
 import type { Browser, BrowserContext, CDPSession, Page } from 'playwright';
 import { captureAuth, mightCarryAuth, type CapturedAuth } from './auth-capture';
@@ -72,13 +73,24 @@ export class SessionService implements OnModuleDestroy {
     // Imported lazily so the service can be constructed — and its pure logic
     // tested — without a browser binary present.
     const { chromium } = await import('playwright');
-    this.browser = await chromium.launch({
-      // The image normally ships the matching build, but a host that provides
-      // its own Chromium can point at it rather than fetching a second copy.
-      executablePath: process.env.CHROMIUM_EXECUTABLE_PATH?.trim() || undefined,
-      args: ['--no-sandbox', '--disable-dev-shm-usage'],
-    });
-    return this.browser;
+    try {
+      this.browser = await chromium.launch({
+        // The image normally ships the matching build, but a host that provides
+        // its own Chromium can point at it rather than fetching a second copy.
+        executablePath: process.env.CHROMIUM_EXECUTABLE_PATH?.trim() || undefined,
+        args: ['--no-sandbox', '--disable-dev-shm-usage'],
+      });
+      return this.browser;
+    } catch (err) {
+      // A launch failure is a deployment fault, not a bad request, and it must
+      // arrive saying so. Left to Nest it becomes a bare 500 that reaches the
+      // admin as "Internal server error" — which is how a Playwright version
+      // that does not match the image's browser build looked from the panel:
+      // like nothing in particular.
+      const message = (err as Error).message?.split('\n')[0] ?? String(err);
+      this.logger.error(`Could not launch a browser: ${message}`);
+      throw new ServiceUnavailableException(`Could not launch a browser: ${message}`);
+    }
   }
 
   private proxyOption(useProxy: boolean | undefined) {

@@ -51,6 +51,44 @@ describe('browser session', () => {
       await fn();
     }, timeout);
 
+  describe('a browser that will not start', () => {
+    /**
+     * How a version mismatch between the Playwright client and the browser the
+     * image ships actually presents: the launch throws, and without this the
+     * admin was told "Internal server error" and learned nothing about it.
+     */
+    it('says what went wrong instead of failing blankly', async () => {
+      const previous = process.env.CHROMIUM_EXECUTABLE_PATH;
+      process.env.CHROMIUM_EXECUTABLE_PATH = '/nonexistent/chrome';
+      try {
+        await expect(
+          service.open({ providerKey: 'p', loginUrl: 'https://panel.example.ir/login' }),
+        ).rejects.toThrow(/Could not launch a browser/);
+      } finally {
+        if (previous === undefined) delete process.env.CHROMIUM_EXECUTABLE_PATH;
+        else process.env.CHROMIUM_EXECUTABLE_PATH = previous;
+      }
+    }, 60000);
+
+    it('reports it as a service fault, not a bad request', async () => {
+      const previous = process.env.CHROMIUM_EXECUTABLE_PATH;
+      process.env.CHROMIUM_EXECUTABLE_PATH = '/nonexistent/chrome';
+      try {
+        await service
+          .open({ providerKey: 'p', loginUrl: 'https://panel.example.ir/login' })
+          .then(
+            () => {
+              throw new Error('expected the launch to fail');
+            },
+            (err: any) => expect(err.getStatus?.()).toBe(503),
+          );
+      } finally {
+        if (previous === undefined) delete process.env.CHROMIUM_EXECUTABLE_PATH;
+        else process.env.CHROMIUM_EXECUTABLE_PATH = previous;
+      }
+    }, 60000);
+  });
+
   describe('refusals that need no browser', () => {
     it('will not open a provider with no public URL', async () => {
       await expect(

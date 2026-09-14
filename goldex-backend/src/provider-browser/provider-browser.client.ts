@@ -75,9 +75,12 @@ export class ProviderBrowserClient {
       const status = err?.response?.status;
       const message =
         err?.response?.data?.message ?? err?.message ?? 'The provider browser did not answer';
-      if (status && status >= 400 && status < 500) {
-        // Its refusals are the admin's to see — "already open", "no public URL",
-        // "nothing captured yet" are all answers, not outages.
+      // Its refusals are the admin's to see — "already open", "no public URL",
+      // "nothing captured yet" are all answers, not outages. So is a 503: the
+      // service saying it cannot serve (a browser it could not launch, say) is
+      // a real answer about a real condition, and relabelling it 502 would only
+      // blur where the fault is.
+      if (status && ((status >= 400 && status < 500) || status === 503)) {
         throw new HttpException(message, status);
       }
       this.logger.error(`provider-browser ${method.toUpperCase()} ${path} failed: ${message}`);
