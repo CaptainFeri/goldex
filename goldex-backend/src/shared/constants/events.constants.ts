@@ -73,6 +73,17 @@ export const P2pEvents = {
   WITHDRAW_COMPLETED: "p2p.withdraw_completed",
 } as const;
 
+export const SymbolEvents = {
+  /**
+   * cbp refused a symbol sync.
+   *
+   * Not retryable — redelivering a configuration cbp has already rejected
+   * fails identically — so it needs a person, which is why it is an event
+   * rather than a log line.
+   */
+  SYNC_FAILED: "symbol.sync_failed",
+} as const;
+
 export const WarehouseEvents = {
   /**
    * Gold has been settled for with a provider but is not yet a package.

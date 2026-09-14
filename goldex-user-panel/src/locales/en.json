@@ -333,7 +333,7 @@
     "destinationIbanHint": "Depositors will transfer to this IBAN. It need not be in your own name.",
     "collateralLocked": "Backing open trades",
     "collateralAvailable": "Free to trade against",
-    "gatewayPopupBlocked": "Your browser blocked the payment window."
+    "gatewayRedirecting": "Taking you to the payment gateway…"
   },
   "warehouse": {
     "title": "Warehouse",

@@ -80,6 +80,18 @@ describe("a deposit refused before it reaches a gateway", () => {
     expect(saved[0].operation).toBe(PaymentOperationEnum.DEPOSIT);
   });
 
+  it("records the failure with no symbol on it, since none was resolved", async () => {
+    // symbol_id was NOT NULL, so saving this row threw and the report never
+    // went out — the silence this whole path exists to end.
+    const { service, saved } = build(null);
+
+    await expect(service.createDepositFromCommand(cmd)).rejects.toThrow();
+
+    expect(saved).toHaveLength(1);
+    expect(saved[0].symbolId).toBeNull();
+    expect(saved[0].status).toBe(PaymentStatusEnum.FAILED);
+  });
+
   it("still reports an unknown symbol", async () => {
     const { service, failures } = build(null);
     await expect(service.createDepositFromCommand(cmd)).rejects.toThrow();

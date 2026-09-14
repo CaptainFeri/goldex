@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { cbpApi, CbpGatewayHealth, CbpPayment } from "../api/cbp";
 import { apiError } from "../api/client";
 import { Card, Loading, ErrorState, Empty, Badge, Modal } from "../components/ui";
@@ -76,6 +76,7 @@ export default function CbpPage() {
   const [userId, setUserId] = useState("");
   const [identifier, setIdentifier] = useState("");
   const [detail, setDetail] = useState<CbpPayment | null>(null);
+  const qc = useQueryClient();
 
   const health = useQuery({
     queryKey: ["cbp-health"],
@@ -84,6 +85,10 @@ export default function CbpPage() {
   const gateways = useQuery({
     queryKey: ["cbp-gateways"],
     queryFn: () => cbpApi.getGateways(),
+  });
+  const resync = useMutation({
+    mutationFn: () => cbpApi.resyncSymbols(),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["cbp-gateways"] }),
   });
   const list = useQuery({
     queryKey: ["cbp-payments", page, status, operation, gateway, userId, identifier],
@@ -146,6 +151,73 @@ export default function CbpPage() {
                 )}
               </div>
             ))}
+          </div>
+        )}
+      </Card>
+
+      <Card
+        title="درگاه‌ها و نمادهای متصل"
+        action={
+          <button
+            className="btn sm"
+            onClick={() => resync.mutate()}
+            disabled={resync.isPending}
+            title="انتشار دوبارهٔ تنظیمات همهٔ نمادها به سرویس پرداخت"
+          >
+            {resync.isPending ? <span className="spin" /> : "هماهنگی مجدد نمادها"}
+          </button>
+        }
+      >
+        <p style={{ fontSize: 12, color: "var(--text-faint)", marginTop: 0 }}>
+          این فهرست از روی نمادهایی خوانده می‌شود که سرویس پرداخت واقعاً در اختیار دارد، نه آنچه پنل
+          ثبت کرده. اگر یک نماد اینجا دیده نمی‌شود یعنی تنظیماتش به سرویس پرداخت نرسیده و واریز یا
+          برداشت درگاهی‌اش کار نخواهد کرد.
+        </p>
+
+        {resync.isSuccess && (
+          <div style={{ fontSize: 12, color: "var(--green)", marginBottom: 10 }}>
+            تنظیمات {fmtNum(resync.data?.synced, 0)} نماد دوباره منتشر شد. اگر باز هم نمادی
+            نیامد، دلیلش در کارتابل ثبت می‌شود.
+          </div>
+        )}
+        {resync.isError && <ErrorState message={apiError(resync.error)} />}
+
+        {gateways.isLoading ? (
+          <Loading label="در حال خواندن درگاه‌ها…" />
+        ) : gateways.isError ? (
+          <ErrorState message={apiError(gateways.error)} />
+        ) : (
+          <div className="grid" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: 12 }}>
+            {(gateways.data ?? []).map((g: any) => {
+              const deposit = g.symbols?.deposit ?? [];
+              const withdraw = g.symbols?.withdraw ?? [];
+              const unused = deposit.length === 0 && withdraw.length === 0;
+
+              return (
+                <div key={g.code} className="card" style={{ padding: 14 }}>
+                  <div className="row spread">
+                    <strong>{g.name}</strong>
+                    <span style={{ fontSize: 11, color: "var(--text-faint)" }}>
+                      {g.category} / {g.kind}
+                    </span>
+                  </div>
+                  <div dir="ltr" style={{ textAlign: "left", fontSize: 11, marginTop: 4 }} className="mono">
+                    {g.code}
+                  </div>
+
+                  {unused ? (
+                    <div style={{ marginTop: 12, fontSize: 12, color: "var(--gold)" }}>
+                      هیچ نمادی به این درگاه متصل نیست — از پنل نمادها اتصالش دهید.
+                    </div>
+                  ) : (
+                    <div style={{ marginTop: 12, display: "grid", gap: 10 }}>
+                      <SymbolBindings label="واریز" rows={deposit} />
+                      <SymbolBindings label="برداشت" rows={withdraw} />
+                    </div>
+                  )}
+                </div>
+              );
+            })}
           </div>
         )}
       </Card>
@@ -280,5 +352,48 @@ export default function CbpPage() {
         </Modal>
       )}
     </>
+  );
+}
+
+/**
+ * The symbols routed at one gateway in one direction.
+ *
+ * An inactive symbol is still listed: it is configured against this gateway
+ * and will start using it the moment it is switched back on, which is exactly
+ * what someone about to change the gateway needs to know.
+ */
+function SymbolBindings({
+  label,
+  rows,
+}: {
+  label: string;
+  rows: { slug: string; name: string; isActive: boolean; isDefault: boolean }[];
+}) {
+  return (
+    <div>
+      <div style={{ fontSize: 11, color: "var(--text-faint)", marginBottom: 4 }}>{label}</div>
+      {rows.length === 0 ? (
+        <div style={{ fontSize: 12, color: "var(--text-faint)" }}>—</div>
+      ) : (
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+          {rows.map((r) => (
+            <span
+              key={r.slug}
+              title={r.isActive ? r.name : `${r.name} — غیرفعال`}
+              style={{
+                fontSize: 11,
+                padding: "3px 8px",
+                borderRadius: 999,
+                border: "1px solid var(--border)",
+                opacity: r.isActive ? 1 : 0.5,
+              }}
+            >
+              {r.slug}
+              {r.isDefault && <span style={{ color: "var(--gold)", marginInlineStart: 4 }}>پیش‌فرض</span>}
+            </span>
+          ))}
+        </div>
+      )}
+    </div>
   );
 }

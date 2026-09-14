@@ -2,6 +2,7 @@ import { Injectable, NotFoundException } from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
 import { Repository } from "typeorm";
 import { PaymentEntity } from "../entity/payment.entity";
+import { PaymentSymbolEntity } from "../../symbols/entity/payment-symbol.entity";
 
 export interface PaymentListFilters {
   page?: number;
@@ -31,6 +32,8 @@ export interface PaginatedResult<T> {
 @Injectable()
 export class CbpAdminService {
   constructor(
+    @InjectRepository(PaymentSymbolEntity)
+    private readonly symbolRepo: Repository<PaymentSymbolEntity>,
     @InjectRepository(PaymentEntity)
     private readonly paymentRepo: Repository<PaymentEntity>,
   ) {}
@@ -94,4 +97,60 @@ export class CbpAdminService {
     }
     return payment;
   }
+  /**
+   * Every gateway with the symbols actually pointed at it.
+   *
+   * The gateway list on its own says a provider exists, not whether anything
+   * uses it — and a gateway configured on no symbol looks identical to one
+   * serving every deposit in the system. Which symbols route to it, in which
+   * direction, and which of them call it their default is the thing an
+   * operator needs before touching a gateway at all.
+   *
+   * Read from the symbols cbp actually holds, not from what the backend
+   * believes: a sync it refused leaves the two disagreeing, and this is the
+   * side that decides whether a payment goes through.
+   */
+  async gatewayBindings(): Promise<
+    Record<
+      string,
+      {
+        deposit: { slug: string; name: string; isActive: boolean; isDefault: boolean }[];
+        withdraw: { slug: string; name: string; isActive: boolean; isDefault: boolean }[];
+      }
+    >
+  > {
+    const symbols = await this.symbolRepo.find({ order: { slug: "ASC" } });
+    const bindings: Record<string, any> = {};
+
+    const bind = (
+      code: string,
+      direction: "deposit" | "withdraw",
+      symbol: PaymentSymbolEntity,
+      isDefault: boolean,
+    ) => {
+      bindings[code] ??= { deposit: [], withdraw: [] };
+      bindings[code][direction].push({
+        slug: symbol.slug,
+        name: symbol.name,
+        isActive: symbol.isActive,
+        isDefault,
+      });
+    };
+
+    for (const symbol of symbols) {
+      // A symbol with the gateway switch off routes nowhere, whatever lists it
+      // still carries from an earlier configuration.
+      if (!symbol.hasPaymentGateway) continue;
+
+      for (const code of symbol.depositGateways ?? []) {
+        bind(code, "deposit", symbol, symbol.defaultDepositGateway === code);
+      }
+      for (const code of symbol.withdrawGateways ?? []) {
+        bind(code, "withdraw", symbol, symbol.defaultWithdrawGateway === code);
+      }
+    }
+
+    return bindings;
+  }
+
 }

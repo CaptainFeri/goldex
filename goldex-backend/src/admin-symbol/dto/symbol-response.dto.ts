@@ -185,3 +185,9 @@ export class SymbolCapabilitiesDto {
   @ApiPropertyOptional({ description: "Why the registry could not be read" })
   gatewayRegistryError?: string;
 }
+
+/** What a re-publish of every symbol did. */
+export class SymbolResyncDto {
+  @ApiProperty({ example: 7, description: "تعداد نمادهایی که تنظیماتشان دوباره منتشر شد" })
+  synced: number;
+}

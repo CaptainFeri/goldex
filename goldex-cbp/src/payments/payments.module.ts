@@ -5,6 +5,7 @@ import { CbpAdminConsumer } from "./admin/cbp-admin.consumer";
 import { CbpAdminService } from "./admin/cbp-admin.service";
 import { KainoCallbackConsumer } from "./callbacks/kaino-callback.consumer";
 import { PaymentEntity } from "./entity/payment.entity";
+import { PaymentSymbolEntity } from "../symbols/entity/payment-symbol.entity";
 import { GatewaysModule } from "./gateways/gateways.module";
 import { PaymentEventsService } from "./payment-events.service";
 import { PaymentsService } from "./payments.service";
@@ -15,7 +16,7 @@ import { PaymentsService } from "./payments.service";
  */
 @Module({
   imports: [
-    TypeOrmModule.forFeature([PaymentEntity]),
+    TypeOrmModule.forFeature([PaymentEntity, PaymentSymbolEntity]),
     SymbolsModule,
     GatewaysModule,
   ],
