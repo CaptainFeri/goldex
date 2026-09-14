@@ -1,4 +1,9 @@
-import { captureAuth, findSession, mightCarryAuth } from './auth-capture';
+import {
+  captureAuth,
+  captureFromStorage,
+  findSession,
+  mightCarryAuth,
+} from './auth-capture';
 
 /**
  * Recognising a login from outside the page, which is what replaces the script
@@ -145,6 +150,84 @@ describe('capturing credentials', () => {
     // The same session, copied from a different place in the network tab.
     it('reads it just as well without the envelope', () => {
       expect(captureAuth(mockVerifyOtp.Data.user, 'u')?.auth.shopkeeperId).toBe('shopA');
+    });
+  });
+
+  describe('reading the session out of page storage', () => {
+    /**
+     * A single-page app commonly answers the login over the network and then
+     * keeps what it got in localStorage. From then on the session exists only
+     * there, so watching responses alone can watch a perfectly good login go
+     * past and catch nothing.
+     */
+    const session = {
+      uId: 'mock-uid-shopA',
+      token: 'mock-token-shopA',
+      roleType: '0',
+      sessionId: 'mock-session-shopA',
+      shopkeeperId: 'shopA',
+    };
+
+    it('reads a session kept whole under one key', () => {
+      const captured = captureFromStorage(
+        { 'ng2-webstorage|user': JSON.stringify(session), theme: 'dark' },
+        'localStorage',
+      );
+      expect(captured?.auth).toEqual(session);
+      expect(captured?.sourceUrl).toContain('ng2-webstorage|user');
+    });
+
+    it('reads one wrapped the way the login response wraps it', () => {
+      const captured = captureFromStorage(
+        { auth: JSON.stringify({ Data: { user: session } }) },
+        'localStorage',
+      );
+      expect(captured?.auth).toEqual(session);
+    });
+
+    it('reads the fields spread one per key', () => {
+      const captured = captureFromStorage({ ...session, locale: 'fa' }, 'localStorage');
+      expect(captured?.auth).toEqual(session);
+      expect(captured?.auth).not.toHaveProperty('locale');
+    });
+
+    it('keeps only the fields that belong to a session', () => {
+      const captured = captureFromStorage(
+        { ...session, redirectUrl: '/dashboard', lastSeen: '2026-01-01' },
+        'localStorage',
+      );
+      expect(Object.keys(captured!.auth).sort()).toEqual(
+        ['roleType', 'sessionId', 'shopkeeperId', 'token', 'uId'].sort(),
+      );
+    });
+
+    describe('what it refuses to call a session', () => {
+      // Pages keep CSRF tokens, push tokens and analytics keys in storage.
+      // Storing one of those as a provider's credentials would activate a
+      // provider that then cannot authenticate — worse than not activating it.
+      it('ignores a lone token with nothing of a session around it', () => {
+        expect(captureFromStorage({ token: 'csrf-abc123' }, 'localStorage')).toBeNull();
+      });
+
+      it('ignores an unrelated token beside unrelated data', () => {
+        expect(
+          captureFromStorage({ token: 'ga-123', theme: 'dark', locale: 'fa' }, 'localStorage'),
+        ).toBeNull();
+      });
+
+      it('ignores empty storage', () => {
+        expect(captureFromStorage({}, 'localStorage')).toBeNull();
+      });
+
+      it('ignores an entry that is not JSON', () => {
+        expect(captureFromStorage({ blob: 'not json at all' }, 'localStorage')).toBeNull();
+      });
+
+      it('ignores a session whose token is blank', () => {
+        expect(
+          captureFromStorage({ ...session, token: '   ' }, 'localStorage'),
+        ).toBeNull();
+      });
     });
   });
 });

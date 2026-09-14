@@ -12,9 +12,19 @@ there is nothing to drive, and Zaryar's verify body already carries a
 `CaptchaToken` field.
 
 So a person does the login instead, in a real browser, and the credentials are
-read out of the browser's network layer rather than by injecting a script into
-the provider's page. Nothing is injected, so nothing breaks when the provider
-redesigns.
+read from outside the page rather than by injecting a script into it. Nothing
+is injected, so nothing breaks when the provider redesigns.
+
+They are read from two places, because providers differ:
+
+- **the network layer** — the login response itself, for a provider that
+  answers with the session;
+- **the page's own storage** — `localStorage` and `sessionStorage`, polled
+  while the session is open, for a single-page app that keeps the session there
+  and nowhere else. Watching responses alone would see that login succeed and
+  catch nothing.
+
+Whichever sees it first wins, and the poll stops once something is captured.
 
 ## How it fits
 

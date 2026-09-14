@@ -9,7 +9,12 @@ import {
   ServiceUnavailableException,
 } from '@nestjs/common';
 import type { Browser, BrowserContext, CDPSession, Page } from 'playwright';
-import { captureAuth, mightCarryAuth, type CapturedAuth } from './auth-capture';
+import {
+  captureAuth,
+  captureFromStorage,
+  mightCarryAuth,
+  type CapturedAuth,
+} from './auth-capture';
 import { allowedHostsFor, isNavigationAllowed } from './navigation-allowlist';
 
 export interface OpenSessionRequest {
@@ -43,6 +48,7 @@ interface Session {
   expiresAt: number;
   captured: CapturedAuth | null;
   viewport: { width: number; height: number };
+  storagePoll: NodeJS.Timeout;
 }
 
 export interface SessionEvents {
@@ -81,6 +87,14 @@ export function explainNavigationFailure(error: string): string {
 
 /** How long a session may stay open with nobody finishing it. */
 const SESSION_TTL_MS = 10 * 60 * 1000;
+
+/**
+ * How often the page's own storage is read.
+ *
+ * A person is logging in by hand, so a second and a half is imperceptible to
+ * them and costs one tiny evaluate per tick.
+ */
+const STORAGE_POLL_MS = 1500;
 
 @Injectable()
 export class SessionService implements OnModuleDestroy {
@@ -203,6 +217,7 @@ export class SessionService implements OnModuleDestroy {
       expiry: setTimeout(() => void this.close(id, 'expired'), SESSION_TTL_MS),
       captured: null,
       viewport,
+      storagePoll: setInterval(() => void this.inspectStorage(id), STORAGE_POLL_MS),
     };
     this.sessions.set(id, session);
     this.byProvider.set(request.providerKey, id);
@@ -244,12 +259,58 @@ export class SessionService implements OnModuleDestroy {
       const captured = captureAuth(body, response.url());
       if (!captured) return;
 
-      session.captured = captured;
-      this.logger.log(`[${sessionId}] captured credentials from ${captured.sourceUrl}`);
-      this.events?.onCaptured(sessionId, captured);
+      this.finishCapture(sessionId, captured);
     } catch {
       /* a body that cannot be read is simply not a login response */
     }
+  }
+
+  /**
+   * Reads the page's own storage, for a login that leaves its session there
+   * rather than in a response worth reading.
+   *
+   * Polled rather than hooked: there is no event for "the app wrote to
+   * localStorage", and a person doing a login by hand will not notice a second
+   * and a half. It stops as soon as something is captured.
+   */
+  private async inspectStorage(sessionId: string): Promise<void> {
+    const session = this.sessions.get(sessionId);
+    if (!session || session.captured) return;
+    try {
+      const storages = await session.page.evaluate(() => {
+        const read = (store: Storage): Record<string, string> => {
+          const out: Record<string, string> = {};
+          for (let i = 0; i < store.length; i++) {
+            const key = store.key(i);
+            if (key) out[key] = store.getItem(key) ?? '';
+          }
+          return out;
+        };
+        return {
+          local: read(window.localStorage),
+          session: read(window.sessionStorage),
+        };
+      });
+
+      const captured =
+        captureFromStorage(storages.local, 'localStorage') ??
+        captureFromStorage(storages.session, 'sessionStorage');
+      if (!captured) return;
+
+      this.finishCapture(sessionId, captured);
+    } catch {
+      /* the page may be navigating, or gone; the next tick will try again */
+    }
+  }
+
+  /** Records a captured session once, from whichever side saw it first. */
+  private finishCapture(sessionId: string, captured: CapturedAuth): void {
+    const session = this.sessions.get(sessionId);
+    if (!session || session.captured) return;
+    session.captured = captured;
+    clearInterval(session.storagePoll);
+    this.logger.log(`[${sessionId}] captured credentials from ${captured.sourceUrl}`);
+    this.events?.onCaptured(sessionId, captured);
   }
 
   get(id: string): SessionSummary {
@@ -292,6 +353,7 @@ export class SessionService implements OnModuleDestroy {
     if (!session) return;
 
     clearTimeout(session.expiry);
+    clearInterval(session.storagePoll);
     this.sessions.delete(id);
     if (this.byProvider.get(session.providerKey) === id) {
       this.byProvider.delete(session.providerKey);

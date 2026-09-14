@@ -91,3 +91,73 @@ export function mightCarryAuth(contentType: string, size: number): boolean {
   // A login response is small. A megabyte of JSON is a data export, not a session.
   return size <= 1_000_000;
 }
+
+/**
+ * Fields that mark a stored value as a provider session rather than any other
+ * token a page happens to keep.
+ */
+const SESSION_COMPANIONS = ['uId', 'userId', 'sessionId', 'shopkeeperId', 'roleType'];
+
+function scalarsOf(source: Record<string, unknown>): Record<string, string | number> {
+  const out: Record<string, string | number> = {};
+  for (const [key, value] of Object.entries(source)) {
+    if (typeof value === 'string') out[key] = value.trim();
+    else if (typeof value === 'number') out[key] = value;
+  }
+  return out;
+}
+
+/**
+ * Reads the session out of a page's own storage.
+ *
+ * Not every provider's login puts the session on the wire in a form worth
+ * reading. A single-page app commonly answers the login over the network and
+ * then keeps what it got in `localStorage`, and from then on the session exists
+ * only there — so watching responses alone can watch a perfectly successful
+ * login go by and catch nothing.
+ *
+ * Two shapes are read, because both occur:
+ *
+ *  - one entry holding the whole session as JSON, under whatever key the app
+ *    chose;
+ *  - the fields spread across separate entries, one per key.
+ *
+ * A token alone is not enough to call something a session. Pages keep CSRF
+ * tokens, push tokens and analytics keys in storage too, and storing one of
+ * those as a provider's credentials would activate a provider that cannot
+ * authenticate. So a flat match also has to carry at least one field that
+ * belongs to a provider session.
+ */
+export function captureFromStorage(
+  entries: Record<string, string>,
+  sourceLabel: string,
+): CapturedAuth | null {
+  // A whole session kept under one key.
+  for (const [key, raw] of Object.entries(entries)) {
+    if (!raw || (raw[0] !== '{' && raw[0] !== '[')) continue;
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(raw);
+    } catch {
+      continue;
+    }
+    const session = findSession(parsed);
+    if (session) {
+      const auth = scalarsOf(session);
+      if (auth.token) return { auth, sourceUrl: `${sourceLabel}[${key}]` };
+    }
+  }
+
+  // The fields spread one per key.
+  const flat = scalarsOf(entries);
+  const token = typeof flat.token === 'string' ? flat.token : '';
+  if (token && SESSION_COMPANIONS.some((field) => flat[field])) {
+    const auth: Record<string, string | number> = { token };
+    for (const field of SESSION_COMPANIONS) {
+      if (flat[field] !== undefined && flat[field] !== '') auth[field] = flat[field];
+    }
+    return { auth, sourceUrl: sourceLabel };
+  }
+
+  return null;
+}
