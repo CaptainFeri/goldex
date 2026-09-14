@@ -27,6 +27,10 @@ import { WarehouseService } from "../service/warehouse.service";
 import { PacketService } from "../service/packet.service";
 import { ConfirmMaterialInput, WarehouseRequestService } from "../service/warehouse-request.service";
 import { ConfirmMaterialPartDto } from "./dto/confirm-material.dto";
+import { MovementService } from "../service/movement.service";
+import { ManualMovementService } from "../service/manual-movement.service";
+import { RecordMovementDto } from "./dto/record-movement.dto";
+import { MovementQueryDto } from "./dto/movement-query.dto";
 import { AdminCreateWarehouseDto } from "./dto/admin-create-warehouse.dto";
 import { AdminUpdateWarehouseDto } from "./dto/admin-update-warehouse.dto";
 import { AdminCreatePacketDto } from "./dto/admin-create-packet.dto";
@@ -49,7 +53,9 @@ export class AdminWarehouseController {
   constructor(
     private readonly warehouseService: WarehouseService,
     private readonly packetService: PacketService,
-    private readonly requestService: WarehouseRequestService
+    private readonly requestService: WarehouseRequestService,
+    private readonly movementService: MovementService,
+    private readonly manualMovementService: ManualMovementService
   ) {}
   @Get("all")
   @ApiOperation({ summary: "List all warehouses (Admin)" })
@@ -339,7 +345,69 @@ export class AdminWarehouseController {
     return { data: await this.packetService.findUserInWarehousePackets(userId, warehouseId) };
   }
 
+  // -- Movements: the physical ledger, separate from the request paperwork --
+
+  @Get("movements")
+  @ApiOperation({
+    summary: "Warehouse movements",
+    description:
+      "Metal physically entering or leaving, whatever caused it. Distinct from requests: a request " +
+      "is paperwork that may never be fulfilled, and metal can move with no request behind it.",
+  })
+  @ApiResponse({ status: HttpStatus.OK, description: "Returns movements, newest first" })
+  async getMovements(@Query() query: MovementQueryDto) {
+    return { data: await this.movementService.findAll(query) };
+  }
+
+  @Get("movements/today")
+  @ApiOperation({ summary: "Today's inbound and outbound totals" })
+  @ApiResponse({ status: HttpStatus.OK, description: "Returns today's movement totals" })
+  async getTodayMovements(@Query("warehouseId") warehouseId?: string) {
+    return { data: await this.movementService.dailyTotals({ warehouseId }) };
+  }
+
+  @Post("movements")
+  @ApiOperation({
+    summary: "Record a movement by hand",
+    description:
+      "For metal that moved with no request behind it. Inbound may be attributed to a user or a " +
+      "provider; a user inbound credits their wallet with the confirmed net weight, exactly as a " +
+      "requested deposit does. Outbound is provider-only — releasing material to a user goes " +
+      "through a withdrawal request, which locks the balance and refunds the difference.",
+  })
+  @ApiResponse({ status: HttpStatus.CREATED, description: "Movement recorded" })
+  async recordMovement(@Req() req: AdminExpressRequest, @Body() dto: RecordMovementDto) {
+    const adminId = req.admin["id"];
+    return { data: await this.manualMovementService.record(dto, adminId) };
+  }
+
   // -- Warehouse routes with param (:id) — must be last --
+
+  @Get("summary")
+  @ApiOperation({
+    summary: "Warehouses with their inventory and package counts",
+    description: "Powers the warehouse list: one row per warehouse with what it currently holds.",
+  })
+  @ApiResponse({ status: HttpStatus.OK, description: "Returns warehouses with per-warehouse figures" })
+  async getWarehouseSummary(@Query() query: AdminWarehouseQueryDto) {
+    return { data: await this.warehouseService.listWithStats(query) };
+  }
+
+  @Get(":id/stats")
+  @ApiOperation({ summary: "Inventory, packages and pending requests for one warehouse" })
+  @ApiResponse({ status: HttpStatus.OK, description: "Returns the warehouse's figures" })
+  async getWarehouseStats(@Param("id") id: string) {
+    return { data: await this.warehouseService.getWarehouseStats(id) };
+  }
+
+  @Get(":id/movements")
+  @ApiOperation({ summary: "Movements for one warehouse" })
+  @ApiResponse({ status: HttpStatus.OK, description: "Returns the warehouse's movements" })
+  async getWarehouseMovements(@Param("id") id: string, @Query() query: MovementQueryDto) {
+    return { data: await this.movementService.findAll({ ...query, warehouseId: id }) };
+  }
+
+
 
   @Get(":id")
   @ApiOperation({ summary: "Get warehouse by ID (Admin)" })
