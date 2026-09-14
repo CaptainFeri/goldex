@@ -93,6 +93,7 @@ export class ProviderBrowserClient {
     loginUrl: string;
     otherUrls?: string[];
     useProxy?: boolean;
+    category?: string;
   }): Promise<BrowserSessionSummary> {
     return this.call<BrowserSessionSummary>('post', '/sessions', body);
   }

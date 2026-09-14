@@ -1,6 +1,7 @@
 import {
   allowedHostsFor,
   hostOf,
+  isAppDownload,
   isInternalHost,
   isNavigationAllowed,
 } from './navigation-allowlist';
@@ -137,6 +138,49 @@ describe('navigation allowlist', () => {
 
     it('returns nothing for a url it cannot parse', () => {
       expect(hostOf('nonsense')).toBe('');
+    });
+  });
+
+  describe('the app being pushed at the visitor', () => {
+    /**
+     * Provider sites routinely push their mobile app the moment a page loads.
+     * In a real browser a person closes it; here it starts a download in place
+     * of the page and the canvas stays blank. This browser cannot install an
+     * app, so nobody here wants the file.
+     */
+    it.each([
+      'https://panel.example.ir/downloads/app.apk',
+      'https://panel.example.ir/app.APK',
+      'https://panel.example.ir/ios/app.ipa',
+      'https://panel.example.ir/setup.exe',
+      'https://panel.example.ir/app.aab',
+    ])('refuses %s', (url) => {
+      expect(isAppDownload(url)).toBe(true);
+    });
+
+    it('refuses a store link', () => {
+      expect(isAppDownload('https://cafebazaar.ir/app/ir.example.app')).toBe(true);
+      expect(isAppDownload('https://myket.ir/app/ir.example.app')).toBe(true);
+      expect(isAppDownload('bazaar://details?id=ir.example.app')).toBe(true);
+    });
+
+    // The page itself, and everything it legitimately needs, must still load.
+    it.each([
+      'https://panel.example.ir/userarea',
+      'https://panel.example.ir/assets/app.js',
+      'https://panel.example.ir/api/login',
+      'https://panel.example.ir/style.css',
+      'https://panel.example.ir/logo.png',
+    ])('lets %s through', (url) => {
+      expect(isAppDownload(url)).toBe(false);
+    });
+
+    it('is not fooled by a query string that mentions an apk', () => {
+      expect(isAppDownload('https://panel.example.ir/userarea?ref=app.apk')).toBe(false);
+    });
+
+    it('ignores something it cannot parse', () => {
+      expect(isAppDownload('not a url')).toBe(false);
     });
   });
 });

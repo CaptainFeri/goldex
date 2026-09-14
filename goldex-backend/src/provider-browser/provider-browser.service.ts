@@ -46,6 +46,10 @@ export class ProviderBrowserService {
         provider.verifyCodeUrl,
       ].filter((url): url is string => !!url?.trim()),
       useProxy: provider.useProxy ?? true,
+      // What a session of this provider's looks like depends on its category:
+      // a Talaab session is the token alone, a Zaryar one carries an id and a
+      // shopkeeper alongside it.
+      category: provider.category,
     });
 
     this.logger.log(

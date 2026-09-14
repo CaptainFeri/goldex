@@ -15,7 +15,11 @@ import {
   mightCarryAuth,
   type CapturedAuth,
 } from './auth-capture';
-import { allowedHostsFor, isNavigationAllowed } from './navigation-allowlist';
+import {
+  allowedHostsFor,
+  isAppDownload,
+  isNavigationAllowed,
+} from './navigation-allowlist';
 
 export interface OpenSessionRequest {
   providerKey: string;
@@ -25,6 +29,8 @@ export interface OpenSessionRequest {
   /** Mirrors the provider's own `useProxy`, so the browser egresses as the engine would. */
   useProxy?: boolean;
   viewport?: { width: number; height: number };
+  /** The provider's category, which decides what a session of its looks like. */
+  category?: string;
 }
 
 export interface SessionSummary {
@@ -49,6 +55,7 @@ interface Session {
   captured: CapturedAuth | null;
   viewport: { width: number; height: number };
   storagePoll: NodeJS.Timeout;
+  tokenAloneIsSession: boolean;
 }
 
 export interface SessionEvents {
@@ -183,6 +190,16 @@ export class SessionService implements OnModuleDestroy {
 
     await context.route('**/*', async (route) => {
       const url = route.request().url();
+
+      // Checked before the allowlist so the admin is told it was the app being
+      // pushed at them, rather than some domain they have to reason about.
+      if (isAppDownload(url)) {
+        this.logger.log(`[${id}] refused an app download: ${url}`);
+        this.events?.onBlocked(id, `${url} (دانلود اپ — رد شد)`);
+        await route.abort('blockedbyclient').catch(() => undefined);
+        return;
+      }
+
       if (isNavigationAllowed(url, allowedHosts)) {
         await route.continue().catch(() => undefined);
         return;
@@ -190,6 +207,22 @@ export class SessionService implements OnModuleDestroy {
       this.logger.warn(`[${id}] blocked ${url}`);
       this.events?.onBlocked(id, url);
       await route.abort('blockedbyclient').catch(() => undefined);
+    });
+
+    // Only the first page is streamed, so a popup would open somewhere the
+    // admin cannot see and quietly take the login with it. Closing it leaves
+    // them on the page they can actually drive.
+    context.on('page', (popup) => {
+      if (popup === page) return;
+      this.logger.log(`[${id}] closed a popup: ${popup.url()}`);
+      void popup.close().catch(() => undefined);
+    });
+
+    // Belt and braces behind `acceptDownloads: false` — a download that starts
+    // anyway is cancelled rather than left holding the page.
+    page.on('download', (download) => {
+      this.logger.log(`[${id}] cancelled a download: ${download.url()}`);
+      void download.cancel().catch(() => undefined);
     });
 
     page.on('response', (response) => {
@@ -218,6 +251,11 @@ export class SessionService implements OnModuleDestroy {
       captured: null,
       viewport,
       storagePoll: setInterval(() => void this.inspectStorage(id), STORAGE_POLL_MS),
+      // Talaab's session really is the token and nothing else — its provider
+      // reads `config.auth['token']` and never looks for more — so a bare token
+      // in storage is the whole of it there, and refusing one would refuse the
+      // only credentials that exist.
+      tokenAloneIsSession: request.category === 'talaab',
     };
     this.sessions.set(id, session);
     this.byProvider.set(request.providerKey, id);
@@ -292,9 +330,10 @@ export class SessionService implements OnModuleDestroy {
         };
       });
 
+      const options = { tokenAloneIsSession: session.tokenAloneIsSession };
       const captured =
-        captureFromStorage(storages.local, 'localStorage') ??
-        captureFromStorage(storages.session, 'sessionStorage');
+        captureFromStorage(storages.local, 'localStorage', options) ??
+        captureFromStorage(storages.session, 'sessionStorage', options);
       if (!captured) return;
 
       this.finishCapture(sessionId, captured);

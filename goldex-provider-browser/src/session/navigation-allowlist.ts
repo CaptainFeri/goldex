@@ -92,3 +92,35 @@ export function isNavigationAllowed(url: string, allowedHosts: string[]): boolea
     (allowed) => host === allowed || host.endsWith(`.${allowed}`),
   );
 }
+
+/**
+ * Whether a request is the provider's mobile app rather than its web panel.
+ *
+ * Iranian provider sites routinely push their app at a visitor the moment a
+ * page loads — a redirect, a popup, or a link that fires itself. In a real
+ * browser a person shrugs and closes it; here it either starts a download in
+ * place of the page, so the navigation fails and the canvas stays blank, or it
+ * leaves the admin fighting a modal to reach the login form underneath.
+ *
+ * Refusing these is not a security rule — the allowlist already keeps this
+ * browser on the provider's own hosts, and an APK served from one of them is
+ * still the provider's. It is refused because nobody here wants it: this
+ * browser exists to reach a login form, and it cannot install an app.
+ */
+export function isAppDownload(url: string): boolean {
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    return false;
+  }
+
+  // A store link leaves for a host the allowlist refuses anyway; catching it
+  // here means the admin is told it was the app, not a blocked domain.
+  if (/^(bazaar|myket|market|itms-apps):/i.test(parsed.protocol)) return true;
+  if (/(^|\.)(cafebazaar\.ir|myket\.ir|play\.google\.com|apps\.apple\.com)$/i.test(parsed.hostname)) {
+    return true;
+  }
+
+  return /\.(apk|aab|ipa|exe|msi|dmg|pkg)$/i.test(parsed.pathname);
+}

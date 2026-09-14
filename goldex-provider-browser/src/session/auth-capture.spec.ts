@@ -230,4 +230,37 @@ describe('capturing credentials', () => {
       });
     });
   });
+
+  describe('a provider whose session is the token alone', () => {
+    /**
+     * Talaab's is: its provider reads `config.auth['token']` and never looks
+     * for anything else. Refusing a bare token there would refuse the only
+     * credentials that exist — so the caller says when a token alone is the
+     * whole session, and the guard stays on everywhere else.
+     */
+    it('takes a bare token when the caller says that is the session', () => {
+      const captured = captureFromStorage({ token: 'mock-token-shopA' }, 'localStorage', {
+        tokenAloneIsSession: true,
+      });
+      expect(captured?.auth).toEqual({ token: 'mock-token-shopA' });
+    });
+
+    it('still refuses one when the caller has not said so', () => {
+      expect(captureFromStorage({ token: 'mock-token-shopA' }, 'localStorage')).toBeNull();
+    });
+
+    it('reads it from a JSON entry without needing to be told', () => {
+      const captured = captureFromStorage(
+        { auth: JSON.stringify({ success: true, data: { token: 'mock-token-shopA' } }) },
+        'localStorage',
+      );
+      expect(captured?.auth).toEqual({ token: 'mock-token-shopA' });
+    });
+
+    it('still refuses a blank token', () => {
+      expect(
+        captureFromStorage({ token: '  ' }, 'localStorage', { tokenAloneIsSession: true }),
+      ).toBeNull();
+    });
+  });
 });

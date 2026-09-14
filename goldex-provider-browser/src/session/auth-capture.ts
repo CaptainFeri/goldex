@@ -122,15 +122,21 @@ function scalarsOf(source: Record<string, unknown>): Record<string, string | num
  *    chose;
  *  - the fields spread across separate entries, one per key.
  *
- * A token alone is not enough to call something a session. Pages keep CSRF
- * tokens, push tokens and analytics keys in storage too, and storing one of
- * those as a provider's credentials would activate a provider that cannot
- * authenticate. So a flat match also has to carry at least one field that
- * belongs to a provider session.
+ * A token alone is usually not enough to call something a session. Pages keep
+ * CSRF tokens, push tokens and analytics keys in storage too, and storing one
+ * of those as a provider's credentials would activate a provider that then
+ * cannot authenticate — worse than not activating it. So a flat match normally
+ * has to carry at least one field that belongs to a provider session.
+ *
+ * `tokenAloneIsSession` lifts that for a provider whose session genuinely is
+ * the token and nothing else — Talaab's is; its provider reads
+ * `config.auth['token']` and never looks for anything more. Refusing a bare
+ * token there would refuse the only credentials that exist.
  */
 export function captureFromStorage(
   entries: Record<string, string>,
   sourceLabel: string,
+  options: { tokenAloneIsSession?: boolean } = {},
 ): CapturedAuth | null {
   // A whole session kept under one key.
   for (const [key, raw] of Object.entries(entries)) {
@@ -151,7 +157,8 @@ export function captureFromStorage(
   // The fields spread one per key.
   const flat = scalarsOf(entries);
   const token = typeof flat.token === 'string' ? flat.token : '';
-  if (token && SESSION_COMPANIONS.some((field) => flat[field])) {
+  const hasCompanion = SESSION_COMPANIONS.some((field) => flat[field]);
+  if (token && (hasCompanion || options.tokenAloneIsSession)) {
     const auth: Record<string, string | number> = { token };
     for (const field of SESSION_COMPANIONS) {
       if (flat[field] !== undefined && flat[field] !== '') auth[field] = flat[field];

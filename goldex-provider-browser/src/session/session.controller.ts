@@ -27,6 +27,10 @@ class OpenSessionDto {
   @IsBoolean()
   @IsOptional()
   useProxy?: boolean;
+
+  @IsString()
+  @IsOptional()
+  category?: string;
 }
 
 @Controller('sessions')
