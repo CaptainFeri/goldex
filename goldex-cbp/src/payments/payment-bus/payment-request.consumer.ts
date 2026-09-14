@@ -10,9 +10,17 @@ import { PaymentsService } from "../payments.service";
 
 /**
  * Consumes `payment.request.*` commands published by goldex-backend.
- * Failures are handled inside PaymentsService (payment marked FAILED and
- * a `payment.failed` event published), so messages are always acked to
- * avoid poison-message redelivery loops.
+ *
+ * Messages are always acked, to avoid a poison message redelivering forever.
+ * That is only safe because PaymentsService reports every failure back over
+ * the bus — a payment marked FAILED and a `payment.failed` event — so acking
+ * loses nothing the caller needed.
+ *
+ * It did not always hold: refusals raised while preparing a payment threw past
+ * the reporting and landed here, where the catch below logged them and acked.
+ * The backend heard nothing, and a user waited out a gateway that was never
+ * going to open. If a failure path is ever added that does not report, this
+ * catch becomes a silent drop again.
  */
 @Injectable()
 export class PaymentRequestConsumer implements OnModuleInit {

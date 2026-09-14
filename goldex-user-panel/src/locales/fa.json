@@ -293,7 +293,7 @@
     "collateralNote": "این وثیقه به عنوان تضمین تسهیلات اعتباری شما مسدود شده است",
     "depositRequests": "درخواست‌های واریز",
     "withdrawRequests": "درخواست‌های برداشت",
-    "openGateway": "باز کردن درگاه",
+    "openGateway": "رفتن به درگاه",
     "depositType": "نوع واریز",
     "withdrawType": "نوع برداشت",
     "paymentGateway": "درگاه پرداخت",
@@ -332,7 +332,8 @@
     "destinationIbanLabel": "شبای مقصد",
     "destinationIbanHint": "واریزکنندگان مبلغ را به این شبا واریز می‌کنند. لازم نیست به نام خودتان باشد.",
     "collateralLocked": "پشتوانه‌ی معاملات باز",
-    "collateralAvailable": "قابل استفاده برای معامله"
+    "collateralAvailable": "قابل استفاده برای معامله",
+    "gatewayPopupBlocked": "مرورگر پنجرهٔ پرداخت را مسدود کرد."
   },
   "warehouse": {
     "title": "انبار",
