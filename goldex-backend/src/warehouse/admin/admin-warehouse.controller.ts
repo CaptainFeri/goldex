@@ -345,6 +345,18 @@ export class AdminWarehouseController {
     return { data: await this.packetService.findUserInWarehousePackets(userId, warehouseId) };
   }
 
+  @Get("lookups")
+  @ApiOperation({
+    summary: "Material symbols and providers, for the movement form",
+    description:
+      "Served here because the symbol and provider admin APIs require the ADMIN role while these " +
+      "screens are for warehouse operators. Carries the names and keys a dropdown needs, nothing more.",
+  })
+  @ApiResponse({ status: HttpStatus.OK, description: "Returns material symbols and providers" })
+  async getMovementLookups() {
+    return { data: await this.warehouseService.getMovementLookups() };
+  }
+
   // -- Movements: the physical ledger, separate from the request paperwork --
 
   @Get("movements")

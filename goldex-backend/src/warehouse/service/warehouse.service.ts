@@ -14,6 +14,9 @@ import { AdminUpdateWarehouseDto } from "../admin/dto/admin-update-warehouse.dto
 import { AdminWarehouseQueryDto } from "../admin/dto/admin-warehouse-query.dto";
 import { WarehouseStatusEnum } from "../enum/warehouse-status.enum";
 import { ProviderSettlementEntity, SettlementDirection } from "../../provider-finance/entity/provider-settlement.entity";
+import { SymbolEntity } from "../../admin-symbol/entity/symbol.entity";
+import { SymbolTypeEnum } from "../../admin-symbol/enum/symbol.type.enum";
+import { ProviderEntity } from "../../provider/entity/provider.entity";
 
 Decimal.set({
   precision: 20,
@@ -68,6 +71,10 @@ export class WarehouseService {
     private readonly packetRepository: Repository<PacketEntity>,
     @InjectRepository(ProviderSettlementEntity)
     private readonly settlementRepository: Repository<ProviderSettlementEntity>,
+    @InjectRepository(SymbolEntity)
+    private readonly symbolRepository: Repository<SymbolEntity>,
+    @InjectRepository(ProviderEntity)
+    private readonly providerRepository: Repository<ProviderEntity>,
     private readonly dataSource: DataSource
   ) {}
 
@@ -474,6 +481,46 @@ export class WarehouseService {
       capacityUsedPercent: total.greaterThan(0)
         ? used.dividedBy(total).times(100).toDecimalPlaces(1).toNumber()
         : 0,
+    };
+  }
+
+  /**
+   * The two lists the movement form needs to fill its dropdowns.
+   *
+   * Served from here rather than from the symbol and provider admin APIs
+   * because those require the ADMIN role, while the warehouse screens are for
+   * warehouse operators. Widening those APIs would hand out far more than two
+   * dropdowns need, so this returns the names and keys and nothing else.
+   *
+   * Symbols are material only: a vault holds metal, and offering rial would let
+   * an operator book a deposit the warehouse cannot store.
+   */
+  async getMovementLookups(): Promise<{
+    symbols: { id: string; slug: string; name: string }[];
+    providers: { key: string; name: string }[];
+  }> {
+    const [symbols, providers] = await Promise.all([
+      this.symbolRepository.find({
+        where: { symbolType: SymbolTypeEnum.MATERIAL },
+        select: { id: true, slug: true, name: true },
+        order: { slug: "ASC" },
+      }),
+      this.providerRepository.find({
+        select: { key: true, persianName: true, category: true },
+        order: { key: "ASC" },
+      }),
+    ]);
+
+    return {
+      symbols: symbols.map((symbol) => ({
+        id: symbol.id,
+        slug: symbol.slug,
+        name: symbol.name ?? symbol.slug,
+      })),
+      providers: providers.map((provider) => ({
+        key: provider.key,
+        name: provider.persianName || provider.key,
+      })),
     };
   }
 
