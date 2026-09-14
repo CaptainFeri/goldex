@@ -293,7 +293,7 @@
     "collateralNote": "This collateral is frozen as security for your credit facility",
     "depositRequests": "Deposit Requests",
     "withdrawRequests": "Withdraw Requests",
-    "openGateway": "Open Gateway",
+    "openGateway": "Open the gateway",
     "depositType": "Deposit Type",
     "withdrawType": "Withdraw Type",
     "paymentGateway": "Payment Gateway",
@@ -332,7 +332,8 @@
     "destinationIbanLabel": "Destination IBAN",
     "destinationIbanHint": "Depositors will transfer to this IBAN. It need not be in your own name.",
     "collateralLocked": "Backing open trades",
-    "collateralAvailable": "Free to trade against"
+    "collateralAvailable": "Free to trade against",
+    "gatewayPopupBlocked": "Your browser blocked the payment window."
   },
   "warehouse": {
     "title": "Warehouse",

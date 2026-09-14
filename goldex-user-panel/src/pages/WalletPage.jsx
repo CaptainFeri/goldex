@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useRef, useState, useCallback } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useNavigate } from 'react-router-dom'
 import { walletApi, warehouseApi, depositApi, withdrawApi, creditApi } from '../services/api'
@@ -110,6 +110,9 @@ function DepositModal({ symbolId, symbolSlug, depositTypes: allowedDepositTypes,
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState('')
   const [gatewayMsg, setGatewayMsg] = useState('')
+  const [gatewayUrl, setGatewayUrl] = useState('')
+  // Read back in the same tick the poll finishes, which state cannot be.
+  const gatewayUrlRef = useRef('')
   const isWarehouse = type === 'warehouse'
   const isGateway = type === 'payment-gateway'
   // p2p creates a deposit *intent*; the destination account and the receipt
@@ -130,7 +133,15 @@ function DepositModal({ symbolId, symbolSlug, depositTypes: allowedDepositTypes,
       const d = await depositApi.get(depositId)
       const pay = d?.metadata?.payment
       if (pay?.gatewayUrl) {
-        window.open(pay.gatewayUrl, '_blank', 'noopener')
+        // The click that started this was seconds ago, so the browser no longer
+        // counts a new window as user-initiated and blocks it. When that
+        // happens window.open returns null and nothing at all appears — the
+        // gateway simply "does not open". Offer the link instead of guessing.
+        const opened = window.open(pay.gatewayUrl, '_blank', 'noopener')
+        if (!opened) {
+          gatewayUrlRef.current = pay.gatewayUrl
+          setGatewayUrl(pay.gatewayUrl)
+        }
         return
       }
       if (d.status === 'FAILED' || d.status === 'CANCELLED') {
@@ -214,6 +225,12 @@ function DepositModal({ symbolId, symbolSlug, depositTypes: allowedDepositTypes,
         const created = await depositApi.create(payload)
         if (isGateway && created?.id) {
           await openGatewayAfterCreate(created.id)
+          // A blocked popup left the link as the only way through, so the
+          // dialog stays open until the user has taken it.
+          if (gatewayUrlRef.current) {
+            onDone()
+            return
+          }
         }
         if (isP2p) {
           onDone()
@@ -239,7 +256,21 @@ function DepositModal({ symbolId, symbolSlug, depositTypes: allowedDepositTypes,
           <button className="btn btn-ghost" onClick={onClose} style={{ fontSize: '1.2rem', lineHeight: 1, padding: '0.25rem 0.5rem' }}>✕</button>
         </div>
         {error && <Alert type="error">{error}</Alert>}
-        {gatewayMsg && !error && <Alert type="success">{gatewayMsg}</Alert>}
+        {gatewayMsg && !error && !gatewayUrl && <Alert type="success">{gatewayMsg}</Alert>}
+        {gatewayUrl && (
+          <Alert type="warning">
+            {t('wallet.gatewayPopupBlocked')}
+            <a
+              href={gatewayUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="btn"
+              style={{ display: 'inline-block', marginInlineStart: 8 }}
+            >
+              {t('wallet.openGateway')}
+            </a>
+          </Alert>
+        )}
         <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '1rem', marginTop: '1rem' }}>
           {allowedDepositTypes?.length > 1 && (
             <div className="field">
