@@ -94,4 +94,57 @@ describe('capturing credentials', () => {
       expect(mightCarryAuth('application/json', 0)).toBe(true);
     });
   });
+
+  describe("the Zaryar session, as the mock actually answers it", () => {
+    /**
+     * The exact body `buildVerifyOtp` returns, so the shape this has to read is
+     * pinned to the shape that is actually sent rather than to a description of
+     * it. Every field the provider hands back has to survive: the engine's
+     * Zaryar provider signs its requests with uId, sessionId and shopkeeperId,
+     * not with the token alone.
+     */
+    const mockVerifyOtp = {
+      IsSuccess: true,
+      Message: 'OK',
+      Data: {
+        user: {
+          token: 'mock-token-shopA',
+          uId: 'uid-shopA',
+          userId: 'userid-shopA',
+          roleType: '0',
+          sessionId: 'mock-session-shopA',
+          shopkeeperId: 'shopA',
+        },
+      },
+    };
+
+    it('keeps every field of the session', () => {
+      const captured = captureAuth(mockVerifyOtp, 'https://panel.example.ir/api/User/VerifyCode');
+      expect(captured?.auth).toEqual({
+        token: 'mock-token-shopA',
+        uId: 'uid-shopA',
+        userId: 'userid-shopA',
+        roleType: '0',
+        sessionId: 'mock-session-shopA',
+        shopkeeperId: 'shopA',
+      });
+    });
+
+    it('drops the envelope around it', () => {
+      const captured = captureAuth(mockVerifyOtp, 'u');
+      expect(captured?.auth).not.toHaveProperty('IsSuccess');
+      expect(captured?.auth).not.toHaveProperty('Message');
+      expect(captured?.auth).not.toHaveProperty('Data');
+    });
+
+    it('records where it came from', () => {
+      const url = 'https://panel.example.ir/api/User/VerifyCode';
+      expect(captureAuth(mockVerifyOtp, url)?.sourceUrl).toBe(url);
+    });
+
+    // The same session, copied from a different place in the network tab.
+    it('reads it just as well without the envelope', () => {
+      expect(captureAuth(mockVerifyOtp.Data.user, 'u')?.auth.shopkeeperId).toBe('shopA');
+    });
+  });
 });
