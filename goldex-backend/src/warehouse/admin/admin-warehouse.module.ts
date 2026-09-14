@@ -6,10 +6,13 @@ import { PacketService } from "../service/packet.service";
 import { WarehouseRequestService } from "../service/warehouse-request.service";
 import { AllocationService } from "../service/allocation.service";
 import { WarehouseVoucherService } from "../service/warehouse-voucher.service";
+import { MovementService } from "../service/movement.service";
+import { ManualMovementService } from "../service/manual-movement.service";
 import { WarehouseEntity } from "../entity/warehouse.entity";
 import { PacketEntity } from "../entity/packet.entity";
 import { WarehouseRequestEntity } from "../entity/warehouse-request.entity";
 import { WarehouseHistoryEntity } from "../entity/warehouse-history.entity";
+import { WarehouseMovementEntity } from "../entity/warehouse-movement.entity";
 import { WalletEntity } from "../../wallet/entities/wallet.entity";
 import { TransactionEntity } from "../../wallet/entities/transaction.entity";
 import { ProviderSettlementEntity } from "../../provider-finance/entity/provider-settlement.entity";
@@ -25,6 +28,7 @@ import { AdminScheduleModule } from "../../admin-schedule/admin-schedule.module"
       PacketEntity,
       WarehouseRequestEntity,
       WarehouseHistoryEntity,
+      WarehouseMovementEntity,
       WalletEntity,
       TransactionEntity,
       ProviderSettlementEntity,
@@ -35,7 +39,7 @@ import { AdminScheduleModule } from "../../admin-schedule/admin-schedule.module"
     AdminScheduleModule,
   ],
   controllers: [AdminWarehouseController],
-  providers: [WarehouseService, PacketService, WarehouseRequestService, AllocationService, WarehouseVoucherService],
-  exports: [WarehouseService, PacketService, WarehouseRequestService, AllocationService, WarehouseVoucherService],
+  providers: [WarehouseService, PacketService, WarehouseRequestService, AllocationService, WarehouseVoucherService, MovementService, ManualMovementService],
+  exports: [WarehouseService, PacketService, WarehouseRequestService, AllocationService, WarehouseVoucherService, MovementService, ManualMovementService],
 })
 export class AdminWarehouseModule {}

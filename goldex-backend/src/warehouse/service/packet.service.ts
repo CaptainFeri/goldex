@@ -15,6 +15,8 @@ import { AdminUpdatePacketDto } from "../admin/dto/admin-update-packet.dto";
 import { CreateSettlementPacketDto } from "../admin/dto/create-settlement-packet.dto";
 import { PacketStatusEnum } from "../enum/packet-status.enum";
 import { WarehouseService } from "./warehouse.service";
+import { MovementService } from "./movement.service";
+import { MovementDirectionEnum, MovementPartyEnum, MovementSourceEnum } from "../enum/movement.enum";
 import { computeNetWeight } from "../constants/warehouse.constants";
 
 @Injectable()
@@ -32,6 +34,7 @@ export class PacketService {
     private readonly transactionRepository: Repository<TransactionEntity>,
     private readonly warehouseService: WarehouseService,
     private readonly minioService: MinioService,
+    private readonly movementService: MovementService,
     private readonly dataSource: DataSource
   ) {}
 
@@ -185,6 +188,22 @@ export class PacketService {
           wastage: wastage.toString(),
           unpackedRemaining: unpacked.minus(consumed).toString(),
         },
+      });
+
+      await this.movementService.record(queryRunner, {
+        warehouseId: dto.warehouseId,
+        direction: MovementDirectionEnum.IN,
+        source: MovementSourceEnum.SETTLEMENT,
+        // The wastage left the provider's pile with the package, so the
+        // crossing is what came off the bench, not only what was shelved.
+        netWeight: consumed,
+        symbolId: dto.symbolId,
+        partyType: MovementPartyEnum.PROVIDER,
+        providerKey: dto.providerKey,
+        packetIds: [saved.id],
+        settlementId: dto.settlementId,
+        adminId,
+        metadata: { pureWeight: netWeight, wastage: wastage.toString() },
       });
 
       await queryRunner.commitTransaction();
@@ -451,6 +470,21 @@ export class PacketService {
         },
       };
       await queryRunner.manager.save(parent);
+
+      if (wastageDec.greaterThan(0)) {
+        await this.movementService.record(queryRunner, {
+          warehouseId: parent.warehouseId,
+          direction: MovementDirectionEnum.OUT,
+          source: MovementSourceEnum.WASTAGE,
+          netWeight: wastageDec,
+          symbolId: parent.symbolId,
+          // Consumed in the cut: it left the shelf without going to anyone.
+          partyType: MovementPartyEnum.SYSTEM,
+          packetIds: [parent.id],
+          adminId,
+          metadata: { parentPacketId: parent.id, childIds: children.map((c) => c.id) },
+        });
+      }
 
       await this.addHistory(queryRunner, {
         warehouseId: parent.warehouseId,
