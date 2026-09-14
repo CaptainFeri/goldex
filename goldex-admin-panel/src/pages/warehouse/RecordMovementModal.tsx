@@ -4,6 +4,7 @@ import { api, apiError, unwrap } from "../../api/client";
 import { Modal, ErrorState } from "../../components/ui";
 import { fmtNum } from "../../lib/format";
 import type { Packet } from "../../api/types";
+import UserPicker, { type PickedUser } from "../../components/UserPicker";
 import { warehouseApi, type WarehouseSummary } from "./api";
 
 type Direction = "IN" | "OUT";
@@ -34,7 +35,7 @@ export default function RecordMovementModal({
 
   const [warehouseId, setWarehouseId] = useState(defaultWarehouseId || warehouses[0]?.id || "");
   const [partyType, setPartyType] = useState<Party>(inbound ? "USER" : "PROVIDER");
-  const [partyUserId, setPartyUserId] = useState("");
+  const [partyUser, setPartyUser] = useState<PickedUser | null>(null);
   const [providerKey, setProviderKey] = useState("");
   const [symbolId, setSymbolId] = useState("");
   const [apparentWeight, setApparentWeight] = useState("");
@@ -75,7 +76,7 @@ export default function RecordMovementModal({
         warehouseId,
         direction,
         partyType,
-        ...(partyType === "USER" ? { partyUserId } : { providerKey }),
+        ...(partyType === "USER" ? { partyUserId: partyUser?.id } : { providerKey }),
         symbolId,
         ...(inbound
           ? {
@@ -100,7 +101,7 @@ export default function RecordMovementModal({
   const ready =
     warehouseId &&
     symbolId &&
-    (partyType === "USER" ? partyUserId : providerKey) &&
+    (partyType === "USER" ? partyUser?.id : providerKey) &&
     (inbound ? derived !== null || Number(netWeight) > 0 : packetId);
 
   return (
@@ -159,13 +160,8 @@ export default function RecordMovementModal({
 
       {partyType === "USER" ? (
         <div className="field">
-          <label>شناسه کاربر</label>
-          <input
-            className="form-input"
-            value={partyUserId}
-            onChange={(e) => setPartyUserId(e.target.value)}
-            placeholder="UUID کاربر"
-          />
+          <label>کاربر</label>
+          <UserPicker value={partyUser} onChange={setPartyUser} />
         </div>
       ) : (
         <div className="field">
