@@ -15,8 +15,14 @@ export class PaymentEntity extends myBaseEntity {
   @Column({ nullable: true, name: "external_reference" })
   externalReference?: string;
 
-  @Column({ name: "symbol_id" })
-  symbolId: string;
+  /**
+   * Null only when the request was refused before a symbol could be resolved —
+   * an unknown slug, or a sync that never landed. Those failures still have to
+   * be recorded and published, or the caller waits on a payment that will never
+   * move, so the column cannot demand a symbol the request never had.
+   */
+  @Column({ name: "symbol_id", nullable: true })
+  symbolId: string | null;
 
   @ManyToOne(() => PaymentSymbolEntity)
   @JoinColumn({ name: "symbol_id" })
