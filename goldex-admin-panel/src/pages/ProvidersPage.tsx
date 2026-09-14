@@ -180,6 +180,8 @@ function OtpModal({
   const [phone, setPhone] = useState(provider.phone ?? "");
   const [otp, setOtp] = useState("");
 
+  // The request now waits on the engine's real answer, which takes as long as
+  // the provider takes to reply. Both buttons say so while they wait.
   const send = useMutation({
     mutationFn: () => api.post(`/admin/providers/${provider.id}/send-otp`, { phone }),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["providers-admin"] }),
@@ -196,21 +198,38 @@ function OtpModal({
     <Modal title={`فعال‌سازی ${provider.key}`} onClose={onClose}>
       <div className="field">
         <label>تلفن</label>
-        <input className="input mono" dir="ltr" value={phone} onChange={(e) => setPhone(e.target.value)} />
+        <input
+          className="input mono"
+          dir="ltr"
+          value={phone}
+          onChange={(e) => setPhone(e.target.value)}
+          disabled={send.isPending || send.isSuccess}
+        />
       </div>
       <div className="row" style={{ justifyContent: "flex-end", gap: 10, margin: "6px 0 14px" }}>
-        <button className="btn sm" disabled={send.isPending} onClick={() => send.mutate()}>
-          {send.isPending ? <span className="spin" /> : "ارسال کد"}
+        <button className="btn sm" disabled={send.isPending || !phone.trim()} onClick={() => send.mutate()}>
+          {send.isPending ? <span className="spin" /> : send.isSuccess ? "ارسال مجدد کد" : "ارسال کد"}
         </button>
       </div>
+      {send.isPending && (
+        <div className="muted" style={{ fontSize: 12, marginBottom: 10 }}>
+          در حال درخواست کد از تأمین‌کننده…
+        </div>
+      )}
       {send.isError && <div className="error-text">{apiError(send.error)}</div>}
+      {send.isSuccess && !send.isPending && (
+        <div className="muted" style={{ fontSize: 12, marginBottom: 10 }}>
+          ✓ کد برای {phone} ارسال شد. کد دریافتی روی سیم‌کارت را وارد کنید.
+        </div>
+      )}
       <div className="field">
         <label>کد تایید</label>
         <input className="input mono" dir="ltr" value={otp} onChange={(e) => setOtp(e.target.value)} />
       </div>
+      {verify.isError && <div className="error-text">{apiError(verify.error)}</div>}
       <div className="row" style={{ justifyContent: "flex-end", gap: 10 }}>
         <button type="button" className="btn ghost" onClick={onClose}>انصراف</button>
-        <button className="btn primary" disabled={verify.isPending || !otp} onClick={() => verify.mutate()}>
+        <button className="btn primary" disabled={verify.isPending || !otp.trim()} onClick={() => verify.mutate()}>
           {verify.isPending ? <span className="spin" /> : "تایید و فعال‌سازی"}
         </button>
       </div>

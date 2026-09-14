@@ -7,6 +7,7 @@ export enum MessagePatterns {
   PROVIDER_DEACTIVATED = 'provider.deactivated',
   PROVIDER_OTP_SENT = 'provider.otp.sent',
   PROVIDER_OTP_VERIFIED = 'provider.otp.verified',
+  PROVIDER_OTP_FAILED = 'provider.otp.failed',
   PROVIDER_CONNECTED = 'provider.connected',
   PROVIDER_DISCONNECTED = 'provider.disconnected',
   PROVIDER_STATUS_CHANGED = 'provider.status.changed',
@@ -69,6 +70,23 @@ export interface RabbitMQMessage {
   data: any;
   timestamp: string;
   providerKey?: string;
+  /**
+   * Where to send the outcome, for a command whose caller is waiting on it.
+   *
+   * Carried in the body rather than in the AMQP properties because the
+   * engine's command consumer hands its callbacks the parsed body and nothing
+   * else; a reply queue name is a valid routing key on the default exchange
+   * either way.
+   */
+  replyTo?: string;
+  correlationId?: string;
+}
+
+/** What a command replies with when someone is waiting for the outcome. */
+export interface CommandReply<T = unknown> {
+  ok: boolean;
+  data?: T;
+  error?: string;
 }
 
 export interface PriceData {

@@ -101,24 +101,56 @@ export class ProviderManageConsumer implements OnApplicationBootstrap {
     }
   }
 
+  /**
+   * Activation is the one pair of commands whose outcome the caller needs.
+   *
+   * Every other handler here can swallow its error into the log, because
+   * nothing is waiting on it. These two are what the admin panel calls to turn
+   * a provider on, and only the engine knows whether the provider accepted the
+   * phone number or the code — so the error goes back to whoever asked, and is
+   * announced as an event for anything else that is tracking the attempt.
+   */
   private async handleSendOtp(msg: any): Promise<void> {
+    const { key, phone } = msg.data || {};
     try {
-      const { key, phone } = msg.data || {};
       const entity = await this.providerService.findByKey(key);
-      await this.providerService.sendOtp(entity.id, phone);
+      const result = await this.providerService.sendOtp(entity.id, phone);
+      await this.rabbitMQService.reply(msg, { ok: true, data: result });
     } catch (err) {
-      this.logger.error(`provider.send-otp failed: ${this.err(err)}`);
+      const error = this.err(err);
+      this.logger.error(`provider.send-otp failed: ${error}`);
+      await this.announceOtpFailure(key, 'send-otp', error);
+      await this.rabbitMQService.reply(msg, { ok: false, error });
     }
   }
 
   private async handleVerifyOtp(msg: any): Promise<void> {
+    const { key, otp } = msg.data || {};
     try {
-      const { key, otp } = msg.data || {};
       const entity = await this.providerService.findByKey(key);
-      await this.providerService.verifyOtp(entity.id, otp);
+      const saved = await this.providerService.verifyOtp(entity.id, otp);
+      await this.rabbitMQService.reply(msg, {
+        ok: true,
+        data: { key: saved.key, active: saved.active },
+      });
     } catch (err) {
-      this.logger.error(`provider.verify-otp failed: ${this.err(err)}`);
+      const error = this.err(err);
+      this.logger.error(`provider.verify-otp failed: ${error}`);
+      await this.announceOtpFailure(key, 'verify-otp', error);
+      await this.rabbitMQService.reply(msg, { ok: false, error });
     }
+  }
+
+  private async announceOtpFailure(
+    key: string | undefined,
+    stage: 'send-otp' | 'verify-otp',
+    error: string,
+  ): Promise<void> {
+    await this.rabbitMQService.publish(
+      MessagePatterns.PROVIDER_OTP_FAILED,
+      { key, stage, error },
+      key,
+    );
   }
 
   private async handleReconcile(): Promise<void> {

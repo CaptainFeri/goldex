@@ -2,7 +2,9 @@ import { Injectable, Logger, OnModuleDestroy } from '@nestjs/common';
 import { ConfigService, ConfigType } from '@nestjs/config';
 import * as amqp from 'amqplib';
 import appEnvConfig from '../config/app.env.config';
+import { randomUUID } from 'crypto';
 import {
+  CommandReply,
   RabbitMQMessage,
 } from './interfaces/rabbitmq.interfaces';
 
@@ -189,6 +191,100 @@ export class RabbitMQService implements OnModuleDestroy {
       this.logger.error(
         `Failed to publish command ${pattern}: ${(err as Error).message}`,
       );
+    }
+  }
+
+  /**
+   * Publish a command and wait for the engine to say what happened.
+   *
+   * `publishCommand` is right for anything whose outcome the caller does not
+   * need — a refresh, a balance fetch. It is wrong for activation: the engine
+   * is the only thing that knows whether the provider accepted the code, and
+   * a fire-and-forget send left the panel reporting success over a rejected
+   * OTP, with the real error buried in the engine's container log.
+   *
+   * One exclusive reply queue per call, torn down when the call ends. Cheap
+   * enough at this rate — activation is something a person does — and it
+   * cannot leak replies between concurrent callers the way a shared queue
+   * could if a correlation id were ever reused.
+   */
+  async requestCommand<T = unknown>(
+    pattern: string,
+    data: unknown,
+    providerKey?: string,
+    timeoutMs = 20000,
+  ): Promise<CommandReply<T>> {
+    if (!this.channel) {
+      throw new Error('RabbitMQ is not connected');
+    }
+    const channel = this.channel;
+
+    const { queue: replyTo } = await channel.assertQueue('', {
+      exclusive: true,
+      autoDelete: true,
+      durable: false,
+    });
+    const correlationId = randomUUID();
+
+    let consumerTag: string | null = null;
+    let timer: NodeJS.Timeout | null = null;
+
+    const cleanup = async () => {
+      if (timer) clearTimeout(timer);
+      try {
+        if (consumerTag) await channel.cancel(consumerTag);
+        await channel.deleteQueue(replyTo);
+      } catch {
+        /* the queue is exclusive and auto-deletes with the channel anyway */
+      }
+    };
+
+    try {
+      return await new Promise<CommandReply<T>>((resolve, reject) => {
+        timer = setTimeout(
+          () =>
+            reject(
+              new Error(
+                `The pricing engine did not answer ${pattern} within ${Math.round(timeoutMs / 1000)}s`,
+              ),
+            ),
+          timeoutMs,
+        );
+
+        void channel
+          .consume(
+            replyTo,
+            (msg) => {
+              if (!msg || msg.properties.correlationId !== correlationId) return;
+              try {
+                resolve(JSON.parse(msg.content.toString()) as CommandReply<T>);
+              } catch (err) {
+                reject(new Error(`Unreadable reply to ${pattern}: ${(err as Error).message}`));
+              }
+            },
+            { noAck: true },
+          )
+          .then(({ consumerTag: tag }) => {
+            consumerTag = tag;
+            const message: RabbitMQMessage = {
+              pattern,
+              data,
+              timestamp: new Date().toISOString(),
+              providerKey,
+              replyTo,
+              correlationId,
+            };
+            channel.publish(
+              this.exchange,
+              pattern,
+              Buffer.from(JSON.stringify(message)),
+              { persistent: true, replyTo, correlationId },
+            );
+          })
+          .catch(reject);
+      });
+    } finally {
+      await cleanup();
     }
   }
 

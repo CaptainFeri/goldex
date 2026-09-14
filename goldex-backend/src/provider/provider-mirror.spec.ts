@@ -31,7 +31,12 @@ describe('provider admin mirror', () => {
       count: jest.fn(() => Promise.resolve(saved.length)),
       update: jest.fn(() => Promise.resolve()),
     };
-    const rmq = { publishCommand: jest.fn((..._args: any[]) => Promise.resolve()) };
+    const rmq = {
+      publishCommand: jest.fn((..._args: any[]) => Promise.resolve()),
+      requestCommand: jest.fn((..._args: any[]) =>
+        Promise.resolve({ ok: true, data: {} } as any),
+      ),
+    };
     const service = new ProviderService(
       repo as any,
       rmq as any,
@@ -152,6 +157,80 @@ describe('provider admin mirror', () => {
       await service.toggleActive('mine');
       const [, payload] = rmq.publishCommand.mock.calls.at(-1)!;
       expect(payload).toEqual({ key: 'zaryar' });
+    });
+  });
+
+  describe('activation reports what actually happened', () => {
+    const provider = {
+      id: 'mine',
+      key: 'zaryar',
+      category: 'zaryar',
+      baseUrl: 'https://a.ir',
+      phone: '09120000000',
+    };
+
+    /**
+     * The engine is the only thing that talks to the provider, so it is the
+     * only thing that knows the code was wrong. This used to publish and return
+     * "submitted", so the panel showed success over every rejection and the
+     * reason stayed in the engine's container log.
+     */
+    it('fails the request with the reason the engine gave', async () => {
+      const { service, rmq } = build([provider]);
+      rmq.requestCommand.mockResolvedValue({ ok: false, error: 'Verification failed' });
+
+      await expect(service.verifyOtp('mine', '1234')).rejects.toThrow('Verification failed');
+    });
+
+    it('does not activate the mirror on a rejected code', async () => {
+      const { service, rmq } = build([provider]);
+      rmq.requestCommand.mockResolvedValue({ ok: false, error: 'Verification failed' });
+
+      await service.verifyOtp('mine', '1234').catch(() => undefined);
+      const [row] = await service.findAll();
+      expect(row.active).toBeFalsy();
+    });
+
+    it('activates the mirror when the engine says the provider is on', async () => {
+      const { service, rmq } = build([provider]);
+      rmq.requestCommand.mockResolvedValue({ ok: true, data: { key: 'zaryar', active: true } });
+
+      await service.verifyOtp('mine', '1234');
+      const [row] = await service.findAll();
+      expect(row.active).toBe(true);
+    });
+
+    it('separates "the engine said no" from "the engine never answered"', async () => {
+      const { service, rmq } = build([provider]);
+      rmq.requestCommand.mockRejectedValue(new Error('did not answer within 20s'));
+
+      // 503, not 400: the admin's code may have been perfectly good.
+      await expect(service.verifyOtp('mine', '1234')).rejects.toMatchObject({
+        status: 503,
+      });
+    });
+
+    it('records the phone only once a code has actually gone out', async () => {
+      const { service, rmq } = build([{ ...provider, phone: undefined }]);
+      rmq.requestCommand.mockResolvedValue({ ok: false, error: 'no sendOtpUrl configured' });
+
+      await service.sendOtp('mine', '09121111111').catch(() => undefined);
+      const [row] = await service.findAll();
+      expect(row.phone).toBeUndefined();
+    });
+
+    it('records it when the code did go out', async () => {
+      const { service, rmq } = build([{ ...provider, phone: undefined }]);
+      rmq.requestCommand.mockResolvedValue({ ok: true, data: { message: 'OTP sent' } });
+
+      await service.sendOtp('mine', '09121111111');
+      const [row] = await service.findAll();
+      expect(row.phone).toBe('09121111111');
+    });
+
+    it('still refuses to verify before any code was sent', async () => {
+      const { service } = build([{ ...provider, phone: undefined }]);
+      await expect(service.verifyOtp('mine', '1234')).rejects.toThrow(/send OTP first/i);
     });
   });
 });

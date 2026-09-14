@@ -24,6 +24,12 @@ export class ProviderStatusConsumer implements OnModuleInit {
     this.rmq.subscribe(MessagePatterns.PROVIDER_UPDATED, (m) => this.onLifecycle(m));
     this.rmq.subscribe(MessagePatterns.PROVIDER_ACTIVATED, (m) => this.onLifecycle(m));
     this.rmq.subscribe(MessagePatterns.PROVIDER_DEACTIVATED, (m) => this.onLifecycle(m));
+    // Activation changes the provider's stored auth and its active flag, and
+    // the panel refetches the moment the request returns. Without these the
+    // mirror only caught up on the engine's 30-second registry tick, so a
+    // provider that had just been activated still read as inactive.
+    this.rmq.subscribe(MessagePatterns.PROVIDER_OTP_VERIFIED, (m) => this.onLifecycle(m));
+    this.rmq.subscribe(MessagePatterns.PROVIDER_OTP_FAILED, (m) => this.onOtpFailed(m));
     this.rmq.subscribe(MessagePatterns.PROVIDER_CONNECTED, (m) => this.onConnected(m));
     this.rmq.subscribe(MessagePatterns.PROVIDER_DISCONNECTED, (m) => this.onDisconnected(m));
     this.rmq.subscribe(MessagePatterns.PROVIDER_STATUS_CHANGED, (m) => this.onStatusChanged(m));
@@ -35,6 +41,23 @@ export class ProviderStatusConsumer implements OnModuleInit {
     } catch (err) {
       this.logger.error(`provider lifecycle sync failed: ${(err as Error).message}`);
     }
+  }
+
+  /**
+   * Records a failed activation attempt where an operator can find it later.
+   *
+   * The admin who typed the code already has the reason in their response; this
+   * is the trace for afterwards — why a provider that someone tried to turn on
+   * is still off. Deliberately not written to `status`, which is the runtime
+   * connection state: a provider whose activation was refused is not in a
+   * connection error, it was simply never activated, and reporting it as
+   * "error" in the list would say something untrue about the connection.
+   */
+  private onOtpFailed(msg: RabbitMQMessage): void {
+    const key = msg.data?.key || msg.providerKey || 'unknown';
+    this.logger.warn(
+      `Activation failed for provider ${key} at ${msg.data?.stage ?? 'unknown stage'}: ${msg.data?.error ?? 'no reason given'}`,
+    );
   }
 
   private async onConnected(msg: RabbitMQMessage): Promise<void> {

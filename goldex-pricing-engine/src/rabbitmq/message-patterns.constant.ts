@@ -20,6 +20,7 @@ export const MessagePatterns = {
   PROVIDER_DEACTIVATED: 'provider.deactivated',
   PROVIDER_OTP_SENT: 'provider.otp.sent',
   PROVIDER_OTP_VERIFIED: 'provider.otp.verified',
+  PROVIDER_OTP_FAILED: 'provider.otp.failed',
   PROVIDER_CONNECTED: 'provider.connected',
   PROVIDER_DISCONNECTED: 'provider.disconnected',
   PROVIDER_STATUS_CHANGED: 'provider.status.changed',

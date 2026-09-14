@@ -24,6 +24,20 @@ export interface RabbitMQMessage<T = unknown> {
   data: T;
   timestamp: string;
   providerKey?: string;
+  /**
+   * Set when the sender is waiting for the outcome rather than firing and
+   * forgetting. Carried in the body because the command consumer hands its
+   * callbacks the parsed body and nothing else.
+   */
+  replyTo?: string;
+  correlationId?: string;
+}
+
+/** The shape a waiting caller expects back. */
+export interface CommandReply<T = unknown> {
+  ok: boolean;
+  data?: T;
+  error?: string;
 }
 
 @Injectable()
@@ -179,6 +193,31 @@ export class RabbitMQService implements OnModuleInit, OnApplicationBootstrap, On
       this.channel = null;
       this.hintUnavailable((error as Error).message);
       return false;
+    }
+  }
+
+  /**
+   * Answers a command whose sender is waiting on it.
+   *
+   * Published to the default exchange, where a queue name is its own routing
+   * key, so this reaches the caller's private reply queue directly. A command
+   * with no `replyTo` was fire-and-forget and there is nobody to tell.
+   */
+  async reply<T>(msg: RabbitMQMessage, result: CommandReply<T>): Promise<void> {
+    if (!msg.replyTo) return;
+    if (!this.channel) {
+      this.hintUnavailable();
+      return;
+    }
+    try {
+      this.channel.sendToQueue(msg.replyTo, Buffer.from(JSON.stringify(result)), {
+        correlationId: msg.correlationId,
+        contentType: 'application/json',
+      });
+    } catch (error) {
+      // The caller will time out and say so, which is a truthful outcome; a
+      // throw here would only replace it with a worse one.
+      this.logger.warn(`Failed to reply to ${msg.pattern}: ${(error as Error).message}`);
     }
   }
 

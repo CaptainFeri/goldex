@@ -4,6 +4,7 @@ import {
   Injectable,
   NotFoundException,
   OnModuleInit,
+  ServiceUnavailableException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
@@ -268,17 +269,52 @@ export class ProviderService {
     return this.toggleActive(provider.id);
   }
 
+  /**
+   * Runs an activation command on the engine and turns its answer into an HTTP
+   * one.
+   *
+   * The engine owns the provider's state and is the only thing that talks to
+   * it, so it is the only thing that knows whether the phone number was
+   * accepted or the code was right. Publishing and returning "sent" reported
+   * success over every failure — a rejected code, a provider already active, a
+   * missing verifyCodeUrl — and left the reason in the engine's container log.
+   */
+  private async runActivationCommand<T>(
+    pattern: string,
+    data: Record<string, unknown>,
+    providerKey: string,
+  ): Promise<T> {
+    let reply: { ok: boolean; data?: T; error?: string };
+    try {
+      reply = await this.rmq.requestCommand<T>(pattern, data, providerKey);
+    } catch (err) {
+      // No answer at all: the engine is down, or messaging is. Either way the
+      // admin needs to know it is not their code that was wrong.
+      throw new ServiceUnavailableException((err as Error).message);
+    }
+    if (!reply.ok) {
+      throw new BadRequestException(reply.error ?? 'The pricing engine rejected the request');
+    }
+    return reply.data as T;
+  }
+
   async sendOtp(id: string, phone: string): Promise<{ message: string }> {
     const provider = await this.findOne(id);
-    provider.phone = phone;
-    await this.providerRepo.save(provider);
 
-    await this.rmq.publishCommand(
+    const result = await this.runActivationCommand<{ message?: string }>(
       MessagePatterns.PROVIDER_COMMAND_SEND_OTP,
       { key: provider.key, phone },
       provider.key,
     );
-    return { message: `OTP request sent to ${phone} for provider ${provider.key}` };
+
+    // Recorded only once the provider has actually accepted it, so the mirror
+    // never shows a number the engine never sent a code to.
+    provider.phone = phone;
+    await this.providerRepo.save(provider);
+
+    return {
+      message: result?.message ?? `OTP sent to ${phone} for provider ${provider.key}`,
+    };
   }
 
   async verifyOtp(id: string, otp: string): Promise<{ message: string }> {
@@ -286,12 +322,19 @@ export class ProviderService {
     if (!provider.phone) {
       throw new BadRequestException('No phone stored; send OTP first');
     }
-    await this.rmq.publishCommand(
+
+    const result = await this.runActivationCommand<{ key: string; active: boolean }>(
       MessagePatterns.PROVIDER_COMMAND_VERIFY_OTP,
       { key: provider.key, otp },
       provider.key,
     );
-    return { message: `OTP verification submitted for provider ${provider.key}` };
+
+    if (result?.active) {
+      provider.active = true;
+      await this.providerRepo.save(provider);
+    }
+
+    return { message: `Provider ${provider.key} activated` };
   }
 
   async reconcile(): Promise<{ message: string }> {
