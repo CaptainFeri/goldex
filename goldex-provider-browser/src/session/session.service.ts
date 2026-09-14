@@ -50,6 +50,33 @@ export interface SessionEvents {
   onCaptured(sessionId: string, captured: CapturedAuth): void;
   onClosed(sessionId: string, reason: string): void;
   onBlocked(sessionId: string, url: string): void;
+  onNavigationFailed(sessionId: string, message: string): void;
+}
+
+/**
+ * Turns Playwright's navigation errors into something an admin can act on.
+ *
+ * They are accurate and unhelpful in equal measure: "Download is starting" is
+ * true, but what the admin needs to know is that the address they configured
+ * points at a file rather than a login page.
+ */
+export function explainNavigationFailure(error: string): string {
+  if (/Download is starting/i.test(error)) {
+    return 'این آدرس به‌جای یک صفحه، یک فایل برمی‌گرداند. معمولاً یعنی آدرس پنل وب به ریشهٔ سایت اشاره می‌کند نه به صفحهٔ ورود — یا پاسخی که از پروکسی برگشته صفحهٔ واقعی سایت نیست.';
+  }
+  if (/ERR_PROXY|ERR_TUNNEL/i.test(error)) {
+    return 'اتصال از طریق پروکسی برقرار نشد. اگر این تأمین‌کننده مستقیم در دسترس است، تیک «عبور از پروکسی» را در تنظیماتش بردارید.';
+  }
+  if (/ERR_NAME_NOT_RESOLVED/i.test(error)) {
+    return 'نام دامنه پیدا نشد؛ آدرس پنل وب را بررسی کنید.';
+  }
+  if (/ERR_CONNECTION_|ERR_TIMED_OUT|Timeout/i.test(error)) {
+    return 'سایت پاسخ نداد. اگر فقط از داخل ایران در دسترس است، تیک «عبور از پروکسی» باید روشن باشد.';
+  }
+  if (/ERR_CERT|SSL/i.test(error)) {
+    return 'گواهی TLS سایت معتبر نیست.';
+  }
+  return error;
 }
 
 /** How long a session may stay open with nobody finishing it. */
@@ -131,6 +158,10 @@ export class SessionService implements OnModuleDestroy {
       viewport,
       proxy: this.proxyOption(request.useProxy),
       ignoreHTTPSErrors: false,
+      // This browser exists to sign in to a panel. A download is never the
+      // goal, and accepting one would write a file into the container for a
+      // navigation that was already going nowhere.
+      acceptDownloads: false,
     });
 
     const id = randomUUID();
@@ -188,7 +219,12 @@ export class SessionService implements OnModuleDestroy {
     // analytics, must not hold up handing the session back. The admin watches
     // it arrive on the stream.
     void page.goto(request.loginUrl, { waitUntil: 'domcontentloaded' }).catch((err) => {
-      this.logger.warn(`[${id}] navigation failed: ${(err as Error).message}`);
+      const raw = (err as Error).message?.split('\n')[0] ?? String(err);
+      this.logger.warn(`[${id}] navigation failed: ${raw}`);
+      // Told to the admin, not just the log. Without this the canvas simply
+      // stays blank and the only account of why is in a container they cannot
+      // read — the same way the launch failure used to disappear.
+      this.events?.onNavigationFailed(id, explainNavigationFailure(raw));
     });
 
     this.logger.log(`[${id}] opened for ${request.providerKey} at ${request.loginUrl}`);

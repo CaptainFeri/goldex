@@ -52,6 +52,9 @@ export class BrowserGateway implements OnGatewayConnection, OnModuleInit {
       onBlocked: (sessionId, url) => {
         this.server?.to(sessionId).emit('blocked', { sessionId, url });
       },
+      onNavigationFailed: (sessionId, message) => {
+        this.server?.to(sessionId).emit('navigation-failed', { sessionId, message });
+      },
     });
   }
 

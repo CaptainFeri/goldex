@@ -162,6 +162,9 @@ export class ProviderBrowserGateway
       // should see why the page stopped loading rather than a blank frame.
       this.server?.to(sessionId).emit('blocked', payload);
     });
+    upstream.on('navigation-failed', (payload: { message: string }) => {
+      this.server?.to(sessionId).emit('navigation-failed', payload);
+    });
     upstream.on('closed', (payload: { reason: string }) => {
       this.server?.to(sessionId).emit('closed', payload);
       this.teardown(sessionId);

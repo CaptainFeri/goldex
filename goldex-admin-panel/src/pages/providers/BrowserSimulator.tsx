@@ -113,6 +113,12 @@ export default function BrowserSimulator({
     socket.on("blocked", ({ url }: { url: string }) => {
       setBlocked((prev) => (prev.includes(url) ? prev : [...prev.slice(-4), url]));
     });
+    // The canvas stays blank when a page fails to load, and the reason would
+    // otherwise only exist in a container log the admin cannot read.
+    socket.on("navigation-failed", ({ message }: { message: string }) => {
+      setError(message);
+      setStatus("");
+    });
     socket.on("closed", ({ reason }: { reason: string }) => {
       setStatus(reason === "expired" ? "مهلت نشست تمام شد" : "نشست بسته شد");
       setSession(null);

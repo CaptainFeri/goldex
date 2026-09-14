@@ -110,6 +110,7 @@ describe('browser session', () => {
       onCaptured: () => undefined,
       onClosed: () => undefined,
       onBlocked: () => undefined,
+      onNavigationFailed: () => undefined,
     });
 
     const session = await service.open({
@@ -170,6 +171,7 @@ describe('browser session', () => {
       onCaptured: () => undefined,
       onClosed: (id) => void closed.push(id),
       onBlocked: () => undefined,
+      onNavigationFailed: () => undefined,
     });
 
     const session = await service.open({
