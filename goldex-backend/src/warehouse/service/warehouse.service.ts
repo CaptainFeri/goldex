@@ -371,6 +371,112 @@ export class WarehouseService {
     return balance.providers.find((provider) => provider.providerKey === providerKey)?.unpacked ?? 0;
   }
 
+  /**
+   * The warehouse list with the numbers the overview shows on each row.
+   *
+   * One grouped query per fact rather than a query per warehouse: the list is
+   * the first thing the page renders, and N+1 there is felt immediately.
+   */
+  async listWithStats(query: AdminWarehouseQueryDto): Promise<{
+    warehouses: (WarehouseEntity & { inventoryWeight: number; packetCount: number; reservedCount: number })[];
+    total: number;
+  }> {
+    const { warehouses, total } = await this.findAll(query);
+    if (!warehouses.length) return { warehouses: [] as any, total };
+
+    const ids = warehouses.map((warehouse) => warehouse.id);
+
+    const rows = await this.packetRepository
+      .createQueryBuilder("p")
+      .select("p.warehouse_id", "warehouseId")
+      .addSelect("COALESCE(SUM(CASE WHEN p.status IN (:...held) THEN p.pure_weight ELSE 0 END), 0)", "weight")
+      .addSelect("COALESCE(SUM(CASE WHEN p.status IN (:...held) THEN 1 ELSE 0 END), 0)", "packets")
+      .addSelect("COALESCE(SUM(CASE WHEN p.status = :reserved THEN 1 ELSE 0 END), 0)", "reserved")
+      .where("p.warehouse_id IN (:...ids)", { ids })
+      .andWhere("p.deleted_at IS NULL")
+      .setParameters({
+        // What the shelf actually holds: free packages and ones spoken for by a
+        // withdrawal in progress. A withdrawn package left long ago.
+        held: [PacketStatusEnum.ORPHAN, PacketStatusEnum.RESERVED, PacketStatusEnum.IN_WAREHOUSE],
+        reserved: PacketStatusEnum.RESERVED,
+      })
+      .groupBy("p.warehouse_id")
+      .getRawMany();
+
+    const byWarehouse = new Map(rows.map((row: any) => [row.warehouseId, row]));
+
+    return {
+      warehouses: warehouses.map((warehouse) => {
+        const row: any = byWarehouse.get(warehouse.id);
+        return Object.assign(warehouse, {
+          inventoryWeight: new Decimal(row?.weight ?? 0).toNumber(),
+          packetCount: Number(row?.packets ?? 0),
+          reservedCount: Number(row?.reserved ?? 0),
+        });
+      }) as any,
+      total,
+    };
+  }
+
+  /** Everything the warehouse detail panel puts above its tabs. */
+  async getWarehouseStats(warehouseId: string): Promise<{
+    warehouse: WarehouseEntity;
+    inventoryWeight: number;
+    packets: { total: number; free: number; reserved: number; withdrawn: number };
+    requests: { depositPending: number; withdrawPending: number };
+    capacityUsedPercent: number;
+  }> {
+    const warehouse = await this.findById(warehouseId);
+
+    const packetStats = await this.packetRepository
+      .createQueryBuilder("p")
+      .select("COALESCE(SUM(CASE WHEN p.status IN (:...held) THEN p.pure_weight ELSE 0 END), 0)", "weight")
+      .addSelect("COALESCE(SUM(CASE WHEN p.status IN (:...held) THEN 1 ELSE 0 END), 0)", "total")
+      .addSelect("COALESCE(SUM(CASE WHEN p.status = :orphan THEN 1 ELSE 0 END), 0)", "free")
+      .addSelect("COALESCE(SUM(CASE WHEN p.status = :reserved THEN 1 ELSE 0 END), 0)", "reserved")
+      .addSelect("COALESCE(SUM(CASE WHEN p.status = :withdrawn THEN 1 ELSE 0 END), 0)", "withdrawn")
+      .where("p.warehouse_id = :warehouseId", { warehouseId })
+      .andWhere("p.deleted_at IS NULL")
+      .setParameters({
+        held: [PacketStatusEnum.ORPHAN, PacketStatusEnum.RESERVED, PacketStatusEnum.IN_WAREHOUSE],
+        orphan: PacketStatusEnum.ORPHAN,
+        reserved: PacketStatusEnum.RESERVED,
+        withdrawn: PacketStatusEnum.WITHDRAWN,
+      })
+      .getRawOne();
+
+    const requestStats = await this.requestRepository
+      .createQueryBuilder("r")
+      .select("COALESCE(SUM(CASE WHEN r.type = :input THEN 1 ELSE 0 END), 0)", "depositPending")
+      .addSelect("COALESCE(SUM(CASE WHEN r.type = :output THEN 1 ELSE 0 END), 0)", "withdrawPending")
+      .where("r.warehouse_id = :warehouseId", { warehouseId })
+      .andWhere("r.status = :pending", { pending: RequestStatusEnum.PENDING })
+      .setParameters({ input: RequestTypeEnum.INPUT, output: RequestTypeEnum.OUTPUT })
+      .getRawOne();
+
+    const total = new Decimal(warehouse.capacityTotal ?? 0);
+    const used = new Decimal(warehouse.capacityUsed ?? 0);
+
+    return {
+      warehouse,
+      inventoryWeight: new Decimal(packetStats?.weight ?? 0).toNumber(),
+      packets: {
+        total: Number(packetStats?.total ?? 0),
+        free: Number(packetStats?.free ?? 0),
+        reserved: Number(packetStats?.reserved ?? 0),
+        withdrawn: Number(packetStats?.withdrawn ?? 0),
+      },
+      requests: {
+        depositPending: Number(requestStats?.depositPending ?? 0),
+        withdrawPending: Number(requestStats?.withdrawPending ?? 0),
+      },
+      // Guarded: an uncapped warehouse is not "100% full", it is unmeasured.
+      capacityUsedPercent: total.greaterThan(0)
+        ? used.dividedBy(total).times(100).toDecimalPlaces(1).toNumber()
+        : 0,
+    };
+  }
+
   async updateCapacity(
     warehouseId: string,
     weightChange: number,

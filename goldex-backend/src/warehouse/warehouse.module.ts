@@ -7,11 +7,14 @@ import { PacketService } from "./service/packet.service";
 import { WarehouseRequestService } from "./service/warehouse-request.service";
 import { AllocationService } from "./service/allocation.service";
 import { WarehouseVoucherService } from "./service/warehouse-voucher.service";
+import { MovementService } from "./service/movement.service";
+import { ManualMovementService } from "./service/manual-movement.service";
 import { WarehouseCronService } from "./warehouse-cron.service";
 import { WarehouseEntity } from "./entity/warehouse.entity";
 import { PacketEntity } from "./entity/packet.entity";
 import { WarehouseRequestEntity } from "./entity/warehouse-request.entity";
 import { WarehouseHistoryEntity } from "./entity/warehouse-history.entity";
+import { WarehouseMovementEntity } from "./entity/warehouse-movement.entity";
 import { WalletEntity } from "../wallet/entities/wallet.entity";
 import { TransactionEntity } from "../wallet/entities/transaction.entity";
 import { ProviderSettlementEntity } from "../provider-finance/entity/provider-settlement.entity";
@@ -27,6 +30,7 @@ import { AdminWarehouseModule } from "./admin/admin-warehouse.module";
       PacketEntity,
       WarehouseRequestEntity,
       WarehouseHistoryEntity,
+      WarehouseMovementEntity,
       WalletEntity,
       TransactionEntity,
       ProviderSettlementEntity,
@@ -38,7 +42,7 @@ import { AdminWarehouseModule } from "./admin/admin-warehouse.module";
     AdminWarehouseModule,
   ],
   controllers: [WarehouseController],
-  providers: [WarehouseService, PacketService, WarehouseRequestService, AllocationService, WarehouseVoucherService, WarehouseCronService],
-  exports: [WarehouseService, PacketService, WarehouseRequestService, AllocationService, WarehouseVoucherService],
+  providers: [WarehouseService, PacketService, WarehouseRequestService, AllocationService, WarehouseVoucherService, MovementService, ManualMovementService, WarehouseCronService],
+  exports: [WarehouseService, PacketService, WarehouseRequestService, AllocationService, WarehouseVoucherService, MovementService, ManualMovementService],
 })
 export class WarehouseModule {}

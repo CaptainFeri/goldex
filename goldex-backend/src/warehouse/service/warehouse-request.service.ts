@@ -30,6 +30,8 @@ import { PacketService } from "./packet.service";
 import { SmsService } from "../../sms/sms.service";
 import { AllocationService, AllocationOption } from "./allocation.service";
 import { WarehouseVoucherService } from "./warehouse-voucher.service";
+import { MovementService } from "./movement.service";
+import { MovementDirectionEnum, MovementPartyEnum, MovementSourceEnum } from "../enum/movement.enum";
 import { ConfirmMaterialDto, ConfirmMaterialPartDto } from "../admin/dto/confirm-material.dto";
 import { TOLERANCE_GRAMS, computeNetWeight } from "../constants/warehouse.constants";
 
@@ -72,6 +74,7 @@ export class WarehouseRequestService {
     private readonly smsService: SmsService,
     private readonly allocationService: AllocationService,
     private readonly voucherService: WarehouseVoucherService,
+    private readonly movementService: MovementService,
     private readonly dataSource: DataSource
   ) {}
 
@@ -421,6 +424,21 @@ export class WarehouseRequestService {
       // Booked inside the transaction: a deposit that fails after this point
       // must not leave an entry behind claiming the gold arrived.
       request.voucherId = await this.voucherService.issueForDeposit(queryRunner, request, confirmed, adminId);
+
+      await this.movementService.record(queryRunner, {
+        warehouseId: request.warehouseId,
+        direction: MovementDirectionEnum.IN,
+        source: MovementSourceEnum.DEPOSIT_REQUEST,
+        netWeight: confirmed,
+        symbolId: request.symbolId,
+        partyType: MovementPartyEnum.USER,
+        partyUserId: request.userId,
+        packetIds: packets.map((packet) => packet.id),
+        requestId: request.id,
+        voucherId: request.voucherId,
+        adminId,
+        metadata: { declaredWeight: declared.toString(), wastage: wastage.toString() },
+      });
 
       await queryRunner.manager.save(request);
 
@@ -955,6 +973,21 @@ export class WarehouseRequestService {
       exitedWeight,
       request.adminId
     );
+
+    await this.movementService.record(queryRunner, {
+      warehouseId: request.warehouseId,
+      direction: MovementDirectionEnum.OUT,
+      source: MovementSourceEnum.WITHDRAW_REQUEST,
+      netWeight: exitedWeight,
+      symbolId: request.symbolId,
+      partyType: MovementPartyEnum.USER,
+      partyUserId: request.userId,
+      packetIds: packets.map((packet) => packet.id),
+      requestId: request.id,
+      voucherId: request.voucherId,
+      adminId: request.adminId,
+      metadata: { requestedWeight: requested.toString(), refundedWeight: refundedWeight.toString() },
+    });
 
     await this.addHistory(queryRunner, {
       requestId: request.id,

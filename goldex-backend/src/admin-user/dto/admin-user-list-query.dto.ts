@@ -10,7 +10,7 @@ import {
 const ADMIN_USER_LIST_DEFAULT_PAGE_SIZE = 100;
 
 export class AdminUserListQueryDto extends PaginationQueryDto {
-  @ApiPropertyOptional({ description: "Matches first name, last name or email" })
+  @ApiPropertyOptional({ description: "Matches first name, last name, email or phone" })
   @IsOptional()
   @IsString()
   q?: string;
