@@ -3,7 +3,7 @@ import { InjectRepository } from "@nestjs/typeorm";
 import { EventEmitter2 } from "@nestjs/event-emitter";
 import * as crypto from "crypto";
 import * as bcrypt from "bcryptjs";
-import { Between, ILike, In, IsNull, MoreThan, Repository } from "typeorm";
+import { Between, FindOptionsWhere, ILike, In, IsNull, MoreThan, Repository } from "typeorm";
 import { AdminUserDto } from "./dto/admin.user.dto";
 import { GenderEnum } from "../shared/enum/gender.enum";
 import { UserEntity } from "../user/entity/user.entity";
@@ -243,18 +243,46 @@ export class AdminUserService {
     );
   }
 
+  /**
+   * What a search term is allowed to match.
+   *
+   * Names, email and phone. Phone was missing, which made the only identifier
+   * an operator reliably has for a walk-in customer the one thing they could
+   * not search by.
+   *
+   * The email clause matched `%term` — a suffix — while the name clauses
+   * matched `%term%`, so searching "gmail" found nothing and "@gmail.com"
+   * found everything. It is a substring now, like the rest.
+   */
+  private searchClauses(term: string): FindOptionsWhere<UserEntity>[] {
+    const clauses: FindOptionsWhere<UserEntity>[] = [
+      { firstName: ILike(`%${term}%`) },
+      { lastName: ILike(`%${term}%`) },
+      { email: ILike(`%${term}%`) },
+    ];
+
+    // Phones are stored canonically as 09XXXXXXXXX, but an operator reading one
+    // off a screen may type it with a country code or without the leading zero.
+    const digits = term.replace(/\D/g, "");
+    if (digits.length >= 4) {
+      const variants = new Set([digits]);
+      if (digits.startsWith("98")) variants.add(digits.slice(2));
+      if (digits.startsWith("0")) variants.add(digits.slice(1));
+
+      for (const variant of variants) {
+        clauses.push({ phone: ILike(`%${variant}%`) });
+      }
+    }
+
+    return clauses;
+  }
+
   async getUserAdminList(query: AdminUserListQueryDto): Promise<PaginatedDto<UserEntity>> {
     const searchkey = query.search;
     const [userList, totalItems] = await this.userRepo.findAndCount({
       take: query.take,
       skip: query.skip,
-      where: searchkey
-        ? [
-            { firstName: ILike(`%${searchkey}%`) },
-            { lastName: ILike(`%${searchkey}%`) },
-            { email: ILike(`%${searchkey}`) },
-          ]
-        : undefined,
+      where: searchkey ? this.searchClauses(searchkey) : undefined,
       select: {
         id: true,
         firstName: true,
