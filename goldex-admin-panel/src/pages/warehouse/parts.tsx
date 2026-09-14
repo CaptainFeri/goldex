@@ -1,0 +1,1406 @@
+/**
+ * The pieces the warehouse screens are built from: forms, modals and the small
+ * helpers around them.
+ *
+ * Split out of the page so the shell can stay about layout — which warehouse is
+ * selected, which tab is open — rather than carrying fifteen dialogs with it.
+ */
+import { useState } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { api, unwrap, apiError } from "../../api/client";
+import { Card, Modal, Loading, ErrorState, Empty, Badge } from "../../components/ui";
+import { fmtNum, fmtDate } from "../../lib/format";
+import type { Warehouse, Packet, WarehouseRequest, AllocationOption } from "../../api/types";
+import DateField from "../../components/DateField";
+
+export function downloadCSV(data: Record<string, any>[], filename: string) {
+  if (!data.length) return;
+  const headers = Object.keys(data[0]);
+  const rows = data.map((r) => headers.map((h) => `"${String(r[h] ?? "").replace(/"/g, '""')}"`).join(","));
+  const csv = [headers.join(","), ...rows].join("\n");
+  const blob = new Blob(["\uFEFF" + csv], { type: "text/csv;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+const num = (...v: any[]) => {
+  for (const x of v) if (x !== undefined && x !== null) return Number(x) || 0;
+  return 0;
+};
+
+const STATUS_BADGE: Record<string, string> = {
+  PENDING: "gold",
+  APPROVED: "green",
+  COMPLETED: "green",
+  REJECTED: "red",
+  CANCELLED: "gray",
+  ACTIVE: "green",
+  INACTIVE: "gray",
+  MAINTENANCE: "gold",
+  FULL: "red",
+  IN_WAREHOUSE: "green",
+  WITHDRAWN: "red",
+  RELEASED: "gold",
+  ORPHAN: "gray",
+};
+const badgeKind = (s: string): "green" | "red" | "gold" | "gray" => (STATUS_BADGE[s] ?? "gray") as "green" | "red" | "gold" | "gray";
+
+const STATUS_LABEL: Record<string, string> = {
+  PENDING: "در انتظار",
+  APPROVED: "تایید شده",
+  COMPLETED: "تکمیل شده",
+  REJECTED: "رد شده",
+  CANCELLED: "لغو شده",
+  ACTIVE: "فعال",
+  INACTIVE: "غیرفعال",
+  MAINTENANCE: "تعمیرات",
+  FULL: "پر",
+  IN_WAREHOUSE: "در انبار",
+  WITHDRAWN: "برداشت شده",
+  RELEASED: "آزاد شده",
+  ORPHAN: "یتیم",
+};
+const tStatus = (s: string) => STATUS_LABEL[s] ?? s;
+
+export const LEGACY_TABS = [
+  { key: "overview", label: "نمای کلی" },
+  { key: "warehouses", label: "انبارها" },
+  { key: "packets", label: "بسته‌ها" },
+  { key: "requests", label: "درخواست‌ها" },
+  { key: "pending-withdraw", label: "برداشت در انتظار" },
+  { key: "settlement", label: "مواد تسویه" },
+];
+
+export function PacketPictureUpload({ packetId, onClose }: { packetId: string; onClose: () => void }) {
+  const qc = useQueryClient();
+  const [file, setFile] = useState<File | null>(null);
+
+  const upload = useMutation({
+    mutationFn: (formData: FormData) =>
+      api.post(`/admin/warehouse/packets/${packetId}/picture`, formData, {
+        headers: { "Content-Type": "multipart/form-data" },
+      }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["admin-packets"] });
+      onClose();
+    },
+  });
+
+  function submit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!file) return;
+    const fd = new FormData();
+    fd.append("picture", file);
+    upload.mutate(fd);
+  }
+
+  return (
+    <Modal title="آپلود تصویر بسته" onClose={onClose}>
+      <form onSubmit={submit}>
+        <div className="field">
+          <label>انتخاب تصویر</label>
+          <input className="input" type="file" accept="image/*" onChange={(e) => setFile(e.target.files?.[0] ?? null)} required />
+        </div>
+        {upload.isError && <div className="error-text">{apiError(upload.error)}</div>}
+        <div className="row" style={{ justifyContent: "flex-end", gap: 10, marginTop: 16 }}>
+          <button type="button" className="btn ghost" onClick={onClose}>انصراف</button>
+          <button className="btn primary" disabled={!file || upload.isPending}>
+            {upload.isPending ? <span className="spin" /> : "آپلود"}
+          </button>
+        </div>
+      </form>
+    </Modal>
+  );
+}
+
+export function PacketDetailsModal({ packetId, onClose }: { packetId: string; onClose: () => void }) {
+  const qc = useQueryClient();
+  const q = useQuery({
+    queryKey: ["admin-packet-detail", packetId],
+    queryFn: async () => unwrap<Packet>((await api.get(`/admin/warehouse/packets/${packetId}`)).data),
+  });
+  const [showPicUpload, setShowPicUpload] = useState(false);
+
+  const removePacket = useMutation({
+    mutationFn: () => api.delete(`/admin/warehouse/packets/${packetId}`),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["admin-packets"] });
+      qc.invalidateQueries({ queryKey: ["admin-orphan-packets"] });
+      onClose();
+    },
+  });
+
+  const p = q.data;
+  return (
+    <Modal title={`جزئیات بسته ${p?.idSecure ?? packetId?.slice(0, 8)}`} onClose={onClose} wide>
+      {q.isLoading ? (
+        <Loading />
+      ) : q.isError ? (
+        <ErrorState message={apiError(q.error)} />
+      ) : p ? (
+        <>
+          {p.picture && (
+            <div style={{ marginBottom: 16, textAlign: "center" }}>
+              <img src={p.picture} alt="تصویر بسته" style={{ maxWidth: 200, maxHeight: 200, borderRadius: 8, border: "1px solid var(--border)" }} />
+            </div>
+          )}
+          <div className="kv">
+            <span className="k">شناسه</span>
+            <span className="mono" style={{ fontSize: 12 }}>{p.id}</span>
+            <span className="k">شناسه امن</span>
+            <span className="mono">{p.idSecure}</span>
+            <span className="k">وزن خالص</span>
+            <span className="mono">{fmtNum(p.pureWeight, 6)}g</span>
+            <span className="k">وضعیت</span>
+            <span><Badge kind={badgeKind(p.status)}>{tStatus(p.status)}</Badge></span>
+            <span className="k">انبار</span>
+            <span>{p.warehouse?.name ?? "—"}</span>
+            <span className="k">ANG</span>
+            <span>{p.ang ?? "—"}</span>
+            <span className="k">عیار</span>
+            <span>{p.ayar ?? "—"}</span>
+            <span className="k">موقعیت</span>
+            <span>{p.warehouseIndexPosition ?? "—"}</span>
+            <span className="k">سریال</span>
+            <span className="mono">{p.batchNumber || "—"}</span>
+            <span className="k">یتیم</span>
+            <span>{p.isOrphan ? <Badge kind="gold">بله</Badge> : <Badge kind="gray">خیر</Badge>}</span>
+            <span className="k">QR</span>
+            <span className="mono" style={{ fontSize: 11 }}>{p.qrCode || "—"}</span>
+            <span className="k">ایجاد</span>
+            <span>{fmtDate(p.createAt)}</span>
+          </div>
+          <div className="row" style={{ justifyContent: "flex-end", gap: 8, marginTop: 16 }}>
+            <button className="btn sm" onClick={() => setShowPicUpload(true)}>آپلود تصویر</button>
+            <button className="btn sm danger" disabled={removePacket.isPending}
+              onClick={() => { if (confirm("این بسته حذف شود؟")) removePacket.mutate(); }}>
+              حذف بسته
+            </button>
+          </div>
+          {showPicUpload && <PacketPictureUpload packetId={packetId} onClose={() => setShowPicUpload(false)} />}
+        </>
+      ) : null}
+    </Modal>
+  );
+}
+
+export function RequestDetailsModal({ requestId, onClose }: { requestId: string; onClose: () => void }) {
+  const q = useQuery({
+    queryKey: ["admin-request-detail", requestId],
+    queryFn: async () => unwrap<WarehouseRequest>((await api.get(`/admin/warehouse/requests/${requestId}`)).data),
+  });
+  const r = q.data;
+  return (
+    <Modal title={`جزئیات درخواست ${requestId?.slice(0, 8)}`} onClose={onClose} wide>
+      {q.isLoading ? (
+        <Loading />
+      ) : q.isError ? (
+        <ErrorState message={apiError(q.error)} />
+      ) : r ? (
+        <div className="kv">
+          <span className="k">شناسه</span>
+          <span className="mono" style={{ fontSize: 12 }}>{r.id}</span>
+          <span className="k">نوع</span>
+          <span><Badge kind={r.type === "INPUT" ? "green" : "gold"}>{r.type === "INPUT" ? "واریز" : "برداشت"}</Badge></span>
+          <span className="k">کاربر</span>
+          <span>{r.user ? `${r.user.firstName ?? ""} ${r.user.lastName ?? ""}`.trim() || r.userId?.slice(0, 8) : r.userId?.slice(0, 8) ?? "—"}</span>
+          <span className="k">وزن</span>
+          <span className="mono">{fmtNum(r.weight, 6)}g</span>
+          <span className="k">وضعیت</span>
+          <span><Badge kind={badgeKind(r.status)}>{tStatus(r.status)}</Badge></span>
+          <span className="k">انبار</span>
+          <span>{r.warehouse?.name || "—"}</span>
+          <span className="k">بسته</span>
+          <span className="mono" style={{ fontSize: 12 }}>{r.packet?.idSecure ?? r.packetId?.slice(0, 8) ?? "—"}</span>
+          <span className="k">ادمین</span>
+          <span>{r.admin?.phone ?? r.admin?.email ?? r.adminId?.slice(0, 8) ?? "—"}</span>
+          <span className="k">تاریخ تحویل</span>
+          <span>{r.deliveryDate ? fmtDate(r.deliveryDate) : "—"}</span>
+          <span className="k">زمان تحویل</span>
+          <span>{r.deliveryTime || "—"}</span>
+          <span className="k">مکان تحویل</span>
+          <span>{r.deliveryLocation || "—"}</span>
+          <span className="k">یادداشت</span>
+          <span>{r.notes || "—"}</span>
+          <span className="k">متادیتا</span>
+          <span className="mono" style={{ fontSize: 11, whiteSpace: "pre-wrap" }}>{r.metadata ? JSON.stringify(r.metadata, null, 2) : "—"}</span>
+          <span className="k">پردازش شده</span>
+          <span>{fmtDate(r.processedAt)}</span>
+          <span className="k">ایجاد</span>
+          <span>{fmtDate(r.createAt)}</span>
+        </div>
+      ) : null}
+    </Modal>
+  );
+}
+
+export function AssignPacketModal({ request, onClose }: { request: WarehouseRequest; onClose: () => void }) {
+  const qc = useQueryClient();
+  const [packetId, setPacketId] = useState("");
+
+  const orphanPacketsQ = useQuery({
+    queryKey: ["admin-orphan-packets-for-assign"],
+    queryFn: async () => {
+      const res = unwrap<{ packets: Packet[] }>((await api.get("/admin/warehouse/packets?limit=100")).data);
+      return (res.packets || []).filter((p: Packet) => p.isOrphan && p.status === "ORPHAN");
+    },
+  });
+  const orphanPackets: Packet[] = orphanPacketsQ.data ?? [];
+
+  const assign = useMutation({
+    mutationFn: () => api.post(`/admin/warehouse/requests/${request.id}/assign-packet/${packetId}`),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["admin-requests"] });
+      qc.invalidateQueries({ queryKey: ["admin-pending-withdraw"] });
+      qc.invalidateQueries({ queryKey: ["admin-packets"] });
+      onClose();
+    },
+  });
+
+  return (
+    <Modal title="اختصاص بسته یتیم به درخواست برداشت" onClose={onClose}>
+      <div className="kv" style={{ marginBottom: 12 }}>
+        <span className="k">درخواست</span>
+        <span className="mono" style={{ fontSize: 12 }}>{request.id?.slice(0, 8)}…</span>
+        <span className="k">وزن درخواست</span>
+        <span>{fmtNum(request.weight, 6)}g</span>
+      </div>
+      <div className="field">
+        <label>بسته یتیم</label>
+        {orphanPacketsQ.isLoading ? (
+          <Loading />
+        ) : orphanPackets.length === 0 ? (
+          <div className="error-text">بسته یتیمی برای تخصیص موجود نیست</div>
+        ) : (
+          <select className="select" value={packetId} onChange={(e) => setPacketId(e.target.value)} required>
+            <option value="">انتخاب بسته…</option>
+            {orphanPackets.map((p) => (
+              <option key={p.id} value={p.id}>
+                {p.idSecure} — {fmtNum(p.pureWeight, 6)}g @ {p.warehouse?.name || "—"}
+              </option>
+            ))}
+          </select>
+        )}
+      </div>
+      {assign.isError && <div className="error-text">{apiError(assign.error)}</div>}
+      <div className="row" style={{ justifyContent: "flex-end", gap: 8, marginTop: 16 }}>
+        <button className="btn ghost" type="button" onClick={onClose}>انصراف</button>
+        <button className="btn primary" disabled={!packetId || assign.isPending} onClick={() => assign.mutate()}>
+          {assign.isPending ? <span className="spin" /> : "اختصاص"}
+        </button>
+      </div>
+    </Modal>
+  );
+}
+
+// ---- Sub-components ----
+
+const DAY_OPTIONS = [
+  { en: "saturday", fa: "شنبه" },
+  { en: "sunday", fa: "یکشنبه" },
+  { en: "monday", fa: "دوشنبه" },
+  { en: "tuesday", fa: "سه‌شنبه" },
+  { en: "wednesday", fa: "چهارشنبه" },
+  { en: "thursday", fa: "پنجشنبه" },
+  { en: "friday", fa: "جمعه" },
+];
+
+export function WarehouseForm({
+  initial,
+  onClose,
+}: {
+  initial?: Partial<Warehouse>;
+  onClose: () => void;
+}) {
+  const qc = useQueryClient();
+  const [name, setName] = useState(initial?.name ?? "");
+  const [desc, setDesc] = useState(initial?.description ?? "");
+  const [location, setLocation] = useState(initial?.location ?? "");
+  const [capacityTotal, setCapacityTotal] = useState(String(initial?.capacityTotal ?? ""));
+  const [timeLimit, setTimeLimit] = useState(initial?.timeLimit ?? "");
+  const [schedule, setSchedule] = useState<Record<string, { start: string; end: string }>>(
+    initial?.deliverySchedule ?? {}
+  );
+  const isEdit = !!initial?.id;
+
+  const save = useMutation({
+    mutationFn: (body: any) =>
+      isEdit ? api.put(`/admin/warehouse/${initial.id}`, body) : api.post("/admin/warehouse/create", body),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["admin-warehouses"] });
+      onClose();
+    },
+  });
+
+  const toggleDay = (dayEn: string, checked: boolean) => {
+    setSchedule((prev) => {
+      const next = { ...prev };
+      if (checked) next[dayEn] = { start: "09:00", end: "18:00" };
+      else delete next[dayEn];
+      return next;
+    });
+  };
+
+  const updateDayTime = (dayEn: string, field: "start" | "end", value: string) => {
+    setSchedule((prev) => {
+      const day = prev[dayEn];
+      if (!day) return prev;
+      return { ...prev, [dayEn]: { ...day, [field]: value } };
+    });
+  };
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    save.mutate({
+      name,
+      description: desc,
+      location,
+      capacityTotal: Number(capacityTotal),
+      timeLimit: timeLimit || undefined,
+      deliverySchedule: Object.keys(schedule).length > 0 ? schedule : undefined,
+    });
+  };
+
+  return (
+    <Modal title={isEdit ? "ویرایش انبار" : "انبار جدید"} onClose={onClose}>
+      <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: 12, minWidth: 420 }}>
+        {save.isError && <div className="error-text">{apiError(save.error)}</div>}
+        <div className="field">
+          <label>نام</label>
+          <input className="input" value={name} onChange={(e) => setName(e.target.value)} required />
+        </div>
+        <div className="field">
+          <label>توضیحات</label>
+          <textarea className="input" value={desc} onChange={(e) => setDesc(e.target.value)} rows={2} />
+        </div>
+        <div className="field">
+          <label>موقعیت</label>
+          <input className="input" value={location} onChange={(e) => setLocation(e.target.value)} />
+        </div>
+        <div className="field">
+          <label>ظرفیت کل (گرم)</label>
+          <input className="input" type="number" step="0.00000001" value={capacityTotal}
+            onChange={(e) => setCapacityTotal(e.target.value)} required />
+        </div>
+        <div className="field">
+          <label>محدودیت زمانی</label>
+          <input className="input" value={timeLimit} onChange={(e) => setTimeLimit(e.target.value)} placeholder="مثال: 48 ساعت" />
+        </div>
+
+        <div style={{ borderTop: "1px solid var(--border)", paddingTop: 12 }}>
+          <label style={{ fontWeight: 600, display: "block", marginBottom: 8 }}>زمان‌بندی تحویل</label>
+          {DAY_OPTIONS.map((day) => {
+            const enabled = !!schedule[day.en];
+            return (
+              <div key={day.en} style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
+                <label style={{ display: "flex", alignItems: "center", gap: 4, minWidth: 90 }}>
+                  <input type="checkbox" checked={enabled} onChange={(e) => toggleDay(day.en, e.target.checked)} />
+                  {day.fa}
+                </label>
+                {enabled && (
+                  <>
+                    <input type="time" className="input" style={{ width: 100 }}
+                      value={schedule[day.en].start}
+                      onChange={(e) => updateDayTime(day.en, "start", e.target.value)} />
+                    <span>تا</span>
+                    <input type="time" className="input" style={{ width: 100 }}
+                      value={schedule[day.en].end}
+                      onChange={(e) => updateDayTime(day.en, "end", e.target.value)} />
+                  </>
+                )}
+              </div>
+            );
+          })}
+        </div>
+
+        <div className="row" style={{ justifyContent: "flex-end", gap: 8, marginTop: 12 }}>
+          <button className="btn ghost" type="button" onClick={onClose}>انصراف</button>
+          <button className="btn primary" disabled={save.isPending}>{save.isPending ? "در حال ذخیره…" : "ذخیره"}</button>
+        </div>
+      </form>
+    </Modal>
+  );
+}
+
+export function PacketForm({
+  warehouseId,
+  onClose,
+}: {
+  warehouseId?: string;
+  onClose: () => void;
+}) {
+  const qc = useQueryClient();
+  const [wh, setWh] = useState(warehouseId ?? "");
+  const [weight, setWeight] = useState("");
+  const [idSecure, setIdSecure] = useState("");
+  const [ang, setAng] = useState("");
+  const [ayar, setAyar] = useState("");
+  const [apparentWeight, setApparentWeight] = useState("");
+  const [wastage, setWastage] = useState("");
+  const [batchNumber, setBatchNumber] = useState("");
+  const [isOrphan, setIsOrphan] = useState(false);
+
+  const warehousesQ = useQuery({
+    queryKey: ["admin-warehouses"],
+    queryFn: async () => unwrap<{ warehouses: Warehouse[] }>((await api.get("/admin/warehouse/all")).data),
+  });
+  const whList: Warehouse[] = warehousesQ.data?.warehouses ?? [];
+
+  const save = useMutation({
+    mutationFn: (body: any) => {
+      const fd = new FormData();
+      Object.entries(body).forEach(([k, v]) => {
+        if (v !== undefined && v !== null && v !== "") fd.append(k, String(v));
+      });
+      return api.post("/admin/warehouse/packets", fd, { headers: { "Content-Type": "multipart/form-data" } });
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["admin-packets"] });
+      qc.invalidateQueries({ queryKey: ["admin-orphan-packets"] });
+      onClose();
+    },
+  });
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    save.mutate({
+      warehouseId: wh,
+      pureWeight: Number(weight),
+      idSecure: idSecure || `ADM-${Date.now()}`,
+      ang: ang ? Number(ang) : undefined,
+      ayar: ayar ? Number(ayar) : undefined,
+      apparentWeight: apparentWeight ? Number(apparentWeight) : undefined,
+      wastage: wastage ? Number(wastage) : undefined,
+      batchNumber: batchNumber || undefined,
+      isOrphan,
+    });
+  };
+
+  return (
+    <Modal title="ایجاد بسته" onClose={onClose}>
+      <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: 12, minWidth: 360 }}>
+        {save.isError && <div className="error-text">{apiError(save.error)}</div>}
+        <div className="field">
+          <label>انبار</label>
+          <select className="input" value={wh} onChange={(e) => setWh(e.target.value)} required>
+            <option value="">انتخاب…</option>
+            {whList.map((w) => <option key={w.id} value={w.id}>{w.name}</option>)}
+          </select>
+        </div>
+        <div className="field">
+          <label>وزن (گرم)</label>
+          <input className="input" type="number" step="0.00000001" value={weight} onChange={(e) => setWeight(e.target.value)} required />
+        </div>
+        <div className="field">
+          <label>وزن ظاهری (گرم — توزین)</label>
+          <input className="input" type="number" step="any" value={apparentWeight}
+            placeholder="اختیاری؛ اگر با عیار وارد شود، وزن خالص خودکار محاسبه می‌شود"
+            onChange={(e) => setApparentWeight(e.target.value)} />
+        </div>
+        <div className="field">
+          <label>انگی / ضایعات (گرم)</label>
+          <input className="input" type="number" step="any" value={wastage}
+            onChange={(e) => setWastage(e.target.value)} placeholder="0" />
+        </div>
+        {Number(apparentWeight) > 0 && Number(ayar) > 0 && (
+          <div className="alert" style={{ backgroundColor: "var(--gold-bg)", border: "1px solid var(--gold)", padding: 10, borderRadius: 8, fontSize: 13 }}>
+            وزن خالص محاسبه‌شده: <strong className="mono">{fmtNum((Number(apparentWeight) * Number(ayar)) / 750, 6)}g</strong> (ظاهری × عیار ÷ ۷۵۰)
+          </div>
+        )}
+        <div className="field">
+          <label>شناسه امن</label>
+          <input className="input" value={idSecure} onChange={(e) => setIdSecure(e.target.value)} placeholder="خودکار اگر خالی" />
+        </div>
+        <div className="field">
+          <label>ANG (خلوص)</label>
+          <input className="input" type="number" step="0.0001" value={ang} onChange={(e) => setAng(e.target.value)} />
+        </div>
+        <div className="field">
+          <label>عیار</label>
+          <input className="input" type="number" step="0.0001" value={ayar} onChange={(e) => setAyar(e.target.value)} />
+        </div>
+        <div className="field">
+          <label>شماره سریال</label>
+          <input className="input" value={batchNumber} onChange={(e) => setBatchNumber(e.target.value)} />
+        </div>
+        <label style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer" }}>
+          <input type="checkbox" checked={isOrphan} onChange={(e) => setIsOrphan(e.target.checked)} />
+          <span>یتیم (اختصاص خودکار به قدیمی‌ترین برداشت در انتظار)</span>
+        </label>
+        <div className="row" style={{ justifyContent: "flex-end", gap: 8, marginTop: 12 }}>
+          <button className="btn ghost" type="button" onClick={onClose}>انصراف</button>
+          <button className="btn primary" disabled={save.isPending}>{save.isPending ? "در حال ذخیره…" : "ایجاد"}</button>
+        </div>
+      </form>
+    </Modal>
+  );
+}
+
+export function ConfirmMaterialModal({
+  request,
+  onClose,
+}: {
+  request: WarehouseRequest;
+  onClose: () => void;
+}) {
+  const qc = useQueryClient();
+  const [ang, setAng] = useState("");
+  const [ayar, setAyar] = useState("");
+  const [apparentWeight, setApparentWeight] = useState("");
+  const [wastage, setWastage] = useState("");
+  const [position, setPosition] = useState("");
+  const [pictureFile, setPictureFile] = useState<File | null>(null);
+
+  const confirm = useMutation({
+    mutationFn: (formData: FormData) =>
+      api.put(`/admin/warehouse/requests/${request.id}/confirm-material`, formData, {
+        headers: { "Content-Type": "multipart/form-data" },
+      }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["admin-requests"] });
+      qc.invalidateQueries({ queryKey: ["warehouse-overview"] });
+      qc.invalidateQueries({ queryKey: ["admin-packets"] });
+      onClose();
+    },
+  });
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    const fd = new FormData();
+    if (ang) fd.append("ang", String(Number(ang)));
+    if (ayar) fd.append("ayar", String(Number(ayar)));
+    if (apparentWeight) fd.append("apparentWeight", String(Number(apparentWeight)));
+    if (wastage) fd.append("wastage", String(Number(wastage)));
+    if (position) fd.append("warehouseIndexPosition", position);
+    if (pictureFile) fd.append("picture", pictureFile);
+    confirm.mutate(fd);
+  };
+
+  return (
+    <Modal title="تایید مواد واریزی" onClose={onClose}>
+      <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: 12, minWidth: 360 }}>
+        {confirm.isError && <div className="error-text">{apiError(confirm.error)}</div>}
+        <div className="kv" style={{ marginBottom: 4 }}>
+          <span className="k">درخواست</span>
+          <span>{request.id?.slice(0, 8)}…</span>
+          <span className="k">وزن</span>
+          <span>{fmtNum(request.weight, 6)}g</span>
+        </div>
+        <div className="field">
+          <label>ANG (خلوص)</label>
+          <input className="input" type="number" step="0.0001" value={ang} onChange={(e) => setAng(e.target.value)} />
+        </div>
+        <div className="field">
+          <label>عیار</label>
+          <input className="input" type="number" step="0.0001" value={ayar} onChange={(e) => setAyar(e.target.value)} />
+        </div>
+        <div className="field">
+          <label>وزن ظاهری (گرم — توزین)</label>
+          <input className="input" type="number" step="any" value={apparentWeight}
+            placeholder="اختیاری؛ اگر با عیار وارد شود، وزن خالص خودکار محاسبه می‌شود"
+            onChange={(e) => setApparentWeight(e.target.value)} />
+        </div>
+        <div className="field">
+          <label>انگی / ضایعات (گرم)</label>
+          <input className="input" type="number" step="any" value={wastage}
+            onChange={(e) => setWastage(e.target.value)} placeholder="0" />
+        </div>
+        {Number(apparentWeight) > 0 && Number(ayar) > 0 && (
+          <div className="alert" style={{ backgroundColor: "var(--gold-bg)", border: "1px solid var(--gold)", padding: 10, borderRadius: 8, fontSize: 13 }}>
+            وزن خالص QC: <strong className="mono">{fmtNum((Number(apparentWeight) * Number(ayar)) / 750, 6)}g</strong>
+            {Math.abs((Number(apparentWeight) * Number(ayar)) / 750 - request.weight) > 0.00000001 && (
+              <span> (اعلامی: {fmtNum(request.weight, 6)}g — تفاوت ثبت خواهد شد)</span>
+            )}
+          </div>
+        )}
+        <div className="field">
+          <label>موقعیت در انبار</label>
+          <input className="input" value={position} onChange={(e) => setPosition(e.target.value)} placeholder="مثال: A1-B2" />
+        </div>
+        <div className="field">
+          <label>تصویر</label>
+          <input className="input" type="file" accept="image/*" onChange={(e) => setPictureFile(e.target.files?.[0] ?? null)} />
+        </div>
+        <div className="row" style={{ justifyContent: "flex-end", gap: 8, marginTop: 12 }}>
+          <button className="btn ghost" type="button" onClick={onClose}>انصراف</button>
+          <button className="btn primary" disabled={confirm.isPending}>{confirm.isPending ? "در حال تایید…" : "تایید مواد"}</button>
+        </div>
+      </form>
+    </Modal>
+  );
+}
+
+export function RequestProcessModal({
+  request,
+  onClose,
+}: {
+  request: WarehouseRequest;
+  onClose: () => void;
+}) {
+  const qc = useQueryClient();
+  const [status, setStatus] = useState("");
+  const [notes, setNotes] = useState("");
+  const [deliveryDate, setDeliveryDate] = useState("");
+  const [deliveryTime, setDeliveryTime] = useState("");
+  const [deliveryLocation, setDeliveryLocation] = useState("");
+
+  const process = useMutation({
+    mutationFn: (body: any) => api.put(`/admin/warehouse/requests/${request.id}/process`, body),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["admin-requests"] });
+      onClose();
+    },
+  });
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    process.mutate({
+      status,
+      notes: notes || undefined,
+      deliveryDate: deliveryDate || undefined,
+      deliveryTime: deliveryTime || undefined,
+      deliveryLocation: deliveryLocation || undefined,
+    });
+  };
+
+  const isOutput = request.type === "OUTPUT";
+
+  return (
+    <Modal title={`پردازش درخواست ${request.type === "INPUT" ? "واریز" : "برداشت"}`} onClose={onClose}>
+      <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: 12, minWidth: 360 }}>
+        {process.isError && <div className="error-text">{apiError(process.error)}</div>}
+        <div className="kv" style={{ marginBottom: 4 }}>
+          <span className="k">درخواست</span>
+          <span>{request.id?.slice(0, 8)}… ({request.type === "INPUT" ? "واریز" : "برداشت"})</span>
+          <span className="k">وزن</span>
+          <span>{fmtNum(request.weight, 6)}g</span>
+        </div>
+        <div className="field">
+          <label>اقدام</label>
+          <select className="input" value={status} onChange={(e) => setStatus(e.target.value)} required>
+            <option value="">انتخاب…</option>
+            {!isOutput && <option value="APPROVED">تایید (واریز مواد)</option>}
+            <option value="REJECTED">رد</option>
+            {isOutput && <option value="COMPLETED">تکمیل (برداشت شده)</option>}
+          </select>
+        </div>
+        <div className="field">
+          <label>یادداشت</label>
+          <textarea className="input" value={notes} onChange={(e) => setNotes(e.target.value)} rows={2} />
+        </div>
+        {(status === "APPROVED" || status === "COMPLETED") && (
+          <>
+            <div className="field">
+              <label>تاریخ تحویل</label>
+              <DateField value={deliveryDate} onChange={setDeliveryDate} />
+            </div>
+            <div className="field">
+              <label>زمان تحویل</label>
+              <input className="input" type="time" value={deliveryTime} onChange={(e) => setDeliveryTime(e.target.value)} />
+            </div>
+            <div className="field">
+              <label>مکان تحویل</label>
+              <input className="input" value={deliveryLocation} onChange={(e) => setDeliveryLocation(e.target.value)} />
+            </div>
+          </>
+        )}
+        <div className="row" style={{ justifyContent: "flex-end", gap: 8, marginTop: 12 }}>
+          <button className="btn ghost" type="button" onClick={onClose}>انصراف</button>
+          <button className="btn primary" disabled={process.isPending}>{process.isPending ? "در حال پردازش…" : "ثبت"}</button>
+        </div>
+      </form>
+    </Modal>
+  );
+}
+
+export function ApproveWithdrawModal({
+  request,
+  onClose,
+}: {
+  request: WarehouseRequest;
+  onClose: () => void;
+}) {
+  const qc = useQueryClient();
+  const [mode, setMode] = useState<"user" | "orphan">("user");
+  const [selectedPacketId, setSelectedPacketId] = useState("");
+  const [weight1, setWeight1] = useState("");
+  const [ang1, setAng1] = useState("");
+  const [ayar1, setAyar1] = useState("");
+  const [position1, setPosition1] = useState("");
+  const [weight2, setWeight2] = useState("");
+  const [ang2, setAng2] = useState("");
+  const [ayar2, setAyar2] = useState("");
+  const [position2, setPosition2] = useState("");
+  const [picture1, setPicture1] = useState<File | null>(null);
+  const [picture2, setPicture2] = useState<File | null>(null);
+
+  const userId = request.userId || request.user?.id || "";
+  const warehouseId = request.warehouseId || request.warehouse?.id || "";
+
+  const userPacketsQ = useQuery({
+    queryKey: ["admin-user-packets", userId, warehouseId],
+    queryFn: async (): Promise<Packet[]> => {
+      const params = warehouseId ? `?warehouseId=${warehouseId}` : "";
+      return unwrap<Packet[]>((await api.get(`/admin/warehouse/users/${userId}/packets${params}`)).data);
+    },
+    enabled: !!userId,
+  });
+
+  const orphanPacketsQ = useQuery({
+    queryKey: ["admin-orphan-packets"],
+    queryFn: async (): Promise<Packet[]> => {
+      const params = warehouseId ? `?status=ORPHAN&warehouseId=${warehouseId}` : "?status=ORPHAN";
+      const res = unwrap<{ packets: Packet[] }>((await api.get(`/admin/warehouse/packets${params}`)).data);
+      return res.packets ?? [];
+    },
+  });
+
+  const userPackets: Packet[] = userPacketsQ.data ?? [];
+  const orphanPackets: Packet[] = orphanPacketsQ.data ?? [];
+  const pool = mode === "user" ? userPackets : orphanPackets;
+  const selectedPacket = pool.find((p) => p.id === selectedPacketId);
+
+  const w1 = Number(weight1) > 0 ? Number(weight1) : (selectedPacket && mode === "user" ? request.weight : selectedPacket?.pureWeight ?? 0);
+  const w2 = selectedPacket && mode === "user" ? Math.max(0, selectedPacket.pureWeight - w1) : 0;
+
+  const approve = useMutation({
+    mutationFn: () => {
+      const fd = new FormData();
+      fd.append("packetId", selectedPacketId);
+      if (weight1) fd.append("weight1", String(w1));
+      if (ang1) fd.append("ang1", String(ang1));
+      if (ayar1) fd.append("ayar1", String(ayar1));
+      if (position1) fd.append("position1", position1);
+      if (picture1) fd.append("picture1", picture1);
+      if (mode === "user") {
+        if (w2 > 0 && weight2) fd.append("weight2", String(Number(weight2)));
+        if (ang2) fd.append("ang2", String(ang2));
+        if (ayar2) fd.append("ayar2", String(ayar2));
+        if (position2) fd.append("position2", position2);
+        if (picture2) fd.append("picture2", picture2);
+      }
+      return api.post(`/admin/warehouse/requests/${request.id}/approve-withdraw`, fd, {
+        headers: { "Content-Type": "multipart/form-data" },
+      });
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["admin-requests"] });
+      qc.invalidateQueries({ queryKey: ["admin-pending-withdraw"] });
+      qc.invalidateQueries({ queryKey: ["admin-packets"] });
+      qc.invalidateQueries({ queryKey: ["admin-orphan-packets"] });
+      qc.invalidateQueries({ queryKey: ["warehouse-overview"] });
+      onClose();
+    },
+  });
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedPacketId) return;
+    approve.mutate();
+  };
+
+  const userName = request.user
+    ? `${request.user.firstName ?? ""} ${request.user.lastName ?? ""}`.trim() || request.userId?.slice(0, 8)
+    : request.userId?.slice(0, 8);
+
+  return (
+    <Modal title="تایید برداشت با انتخاب بسته" onClose={onClose} wide>
+      <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: 12, minWidth: 420 }}>
+        {approve.isError && <div className="error-text">{apiError(approve.error)}</div>}
+
+        <div className="kv" style={{ marginBottom: 4 }}>
+          <span className="k">درخواست</span>
+          <span>{request.id?.slice(0, 8)}…</span>
+          <span className="k">کاربر</span>
+          <span>{userName}</span>
+          <span className="k">وزن درخواست</span>
+          <span>{fmtNum(request.weight, 6)}g</span>
+        </div>
+
+        <div className="row" style={{ gap: 8 }}>
+          <button
+            type="button"
+            className={`btn ${mode === "user" ? "primary" : "ghost"}`}
+            onClick={() => { setMode("user"); setSelectedPacketId(""); }}
+          >
+            بسته کاربر (تفکیک به ۲ بخش)
+          </button>
+          <button
+            type="button"
+            className={`btn ${mode === "orphan" ? "primary" : "ghost"}`}
+            onClick={() => { setMode("orphan"); setSelectedPacketId(""); }}
+          >
+            بسته یتیم (تخصیص مستقیم)
+          </button>
+        </div>
+
+        <div className="field">
+          <label>
+            {mode === "user"
+              ? "بسته کاربر برای تفکیک"
+              : "بسته یتیم برای تخصیص مستقیم به این کاربر"}
+          </label>
+          {mode === "user" && userPacketsQ.isLoading ? (
+            <div>در حال بارگذاری بسته‌های کاربر…</div>
+          ) : mode === "orphan" && orphanPacketsQ.isLoading ? (
+            <div>در حال بارگذاری بسته‌های یتیم…</div>
+          ) : pool.length === 0 ? (
+            <div style={{ color: "var(--red)" }}>
+              {mode === "user"
+                ? "کاربر بسته‌ای در انبار ندارد — ابتدا برای کاربر بسته ایجاد کنید یا از بسته یتیم استفاده کنید."
+                : "بسته یتیم موجودی ندارد — ابتدا از مواد تسویه بسته یتیم ایجاد کنید."}
+            </div>
+          ) : (
+            <select
+              className="input"
+              value={selectedPacketId}
+              onChange={(e) => { setSelectedPacketId(e.target.value); setWeight1(""); setWeight2(""); }}
+            >
+              <option value="">انتخاب بسته…</option>
+              {pool.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.idSecure} — وزن: {fmtNum(p.pureWeight, 6)}g
+                  {p.warehouse ? ` @ ${p.warehouse.name}` : ""}
+                  {p.warehouseIndexPosition ? ` [${p.warehouseIndexPosition}]` : ""}
+                </option>
+              ))}
+            </select>
+          )}
+        </div>
+
+        {selectedPacket && mode === "user" && (
+          <>
+            <div
+              className="alert"
+              style={{
+                backgroundColor: "var(--gold-bg)",
+                border: "1px solid var(--gold)",
+                padding: 12,
+                borderRadius: 8,
+                fontSize: 13,
+              }}
+            >
+              <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                <strong>پیش‌نمایش تفکیک:</strong>
+                <div className="row" style={{ justifyContent: "space-between" }}>
+                  <span>بسته اصلی: {fmtNum(selectedPacket.pureWeight, 6)}g</span>
+                </div>
+                <div className="row" style={{ justifyContent: "space-between" }}>
+                  <span style={{ color: "var(--red)" }}>برداشت (بخش ۱): −{fmtNum(w1, 6)}g</span>
+                </div>
+                <div className="row" style={{ justifyContent: "space-between" }}>
+                  <span style={{ color: "var(--green)" }}>
+                    باقی‌مانده (بخش ۲): {fmtNum(w2, 6)}g
+                    {w2 > 0 ? " (بسته جدید ایجاد می‌شود)" : " (کل وزن برداشت می‌شود)"}
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            <div style={{ border: "1px solid var(--border)", borderRadius: 8, padding: 10, display: "flex", flexDirection: "column", gap: 10 }}>
+              <strong>بخش ۱ — برداشت</strong>
+              <div className="row" style={{ gap: 8, flexWrap: "wrap" }}>
+                <div className="field" style={{ flex: 1 }}>
+                  <label>وزن (گرم)</label>
+                  <input className="input" type="number" step="any" value={weight1} placeholder={String(request.weight)} onChange={(e) => setWeight1(e.target.value)} />
+                </div>
+                <div className="field" style={{ flex: 1 }}>
+                  <label>عکس بخش برداشت</label>
+                  <input className="input" type="file" accept="image/*" onChange={(e) => setPicture1(e.target.files?.[0] ?? null)} />
+                </div>
+              </div>
+              <div className="row" style={{ gap: 8, flexWrap: "wrap" }}>
+                <div className="field" style={{ flex: 1 }}>
+                  <label>ANG</label>
+                  <input className="input" type="number" step="any" value={ang1} placeholder={selectedPacket.ang != null ? String(selectedPacket.ang) : ""} onChange={(e) => setAng1(e.target.value)} />
+                </div>
+                <div className="field" style={{ flex: 1 }}>
+                  <label>AYAR</label>
+                  <input className="input" type="number" step="any" value={ayar1} placeholder={selectedPacket.ayar != null ? String(selectedPacket.ayar) : ""} onChange={(e) => setAyar1(e.target.value)} />
+                </div>
+                <div className="field" style={{ flex: 1 }}>
+                  <label>موقعیت در انبار</label>
+                  <input className="input" type="text" value={position1} placeholder={selectedPacket.warehouseIndexPosition} onChange={(e) => setPosition1(e.target.value)} />
+                </div>
+              </div>
+            </div>
+
+            {w2 > 0 && (
+              <div style={{ border: "1px solid var(--border)", borderRadius: 10, padding: 10, display: "flex", flexDirection: "column", gap: 10 }}>
+                <strong>بخش ۲ — باقی‌مانده (بسته جدید برای کاربر)</strong>
+                <div className="row" style={{ gap: 8, flexWrap: "wrap" }}>
+                  <div className="field" style={{ flex: 1 }}>
+                    <label>وزن (گرم)</label>
+                    <input className="input" type="number" step="any" value={weight2} placeholder={String(w2)} onChange={(e) => setWeight2(e.target.value)} />
+                  </div>
+                  <div className="field" style={{ flex: 1 }}>
+                    <label>عکس بخش باقی‌مانده</label>
+                    <input className="input" type="file" accept="image/*" onChange={(e) => setPicture2(e.target.files?.[0] ?? null)} />
+                  </div>
+                </div>
+                <div className="row" style={{ gap: 8, flexWrap: "wrap" }}>
+                  <div className="field" style={{ flex: 1 }}>
+                    <label>ANG</label>
+                    <input className="input" type="number" step="any" value={ang2} placeholder={selectedPacket.ang != null ? String(selectedPacket.ang) : ""} onChange={(e) => setAng2(e.target.value)} />
+                  </div>
+                  <div className="field" style={{ flex: 1 }}>
+                    <label>AYAR</label>
+                    <input className="input" type="number" step="any" value={ayar2} placeholder={selectedPacket.ayar != null ? String(selectedPacket.ayar) : ""} onChange={(e) => setAyar2(e.target.value)} />
+                  </div>
+                  <div className="field" style={{ flex: 1 }}>
+                    <label>موقعیت در انبار</label>
+                    <input className="input" type="text" value={position2} placeholder={selectedPacket.warehouseIndexPosition} onChange={(e) => setPosition2(e.target.value)} />
+                  </div>
+                </div>
+              </div>
+            )}
+          </>
+        )}
+
+        {selectedPacket && mode === "orphan" && (
+          <div style={{ border: "1px solid var(--border)", borderRadius: 10, padding: 10, display: "flex", flexDirection: "column", gap: 10 }}>
+            <strong>مشخصات پس از تخصیص (اختیاری)</strong>
+            <div className="row" style={{ gap: 8, flexWrap: "wrap" }}>
+              <div className="field" style={{ flex: 1 }}>
+                <label>ANG</label>
+                <input className="input" type="number" step="any" value={ang1} placeholder={selectedPacket.ang != null ? String(selectedPacket.ang) : ""} onChange={(e) => setAng1(e.target.value)} />
+              </div>
+              <div className="field" style={{ flex: 1 }}>
+                <label>AYAR</label>
+                <input className="input" type="number" step="any" value={ayar1} placeholder={selectedPacket.ayar != null ? String(selectedPacket.ayar) : ""} onChange={(e) => setAyar1(e.target.value)} />
+              </div>
+              <div className="field" style={{ flex: 1 }}>
+                <label>موقعیت در انبار</label>
+                <input className="input" type="text" value={position1} placeholder={selectedPacket.warehouseIndexPosition} onChange={(e) => setPosition1(e.target.value)} />
+              </div>
+            </div>
+            <div className="field">
+              <label>عکس بسته</label>
+              <input className="input" type="file" accept="image/*" onChange={(e) => setPicture1(e.target.files?.[0] ?? null)} />
+            </div>
+          </div>
+        )}
+
+        <div className="row" style={{ justifyContent: "flex-end", gap: 8, marginTop: 12 }}>
+          <button className="btn ghost" type="button" onClick={onClose}>
+            انصراف
+          </button>
+          <button className="btn primary" type="submit" disabled={approve.isPending || !selectedPacketId}>
+            {approve.isPending ? "در حال تایید…" : mode === "user" ? "تایید و تفکیک بسته" : "تایید و تخصیص بسته یتیم"}
+          </button>
+        </div>
+      </form>
+    </Modal>
+  );
+}
+
+export function SmartAllocationModal({
+  request,
+  onClose,
+}: {
+  request: WarehouseRequest;
+  onClose: () => void;
+}) {
+  const qc = useQueryClient();
+  const [selectedKey, setSelectedKey] = useState("");
+
+  const suggestionsQ = useQuery({
+    queryKey: ["allocation-suggestions", request.id],
+    queryFn: async (): Promise<AllocationOption[]> => {
+      return unwrap<AllocationOption[]>(
+        (await api.get(`/admin/warehouse/requests/${request.id}/allocation-suggestions`)).data
+      );
+    },
+  });
+
+  const apply = useMutation({
+    mutationFn: (optionKey: string) =>
+      api.post(`/admin/warehouse/requests/${request.id}/allocation-apply`, { optionKey }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["admin-requests"] });
+      qc.invalidateQueries({ queryKey: ["admin-pending-withdraw"] });
+      qc.invalidateQueries({ queryKey: ["admin-packets"] });
+      qc.invalidateQueries({ queryKey: ["admin-orphan-packets"] });
+      qc.invalidateQueries({ queryKey: ["warehouse-overview"] });
+      onClose();
+    },
+  });
+
+  const opts: AllocationOption[] = suggestionsQ.data ?? [];
+  const selected = opts.find((o) => o.optionKey === selectedKey);
+
+  const KIND_LABEL: Record<string, string> = {
+    "own-exact": "بسته کاربر — تطابق دقیق",
+    "own-fit": "بسته کاربر — تفکیک",
+    "orphan-exact": "بسته یتیم — تطابق دقیق",
+    "orphan-fit": "بسته یتیم — نزدیک‌ترین",
+    combination: "ترکیب بسته‌ها",
+  };
+
+  return (
+    <Modal title="تخصیص هوشمند بسته‌ها" onClose={onClose} wide>
+      <div style={{ display: "flex", flexDirection: "column", gap: 12, minWidth: 420 }}>
+        <div className="kv" style={{ marginBottom: 4 }}>
+          <span className="k">درخواست</span>
+          <span>{request.id?.slice(0, 8)}…</span>
+          <span className="k">وزن</span>
+          <span>{fmtNum(request.weight, 6)}g</span>
+        </div>
+
+        {suggestionsQ.isLoading ? (
+          <div>در حال محاسبه پیشنهادها…</div>
+        ) : suggestionsQ.isError ? (
+          <div className="error-text">{apiError(suggestionsQ.error)}</div>
+        ) : opts.length === 0 ? (
+          <div style={{ color: "var(--red)" }}>
+            هیچ پیشنهاد تخصیصی یافت نشد — ابتدا برای کاربر بسته ایجاد کنید یا بسته یتیم موجود کنید.
+          </div>
+        ) : (
+          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+            {opts.map((o) => (
+              <label
+                key={o.optionKey}
+                style={{
+                  display: "flex",
+                  gap: 8,
+                  padding: 10,
+                  border: "1px solid var(--border)",
+                  borderRadius: 8,
+                  cursor: "pointer",
+                  alignItems: "flex-start",
+                }}
+              >
+                <input
+                  type="radio"
+                  name="alloc"
+                  value={o.optionKey}
+                  checked={selectedKey === o.optionKey}
+                  onChange={() => setSelectedKey(o.optionKey)}
+                  style={{ marginTop: 3 }}
+                />
+                <div style={{ display: "flex", flexDirection: "column", gap: 4, flex: 1 }}>
+                  <div className="row" style={{ justifyContent: "space-between" }}>
+                    <strong>{KIND_LABEL[o.kind] ?? o.kind}</strong>
+                    <span className="mono">{fmtNum(o.deliveredWeight, 6)}g</span>
+                  </div>
+                  <div style={{ fontSize: 12, color: "var(--text-faint)" }}>{o.description}</div>
+                  {o.refundWeight > 0 && (
+                    <div style={{ fontSize: 12, color: "var(--green)" }}>
+                      بازگشت به کیف پول: {fmtNum(o.refundWeight, 6)}g
+                    </div>
+                  )}
+                  {o.splitsUserPacket && (
+                    <div style={{ fontSize: 12, color: "var(--gold)" }}>
+                      بسته کاربر تفکیک می‌شود و بسته جدیدی برای کاربر ایجاد می‌شود.
+                    </div>
+                  )}
+                </div>
+              </label>
+            ))}
+          </div>
+        )}
+
+        {apply.isError && <div className="error-text">{apiError(apply.error)}</div>}
+
+        <div className="row" style={{ justifyContent: "flex-end", gap: 8, marginTop: 12 }}>
+          <button className="btn ghost" type="button" onClick={onClose}>انصراف</button>
+          <button
+            className="btn primary"
+            disabled={apply.isPending || !selectedKey || !selected}
+            onClick={() => apply.mutate(selectedKey)}
+          >
+            {apply.isPending ? "در حال اعمال…" : `اعمال: ${selected?.packetIds.length ?? 0} بسته`}
+          </button>
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
+export function SplitPacketModal({
+  packet,
+  onClose,
+}: {
+  packet: Packet;
+  onClose: () => void;
+}) {
+  const qc = useQueryClient();
+  const [parts, setParts] = useState([{ weight: "", ang: "", ayar: "", position: "" }]);
+  const [wastage, setWastage] = useState("");
+
+  const partsSum = parts.reduce((s, p) => s + (Number(p.weight) || 0), 0);
+  const waste = Number(wastage) || 0;
+  const delta = packet.pureWeight - (partsSum + waste);
+  const conserved = Math.abs(delta) < 0.00000001;
+
+  const save = useMutation({
+    mutationFn: (body: any) => api.post(`/admin/warehouse/packets/${packet.id}/split`, body),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["admin-packets"] });
+      qc.invalidateQueries({ queryKey: ["admin-orphan-packets"] });
+      qc.invalidateQueries({ queryKey: ["warehouse-overview"] });
+      onClose();
+    },
+  });
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!conserved) return;
+    save.mutate({
+      parts: parts
+        .filter((p) => Number(p.weight) > 0)
+        .map((p) => ({
+          weight: Number(p.weight),
+          ang: p.ang ? Number(p.ang) : undefined,
+          ayar: p.ayar ? Number(p.ayar) : undefined,
+          position: p.position || undefined,
+        })),
+      wastage: waste > 0 ? waste : undefined,
+    });
+  };
+
+  const updatePart = (i: number, field: string, value: string) => {
+    setParts((prev) => prev.map((p, idx) => (idx === i ? { ...p, [field]: value } : p)));
+  };
+
+  return (
+    <Modal title={`تقسیم بسته ${packet.idSecure}`} onClose={onClose} wide>
+      <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: 12, minWidth: 420 }}>
+        {save.isError && <div className="error-text">{apiError(save.error)}</div>}
+        <div className="kv" style={{ marginBottom: 4 }}>
+          <span className="k">وزن مادر</span>
+          <span className="mono">{fmtNum(packet.pureWeight, 6)}g</span>
+          <span className="k">مجموع بخش‌ها</span>
+          <span className="mono">{fmtNum(partsSum, 6)}g</span>
+          <span className="k">انگی</span>
+          <span className="mono">{fmtNum(waste, 6)}g</span>
+        </div>
+
+        <div
+          className="alert"
+          style={{
+            backgroundColor: conserved ? "var(--green-bg)" : "var(--gold-bg)",
+            border: `1px solid ${conserved ? "var(--green)" : "var(--gold)"}`,
+            padding: 12,
+            borderRadius: 8,
+            fontSize: 13,
+          }}
+        >
+          {conserved
+            ? "پایستگی جرم برقرار است: مجموع بخش‌ها + انگی = وزن مادر ✓"
+            : `اختلاف: ${fmtNum(Math.abs(delta), 6)}g ${delta > 0 ? "کمتر" : "بیشتر"} از وزن مادر — باید مجموع بخش‌ها + انگی برابر وزن مادر باشد.`}
+        </div>
+
+        {parts.map((p, i) => (
+          <div key={i} style={{ border: "1px solid var(--border)", borderRadius: 10, padding: 10, display: "flex", flexDirection: "column", gap: 8 }}>
+            <div className="row" style={{ justifyContent: "space-between" }}>
+              <strong>بخش {i + 1}</strong>
+              {parts.length > 1 && (
+                <button type="button" className="btn ghost sm" onClick={() => setParts((prev) => prev.filter((_, idx) => idx !== i))}>
+                  حذف
+                </button>
+              )}
+            </div>
+            <div className="row" style={{ gap: 8, flexWrap: "wrap" }}>
+              <div className="field" style={{ flex: 1 }}>
+                <label>وزن (گرم)</label>
+                <input className="input" type="number" step="any" value={p.weight}
+                  onChange={(e) => updatePart(i, "weight", e.target.value)} required />
+              </div>
+              <div className="field" style={{ flex: 1 }}>
+                <label>ANG</label>
+                <input className="input" type="number" step="any" value={p.ang}
+                  placeholder={packet.ang != null ? String(packet.ang) : ""}
+                  onChange={(e) => updatePart(i, "ang", e.target.value)} />
+              </div>
+              <div className="field" style={{ flex: 1 }}>
+                <label>AYAR</label>
+                <input className="input" type="number" step="any" value={p.ayar}
+                  placeholder={packet.ayar != null ? String(packet.ayar) : ""}
+                  onChange={(e) => updatePart(i, "ayar", e.target.value)} />
+              </div>
+              <div className="field" style={{ flex: 1 }}>
+                <label>موقعیت</label>
+                <input className="input" type="text" value={p.position}
+                  placeholder={packet.warehouseIndexPosition}
+                  onChange={(e) => updatePart(i, "position", e.target.value)} />
+              </div>
+            </div>
+          </div>
+        ))}
+
+        <div className="row" style={{ gap: 8 }}>
+          <div className="field" style={{ flex: 1 }}>
+            <label>انگی / ضایعات (گرم)</label>
+            <input className="input" type="number" step="any" value={wastage}
+              onChange={(e) => setWastage(e.target.value)} placeholder="0" />
+          </div>
+          <div className="field" style={{ flex: 1 }}>
+            <label>بخش جدید</label>
+            <button type="button" className="btn" style={{ width: "100%" }}
+              onClick={() => setParts((prev) => [...prev, { weight: "", ang: "", ayar: "", position: "" }])}>
+              + افزودن بخش
+            </button>
+          </div>
+        </div>
+
+        <div className="row" style={{ justifyContent: "flex-end", gap: 8, marginTop: 12 }}>
+          <button className="btn ghost" type="button" onClick={onClose}>انصراف</button>
+          <button className="btn primary" type="submit" disabled={save.isPending || !conserved || partsSum <= 0}>
+            {save.isPending ? "در حال تقسیم…" : "تقسیم بسته"}
+          </button>
+        </div>
+      </form>
+    </Modal>
+  );
+}
+
+export function SettlementReleaseForm({ onClose }: { onClose: () => void }) {
+  const qc = useQueryClient();
+  const [warehouseId, setWarehouseId] = useState("");
+  const [providerKey, setProviderKey] = useState("");
+  const [pureWeight, setPureWeight] = useState("");
+  const [apparentWeight, setApparentWeight] = useState("");
+  const [ayar, setAyar] = useState("");
+  const [picture, setPicture] = useState<File | null>(null);
+
+  const release = useMutation({
+    mutationFn: (body: any) => {
+      const fd = new FormData();
+      Object.entries(body).forEach(([k, v]) => {
+        if (v !== undefined && v !== null && v !== "") fd.append(k, String(v));
+      });
+      if (picture) fd.append("picture", picture);
+      return api.post("/admin/warehouse/settlement-material/release", fd, {
+        headers: { "Content-Type": "multipart/form-data" },
+      });
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["admin-packets"] });
+      qc.invalidateQueries({ queryKey: ["settlement-balance"] });
+      onClose();
+    },
+  });
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    release.mutate({
+      warehouseId,
+      providerKey,
+      pureWeight: Number(pureWeight),
+      apparentWeight: apparentWeight ? Number(apparentWeight) : undefined,
+      ayar: ayar ? Number(ayar) : undefined,
+    });
+  };
+
+  const qcNet =
+    Number(apparentWeight) > 0 && Number(ayar) > 0
+      ? (Number(apparentWeight) * Number(ayar)) / 750
+      : null;
+
+  return (
+    <Modal title="انتشار مواد تسویه" onClose={onClose}>
+      <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: 12, minWidth: 360 }}>
+        {release.isError && <div className="error-text">{apiError(release.error)}</div>}
+        <div className="field">
+          <label>انبار</label>
+          <input className="input" value={warehouseId} onChange={(e) => setWarehouseId(e.target.value)} placeholder="شناسه انبار" required />
+        </div>
+        <div className="field">
+          <label>کلید تامین‌کننده</label>
+          <input className="input" value={providerKey} onChange={(e) => setProviderKey(e.target.value)} placeholder="مثال: mock-zaryar-a" required />
+        </div>
+        <div className="field">
+          <label>وزن (گرم)</label>
+          <input className="input" type="number" step="0.00000001" value={pureWeight}
+            onChange={(e) => setPureWeight(e.target.value)} required />
+        </div>
+        <div className="field">
+          <label>وزن ظاهری (گرم — توزین)</label>
+          <input className="input" type="number" step="any" value={apparentWeight}
+            placeholder="اختیاری؛ با عیار، وزن خالص = ظاهری × عیار ÷ ۷۵۰"
+            onChange={(e) => setApparentWeight(e.target.value)} />
+        </div>
+        <div className="field">
+          <label>عیار</label>
+          <input className="input" type="number" step="any" value={ayar} onChange={(e) => setAyar(e.target.value)} />
+        </div>
+        {qcNet !== null && (
+          <div className="alert" style={{ backgroundColor: "var(--gold-bg)", border: "1px solid var(--gold)", padding: 10, borderRadius: 8, fontSize: 13 }}>
+            وزن خالص محاسبه‌شده: <strong className="mono">{fmtNum(qcNet, 6)}g</strong>
+          </div>
+        )}
+        <div className="field">
+          <label>تصویر (اختیاری)</label>
+          <input className="input" type="file" accept="image/*" onChange={(e) => setPicture(e.target.files?.[0] ?? null)} />
+        </div>
+        <div className="row" style={{ justifyContent: "flex-end", gap: 8, marginTop: 12 }}>
+          <button className="btn ghost" type="button" onClick={onClose}>انصراف</button>
+          <button className="btn primary" disabled={release.isPending}>{release.isPending ? "در حال انتشار…" : "انتشار"}</button>
+        </div>
+      </form>
+    </Modal>
+  );
+}
+
+export function WarehouseDetailsModal({ warehouseId, onClose }: { warehouseId: string; onClose: () => void }) {
+  const q = useQuery({
+    queryKey: ["admin-warehouse-detail", warehouseId],
+    queryFn: async () => unwrap<Warehouse>((await api.get(`/admin/warehouse/${warehouseId}`)).data),
+  });
+  const w = q.data;
+  return (
+    <Modal title={`جزئیات انبار — ${w?.name ?? warehouseId?.slice(0, 8)}`} onClose={onClose} wide>
+      {q.isLoading ? (
+        <Loading />
+      ) : q.isError ? (
+        <ErrorState message={apiError(q.error)} />
+      ) : w ? (
+        <div className="kv">
+          <span className="k">شناسه</span>
+          <span className="mono" style={{ fontSize: 12 }}>{w.id}</span>
+          <span className="k">نام</span>
+          <span>{w.name}</span>
+          <span className="k">توضیحات</span>
+          <span>{w.description || "—"}</span>
+          <span className="k">موقعیت</span>
+          <span>{w.location || "—"}</span>
+          <span className="k">ظرفیت کل</span>
+          <span className="mono">{fmtNum(w.capacityTotal, 4)}g</span>
+          <span className="k">مصرف شده</span>
+          <span className="mono" style={{ color: "var(--red)" }}>{fmtNum(w.capacityUsed, 4)}g</span>
+          <span className="k">باقی‌مانده</span>
+          <span className="mono" style={{ color: "var(--green)" }}>{fmtNum(w.capacityRemaining, 4)}g</span>
+          <span className="k">وضعیت</span>
+          <span><Badge kind={badgeKind(w.status)}>{tStatus(w.status)}</Badge></span>
+          <span className="k">محدودیت زمانی</span>
+          <span>{w.timeLimit || "—"}</span>
+          {w.deliveryDates && w.deliveryDates.length > 0 && (
+            <>
+              <span className="k">تاریخ‌های تحویل</span>
+              <span>{w.deliveryDates.join(", ")}</span>
+            </>
+          )}
+          {w.deliverySchedule && Object.keys(w.deliverySchedule).length > 0 && (
+            <>
+              <span className="k">زمان‌بندی تحویل</span>
+              <span>
+                {Object.entries(w.deliverySchedule).map(([day, times]: [string, any]) => (
+                  <div key={day}>{day}: {times.start} - {times.end}</div>
+                ))}
+              </span>
+            </>
+          )}
+          <span className="k">بسته‌ها</span>
+          <span className="mono">{fmtNum(w.packets?.length ?? 0)}</span>
+          <span className="k">ایجاد</span>
+          <span>{fmtDate(w.createAt)}</span>
+        </div>
+      ) : null}
+    </Modal>
+  );
+}
