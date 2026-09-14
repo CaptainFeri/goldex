@@ -2,6 +2,11 @@ import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, unwrap, apiError } from "../api/client";
 import { Card, Loading, ErrorState, Empty, Badge, Modal } from "../components/ui";
+import {
+  providerFormInitial,
+  providerFormIsComplete,
+  providerFormPayload,
+} from "../lib/provider-form";
 
 interface Provider {
   id: string;
@@ -10,6 +15,9 @@ interface Provider {
   baseUrl: string;
   apiBaseUrl?: string;
   persianName?: string;
+  webPanelUrl?: string;
+  sendOtpUrl?: string;
+  verifyCodeUrl?: string;
   phone?: string;
   /** Unit the provider quotes in; the engine converts everything to Rial. */
   priceUnit?: "IRR" | "TOMAN";
@@ -44,18 +52,6 @@ const PRICE_UNIT_LABEL: Record<string, string> = {
   TOMAN: "تومان",
 };
 
-const emptyForm = {
-  key: "",
-  category: "zaryar",
-  baseUrl: "",
-  apiBaseUrl: "",
-  persianName: "",
-  phone: "",
-  priceUnit: "TOMAN",
-  sendOtpUrl: "",
-  verifyCodeUrl: "",
-};
-
 function ProviderForm({
   initial,
   onClose,
@@ -65,17 +61,7 @@ function ProviderForm({
 }) {
   const qc = useQueryClient();
   const editing = !!initial?.id;
-  const [form, setForm] = useState(initial ? {
-    key: initial.key,
-    category: initial.category,
-    baseUrl: initial.baseUrl,
-    apiBaseUrl: initial.apiBaseUrl ?? "",
-    persianName: initial.persianName ?? "",
-    phone: initial.phone ?? "",
-    priceUnit: initial.priceUnit ?? "TOMAN",
-    sendOtpUrl: "",
-    verifyCodeUrl: "",
-  } : emptyForm);
+  const [form, setForm] = useState(() => providerFormInitial(initial));
 
   const save = useMutation({
     mutationFn: (p: any) =>
@@ -90,18 +76,8 @@ function ProviderForm({
 
   function submit(e: React.FormEvent) {
     e.preventDefault();
-    if (!form.key || !form.category || !form.baseUrl) return;
-    save.mutate({
-      key: form.key.trim(),
-      category: form.category,
-      baseUrl: form.baseUrl.trim(),
-      apiBaseUrl: form.apiBaseUrl.trim() || undefined,
-      persianName: form.persianName.trim() || undefined,
-      phone: form.phone.trim(),
-      priceUnit: form.priceUnit,
-      sendOtpUrl: form.sendOtpUrl.trim() || undefined,
-      verifyCodeUrl: form.verifyCodeUrl.trim() || undefined,
-    });
+    if (!providerFormIsComplete(form)) return;
+    save.mutate(providerFormPayload(form));
   }
 
   return (
@@ -133,8 +109,23 @@ function ProviderForm({
           <input className="input mono" dir="ltr" value={form.apiBaseUrl} onChange={(e) => setForm({ ...form, apiBaseUrl: e.target.value })} />
         </div>
         <div className="field">
+          <label>آدرس پنل وب (اختیاری)</label>
+          <input className="input mono" dir="ltr" value={form.webPanelUrl} onChange={(e) => setForm({ ...form, webPanelUrl: e.target.value })} />
+        </div>
+        <div className="field">
           <label>تلفن (برای OTP)</label>
           <input className="input mono" dir="ltr" value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} />
+        </div>
+        <div className="field">
+          <label>آدرس ارسال کد (sendOtpUrl)</label>
+          <input className="input mono" dir="ltr" value={form.sendOtpUrl} onChange={(e) => setForm({ ...form, sendOtpUrl: e.target.value })} />
+        </div>
+        <div className="field">
+          <label>آدرس تایید کد (verifyCodeUrl)</label>
+          <input className="input mono" dir="ltr" value={form.verifyCodeUrl} onChange={(e) => setForm({ ...form, verifyCodeUrl: e.target.value })} />
+          <div className="muted" style={{ fontSize: 12, marginTop: 4 }}>
+            بدون این دو آدرس، «فعال‌سازی OTP» کار نمی‌کند؛ موتور قیمت‌گذاری برای گرفتن و تایید کد پیامکی به آن‌ها درخواست می‌زند.
+          </div>
         </div>
         <div className="field">
           <label>واحد قیمت اعلامی</label>
@@ -301,12 +292,16 @@ export default function ProvidersPage() {
                     <td>{p.active ? <Badge kind="green">فعال</Badge> : <Badge kind="red">غیرفعال</Badge>}</td>
                     <td>
                       <div className="row">
-                        <button className="btn sm" onClick={() => setForm({ open: true, initial: p })}>ویرایش</button>
-                        <button className="btn sm" onClick={() => setOtpFor(p)} disabled={p.active}>فعال‌سازی OTP</button>
+                        {/* A provider the engine reports but the backend could not
+                            adopt has no id, and every id-addressed route would
+                            resolve to /admin/providers/undefined/…. Show it, but
+                            offer only the actions keyed by `key`. */}
+                        <button className="btn sm" disabled={!p.id} onClick={() => setForm({ open: true, initial: p })}>ویرایش</button>
+                        <button className="btn sm" onClick={() => setOtpFor(p)} disabled={p.active || !p.id}>فعال‌سازی OTP</button>
                         <button className="btn sm" disabled={refresh.isPending} onClick={() => refresh.mutate(p.key)}>بازنشانی</button>
                         <button
                           className={"btn sm " + (p.active ? "danger" : "")}
-                          disabled={toggle.isPending}
+                          disabled={toggle.isPending || !p.id}
                           onClick={() => toggle.mutate(p.id)}
                         >
                           {p.active ? "غیرفعال کن" : "فعال کن"}

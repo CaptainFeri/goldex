@@ -46,12 +46,29 @@ export class ProviderService implements OnApplicationBootstrap {
     await this.redisService.setJson('providers:registry', entities, 3600);
   }
 
+  /**
+   * Strips the fields this service alone owns from an inbound payload.
+   *
+   * Commands arrive from the backend carrying that service's *own* row —
+   * including its `id`, which is a different UUID for the same provider. Let
+   * that through into an `Object.assign` and it rewrites the primary key: the
+   * following `save()` either updates nothing or tries to insert a duplicate
+   * `key`. Providers are addressed by `key` on both sides, so identity and
+   * timestamps never travel with a command.
+   */
+  private stripOwnedFields<T extends Record<string, any>>(data: T): T {
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    const { id, createdAt, updatedAt, ...rest } = data ?? ({} as T);
+    return rest as T;
+  }
+
   async create(data: CreateProviderDto): Promise<ProviderEntity> {
+    const clean = this.stripOwnedFields(data);
     const provider = this.providerRepo.create({
-      ...data,
-      active: data.active ?? false,
-      auth: data.auth ?? {},
-      config: data.config ?? {},
+      ...clean,
+      active: clean.active ?? false,
+      auth: clean.auth ?? {},
+      config: clean.config ?? {},
     });
     const saved = await this.providerRepo.save(provider);
     if (this.rabbitMQService) {
@@ -99,7 +116,7 @@ export class ProviderService implements OnApplicationBootstrap {
     const provider = await this.findOne(id);
     const isRunning = !!this.providerManager.getProvider(provider.key);
 
-    Object.assign(provider, data);
+    Object.assign(provider, this.stripOwnedFields(data));
     const saved = await this.providerRepo.save(provider);
 
     if (data.auth !== undefined && isRunning) {

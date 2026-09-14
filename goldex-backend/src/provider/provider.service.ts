@@ -84,8 +84,49 @@ export class ProviderService {
     return saved;
   }
 
+  /**
+   * Give every provider the engine knows about a row in this mirror.
+   *
+   * The panel addresses a provider by this mirror's id — `/admin/providers/:id/
+   * send-otp` and friends all run through `ParseUUIDPipe`. A provider that only
+   * ever existed in the engine had no row here, so it was listed with
+   * `id: undefined` and every button on it called `/admin/providers/undefined/…`
+   * for a 400. Adopting it on read means the list can only ever hand back rows
+   * that are actually actionable.
+   *
+   * Conflicts are ignored: two concurrent reads racing to adopt the same key is
+   * the unique constraint doing its job, and the loser sees the winner's row.
+   */
+  private async adoptMissing(
+    mirrorKeys: Set<string>,
+    registry: Record<string, any>[],
+    liveKeys: string[],
+  ): Promise<boolean> {
+    const pending = new Map<string, Record<string, any>>();
+    for (const reg of registry) {
+      if (reg?.key && !mirrorKeys.has(reg.key)) pending.set(reg.key, reg);
+    }
+    for (const key of liveKeys) {
+      if (!mirrorKeys.has(key) && !pending.has(key)) {
+        pending.set(key, { key, category: 'unknown', baseUrl: '', active: true });
+      }
+    }
+    if (pending.size === 0) return false;
+
+    let adopted = false;
+    for (const payload of pending.values()) {
+      try {
+        await this.upsertFromEngine(payload);
+        adopted = true;
+      } catch {
+        /* raced with another adopt, or the engine sent something unsavable */
+      }
+    }
+    return adopted;
+  }
+
   async findAll(): Promise<ProviderEntity[]> {
-    const mirror = await this.providerRepo.find({ order: { createAt: 'ASC' } });
+    let mirror = await this.providerRepo.find({ order: { createAt: 'ASC' } });
 
     // Merge three sources so EVERY provider is listed — active and inactive:
     //  1. `providers:registry` — the pricing-engine's authoritative full list
@@ -101,6 +142,15 @@ export class ProviderService {
     } catch {
       /* pricing redis unavailable */
     }
+    const adopted = await this.adoptMissing(
+      new Set(mirror.map((p) => p.key)),
+      registry,
+      liveKeys,
+    );
+    if (adopted) {
+      mirror = await this.providerRepo.find({ order: { createAt: 'ASC' } });
+    }
+
     const liveSet = new Set(liveKeys);
     const mirrorByKey = new Map(mirror.map((p) => [p.key, p]));
     const seen = new Set<string>();
@@ -140,6 +190,9 @@ export class ProviderService {
       seen.add(m.key);
     }
 
+    // Only reachable when adoption above failed for this key. The row has no
+    // id, so the panel renders it read-only rather than offering buttons that
+    // would resolve to /admin/providers/undefined/….
     for (const key of liveKeys) {
       if (seen.has(key)) continue;
       result.push(
@@ -191,7 +244,7 @@ export class ProviderService {
 
     await this.rmq.publishCommand(
       MessagePatterns.PROVIDER_COMMAND_TOGGLE_ACTIVE,
-      { key: saved.key, id: saved.id },
+      { key: saved.key },
       saved.key,
     );
     return saved;
@@ -314,9 +367,17 @@ export class ProviderService {
     await this.providerRepo.save(this.providerRepo.create({ ...data, id: existing?.id }));
   }
 
+  /**
+   * The command body sent to the pricing-engine.
+   *
+   * Deliberately without `id`: the engine keeps its own `providers` table with
+   * its own UUIDs, and every command it handles resolves the provider by `key`.
+   * Sending this mirror's id made the engine assign it over the row's primary
+   * key, so an edit from the panel either updated nothing or collided with the
+   * unique `key` — silently, since the consumer only logs.
+   */
   private toPayload(p: ProviderEntity): Record<string, unknown> {
     return {
-      id: p.id,
       key: p.key,
       category: p.category,
       baseUrl: p.baseUrl,

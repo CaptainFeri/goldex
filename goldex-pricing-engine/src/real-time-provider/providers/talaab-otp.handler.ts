@@ -3,20 +3,14 @@ import { HttpService } from '@nestjs/axios';
 import { firstValueFrom } from 'rxjs';
 import { OtpHandler, OtpResult } from '../types/otp.types';
 import { ProviderEntity } from '../entity/provider.entity';
+import { requireProviderUrl } from './require-provider-url';
 
 @Injectable()
 export class TalaabOtpHandler implements OtpHandler {
   constructor(private readonly httpService: HttpService) {}
 
   async sendOtp(provider: ProviderEntity, phone: string): Promise<void> {
-    const url =
-      provider.sendOtpUrl ||
-      (() => {
-        if (!provider.apiBaseUrl) {
-          throw new Error('apiBaseUrl is required for Talaab provider');
-        }
-        return `${provider.sendOtpUrl}`;
-      })();
+    const url = requireProviderUrl(provider, 'sendOtpUrl');
     await firstValueFrom(
       this.httpService.post(
         url,
@@ -32,14 +26,7 @@ export class TalaabOtpHandler implements OtpHandler {
     const mobile = provider.phone || provider.auth?.mobile;
     if (!mobile) throw new Error('No phone number stored');
 
-    const url =
-      provider.verifyCodeUrl ||
-      (() => {
-        if (!provider.verifyCodeUrl) {
-          throw new Error('apiBaseUrl is required for Talaab provider');
-        }
-        return `${provider.verifyCodeUrl}`;
-      })();
+    const url = requireProviderUrl(provider, 'verifyCodeUrl');
 
     const body = { mobile, otp, password: null, type: 'otp' };
     const response = await firstValueFrom(
