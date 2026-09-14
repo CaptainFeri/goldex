@@ -20,7 +20,6 @@ flowchart LR
         UP[goldex-user-panel] 
         AP[goldex-admin-panel]
         TB[goldex-telegram-bot]
-        SF[goldex-sms-forwarder]
     end
 
     subgraph Core
@@ -44,7 +43,6 @@ flowchart LR
     UP --> BE
     AP --> BE
     TB --> BE
-    SF --> PE
 
     BE <--> CBP
     BE --> PG
@@ -73,7 +71,6 @@ flowchart LR
 | **goldex-admin-panel** | React (Vite) TS SPA | Operator console: users, KYC, wallets, finance, CBP payments, provider finance, symbols/pairs/mappings, order-book, deposits/withdraws, OCR admin, telegram market, CRM. |
 | **paddle-ocr-service** | Python FastAPI | OCR text extraction (PaddleOCR, Arabic) for payment/ID document uploads. |
 | **kraken-ocr-service** | Python FastAPI | OCR with a self-training loop + optional RabbitMQ async worker. |
-| **goldex-sms-forwarder** | Android (Kotlin) | Listens for OTP notifications and forwards captured codes to complete provider activation. |
 | **monitor** | Node | Operational monitoring/health utilities. |
 
 ### Shared infrastructure
@@ -91,7 +88,6 @@ flowchart LR
 - Node.js 18+ / npm (backend, bots, panels)
 - Python 3.9+ (OCR services)
 - Docker + Docker Compose (Postgres, Redis, RabbitMQ)
-- Android Studio / Gradle (sms-forwarder)
 
 ### Quick start (development)
 
@@ -137,7 +133,6 @@ Each service reads its own `.env` — copy from `.env.example` and fill credenti
 ├── goldex-admin-panel/        # Admin web app
 ├── paddle-ocr-service/        # PaddleOCR API
 ├── kraken-ocr-service/        # Kraken OCR + self-training
-├── goldex-sms-forwarder/      # Android OTP forwarder
 ├── monitor/                   # Operational monitoring
 ├── postgres-init/             # DB bootstrap scripts
 ├── tools/                     # Dev utilities
