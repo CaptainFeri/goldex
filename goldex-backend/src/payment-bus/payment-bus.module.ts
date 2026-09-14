@@ -6,6 +6,7 @@ import { TransactionEntity } from "../wallet/entities/transaction.entity";
 import { WalletEntity } from "../wallet/entities/wallet.entity";
 import { WithdrawEntity } from "../withdraw/withdraw.entity";
 import { PaymentEventConsumer } from "./consumers/payment-event.consumer";
+import { SymbolSyncFailureConsumer } from "./consumers/symbol-sync-failure.consumer";
 import { PaymentEventService } from "./payment-event.service";
 import { PaymentBusService } from "./payment-bus.service";
 
@@ -24,7 +25,7 @@ import { PaymentBusService } from "./payment-bus.service";
       TransactionEntity,
     ]),
   ],
-  providers: [PaymentBusService, PaymentEventService, PaymentEventConsumer],
+  providers: [PaymentBusService, PaymentEventService, PaymentEventConsumer, SymbolSyncFailureConsumer],
   exports: [PaymentBusService],
 })
 export class PaymentBusModule {}

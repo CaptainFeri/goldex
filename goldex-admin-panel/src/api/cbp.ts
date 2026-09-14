@@ -69,7 +69,28 @@ export const cbpApi = {
     return unwrap<CbpGatewayHealth[]>(r.data);
   },
 
-  getGateways: async (): Promise<{ code: string; name: string; category: string; kind: string }[]> => {
+  /**
+   * Re-publishes every symbol's configuration to the payment service.
+   *
+   * A sync never retries, so one the payment service refused leaves the two
+   * configured differently with no way back short of re-saving each symbol.
+   */
+  resyncSymbols: async (): Promise<{ synced: number }> =>
+    unwrap((await api.post("/admin/symbols/resync")).data),
+
+  getGateways: async (): Promise<
+    {
+      code: string;
+      name: string;
+      category: string;
+      kind: string;
+      /** The symbols routed at this gateway, read from the payment service itself. */
+      symbols?: {
+        deposit: { slug: string; name: string; isActive: boolean; isDefault: boolean }[];
+        withdraw: { slug: string; name: string; isActive: boolean; isDefault: boolean }[];
+      };
+    }[]
+  > => {
     const r = await api.get(`${CBP_BASE}/gateways`);
     return unwrap(r.data);
   },

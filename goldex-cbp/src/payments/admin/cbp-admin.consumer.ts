@@ -43,9 +43,16 @@ export class CbpAdminConsumer implements OnModuleInit {
         case "health":
           result = await this.registry.health();
           break;
-        case "gateways":
-          result = this.registry.metadata();
+        case "gateways": {
+          // Metadata alone says a provider exists, not whether anything routes
+          // to it. The bindings are what an operator needs before changing one.
+          const bindings = await this.admin.gatewayBindings();
+          result = this.registry.metadata().map((gateway) => ({
+            ...gateway,
+            symbols: bindings[gateway.code] ?? { deposit: [], withdraw: [] },
+          }));
           break;
+        }
         case "payments":
           result = await this.admin.listPayments(req.params ?? {});
           break;

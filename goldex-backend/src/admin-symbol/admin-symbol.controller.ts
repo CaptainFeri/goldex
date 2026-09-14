@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Body, Patch, Param, Delete, UseGuards } from "@nestjs/common";
+import { Controller, Get, Post, Body, Patch, Param, Delete, UseGuards, HttpCode, HttpStatus } from "@nestjs/common";
 import { CreateSymbolDto } from "./dto/create-symbol.dto";
 import { UpdateSymbolDto } from "./dto/update-symbol.dto";
 import { SymbolTypeEnum } from "./enum/symbol.type.enum";
@@ -10,7 +10,7 @@ import {
   ApiEnvelopeNoDataResponse,
   ApiEnvelopeResponse,
 } from "../shared/swagger";
-import { SymbolCapabilitiesDto, SymbolDto } from "./dto/symbol-response.dto";
+import { SymbolCapabilitiesDto, SymbolDto, SymbolResyncDto } from "./dto/symbol-response.dto";
 import { AdminAuthGuard } from "../admin/auth/Guard/admin.guard";
 import { AdminRole } from "../admin/role/admin.roles.enum";
 import { AdminRoles } from "../admin/role/admin.role.decorator";
@@ -30,6 +30,24 @@ export class AdminSymbolController {
    * gateways actually registered in goldex-cbp with their health. The admin
    * panel keeps no copy of these rules.
    */
+  @Post("resync")
+  // Nothing is created: this re-publishes configuration that already exists.
+  @HttpCode(HttpStatus.OK)
+  @UseGuards(AdminAuthGuard)
+  @ApiBearerAuth()
+  @AdminRoles(AdminRole.ADMIN, AdminRole.SUPER_ADMIN)
+  @ApiOperation({
+    summary: "Re-publish every symbol to the payment service",
+    description:
+      "A symbol sync is fire-and-forget and never retries, so one the payment service refused — or " +
+      "one lost while it was down — leaves the two configured differently with no way back short of " +
+      "re-saving each symbol. Use this after fixing whatever the refusal named.",
+  })
+  @ApiEnvelopeResponse(SymbolResyncDto)
+  async resync() {
+    return { data: await this.symbolService.resyncAll() };
+  }
+
   @Get("capabilities")
   @UseGuards(AdminAuthGuard)
   @ApiBearerAuth()

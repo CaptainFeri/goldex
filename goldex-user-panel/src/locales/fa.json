@@ -333,7 +333,7 @@
     "destinationIbanHint": "واریزکنندگان مبلغ را به این شبا واریز می‌کنند. لازم نیست به نام خودتان باشد.",
     "collateralLocked": "پشتوانه‌ی معاملات باز",
     "collateralAvailable": "قابل استفاده برای معامله",
-    "gatewayPopupBlocked": "مرورگر پنجرهٔ پرداخت را مسدود کرد."
+    "gatewayRedirecting": "در حال انتقال به درگاه پرداخت…"
   },
   "warehouse": {
     "title": "انبار",
