@@ -264,6 +264,32 @@ services:
       - goldex-network
     logging: *default-logging
 
+  goldex-provider-browser:
+    build:
+      context: ./goldex-provider-browser
+      dockerfile: Dockerfile
+      target: runner
+    container_name: goldex-provider-browser
+    restart: unless-stopped
+    environment:
+      # Without this the service refuses every request; there is no open mode.
+      BROWSER_SERVICE_TOKEN: ${BROWSER_SERVICE_TOKEN:?BROWSER_SERVICE_TOKEN must be set}
+      PROXY_HOST: ${PRICING_ENGINE_PROXY_HOST:-}
+      PROXY_PORT: ${PRICING_ENGINE_PROXY_PORT:-29180}
+      PROXY_USERNAME: ${PRICING_ENGINE_PROXY_USERNAME:-}
+      PROXY_PASSWORD: ${PRICING_ENGINE_PROXY_PASSWORD:-}
+      PORT: 3000
+      NODE_ENV: production
+    dns: *default-dns
+    # Deliberately no `ports`: this is a remote-controlled browser inside the
+    # server network, reached only through the backend, which is what
+    # authenticates the admin driving it.
+    # Chromium needs more than the default 64MB of shared memory to render.
+    shm_size: 1gb
+    networks:
+      - goldex-network
+    logging: *default-logging
+
   goldex-pricing-engine-mock:
     build:
       context: ./goldex-pricing-engine
