@@ -127,6 +127,39 @@ export class ProviderBrowserGateway
     return { ok: true };
   }
 
+  /**
+   * Anything that steers the page — a new URL, reload, back, the app-download
+   * toggle — relayed to the browser and answered back.
+   *
+   * Only somebody already watching may steer, the same check as typing into it.
+   */
+  @SubscribeMessage('control')
+  async control(
+    @ConnectedSocket() socket: Socket,
+    @MessageBody()
+    body: { sessionId?: string; message?: string; payload?: Record<string, unknown> },
+  ): Promise<{ ok: boolean; error?: string; currentUrl?: string }> {
+    const sessionId = body?.sessionId;
+    const message = body?.message;
+    if (!sessionId || !message) return { ok: false, error: 'sessionId and message are required' };
+    if (!this.watchers.get(sessionId)?.has(socket.id)) {
+      return { ok: false, error: 'not watching this session' };
+    }
+    const upstream = this.upstreams.get(sessionId);
+    if (!upstream?.connected) return { ok: false, error: 'the browser is not connected' };
+
+    return new Promise((resolve) => {
+      const timer = setTimeout(
+        () => resolve({ ok: false, error: 'the browser did not answer' }),
+        20000,
+      );
+      upstream.emit(message, { sessionId, ...(body.payload ?? {}) }, (reply: any) => {
+        clearTimeout(timer);
+        resolve(reply ?? { ok: false, error: 'no reply' });
+      });
+    });
+  }
+
   @SubscribeMessage('unwatch')
   unwatch(
     @ConnectedSocket() socket: Socket,

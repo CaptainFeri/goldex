@@ -13,9 +13,11 @@ interface BrowserSession {
   id: string;
   providerKey: string;
   loginUrl: string;
+  currentUrl: string;
   allowedHosts: string[];
   expiresAt: string;
   captured: boolean;
+  blockAppDownloads: boolean;
 }
 
 /** The remote viewport, fixed server-side; frames arrive at this size. */
@@ -51,6 +53,32 @@ export default function BrowserSimulator({
   const [captured, setCaptured] = useState<{ fields: string[]; sourceUrl: string } | null>(null);
   const [blocked, setBlocked] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
+  const [address, setAddress] = useState("");
+  const [blockApp, setBlockApp] = useState(true);
+  const [steering, setSteering] = useState(false);
+
+  /**
+   * Steering the page: a new address, reload, back, or the app-download
+   * toggle. The address a provider is configured with is a guess about where
+   * its login lives, and a person watching a browser can just try the next one.
+   */
+  const control = useCallback(
+    (message: string, payload: Record<string, unknown> = {}) => {
+      if (!socketRef.current || !session) return;
+      setSteering(true);
+      setError("");
+      socketRef.current.emit(
+        "control",
+        { sessionId: session.id, message, payload },
+        (reply: { ok: boolean; error?: string; currentUrl?: string }) => {
+          setSteering(false);
+          if (!reply?.ok) setError(reply?.error ?? "مرورگر پاسخ نداد");
+          else if (reply.currentUrl) setAddress(reply.currentUrl);
+        },
+      );
+    },
+    [session],
+  );
 
   const send = useCallback((event: Record<string, unknown> | null) => {
     if (!event || !socketRef.current || !session) return;
@@ -157,7 +185,10 @@ export default function BrowserSimulator({
     setCaptured(null);
     try {
       const data = await api.post(`/admin/providers/${providerId}/browser-session`);
-      setSession(unwrap<BrowserSession>(data.data));
+      const opened = unwrap<BrowserSession>(data.data);
+      setSession(opened);
+      setAddress(opened.currentUrl || opened.loginUrl);
+      setBlockApp(opened.blockAppDownloads ?? true);
       setStatus("در حال باز کردن مرورگر…");
     } catch (err) {
       setError(apiError(err));
@@ -204,6 +235,51 @@ export default function BrowserSimulator({
         </div>
       ) : (
         <>
+          <form
+            className="row"
+            style={{ gap: 6, marginBottom: 8 }}
+            onSubmit={(e) => {
+              e.preventDefault();
+              if (address.trim()) control("navigate", { url: address.trim() });
+            }}
+          >
+            <button type="button" className="btn sm" disabled={steering} onClick={() => control("page-action", { action: "back" })}>
+              ←
+            </button>
+            <button type="button" className="btn sm" disabled={steering} onClick={() => control("page-action", { action: "reload" })}>
+              ⟳
+            </button>
+            <input
+              className="input mono grow"
+              dir="ltr"
+              value={address}
+              onChange={(e) => setAddress(e.target.value)}
+              placeholder="https://…"
+            />
+            <button className="btn sm primary" disabled={steering || !address.trim()}>
+              برو
+            </button>
+          </form>
+
+          <div className="row" style={{ gap: 6, marginBottom: 8 }}>
+            <label className="muted" style={{ fontSize: 12 }}>
+              <input
+                type="checkbox"
+                checked={blockApp}
+                onChange={(e) => {
+                  setBlockApp(e.target.checked);
+                  control("set-block-app-downloads", { enabled: e.target.checked });
+                }}
+              />
+              <span style={{ marginRight: 6 }}>
+                دانلود اپ و پاپ‌آپ سایت رد شود
+              </span>
+            </label>
+            <span className="muted" style={{ fontSize: 11 }}>
+              اگر صفحه نمی‌آید، خاموشش کنید تا سایت طبیعی رفتار کند و خودتان پاپ‌آپ را ببندید.
+            </span>
+          </div>
+
           <div
             style={{
               position: "relative",

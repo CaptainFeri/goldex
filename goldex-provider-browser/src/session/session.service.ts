@@ -31,15 +31,20 @@ export interface OpenSessionRequest {
   viewport?: { width: number; height: number };
   /** The provider's category, which decides what a session of its looks like. */
   category?: string;
+  /** Refuse the app the site pushes. On unless the admin wants to handle it. */
+  blockAppDownloads?: boolean;
 }
 
 export interface SessionSummary {
   id: string;
   providerKey: string;
   loginUrl: string;
+  /** Where the page actually is now, which is not always where it was sent. */
+  currentUrl: string;
   allowedHosts: string[];
   expiresAt: string;
   captured: boolean;
+  blockAppDownloads: boolean;
 }
 
 interface Session {
@@ -56,6 +61,15 @@ interface Session {
   viewport: { width: number; height: number };
   storagePoll: NodeJS.Timeout;
   tokenAloneIsSession: boolean;
+  /**
+   * Whether the app the site pushes is refused.
+   *
+   * On by default, because it is what usually stops the login page appearing.
+   * But a site that serves its real page through the same request this refuses
+   * ends up blank either way, and there is a person watching who can simply
+   * close a popup — so they can turn it off and deal with it themselves.
+   */
+  blockAppDownloads: boolean;
 }
 
 export interface SessionEvents {
@@ -193,7 +207,7 @@ export class SessionService implements OnModuleDestroy {
 
       // Checked before the allowlist so the admin is told it was the app being
       // pushed at them, rather than some domain they have to reason about.
-      if (isAppDownload(url)) {
+      if (isAppDownload(url) && this.sessions.get(id)?.blockAppDownloads !== false) {
         this.logger.log(`[${id}] refused an app download: ${url}`);
         this.events?.onBlocked(id, `${url} (دانلود اپ — رد شد)`);
         await route.abort('blockedbyclient').catch(() => undefined);
@@ -214,6 +228,11 @@ export class SessionService implements OnModuleDestroy {
     // them on the page they can actually drive.
     context.on('page', (popup) => {
       if (popup === page) return;
+      // Only the first page is streamed, so a popup opens where the admin
+      // cannot see it. Closing it keeps them on the page they can drive —
+      // unless they have asked to deal with the site's interruptions
+      // themselves, in which case its own content is theirs to handle.
+      if (this.sessions.get(id)?.blockAppDownloads === false) return;
       this.logger.log(`[${id}] closed a popup: ${popup.url()}`);
       void popup.close().catch(() => undefined);
     });
@@ -256,6 +275,7 @@ export class SessionService implements OnModuleDestroy {
       // in storage is the whole of it there, and refusing one would refuse the
       // only credentials that exist.
       tokenAloneIsSession: request.category === 'talaab',
+      blockAppDownloads: request.blockAppDownloads ?? true,
     };
     this.sessions.set(id, session);
     this.byProvider.set(request.providerKey, id);
@@ -387,6 +407,62 @@ export class SessionService implements OnModuleDestroy {
     }
   }
 
+  /**
+   * Sends the page somewhere else, within the same allowlist.
+   *
+   * The address a provider is configured with is a guess about where its login
+   * lives, and a wrong guess used to mean rebuilding and trying again. A person
+   * watching a browser can just try the next URL, so let them.
+   */
+  async navigate(id: string, url: string): Promise<SessionSummary> {
+    const session = this.sessions.get(id);
+    if (!session) throw new NotFoundException('Session not found or already closed');
+
+    if (!isNavigationAllowed(url, session.allowedHosts)) {
+      throw new BadRequestException(
+        `This browser may only reach ${session.allowedHosts.join(', ')}`,
+      );
+    }
+
+    await session.page.goto(url, { waitUntil: 'domcontentloaded' }).catch((err) => {
+      const raw = (err as Error).message?.split('\n')[0] ?? String(err);
+      this.logger.warn(`[${id}] navigation failed: ${raw}`);
+      this.events?.onNavigationFailed(id, explainNavigationFailure(raw));
+    });
+    return this.summarise(session);
+  }
+
+  /** Reload, and step back, for a page that went somewhere unhelpful. */
+  async reload(id: string): Promise<SessionSummary> {
+    const session = this.sessions.get(id);
+    if (!session) throw new NotFoundException('Session not found or already closed');
+    await session.page.reload({ waitUntil: 'domcontentloaded' }).catch(() => undefined);
+    return this.summarise(session);
+  }
+
+  async goBack(id: string): Promise<SessionSummary> {
+    const session = this.sessions.get(id);
+    if (!session) throw new NotFoundException('Session not found or already closed');
+    await session.page.goBack({ waitUntil: 'domcontentloaded' }).catch(() => undefined);
+    return this.summarise(session);
+  }
+
+  /**
+   * Turns the app-download refusal on or off mid-session.
+   *
+   * Refusing it is usually what lets the login page appear at all. But a site
+   * that serves its real page through the very request being refused ends up
+   * blank either way — and there is a person watching who can close a popup
+   * themselves, which is more than this can do by guessing.
+   */
+  setBlockAppDownloads(id: string, enabled: boolean): SessionSummary {
+    const session = this.sessions.get(id);
+    if (!session) throw new NotFoundException('Session not found or already closed');
+    session.blockAppDownloads = enabled;
+    this.logger.log(`[${id}] app downloads ${enabled ? 'refused' : 'allowed'}`);
+    return this.summarise(session);
+  }
+
   async close(id: string, reason = 'closed'): Promise<void> {
     const session = this.sessions.get(id);
     if (!session) return;
@@ -416,9 +492,17 @@ export class SessionService implements OnModuleDestroy {
       id: session.id,
       providerKey: session.providerKey,
       loginUrl: session.loginUrl,
+      currentUrl: (() => {
+        try {
+          return session.page.url();
+        } catch {
+          return '';
+        }
+      })(),
       allowedHosts: session.allowedHosts,
       expiresAt: new Date(session.expiresAt).toISOString(),
       captured: !!session.captured,
+      blockAppDownloads: session.blockAppDownloads,
     };
   }
 

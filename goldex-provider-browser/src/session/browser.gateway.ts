@@ -77,6 +77,45 @@ export class BrowserGateway implements OnGatewayConnection, OnModuleInit {
     return { ok: true };
   }
 
+  @SubscribeMessage('navigate')
+  async navigate(
+    @MessageBody() body: { sessionId: string; url: string },
+  ): Promise<{ ok: boolean; error?: string; currentUrl?: string }> {
+    try {
+      const summary = await this.sessions.navigate(body.sessionId, body.url);
+      return { ok: true, currentUrl: summary.currentUrl };
+    } catch (err) {
+      return { ok: false, error: (err as Error).message };
+    }
+  }
+
+  @SubscribeMessage('page-action')
+  async pageAction(
+    @MessageBody() body: { sessionId: string; action: 'reload' | 'back' },
+  ): Promise<{ ok: boolean; error?: string; currentUrl?: string }> {
+    try {
+      const summary =
+        body.action === 'back'
+          ? await this.sessions.goBack(body.sessionId)
+          : await this.sessions.reload(body.sessionId);
+      return { ok: true, currentUrl: summary.currentUrl };
+    } catch (err) {
+      return { ok: false, error: (err as Error).message };
+    }
+  }
+
+  @SubscribeMessage('set-block-app-downloads')
+  setBlockAppDownloads(
+    @MessageBody() body: { sessionId: string; enabled: boolean },
+  ): { ok: boolean; error?: string } {
+    try {
+      this.sessions.setBlockAppDownloads(body.sessionId, body.enabled);
+      return { ok: true };
+    } catch (err) {
+      return { ok: false, error: (err as Error).message };
+    }
+  }
+
   @SubscribeMessage('input')
   async input(
     @MessageBody() body: { sessionId: string; event: Record<string, any> },

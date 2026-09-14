@@ -197,4 +197,56 @@ describe('browser session', () => {
     });
     expect(() => service.captured(session.id)).toThrow(/No credentials captured/i);
   });
+
+  describe('steering the page', () => {
+    // The address a provider is configured with is a guess about where its
+    // login lives. A wrong guess used to mean a rebuild; now it means typing
+    // the next URL.
+    maybe('refuses to be steered off the provider', async () => {
+      const session = await service.open({
+        providerKey: 'zaryar',
+        loginUrl: 'https://panel.example.ir/login',
+        useProxy: false,
+      });
+
+      await expect(service.navigate(session.id, 'https://evil.example.com/')).rejects.toThrow(
+        /may only reach/i,
+      );
+      await expect(service.navigate(session.id, 'http://postgres:5432/')).rejects.toThrow(
+        /may only reach/i,
+      );
+    });
+
+    maybe('accepts another address on the same provider', async () => {
+      const session = await service.open({
+        providerKey: 'zaryar',
+        loginUrl: 'https://panel.example.ir/login',
+        useProxy: false,
+      });
+
+      // The navigation itself fails offline; what matters is that it was
+      // allowed to try rather than refused for being off-limits.
+      const summary = await service.navigate(session.id, 'https://panel.example.ir/userarea');
+      expect(summary.id).toBe(session.id);
+    });
+
+    maybe('lets the admin take the site’s interruptions on themselves', async () => {
+      const session = await service.open({
+        providerKey: 'talaab',
+        loginUrl: 'https://panel.example.ir/userarea',
+        useProxy: false,
+      });
+      expect(session.blockAppDownloads).toBe(true);
+
+      expect(service.setBlockAppDownloads(session.id, false).blockAppDownloads).toBe(false);
+      expect(service.setBlockAppDownloads(session.id, true).blockAppDownloads).toBe(true);
+    });
+
+    it('will not steer a session that is gone', async () => {
+      await expect(service.navigate('nope', 'https://panel.example.ir/')).rejects.toThrow(
+        /not found/i,
+      );
+      expect(() => service.setBlockAppDownloads('nope', false)).toThrow(/not found/i);
+    });
+  });
 });
