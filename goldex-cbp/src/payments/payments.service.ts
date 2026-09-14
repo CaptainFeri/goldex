@@ -114,36 +114,78 @@ export class PaymentsService {
     try {
       symbol = await this.symbolsService.findBySlug(cmd.symbolSlug);
     } catch {
-      const payment = this.paymentRepo.create({
-        userId: cmd.userId,
-        symbolId: null,
-        externalReference: cmd.externalReference,
-        operation: PaymentOperationEnum.DEPOSIT,
-        category: PaymentCategoryEnum.FIAT,
-        type: cmd.type,
-        amount: Number(cmd.amount),
-        currency: cmd.currency,
-        status: PaymentStatusEnum.FAILED,
-        identifier: this.newIdentifier(PaymentOperationEnum.DEPOSIT),
-        metadata: { error: `Payment symbol "${cmd.symbolSlug}" not found in cbp` },
-      });
-      const saved = await this.paymentRepo.save(payment);
-      this.events.failed(saved, `Payment symbol "${cmd.symbolSlug}" not found in cbp`);
-      throw new NotFoundException(`Payment symbol "${cmd.symbolSlug}" not found in cbp`);
+      const reason = `Payment symbol "${cmd.symbolSlug}" not found in cbp`;
+      await this.recordSetupFailure(PaymentOperationEnum.DEPOSIT, cmd, reason);
+      throw new NotFoundException(reason);
     }
-    return this.createDepositCore(
-      cmd.userId,
-      symbol,
-      {
-        type: cmd.type,
-        amount: cmd.amount,
-        currency: cmd.currency,
-        gatewayCode: cmd.gatewayCode,
-        picturePath: cmd.picturePath,
-        notes: cmd.notes,
-        metadata: cmd.metadata,
-      },
-      cmd.externalReference,
+
+    // Everything from here can still refuse the request — a deposit type the
+    // symbol does not allow, a gateway that is not configured or not permitted.
+    // Those used to throw into the consumer's catch, which logs and acks, so
+    // the backend heard nothing and the caller waited out its timeout with no
+    // reason to show. Whatever the refusal is, it goes back as a failure.
+    try {
+      return await this.createDepositCore(
+        cmd.userId,
+        symbol,
+        {
+          type: cmd.type,
+          amount: cmd.amount,
+          currency: cmd.currency,
+          gatewayCode: cmd.gatewayCode,
+          picturePath: cmd.picturePath,
+          notes: cmd.notes,
+          metadata: cmd.metadata,
+        },
+        cmd.externalReference,
+      );
+    } catch (err) {
+      // createDepositCore already reports a failed gateway call itself, and
+      // marks that payment FAILED. Reporting again would publish a second
+      // failure for one request.
+      if (!(err as any)?.__cbpReported) {
+        await this.recordSetupFailure(
+          PaymentOperationEnum.DEPOSIT,
+          cmd,
+          (err as Error)?.message ?? String(err),
+        );
+      }
+      throw err;
+    }
+  }
+
+  /**
+   * Records a request the gateway never got to see, and tells the backend.
+   *
+   * Refusals raised while preparing a payment — an unknown symbol, a type the
+   * symbol does not allow, a gateway that is not configured — used to throw
+   * into the consumer, which logs and acks. Nothing went back over the bus, so
+   * the caller sat on a pending record until its own timeout and could only
+   * report that the gateway had not opened, never why.
+   */
+  private async recordSetupFailure(
+    operation: PaymentOperationEnum,
+    cmd: PaymentRequestMessage,
+    reason: string,
+  ): Promise<void> {
+    const payment = this.paymentRepo.create({
+      userId: cmd.userId,
+      symbolId: null,
+      externalReference: cmd.externalReference,
+      operation,
+      category: PaymentCategoryEnum.FIAT,
+      type: cmd.type,
+      amount: Number(cmd.amount),
+      currency: cmd.currency,
+      status: PaymentStatusEnum.FAILED,
+      identifier: this.newIdentifier(operation),
+      gatewayCode: cmd.gatewayCode,
+      metadata: { ...(cmd.metadata ?? {}), error: reason },
+    });
+    const saved = await this.paymentRepo.save(payment);
+    this.events.failed(saved, reason);
+    this.logger.error(
+      `${operation} ${cmd.externalReference} refused before reaching a gateway: ${reason}`,
     );
   }
 
@@ -152,42 +194,39 @@ export class PaymentsService {
     try {
       symbol = await this.symbolsService.findBySlug(cmd.symbolSlug);
     } catch {
-      const payment = this.paymentRepo.create({
-        userId: cmd.userId,
-        symbolId: null,
-        externalReference: cmd.externalReference,
-        operation: PaymentOperationEnum.WITHDRAW,
-        category: PaymentCategoryEnum.FIAT,
-        type: cmd.type,
-        amount: Number(cmd.amount),
-        currency: cmd.currency,
-        status: PaymentStatusEnum.FAILED,
-        identifier: this.newIdentifier(PaymentOperationEnum.WITHDRAW),
-        metadata: { error: `Payment symbol "${cmd.symbolSlug}" not found in cbp` },
-      });
-      const saved = await this.paymentRepo.save(payment);
-      this.events.failed(saved, `Payment symbol "${cmd.symbolSlug}" not found in cbp`);
-      throw new NotFoundException(`Payment symbol "${cmd.symbolSlug}" not found in cbp`);
+      const reason = `Payment symbol "${cmd.symbolSlug}" not found in cbp`;
+      await this.recordSetupFailure(PaymentOperationEnum.WITHDRAW, cmd, reason);
+      throw new NotFoundException(reason);
     }
-    return this.createWithdrawCore(
-      cmd.userId,
-      symbol,
-      {
-        type: cmd.type,
-        amount: cmd.amount,
-        currency: cmd.currency,
-        gatewayCode: cmd.gatewayCode,
-        picturePath: cmd.picturePath,
-        notes: cmd.notes,
-        metadata: {
-          ...(cmd.metadata ?? {}),
-          beneficiaryIban: cmd.beneficiaryIban,
-          beneficiaryName: cmd.beneficiaryName,
-          beneficiaryId: cmd.beneficiaryId,
+
+    // Same reasoning as the deposit path: a refusal raised while preparing the
+    // payment has to reach the backend, or the caller waits on a record that
+    // will never move.
+    try {
+      return await this.createWithdrawCore(
+        cmd.userId,
+        symbol,
+        {
+          type: cmd.type,
+          amount: cmd.amount,
+          currency: cmd.currency,
+          gatewayCode: cmd.gatewayCode,
+          picturePath: cmd.picturePath,
+          notes: cmd.notes,
+          metadata: cmd.metadata,
         },
-      },
-      cmd.externalReference,
-    );
+        cmd.externalReference,
+      );
+    } catch (err) {
+      if (!(err as any)?.__cbpReported) {
+        await this.recordSetupFailure(
+          PaymentOperationEnum.WITHDRAW,
+          cmd,
+          (err as Error)?.message ?? String(err),
+        );
+      }
+      throw err;
+    }
   }
 
   async approveWithdrawByExternalReference(
@@ -279,6 +318,9 @@ export class PaymentsService {
       payment.metadata = { ...(input.metadata ?? {}), error: (err as Error)?.message };
       const saved = await this.paymentRepo.save(payment);
       this.events.failed(saved, (err as Error)?.message);
+      // This payment is already recorded and reported; the caller must not
+      // publish a second failure for the same request.
+      (err as any).__cbpReported = true;
       throw err;
     }
   }
