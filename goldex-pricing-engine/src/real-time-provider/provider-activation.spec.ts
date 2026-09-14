@@ -149,4 +149,71 @@ describe('provider activation', () => {
       expect(lookupProxyRoute('legacy.example.ir')).toBe(true);
     });
   });
+
+  describe('activating with credentials captured by hand', () => {
+    const build = (row: ProviderEntity, running = false) => {
+      const manager = {
+        getProvider: jest.fn(() => (running ? {} : undefined)),
+        restartProvider: jest.fn(() => Promise.resolve()),
+        startProvider: jest.fn(() => Promise.resolve()),
+      };
+      const service = new ProviderService(
+        {
+          find: jest.fn().mockResolvedValue([row]),
+          findOne: jest.fn().mockResolvedValue(row),
+          save: jest.fn((e: any) => Promise.resolve(e)),
+        } as any,
+        manager as any,
+        new Map(),
+        { log: jest.fn(), error: jest.fn(), warn: jest.fn() } as any,
+        { setJson: jest.fn() } as any,
+      );
+      return { service, manager };
+    };
+
+    it('stores the credentials and turns the provider on', async () => {
+      const { service } = build(entity());
+      const saved = await service.setAuth('engine-uuid', { token: 'tok-1', uId: 'u-1' });
+      expect(saved.active).toBe(true);
+      expect(saved.auth).toMatchObject({ token: 'tok-1', uId: 'u-1' });
+    });
+
+    /**
+     * These came from one login. Merging them over a previous session's fields
+     * would produce a credential set that never existed — a new token beside a
+     * stale sessionId.
+     */
+    it('replaces the previous session rather than merging into it', async () => {
+      const { service } = build(entity({ auth: { token: 'old', sessionId: 'stale' } }));
+      const saved = await service.setAuth('engine-uuid', { token: 'new' });
+      expect(saved.auth).toEqual({ token: 'new' });
+    });
+
+    it('refuses credentials with no token', async () => {
+      const { service } = build(entity());
+      await expect(service.setAuth('engine-uuid', { uId: 'u-1' })).rejects.toThrow(/token/i);
+    });
+
+    it('trims the token it stores', async () => {
+      const { service } = build(entity());
+      const saved = await service.setAuth('engine-uuid', { token: '  tok  ' });
+      expect(saved.auth.token).toBe('tok');
+    });
+
+    it('starts a provider that was not running', async () => {
+      const { service, manager } = build(entity(), false);
+      await service.setAuth('engine-uuid', { token: 'tok' });
+      expect(manager.startProvider).toHaveBeenCalled();
+      expect(manager.restartProvider).not.toHaveBeenCalled();
+    });
+
+    // A running provider is holding the credentials these replace, so leaving
+    // it alone would keep it on the old ones.
+    it('restarts one that was already running onto the new credentials', async () => {
+      const { service, manager } = build(entity(), true);
+      await service.setAuth('engine-uuid', { token: 'tok' });
+      expect(manager.restartProvider).toHaveBeenCalledWith('zaryar');
+      expect(manager.startProvider).not.toHaveBeenCalled();
+    });
+  });
 });

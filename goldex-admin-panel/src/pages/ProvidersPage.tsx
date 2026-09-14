@@ -7,6 +7,7 @@ import {
   providerFormIsComplete,
   providerFormPayload,
 } from "../lib/provider-form";
+import { parseProviderAuth } from "../lib/provider-auth-paste";
 
 interface Provider {
   id: string;
@@ -169,7 +170,80 @@ function ProviderForm({
   );
 }
 
-function OtpModal({
+/**
+ * Activation by pasting a session the admin captured themselves.
+ *
+ * The OTP path only reaches a provider whose login is a plain exchange of a
+ * phone number for a code. Behind a captcha or a second factor there is no such
+ * exchange to drive, and this is the way in for those: sign in to the provider
+ * in a real browser, copy the login response, paste it here.
+ */
+function ManualAuthPanel({
+  provider,
+  onClose,
+}: {
+  provider: Provider;
+  onClose: () => void;
+}) {
+  const qc = useQueryClient();
+  const [raw, setRaw] = useState("");
+  const parsed = raw.trim() ? parseProviderAuth(raw) : null;
+
+  const activate = useMutation({
+    mutationFn: (auth: Record<string, unknown>) =>
+      api.post(`/admin/providers/${provider.id}/set-auth`, { auth }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["providers-admin"] });
+      onClose();
+    },
+  });
+
+  return (
+    <>
+      <div className="muted" style={{ fontSize: 12, marginBottom: 10 }}>
+        در پنل وب تأمین‌کننده وارد شوید، پاسخ درخواست لاگین را از تب Network کپی کنید و اینجا بچسبانید.
+        {provider.webPanelUrl && (
+          <>
+            {" "}
+            <a href={provider.webPanelUrl} target="_blank" rel="noreferrer" dir="ltr">
+              {provider.webPanelUrl}
+            </a>
+          </>
+        )}
+      </div>
+      <div className="field">
+        <label>پاسخ لاگین (JSON)</label>
+        <textarea
+          className="input mono"
+          dir="ltr"
+          rows={7}
+          value={raw}
+          onChange={(e) => setRaw(e.target.value)}
+          placeholder='{"Data":{"user":{"token":"…","uId":"…"}}}'
+        />
+      </div>
+      {parsed && !parsed.ok && <div className="error-text">{parsed.error}</div>}
+      {parsed?.ok && (
+        <div className="muted" style={{ fontSize: 12, marginBottom: 10 }}>
+          ✓ شناسایی شد: <span dir="ltr">{parsed.value.recognised.join("، ")}</span>
+        </div>
+      )}
+      {activate.isError && <div className="error-text">{apiError(activate.error)}</div>}
+      <div className="row" style={{ justifyContent: "flex-end", gap: 10 }}>
+        <button type="button" className="btn ghost" onClick={onClose}>انصراف</button>
+        <button
+          className="btn primary"
+          disabled={activate.isPending || !parsed?.ok}
+          onClick={() => parsed?.ok && activate.mutate(parsed.value.auth as Record<string, unknown>)}
+        >
+          {activate.isPending ? <span className="spin" /> : "ذخیره و فعال‌سازی"}
+        </button>
+      </div>
+    </>
+  );
+}
+
+function OtpPanel({
   provider,
   onClose,
 }: {
@@ -195,7 +269,7 @@ function OtpModal({
   });
 
   return (
-    <Modal title={`فعال‌سازی ${provider.key}`} onClose={onClose}>
+    <>
       <div className="field">
         <label>تلفن</label>
         <input
@@ -233,6 +307,50 @@ function OtpModal({
           {verify.isPending ? <span className="spin" /> : "تایید و فعال‌سازی"}
         </button>
       </div>
+    </>
+  );
+}
+
+/**
+ * The two ways a provider gets turned on, in one place.
+ *
+ * They reach the same end — stored credentials and a running provider — and
+ * differ only in who performs the login. The OTP tab has the engine do it,
+ * which works when the provider's login is a plain phone-for-code exchange.
+ * The manual tab is for when it is not.
+ */
+function ActivationModal({
+  provider,
+  onClose,
+}: {
+  provider: Provider;
+  onClose: () => void;
+}) {
+  const [tab, setTab] = useState<"otp" | "manual">("otp");
+
+  return (
+    <Modal title={`فعال‌سازی ${provider.persianName || provider.key}`} onClose={onClose} wide>
+      <div className="row" style={{ gap: 8, marginBottom: 14 }}>
+        <button
+          type="button"
+          className={"btn sm " + (tab === "otp" ? "primary" : "ghost")}
+          onClick={() => setTab("otp")}
+        >
+          کد پیامکی
+        </button>
+        <button
+          type="button"
+          className={"btn sm " + (tab === "manual" ? "primary" : "ghost")}
+          onClick={() => setTab("manual")}
+        >
+          ورود دستی توکن
+        </button>
+      </div>
+      {tab === "otp" ? (
+        <OtpPanel provider={provider} onClose={onClose} />
+      ) : (
+        <ManualAuthPanel provider={provider} onClose={onClose} />
+      )}
     </Modal>
   );
 }
@@ -337,7 +455,7 @@ export default function ProvidersPage() {
                             resolve to /admin/providers/undefined/…. Show it, but
                             offer only the actions keyed by `key`. */}
                         <button className="btn sm" disabled={!p.id} onClick={() => setForm({ open: true, initial: p })}>ویرایش</button>
-                        <button className="btn sm" onClick={() => setOtpFor(p)} disabled={p.active || !p.id}>فعال‌سازی OTP</button>
+                        <button className="btn sm" onClick={() => setOtpFor(p)} disabled={p.active || !p.id}>فعال‌سازی</button>
                         <button className="btn sm" disabled={refresh.isPending} onClick={() => refresh.mutate(p.key)}>بازنشانی</button>
                         <button
                           className={"btn sm " + (p.active ? "danger" : "")}
@@ -356,7 +474,7 @@ export default function ProvidersPage() {
         )}
       </Card>
 
-      {otpFor && <OtpModal provider={otpFor} onClose={() => setOtpFor(null)} />}
+      {otpFor && <ActivationModal provider={otpFor} onClose={() => setOtpFor(null)} />}
     </>
   );
 }

@@ -10,7 +10,9 @@ import { ProviderEntity } from './entity/provider.entity';
  */
 describe('provider admin mirror', () => {
   const build = (rows: Partial<ProviderEntity>[], registry: any[] = [], live: string[] = []) => {
-    const saved: Partial<ProviderEntity>[] = [...rows];
+    // Copied, not aliased: the service mutates the row it is handed, and a
+    // shared fixture object would carry one test's activation into the next.
+    const saved: Partial<ProviderEntity>[] = rows.map((r) => ({ ...r }));
     const repo = {
       find: jest.fn(() => Promise.resolve(saved.map((r) => ({ ...r }) as ProviderEntity))),
       findOne: jest.fn(({ where }: any) =>
@@ -231,6 +233,57 @@ describe('provider admin mirror', () => {
     it('still refuses to verify before any code was sent', async () => {
       const { service } = build([{ ...provider, phone: undefined }]);
       await expect(service.verifyOtp('mine', '1234')).rejects.toThrow(/send OTP first/i);
+    });
+  });
+
+  describe('activating with credentials captured by hand', () => {
+    const provider = {
+      id: 'mine',
+      key: 'zaryar',
+      category: 'zaryar',
+      baseUrl: 'https://a.ir',
+    };
+
+    /**
+     * The way in for a provider whose login the engine cannot drive — behind a
+     * captcha, or with a login API nobody has worked out. Without it, deleting
+     * the Android app would leave those providers with no way to be turned on
+     * at all.
+     */
+    it('hands the credentials to the engine and activates the mirror', async () => {
+      const { service, rmq } = build([provider]);
+      rmq.requestCommand.mockResolvedValue({ ok: true, data: { key: 'zaryar', active: true } });
+
+      await service.setAuth('mine', { token: 'tok-1', uId: 'u-1' });
+
+      const [pattern, payload] = rmq.requestCommand.mock.calls.at(-1)!;
+      expect(pattern).toBe('provider.command.set-auth');
+      expect(payload).toEqual({ key: 'zaryar', auth: { token: 'tok-1', uId: 'u-1' } });
+
+      const [row] = await service.findAll();
+      expect(row.active).toBe(true);
+    });
+
+    it('refuses credentials with no token before troubling the engine', async () => {
+      const { service, rmq } = build([provider]);
+      await expect(service.setAuth('mine', { uId: 'u-1' } as any)).rejects.toThrow(/token/i);
+      expect(rmq.requestCommand).not.toHaveBeenCalled();
+    });
+
+    it('refuses a token that is only whitespace', async () => {
+      const { service } = build([provider]);
+      await expect(service.setAuth('mine', { token: '   ' })).rejects.toThrow(/token/i);
+    });
+
+    it('leaves the mirror inactive when the engine refuses them', async () => {
+      const { service, rmq } = build([provider]);
+      rmq.requestCommand.mockResolvedValue({ ok: false, error: 'Credentials rejected' });
+
+      await expect(service.setAuth('mine', { token: 'tok-1' })).rejects.toThrow(
+        'Credentials rejected',
+      );
+      const [row] = await service.findAll();
+      expect(row.active).toBeFalsy();
     });
   });
 });

@@ -26,6 +26,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { ProviderService } from './provider.service';
 import { CreateProviderDto } from './dto/create-provider.dto';
+import { SetProviderAuthDto } from './dto/set-provider-auth.dto';
 import { UpdateProviderDto } from './dto/update-provider.dto';
 import { AdminAuthGuard } from '../admin/auth/Guard/admin.guard';
 import { AdminRolesGuard } from '../admin/auth/Guard/admin.role.guard';
@@ -98,6 +99,20 @@ export class ProviderController {
   @ApiEnvelopeResponse(ProviderCommandAckDto, { status: 201 })
   async verifyOtp(@Param('id', ParseUUIDPipe) id: string, @Body('otp') otp: string) {
     return { data: await this.providerService.verifyOtp(id, otp) };
+  }
+
+  @Post(':id/set-auth')
+  @ApiOperation({
+    summary: 'Activate a provider with credentials captured by hand',
+    description:
+      'For a provider whose login the engine cannot drive itself — a captcha, a second factor, or a login API that has not been worked out. The admin signs in to the provider, brings back the session, and the provider is started with it.',
+  })
+  @ApiEnvelopeResponse(ProviderCommandAckDto, { status: 201 })
+  async setAuth(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: SetProviderAuthDto,
+  ) {
+    return { data: await this.providerService.setAuth(id, dto.auth) };
   }
 
   @Post('reconcile')

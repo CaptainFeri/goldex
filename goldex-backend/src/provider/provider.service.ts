@@ -317,6 +317,36 @@ export class ProviderService {
     };
   }
 
+  /**
+   * Activates a provider with credentials the admin captured themselves.
+   *
+   * The OTP pair drives the provider's own login API, which only reaches a
+   * provider whose login is a plain phone-for-code exchange. A captcha, a
+   * second factor, or a login nobody has reverse-engineered puts a provider
+   * out of that path's reach entirely — this is how those get turned on, and
+   * it is the reason the panel is a complete replacement for the Android app
+   * rather than a partial one.
+   */
+  async setAuth(id: string, auth: Record<string, any>): Promise<{ message: string }> {
+    const provider = await this.findOne(id);
+
+    const token = typeof auth?.token === 'string' ? auth.token.trim() : '';
+    if (!token) {
+      throw new BadRequestException('Credentials must include a non-empty token');
+    }
+
+    await this.runActivationCommand<{ key: string; active: boolean }>(
+      MessagePatterns.PROVIDER_COMMAND_SET_AUTH,
+      { key: provider.key, auth },
+      provider.key,
+    );
+
+    provider.active = true;
+    await this.providerRepo.save(provider);
+
+    return { message: `Provider ${provider.key} activated with supplied credentials` };
+  }
+
   async verifyOtp(id: string, otp: string): Promise<{ message: string }> {
     const provider = await this.findOne(id);
     if (!provider.phone) {

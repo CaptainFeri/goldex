@@ -46,6 +46,12 @@ export enum MessagePatterns {
   PROVIDER_COMMAND_TOGGLE_ACTIVE = 'provider.command.toggle-active',
   PROVIDER_COMMAND_SEND_OTP = 'provider.command.send-otp',
   PROVIDER_COMMAND_VERIFY_OTP = 'provider.command.verify-otp',
+  /**
+   * Activation with credentials an admin captured themselves, for a provider
+   * whose login the engine cannot drive — a captcha, a second factor, a login
+   * API nobody has worked out.
+   */
+  PROVIDER_COMMAND_SET_AUTH = 'provider.command.set-auth',
   PROVIDER_COMMAND_RECONCILE = 'provider.command.reconcile',
   PROVIDER_COMMAND_REFRESH = 'provider.command.refresh',
   PROVIDER_COMMAND_FETCH_ORDERS = 'provider.command.fetch-orders',

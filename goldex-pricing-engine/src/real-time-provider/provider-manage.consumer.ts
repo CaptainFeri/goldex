@@ -51,6 +51,10 @@ export class ProviderManageConsumer implements OnApplicationBootstrap {
       (msg) => void this.handleVerifyOtp(msg),
     );
     await this.rabbitMQService.subscribeCommand(
+      MessagePatterns.PROVIDER_COMMAND_SET_AUTH,
+      (msg) => void this.handleSetAuth(msg),
+    );
+    await this.rabbitMQService.subscribeCommand(
       MessagePatterns.PROVIDER_COMMAND_RECONCILE,
       () => void this.handleReconcile(),
     );
@@ -102,13 +106,14 @@ export class ProviderManageConsumer implements OnApplicationBootstrap {
   }
 
   /**
-   * Activation is the one pair of commands whose outcome the caller needs.
+   * Activation is what the caller actually waits on.
    *
    * Every other handler here can swallow its error into the log, because
-   * nothing is waiting on it. These two are what the admin panel calls to turn
-   * a provider on, and only the engine knows whether the provider accepted the
-   * phone number or the code — so the error goes back to whoever asked, and is
-   * announced as an event for anything else that is tracking the attempt.
+   * nothing is listening. These are what the admin panel calls to turn a
+   * provider on, and only the engine knows whether the provider accepted the
+   * phone number, the code, or the credentials — so the error goes back to
+   * whoever asked, and is announced as an event for anything else tracking the
+   * attempt.
    */
   private async handleSendOtp(msg: any): Promise<void> {
     const { key, phone } = msg.data || {};
@@ -141,9 +146,31 @@ export class ProviderManageConsumer implements OnApplicationBootstrap {
     }
   }
 
+  /**
+   * The manual way in, for a login the engine cannot drive itself. Answers the
+   * caller like the OTP pair does — an admin who has just pasted credentials
+   * needs to know whether they were accepted.
+   */
+  private async handleSetAuth(msg: any): Promise<void> {
+    const { key, auth } = msg.data || {};
+    try {
+      const entity = await this.providerService.findByKey(key);
+      const saved = await this.providerService.setAuth(entity.id, auth);
+      await this.rabbitMQService.reply(msg, {
+        ok: true,
+        data: { key: saved.key, active: saved.active },
+      });
+    } catch (err) {
+      const error = this.err(err);
+      this.logger.error(`provider.set-auth failed: ${error}`);
+      await this.announceOtpFailure(key, 'set-auth', error);
+      await this.rabbitMQService.reply(msg, { ok: false, error });
+    }
+  }
+
   private async announceOtpFailure(
     key: string | undefined,
-    stage: 'send-otp' | 'verify-otp',
+    stage: 'send-otp' | 'verify-otp' | 'set-auth',
     error: string,
   ): Promise<void> {
     await this.rabbitMQService.publish(

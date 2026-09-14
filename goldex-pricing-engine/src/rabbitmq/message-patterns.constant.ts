@@ -43,6 +43,15 @@ export const MessagePatterns = {
   PROVIDER_COMMAND_TOGGLE_ACTIVE: 'provider.command.toggle-active',
   PROVIDER_COMMAND_SEND_OTP: 'provider.command.send-otp',
   PROVIDER_COMMAND_VERIFY_OTP: 'provider.command.verify-otp',
+  /**
+   * Activation with credentials an admin captured themselves.
+   *
+   * The OTP pair is the automated path and cannot survive a login the engine
+   * cannot drive — a captcha, a second factor, a provider whose login API has
+   * not been worked out. This is the way in for those: the credentials are
+   * handed over directly and the provider is started with them.
+   */
+  PROVIDER_COMMAND_SET_AUTH: 'provider.command.set-auth',
   PROVIDER_COMMAND_RECONCILE: 'provider.command.reconcile',
   PROVIDER_COMMAND_REFRESH: 'provider.command.refresh',
   PROVIDER_COMMAND_FETCH_ORDERS: 'provider.command.fetch-orders',

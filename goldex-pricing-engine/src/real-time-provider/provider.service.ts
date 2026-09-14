@@ -234,6 +234,46 @@ export class ProviderService implements OnApplicationBootstrap {
     }
   }
 
+  /**
+   * Activates a provider with credentials somebody obtained by hand.
+   *
+   * The OTP pair drives the provider's login API, which only works when that
+   * login is a plain exchange of a phone number for a code. It is not, for a
+   * provider behind a captcha or a second factor — and for those the admin
+   * signs in themselves, in a real browser, and brings back what the session
+   * produced. Everything past this point is identical to a verified OTP: the
+   * same auth blob, stored the same way, starting the provider the same way.
+   */
+  async setAuth(id: string, auth: Record<string, any>): Promise<ProviderEntity> {
+    const provider = await this.findOne(id);
+
+    const token = typeof auth?.token === 'string' ? auth.token.trim() : '';
+    if (!token) {
+      throw new BadRequestException('Credentials must include a non-empty token');
+    }
+
+    // Replaced rather than merged: these came from one login, and keeping
+    // stale fields from a previous session alongside them would produce a
+    // credential set that never existed.
+    provider.auth = { ...auth, token };
+    provider.active = true;
+    const saved = await this.providerRepo.save(provider);
+
+    // A provider already running is holding the credentials these replace, so
+    // it has to be restarted onto the new ones rather than left on the old.
+    this.formatter.log('ProviderService', `manual-activate-${saved.key}`);
+    if (this.providerManager.getProvider(saved.key)) {
+      await this.providerManager.restartProvider(saved.key);
+    } else {
+      void this.providerManager.startProvider(saved);
+    }
+
+    if (this.rabbitMQService) {
+      await this.rabbitMQService.publish(MessagePatterns.PROVIDER_UPDATED, saved, saved.key);
+    }
+    return saved;
+  }
+
   async verifyOtp(id: string, otp: string): Promise<ProviderEntity> {
     const provider = await this.findOne(id);
     if (provider.active) {
