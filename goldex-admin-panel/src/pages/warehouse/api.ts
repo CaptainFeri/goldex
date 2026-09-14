@@ -68,6 +68,10 @@ export const warehouseApi = {
   movementTotals: async (warehouseId?: string): Promise<MovementTotals> =>
     unwrap((await api.get(`${BASE}/movements/today`, { params: warehouseId ? { warehouseId } : {} })).data),
 
+  /** Material symbols and providers, scoped to what a warehouse operator may read. */
+  lookups: async (): Promise<{ symbols: { id: string; slug: string; name: string }[]; providers: { key: string; name: string }[] }> =>
+    unwrap((await api.get(`${BASE}/lookups`)).data),
+
   recordMovement: async (payload: Record<string, unknown>) =>
     unwrap((await api.post(`${BASE}/movements`, payload)).data),
 };

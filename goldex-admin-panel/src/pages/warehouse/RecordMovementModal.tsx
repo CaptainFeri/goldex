@@ -1,11 +1,27 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { api, apiError, unwrap } from "../../api/client";
+import { apiError } from "../../api/client";
 import { Modal, ErrorState } from "../../components/ui";
 import { fmtNum } from "../../lib/format";
 import type { Packet } from "../../api/types";
 import UserPicker, { type PickedUser } from "../../components/UserPicker";
 import { warehouseApi, type WarehouseSummary } from "./api";
+
+/**
+ * A list, whatever the endpoint handed back.
+ *
+ * A dropdown that renders nothing is a bad afternoon; a dropdown that throws
+ * takes the whole dialog down with it, which is what happened when these two
+ * were pointed at routes that do not return arrays.
+ */
+function asList<T>(value: unknown): T[] {
+  if (Array.isArray(value)) return value as T[];
+  if (value && typeof value === "object") {
+    const items = (value as any).items ?? (value as any).data;
+    if (Array.isArray(items)) return items as T[];
+  }
+  return [];
+}
 
 type Direction = "IN" | "OUT";
 type Party = "USER" | "PROVIDER";
@@ -46,15 +62,17 @@ export default function RecordMovementModal({
   const [packetId, setPacketId] = useState("");
   const [notes, setNotes] = useState("");
 
-  const symbols = useQuery({
-    queryKey: ["symbols"],
-    queryFn: async () => unwrap<any[]>((await api.get("/admin/symbols")).data),
+  // One call, served by the warehouse API itself: the symbol and provider
+  // admin APIs require the ADMIN role, and these screens are for warehouse
+  // operators. Material symbols only — a vault holds metal, and offering rial
+  // would let an operator book a deposit the warehouse cannot store.
+  const lookups = useQuery({
+    queryKey: ["warehouse-lookups"],
+    queryFn: warehouseApi.lookups,
   });
 
-  const providers = useQuery({
-    queryKey: ["providers"],
-    queryFn: async () => unwrap<any[]>((await api.get("/provider")).data),
-  });
+  const symbols = asList<{ id: string; slug: string; name: string }>(lookups.data?.symbols);
+  const providers = asList<{ key: string; name: string }>(lookups.data?.providers);
 
   // Only free packages can leave, and only from the chosen warehouse.
   const packets = useQuery({
@@ -168,9 +186,9 @@ export default function RecordMovementModal({
           <label>تامین‌کننده</label>
           <select className="form-input" value={providerKey} onChange={(e) => setProviderKey(e.target.value)}>
             <option value="">انتخاب کنید…</option>
-            {(providers.data ?? []).map((p: any) => (
-              <option key={p.key ?? p.providerKey} value={p.key ?? p.providerKey}>
-                {p.name ?? p.key ?? p.providerKey}
+            {providers.map((p) => (
+              <option key={p.key} value={p.key}>
+                {p.name}
               </option>
             ))}
           </select>
@@ -181,9 +199,9 @@ export default function RecordMovementModal({
         <label>نماد</label>
         <select className="form-input" value={symbolId} onChange={(e) => setSymbolId(e.target.value)}>
           <option value="">انتخاب کنید…</option>
-          {(symbols.data ?? []).map((s: any) => (
+          {symbols.map((s) => (
             <option key={s.id} value={s.id}>
-              {s.slug ?? s.name}
+              {s.name && s.name !== s.slug ? `${s.slug} — ${s.name}` : s.slug}
             </option>
           ))}
         </select>
