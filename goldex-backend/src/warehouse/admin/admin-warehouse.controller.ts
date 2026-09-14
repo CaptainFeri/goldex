@@ -23,6 +23,8 @@ import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth, ApiConsumes, ApiBody
 import { FileInterceptor, FileFieldsInterceptor } from "@nestjs/platform-express";
 import { AdminAuthGuard } from "../../admin/auth/Guard/admin.guard";
 import { AdminWorkTimeGuard } from "../../admin-schedule/admin-work-time.guard";
+import { AdminPermissionsGuard } from "../../admin-role/guard/admin-permissions.guard";
+import { RequirePermissions } from "../../admin-role/guard/require-permissions.decorator";
 import { WarehouseService } from "../service/warehouse.service";
 import { PacketService } from "../service/packet.service";
 import { ConfirmMaterialInput, WarehouseRequestService } from "../service/warehouse-request.service";
@@ -47,7 +49,20 @@ import { SplitPacketDto } from "./dto/split-packet.dto";
 
 @ApiTags("Admin - Warehouse")
 @ApiBearerAuth()
-@UseGuards(AdminAuthGuard, AdminWorkTimeGuard)
+/**
+ * Every route here moves metal, credits a wallet or books an entry, so the
+ * whole controller is gated on the `warehouse` permission rather than the
+ * routes being gated one at a time.
+ *
+ * Permission rather than the legacy role enum: `AdminRolesGuard` compares
+ * `Math.max` of the required roles against the caller's rank, so naming
+ * superAdmin, admin and warehouse together would demand the *highest* of the
+ * three and lock out the two below it — the opposite of listing them. The
+ * permission is held by exactly superAdmin, admin and warehouse, and not by
+ * finance, which is the set intended.
+ */
+@UseGuards(AdminAuthGuard, AdminPermissionsGuard, AdminWorkTimeGuard)
+@RequirePermissions("warehouse")
 @Controller("admin/warehouse")
 export class AdminWarehouseController {
   constructor(
