@@ -16,6 +16,8 @@ import { WarehouseMovementEntity } from "../entity/warehouse-movement.entity";
 import { WalletEntity } from "../../wallet/entities/wallet.entity";
 import { TransactionEntity } from "../../wallet/entities/transaction.entity";
 import { ProviderSettlementEntity } from "../../provider-finance/entity/provider-settlement.entity";
+import { SymbolEntity } from "../../admin-symbol/entity/symbol.entity";
+import { ProviderEntity } from "../../provider/entity/provider.entity";
 import { AdminAccountingModule } from "../../admin-accounting/admin-accounting.module";
 import { MinioModule } from "../../minio/minio.module";
 import { SmsModule } from "../../sms/sms.module";
@@ -32,6 +34,8 @@ import { AdminScheduleModule } from "../../admin-schedule/admin-schedule.module"
       WalletEntity,
       TransactionEntity,
       ProviderSettlementEntity,
+      SymbolEntity,
+      ProviderEntity,
     ]),
     AdminAccountingModule,
     MinioModule,
