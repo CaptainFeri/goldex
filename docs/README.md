@@ -40,3 +40,15 @@ Recorded in full in `PARSZARGAR-ADMIN-API-PLAN.md` §9; the load-bearing ones:
   except for the root role. §5.7.
 - **Monitoring** reads the standalone `monitor` app. §5.4.
 - **Reports:** super admin sees all, everyone else sees their own. §5.23.
+
+## Archive
+
+`archive/` holds superseded planning documents, kept so a decision can be
+traced back to where it was made. They are dated in their filenames and carry a
+notice at the top saying what replaced them — nothing there describes current
+work, and nothing there should be scheduled from.
+
+- [`archive/2026-09-parszargar-delivery-roadmap.md`](./archive/2026-09-parszargar-delivery-roadmap.md)
+  — the September 2026 milestone table and dependency order, from a roadmap
+  written before implementation started. Its week numbers are stale; the order
+  of the work is the part that survived.
