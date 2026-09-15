@@ -262,6 +262,12 @@ function ManualAuthPanel({
   );
 }
 
+interface RelayedOtp {
+  code: string | null;
+  receivedAt: string | null;
+  message?: string | null;
+}
+
 function OtpPanel({
   provider,
   onClose,
@@ -272,13 +278,48 @@ function OtpPanel({
   const qc = useQueryClient();
   const [phone, setPhone] = useState(provider.phone ?? "");
   const [otp, setOtp] = useState("");
+  const [typed, setTyped] = useState(false);
+  // When this attempt asked for a code, so a code relayed for an earlier one is
+  // not filled in as though it answered this request.
+  const [askedAt, setAskedAt] = useState<number | null>(null);
 
   // The request now waits on the engine's real answer, which takes as long as
   // the provider takes to reply. Both buttons say so while they wait.
   const send = useMutation({
     mutationFn: () => api.post(`/admin/providers/${provider.id}/send-otp`, { phone }),
+    onMutate: () => {
+      setAskedAt(Date.now());
+      setOtp("");
+      setTyped(false);
+    },
     onSuccess: () => qc.invalidateQueries({ queryKey: ["providers-admin"] }),
   });
+  /**
+   * The code the companion app read off the SIM.
+   *
+   * The message arrives on a handset, which is the one part of this the panel
+   * cannot do. While a code has been asked for and nobody here has typed one,
+   * the backend is polled for what that handset relayed, so an operator at the
+   * panel finishes an activation somebody else's phone received.
+   */
+  const relayed = useQuery({
+    queryKey: ["provider-relayed-otp", provider.id, askedAt],
+    queryFn: () => api.get(`/admin/providers/${provider.id}/relayed-otp`).then(unwrap<RelayedOtp>),
+    enabled: send.isSuccess && !typed,
+    refetchInterval: (query) => (query.state.data?.code ? false : 3000),
+    gcTime: 0,
+  });
+
+  // A relayed code stands for five minutes, so one can still be sitting there
+  // from an attempt before this one. Only what arrived after this request was
+  // made is an answer to it.
+  const fresh =
+    relayed.data?.code &&
+    askedAt != null &&
+    (!relayed.data.receivedAt || Date.parse(relayed.data.receivedAt) >= askedAt);
+  const relayedCode = fresh ? relayed.data!.code : null;
+  if (relayedCode && !typed && otp !== relayedCode) setOtp(relayedCode);
+
   const verify = useMutation({
     mutationFn: () => api.post(`/admin/providers/${provider.id}/verify-otp`, { otp }),
     onSuccess: () => {
@@ -317,8 +358,26 @@ function OtpPanel({
       )}
       <div className="field">
         <label>کد تایید</label>
-        <input className="input mono" dir="ltr" value={otp} onChange={(e) => setOtp(e.target.value)} />
+        <input
+          className="input mono"
+          dir="ltr"
+          value={otp}
+          onChange={(e) => {
+            setTyped(true);
+            setOtp(e.target.value);
+          }}
+        />
       </div>
+      {relayedCode && !typed && (
+        <div className="muted" style={{ fontSize: 12, marginBottom: 10 }}>
+          ✓ این کد از گوشی اپراتور دریافت شد{relayed.data?.message ? `: ${relayed.data.message}` : "."}
+        </div>
+      )}
+      {send.isSuccess && !relayedCode && !typed && (
+        <div className="muted" style={{ fontSize: 12, marginBottom: 10 }}>
+          در انتظار کد از اپ اندروید… می‌توانید کد را دستی هم وارد کنید.
+        </div>
+      )}
       {verify.isError && <div className="error-text">{apiError(verify.error)}</div>}
       <div className="row" style={{ justifyContent: "flex-end", gap: 10 }}>
         <button type="button" className="btn ghost" onClick={onClose}>انصراف</button>
