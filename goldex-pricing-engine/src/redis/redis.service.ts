@@ -96,18 +96,34 @@ export class RedisService implements OnModuleDestroy {
    * checked. That is a handful of O(1) lookups against a `KEYS` sweep of the
    * whole keyspace, which blocks the server for its duration and was being run
    * on every panel page load.
+   *
+   * A provider counts if it has **either** a symbol list or prices. The two
+   * arrive by different routes and fail independently: a Talaab provider reads
+   * its symbols from an HTTP call and its prices from a socket, so a closed
+   * shop leaves it with a list and no quotes; a Zaryar provider streams prices
+   * over SignalR while its symbol list comes from a REST call that can be
+   * refused on its own. Requiring prices meant the first kind was not merely
+   * hidden but actively pruned from the index — a provider with a published
+   * symbol list disappeared from the panel altogether.
    */
   async getActiveProviders(): Promise<string[]> {
     const named = await this.redis.smembers(ACTIVE_PROVIDERS_KEY);
     if (named.length === 0) return [];
 
     const pipeline = this.redis.pipeline();
-    for (const key of named) pipeline.exists(providerPricesKey(key));
+    for (const key of named) {
+      pipeline.exists(providerPricesKey(key));
+      pipeline.exists(providerItemsKey(key));
+    }
     const results = await pipeline.exec();
 
     const live: string[] = [];
     const dead: string[] = [];
-    named.forEach((key, i) => (results?.[i]?.[1] ? live : dead).push(key));
+    named.forEach((key, i) => {
+      const hasPrices = Boolean(results?.[i * 2]?.[1]);
+      const hasItems = Boolean(results?.[i * 2 + 1]?.[1]);
+      (hasPrices || hasItems ? live : dead).push(key);
+    });
     // Tidied here rather than by a sweeper: this is the only place that learns
     // a provider has gone quiet, and an index nobody prunes is the bug this
     // layout replaced.
@@ -318,6 +334,12 @@ export class RedisService implements OnModuleDestroy {
    * reader got was a list that had never existed.
    */
   async setProviderItems(providerKey: string, items: unknown[]): Promise<void> {
+    // An empty list is a failed fetch far more often than a provider that has
+    // withdrawn every symbol it offers, and the two are indistinguishable from
+    // here. Keeping the previous list is the recoverable mistake; wiping it
+    // loses the names for every price still streaming in.
+    if (items.length === 0) return;
+
     const key = providerItemsKey(providerKey);
     const pipeline = this.redis.pipeline();
     pipeline.del(key);

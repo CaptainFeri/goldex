@@ -81,18 +81,26 @@ export class PricingRedisService implements OnModuleDestroy {
    * Read from the engine's index and then checked, rather than scanned for.
    * The old path listed providers by a set the engine never pruned, so a
    * provider that had been off for weeks still counted as reporting — and the
-   * panel showed it green. A provider is in this list when its price hash
-   * exists, which is to say when it has reported inside the data lifetime.
+   * panel showed it green. A provider is in this list when it holds either a
+   * symbol list or prices inside the data lifetime.
    */
   async getProviders(): Promise<string[]> {
     const named = await this.client.smembers(ACTIVE_PROVIDERS_KEY);
     if (!named.length) return [];
 
     const pipeline = this.client.pipeline();
-    for (const key of named) pipeline.exists(providerPricesKey(key));
+    for (const key of named) {
+      pipeline.exists(providerPricesKey(key));
+      pipeline.exists(providerItemsKey(key));
+    }
     const results = await pipeline.exec();
 
-    return named.filter((_, i) => Boolean(results?.[i]?.[1])).sort();
+    // Either half counts. Symbols and prices reach the engine by different
+    // routes and fail independently — a provider whose shop is closed has a
+    // published symbol list and no quotes — and requiring both hid it.
+    return named
+      .filter((_, i) => Boolean(results?.[i * 2]?.[1]) || Boolean(results?.[i * 2 + 1]?.[1]))
+      .sort();
   }
 
   /**

@@ -144,6 +144,20 @@ describe('a provider’s data in Redis', () => {
       expect([...ttls.keys()]).toEqual([providerItemsKey('zaryar')]);
     });
 
+    /**
+     * An empty result is a failed fetch far more often than a provider that
+     * has withdrawn everything, and from here the two look identical. Keeping
+     * the previous list is the recoverable mistake; wiping it loses the names
+     * for every price still arriving.
+     */
+    it('are not wiped by a fetch that came back empty', async () => {
+      const { service } = build();
+      await service.setProviderItems('zaryar', [{ itemId: 1, name: 'طلای آبشده' }]);
+      await service.setProviderItems('zaryar', []);
+
+      expect(await service.getProviderItems('zaryar')).toHaveLength(1);
+    });
+
     it('skip an entry with no id rather than storing it unfindable', async () => {
       const { service } = build();
       await service.setProviderItems('zaryar', [{ itemId: 1 }, { name: 'nameless' }]);
@@ -226,6 +240,40 @@ describe('a provider’s data in Redis', () => {
       expect(await service.getActiveProviders()).toEqual(['zaryar']);
       // And is forgotten, rather than re-checked for ever.
       expect([...sets.get(ACTIVE_PROVIDERS_KEY)!]).toEqual(['zaryar']);
+    });
+
+    /**
+     * The two halves arrive by different routes and fail independently, and
+     * both were seen live: a Talaab provider had published its symbol list and
+     * no prices (its shop was shut), while two Zaryar providers were streaming
+     * prices with no symbol list (their metadata call was being refused).
+     * Requiring prices did not merely hide the first — it pruned it from the
+     * index, so a provider with a published symbol list vanished.
+     */
+    it('counts a provider that has symbols but no prices yet', async () => {
+      const { service, sets } = build();
+      await service.setProviderItems('afrogh', [{ itemId: 1, name: 'طلای آبشده' }]);
+
+      expect(await service.getActiveProviders()).toEqual(['afrogh']);
+      expect([...sets.get(ACTIVE_PROVIDERS_KEY)!]).toContain('afrogh');
+    });
+
+    it('counts a provider that has prices but no symbols yet', async () => {
+      const { service } = build();
+      await service.setCurrentPrice('ariana', 1, price(1));
+      expect(await service.getActiveProviders()).toEqual(['ariana']);
+    });
+
+    it('drops one only when both halves are gone', async () => {
+      const { service, client } = build();
+      await service.setProviderItems('afrogh', [{ itemId: 1 }]);
+      await service.setCurrentPrice('afrogh', 1, price(1));
+
+      await client.del(providerPricesKey('afrogh'));
+      expect(await service.getActiveProviders()).toEqual(['afrogh']);
+
+      await client.del(providerItemsKey('afrogh'));
+      expect(await service.getActiveProviders()).toEqual([]);
     });
 
     it('is empty before anything has reported', async () => {
