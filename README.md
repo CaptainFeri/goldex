@@ -20,6 +20,7 @@ flowchart LR
         UP[goldex-user-panel] 
         AP[goldex-admin-panel]
         TB[goldex-telegram-bot]
+        AA[goldex-admin-app]
     end
 
     subgraph Core
@@ -43,6 +44,7 @@ flowchart LR
     UP --> BE
     AP --> BE
     TB --> BE
+    AA --> BE
 
     BE <--> CBP
     BE --> PG
@@ -71,6 +73,7 @@ flowchart LR
 | **goldex-admin-panel** | React (Vite) TS SPA | Operator console: users, KYC, wallets, finance, CBP payments, provider finance, symbols/pairs/mappings, order-book, deposits/withdraws, OCR admin, telegram market, CRM. |
 | **paddle-ocr-service** | Python FastAPI | OCR text extraction (PaddleOCR, Arabic) for payment/ID document uploads. |
 | **kraken-ocr-service** | Python FastAPI | OCR with a self-training loop + optional RabbitMQ async worker. |
+| **goldex-admin-app** | Android (Kotlin, Compose) | Operator handset console: system dashboard, provider status, and activation by the code the provider texts to that SIM — which it also relays to the backend so the panel can finish the same activation. |
 | **monitor** | Node | Operational monitoring/health utilities. |
 
 ### Shared infrastructure
@@ -88,6 +91,7 @@ flowchart LR
 - Node.js 18+ / npm (backend, bots, panels)
 - Python 3.9+ (OCR services)
 - Docker + Docker Compose (Postgres, Redis, RabbitMQ)
+- JDK 17 + Android SDK 35 (admin app; CI builds the APK on every push)
 
 ### Quick start (development)
 
@@ -133,6 +137,7 @@ Each service reads its own `.env` — copy from `.env.example` and fill credenti
 ├── goldex-admin-panel/        # Admin web app
 ├── paddle-ocr-service/        # PaddleOCR API
 ├── kraken-ocr-service/        # Kraken OCR + self-training
+├── goldex-admin-app/          # Android operator console
 ├── monitor/                   # Operational monitoring
 ├── postgres-init/             # DB bootstrap scripts
 ├── tools/                     # Dev utilities

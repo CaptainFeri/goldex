@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!--
+      The launch theme only. Everything after the first frame is Compose's
+      Material 3 theme; this exists so the window is the app's colour before
+      Compose has drawn, rather than a white flash.
+    -->
+    <style name="Theme.GoldexAdmin" parent="android:Theme.Material.NoActionBar">
+        <item name="android:windowBackground">@color/brand_surface</item>
+        <item name="android:statusBarColor">@color/brand_surface</item>
+        <item name="android:navigationBarColor">@color/brand_surface</item>
+    </style>
+</resources>

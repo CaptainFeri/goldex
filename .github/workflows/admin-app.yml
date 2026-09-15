@@ -1,0 +1,62 @@
+name: Admin App
+
+on:
+  push:
+    paths:
+      - 'goldex-admin-app/**'
+      - '.github/workflows/admin-app.yml'
+  pull_request:
+    paths:
+      - 'goldex-admin-app/**'
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: write
+
+    defaults:
+      run:
+        working-directory: goldex-admin-app
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      # The unit tests are where the code that reads a code out of a text
+      # message is checked, so they run before anything is packaged.
+      - name: Unit tests
+        run: ./gradlew --no-daemon test
+
+      - name: Build debug APK
+        run: ./gradlew --no-daemon assembleDebug
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: goldex-admin-debug
+          path: goldex-admin-app/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
+
+      # A tagged build is one somebody is meant to install, so it also becomes a
+      # release the operator can download on the handset itself.
+      - name: Publish to the rolling release
+        if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release delete admin-app-latest --yes --cleanup-tag || true
+          gh release create admin-app-latest \
+            app/build/outputs/apk/debug/app-debug.apk \
+            --title "Goldex Admin — latest" \
+            --notes "Built from ${GITHUB_SHA}"

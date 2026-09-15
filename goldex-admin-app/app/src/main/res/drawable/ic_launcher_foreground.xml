@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- An ingot, stamped. The app is the panel for a gold desk. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <path
+        android:fillColor="#E8B45C"
+        android:pathData="M34,42h40l10,26h-60z" />
+    <path
+        android:fillColor="#F5D48A"
+        android:pathData="M34,42h40l-4,8h-32z" />
+    <path
+        android:fillColor="#12100E"
+        android:pathData="M48,56h12v4h-12z" />
+</vector>

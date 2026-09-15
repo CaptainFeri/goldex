@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  The backend is frequently reached over plain HTTP on an operator's own
+  network — a LAN address or a tunnel, not a public name with a certificate.
+  Cleartext is therefore permitted, but only as the base default: a deployment
+  that does have TLS gets it, because an https:// base URL is unaffected by
+  this.
+-->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="true">
+        <trust-anchors>
+            <certificates src="system" />
+            <certificates src="user" />
+        </trust-anchors>
+    </base-config>
+</network-security-config>
