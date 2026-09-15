@@ -21,22 +21,47 @@ class ApiClient(private val store: SessionStore) {
 
     private var cachedFor: String? = null
     private var cached: AdminApi? = null
+    private var deviceCachedFor: String? = null
+    private var deviceCached: DeviceApi? = null
 
     @Synchronized
     fun api(): AdminApi {
-        val base = SessionStore.normalizeBaseUrl(store.baseUrl) + API_PREFIX
+        val base = baseUrl()
         cached?.let { if (cachedFor == base) return it }
-        val built = build(base)
-        cachedFor = base
-        cached = built
-        return built
+        return build(base) { store.token.value }
+            .create(AdminApi::class.java)
+            .also {
+                cachedFor = base
+                cached = it
+            }
     }
 
-    private fun build(base: String): AdminApi {
+    /**
+     * The same backend under this handset's own credential.
+     *
+     * A separate client rather than a header swapped per call: the two
+     * credentials authorise different things, and one that could be chosen per
+     * request is one that can be chosen wrongly.
+     */
+    @Synchronized
+    fun deviceApi(): DeviceApi {
+        val base = baseUrl()
+        deviceCached?.let { if (deviceCachedFor == base) return it }
+        return build(base) { store.deviceToken }
+            .create(DeviceApi::class.java)
+            .also {
+                deviceCachedFor = base
+                deviceCached = it
+            }
+    }
+
+    private fun baseUrl() = SessionStore.normalizeBaseUrl(store.baseUrl) + API_PREFIX
+
+    private fun build(base: String, token: () -> String?): Retrofit {
         val auth = Interceptor { chain ->
             val request = chain.request().newBuilder().apply {
                 header("Accept", "application/json")
-                store.token.value?.let { header("Authorization", "Bearer $it") }
+                token()?.let { header("Authorization", "Bearer $it") }
             }.build()
             chain.proceed(request)
         }
@@ -61,7 +86,6 @@ class ApiClient(private val store: SessionStore) {
             .client(client)
             .addConverterFactory(GsonConverterFactory.create())
             .build()
-            .create(AdminApi::class.java)
     }
 
     companion object {

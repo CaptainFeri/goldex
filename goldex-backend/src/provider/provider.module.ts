@@ -9,6 +9,11 @@ import { ProviderBalanceSnapshotEntity } from '../financial/entity/provider-bala
 import { AdminMonitoringModule } from '../admin-monitoring/admin-monitoring.module';
 import { RedisModule } from '../redis/redis.module';
 import { ProviderAutoLoginService } from './provider-auto-login.service';
+import { ProviderLoginDeviceEntity } from './entity/provider-login-device.entity';
+import { LoginDeviceService } from './device/login-device.service';
+import { DeviceAuthGuard } from './device/device-auth.guard';
+import { LoginDeviceController } from './device/login-device.controller';
+import { ProviderDeviceController } from './device/provider-device.controller';
 
 @Module({
   imports: [
@@ -16,12 +21,19 @@ import { ProviderAutoLoginService } from './provider-auto-login.service';
       ProviderEntity,
       ProviderDealSnapshotEntity,
       ProviderBalanceSnapshotEntity,
+      ProviderLoginDeviceEntity,
     ]),
     AdminMonitoringModule,
     RedisModule,
   ],
-  providers: [ProviderService, ProviderAutoLoginService, ProviderStatusConsumer],
-  controllers: [ProviderController],
+  providers: [
+    ProviderService,
+    ProviderAutoLoginService,
+    LoginDeviceService,
+    DeviceAuthGuard,
+    ProviderStatusConsumer,
+  ],
+  controllers: [ProviderController, LoginDeviceController, ProviderDeviceController],
   exports: [ProviderService],
 })
 export class ProviderModule {}

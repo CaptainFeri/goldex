@@ -118,6 +118,38 @@ describe('claiming a provider for an automatic login', () => {
     });
   });
 
+  /**
+   * Without this the lease would be advisory. A device could skip claiming and
+   * go straight to asking the provider for a code — the unmetered loop the
+   * lease exists to prevent — and two devices could drive one activation into
+   * spending both its codes.
+   */
+  describe('only the holder may act', () => {
+    it('lets the device that claimed it through', async () => {
+      const { service } = build();
+      await service.claim(provider(), 'phone-1');
+      await expect(service.assertHolder('zaryar', 'phone-1')).resolves.toBeUndefined();
+    });
+
+    it('refuses a device that never claimed it', async () => {
+      const { service } = build();
+      await service.claim(provider(), 'phone-1');
+      await expect(service.assertHolder('zaryar', 'phone-2')).rejects.toThrow(/phone-1/);
+    });
+
+    it('refuses acting with no claim at all', async () => {
+      const { service } = build();
+      await expect(service.assertHolder('zaryar', 'phone-1')).rejects.toThrow(/claim it first/);
+    });
+
+    it('refuses once the claim has been given back', async () => {
+      const { service } = build();
+      await service.claim(provider(), 'phone-1');
+      await service.release(provider(), 'phone-1', 'failure');
+      await expect(service.assertHolder('zaryar', 'phone-1')).rejects.toThrow(/claim it first/);
+    });
+  });
+
   describe('a person at the panel comes first', () => {
     // The code is single-use. Two requests for one activation mean both are
     // spent and neither works.

@@ -214,6 +214,26 @@ export class ProviderAutoLoginService {
     };
   }
 
+  /**
+   * Refuse anything but the device that holds the claim.
+   *
+   * Without this the lease would be advisory: a device could skip claiming and
+   * go straight to asking the provider for a code, which is exactly the
+   * unmetered loop the lease exists to prevent, and two devices could drive one
+   * activation into spending both its codes.
+   */
+  async assertHolder(providerKey: string, deviceId: string): Promise<void> {
+    const lease = await this.readLease(providerKey);
+    if (!lease) {
+      throw new ConflictException(
+        `No login attempt is in progress for ${providerKey}; claim it first`,
+      );
+    }
+    if (lease.deviceId !== deviceId) {
+      throw new ConflictException(`This attempt belongs to device ${lease.deviceId}`);
+    }
+  }
+
   /** Give the provider back, saying whether the login worked. */
   async release(
     provider: ProviderEntity,

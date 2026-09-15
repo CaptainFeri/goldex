@@ -9,6 +9,7 @@ import {
 } from "../lib/provider-form";
 import { parseProviderAuth } from "../lib/provider-auth-paste";
 import BrowserSimulator from "./providers/BrowserSimulator";
+import LoginDevices from "./providers/LoginDevices";
 
 interface Provider {
   id: string;
@@ -573,6 +574,8 @@ export default function ProvidersPage() {
           </div>
         )}
       </Card>
+
+      <LoginDevices />
 
       {otpFor && <ActivationModal provider={otpFor} onClose={() => setOtpFor(null)} />}
     </>

@@ -148,6 +148,36 @@ export class ProviderService {
   }
 
   /**
+   * Ask a provider for a code, on behalf of a device that has claimed it.
+   *
+   * The claim is checked here rather than trusted: holding a device credential
+   * says the handset may take part, not that it may act on this provider right
+   * now.
+   */
+  async deviceSendOtp(id: string, deviceId: string, phone: string) {
+    const provider = await this.findOne(id);
+    await this.autoLogin.assertHolder(provider.key, deviceId);
+    return this.sendOtp(id, phone);
+  }
+
+  /**
+   * Finish the login with a code the device read.
+   *
+   * A success releases the claim as part of the same step. Leaving that to the
+   * device would mean a handset that crashed on the happy path holds a provider
+   * it has already fixed, and leaves a failure counted against a login that
+   * worked.
+   */
+  async deviceVerifyOtp(id: string, deviceId: string, otp: string) {
+    const provider = await this.findOne(id);
+    await this.autoLogin.assertHolder(provider.key, deviceId);
+
+    const result = await this.verifyOtp(id, otp);
+    await this.autoLogin.release(provider, deviceId, 'success');
+    return result;
+  }
+
+  /**
    * On boot, ask the pricing-engine for a full provider snapshot so the admin
    * mirror seeds itself with providers that already exist in the engine (active
    * and inactive) — not just ones created through the panel. Retried until the

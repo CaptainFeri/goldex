@@ -49,6 +49,8 @@ fun SettingsScreen(store: SessionStore, onSignOut: () -> Unit) {
     val context = LocalContext.current
     var baseUrl by remember { mutableStateOf(store.baseUrl) }
     var saved by remember { mutableStateOf(false) }
+    var deviceToken by remember { mutableStateOf(store.deviceToken.orEmpty()) }
+    var enrolled by remember { mutableStateOf(store.isEnrolled) }
 
     // Both grants are made outside this screen — one in a system dialog, one in
     // a settings app — so they are re-read every time the screen comes back
@@ -94,6 +96,59 @@ fun SettingsScreen(store: SessionStore, onSignOut: () -> Unit) {
                 if (saved) {
                     Spacer(Modifier.height(8.dp))
                     Text("ذخیره شد.", style = MaterialTheme.typography.bodySmall)
+                }
+            }
+        }
+
+        item {
+            SectionCard(title = "اعتبارنامه‌ی این دستگاه") {
+                Text(
+                    "بدون این، اپ فقط وقتی کار می‌کند که کسی وارد شده باشد. با آن، این گوشی " +
+                        "با اعتبارنامه‌ی محدود خودش کار می‌کند — بدون دسترسی ادمین و قابل ابطال " +
+                        "از پنل.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Spacer(Modifier.height(10.dp))
+                if (enrolled) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Pill("ثبت‌شده", Color(0xFF6FBF8B))
+                        Spacer(Modifier.weight(1f))
+                        OutlinedButton(onClick = {
+                            store.forgetDevice()
+                            deviceToken = ""
+                            enrolled = false
+                        }) { Text("حذف اعتبارنامه") }
+                    }
+                    Spacer(Modifier.height(8.dp))
+                    // Removing it here does not withdraw the trust; only the
+                    // panel can do that, and saying so is the difference
+                    // between a revoked credential and one merely forgotten.
+                    Text(
+                        "حذف از این گوشی، اعتبارنامه را باطل نمی‌کند. ابطال باید از پنل انجام شود.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                } else {
+                    OutlinedTextField(
+                        value = deviceToken,
+                        onValueChange = { deviceToken = it },
+                        label = { Text("توکن دستگاه") },
+                        supportingText = {
+                            Text("از پنل مدیریت › تأمین‌کنندگان › دستگاه‌های ورود خودکار")
+                        },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                    Spacer(Modifier.height(10.dp))
+                    Button(
+                        onClick = {
+                            store.deviceToken = deviceToken
+                            enrolled = store.isEnrolled
+                        },
+                        enabled = deviceToken.trim().startsWith("gxd_"),
+                        modifier = Modifier.fillMaxWidth(),
+                    ) { Text("ثبت دستگاه") }
                 }
             }
         }

@@ -81,6 +81,30 @@ data class RelayOtpRequest(
 
 data class AwaitingOtp(val providerKey: String?, val since: String?)
 
+/**
+ * A provider the engine says has stopped accepting its session.
+ *
+ * `reason` is carried beside `eligible` because it is the whole answer: "no,
+ * waiting until 14:20" and "no, it has no phone number stored" both mean no,
+ * and they call for completely different actions.
+ */
+data class LoginCandidate(
+    val id: String?,
+    val key: String,
+    val persianName: String?,
+    val phone: String?,
+    val status: String?,
+    val eligible: Boolean = false,
+    val reason: String?,
+    val attempts: Int = 0,
+    val cooldownUntil: String?,
+    val leasedBy: String?,
+)
+
+data class LoginLease(val leaseExpiresAt: String?, val phone: String?)
+
+data class ReleaseLoginRequest(val outcome: String)
+
 data class RelayedOtp(
     val code: String?,
     val receivedAt: String?,

@@ -87,13 +87,28 @@ class AdminRepository(
      * wire.
      */
     suspend fun awaitingProviderKey(): String? = io {
-        client.api().awaitingOtp().data.providerKey
+        if (store.isEnrolled) {
+            client.deviceApi().awaitingOtp().data.providerKey
+        } else {
+            client.api().awaitingOtp().data.providerKey
+        }
     }
 
-    /** Hand a code read off this handset to the backend, for the panel to use. */
+    /**
+     * Hand a code read off this handset to the backend, for the panel to use.
+     *
+     * Sent on this handset's own credential where it has one. That is what
+     * makes relaying survive nobody being signed in — which is the normal state
+     * of a phone left on a desk, and used to be the state in which every code
+     * it read was dropped.
+     */
     suspend fun relayOtp(providerKey: String?, code: String, message: String?) = io {
-        client.api().relayOtp(RelayOtpRequest(providerKey, code, message))
+        val body = RelayOtpRequest(providerKey, code, message)
+        if (store.isEnrolled) client.deviceApi().relayOtp(body) else client.api().relayOtp(body)
     }
+
+    /** Whether this handset can act without somebody signed in on it. */
+    val enrolled: Boolean get() = store.isEnrolled
 
     // ── dashboard ─────────────────────────────────────────────────────────────
 

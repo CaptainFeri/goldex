@@ -64,6 +64,22 @@ class SessionStore(context: Context) {
         set(value) = prefs.edit().putString(KEY_ROLE, value).apply()
 
     /**
+     * The credential this handset was enrolled with.
+     *
+     * Separate from the admin token on purpose. The admin token is a person's
+     * session — it belongs to whoever signed in, expires with their login, and
+     * opens the whole platform. This one belongs to the phone, opens four
+     * endpoints, and is what lets the handset keep working when nobody is
+     * signed in on it, which is the entire point of leaving it on a desk.
+     */
+    var deviceToken: String?
+        get() = prefs.getString(KEY_DEVICE_TOKEN, null)?.takeIf { it.isNotBlank() }
+        set(value) = prefs.edit().putString(KEY_DEVICE_TOKEN, value?.trim()).apply()
+
+    /** Whether this handset has been enrolled to act on its own. */
+    val isEnrolled: Boolean get() = deviceToken != null
+
+    /**
      * Which provider the next incoming code belongs to.
      *
      * Set when an activation code is requested and cleared when it is used. A
@@ -84,6 +100,14 @@ class SessionStore(context: Context) {
         _token.value = token
     }
 
+    /**
+     * The person signs out; the handset stays enrolled.
+     *
+     * The device credential is deliberately kept: it was issued to this phone,
+     * not to whoever happened to be signed in on it, and clearing it here would
+     * mean a handset stopped doing its unattended work the moment someone
+     * tidied up after using the console.
+     */
     fun signOut() {
         prefs.edit()
             .remove(KEY_TOKEN)
@@ -93,6 +117,11 @@ class SessionStore(context: Context) {
         _token.value = null
     }
 
+    /** Undo enrolment on this handset. The credential must also be revoked at the panel. */
+    fun forgetDevice() {
+        prefs.edit().remove(KEY_DEVICE_TOKEN).apply()
+    }
+
     companion object {
         private const val TAG = "SessionStore"
         private const val KEY_TOKEN = "token"
@@ -100,6 +129,7 @@ class SessionStore(context: Context) {
         private const val KEY_PHONE = "phone"
         private const val KEY_ROLE = "role"
         private const val KEY_PENDING = "pending_provider"
+        private const val KEY_DEVICE_TOKEN = "device_token"
 
         /**
          * Retrofit refuses a base URL without a trailing slash, and an operator

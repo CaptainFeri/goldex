@@ -34,8 +34,13 @@ class OtpRelayWorker(context: Context, params: WorkerParameters) :
         val message = inputData.getString(KEY_MESSAGE)
         val store = Goldex.session(applicationContext)
 
-        if (store.token.value.isNullOrBlank()) return skip("nobody is signed in")
         val repo = Goldex.repository(applicationContext)
+        // Either credential will do. The handset's own is the one that makes
+        // this work at three in the morning with nobody signed in; an admin
+        // session is the fallback for a phone nobody has enrolled yet.
+        if (!store.isEnrolled && store.token.value.isNullOrBlank()) {
+            return skip("this handset is not enrolled and nobody is signed in")
+        }
 
         /*
          * Whose code this is. Normally this app asked for it and knows. When
