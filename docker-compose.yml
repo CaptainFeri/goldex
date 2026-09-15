@@ -254,6 +254,10 @@ services:
       RABBITMQ_PORT: 5672
       MOCK_HOST: goldex-pricing-engine-mock
       MOCK_PORT: 5000
+      # The mock providers are seeded inactive, since the mock server they point
+      # at no longer starts by default. Only affects a fresh database —
+      # migrations do not re-run — so existing rows are left to the panel.
+      MOCK_SEED_ACTIVE: ${MOCK_SEED_ACTIVE:-false}
       PROXY_HOST: ${PRICING_ENGINE_PROXY_HOST:-}
       PROXY_PORT: ${PRICING_ENGINE_PROXY_PORT:-29180}
       PROXY_USERNAME: ${PRICING_ENGINE_PROXY_USERNAME:-}
@@ -295,7 +299,11 @@ services:
       - goldex-network
     logging: *default-logging
 
+  # Off by default. Nothing depends on it — the engine only reads MOCK_HOST to
+  # build the seeded mock providers' URLs — so it starts only when asked for:
+  #   docker compose --profile mock up -d goldex-pricing-engine-mock
   goldex-pricing-engine-mock:
+    profiles: ["mock"]
     build:
       context: ./goldex-pricing-engine
       dockerfile: Dockerfile

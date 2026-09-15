@@ -216,4 +216,69 @@ describe('provider activation', () => {
       expect(manager.startProvider).not.toHaveBeenCalled();
     });
   });
+
+  describe('what a stored session carries beyond the token', () => {
+    const build = (row: ProviderEntity) => {
+      const manager = {
+        getProvider: jest.fn(() => undefined),
+        restartProvider: jest.fn(() => Promise.resolve()),
+        startProvider: jest.fn(() => Promise.resolve()),
+      };
+      return new ProviderService(
+        {
+          find: jest.fn().mockResolvedValue([row]),
+          findOne: jest.fn().mockResolvedValue(row),
+          save: jest.fn((e: any) => Promise.resolve(e)),
+        } as any,
+        manager as any,
+        new Map(),
+        { log: jest.fn(), error: jest.fn(), warn: jest.fn() } as any,
+        { setJson: jest.fn() } as any,
+      );
+    };
+
+    /**
+     * A Talaab provider reads `config.apiBaseUrl || config.auth['apiBaseUrl']`,
+     * so where to send an authenticated request is part of being able to use a
+     * session at all. A login never returns it — the site already knows where
+     * it is — so it is carried in from the provider row.
+     */
+    it('carries the provider’s apiBaseUrl alongside the token', async () => {
+      const service = build(
+        entity({
+          key: 'afrogh',
+          category: 'talaab',
+          apiBaseUrl: 'http://goldex-pricing-engine-mock:5000/talaab/afrogh/homepage',
+        }),
+      );
+
+      const saved = await service.setAuth('engine-uuid', { token: 'mock-token-afrogh' });
+
+      expect(saved.auth).toEqual({
+        token: 'mock-token-afrogh',
+        apiBaseUrl: 'http://goldex-pricing-engine-mock:5000/talaab/afrogh/homepage',
+      });
+    });
+
+    // The login's own word wins: a provider that does tell you where its API is
+    // knows better than the row someone typed.
+    it('does not overwrite one the login itself returned', async () => {
+      const service = build(
+        entity({ category: 'talaab', apiBaseUrl: 'http://from-the-row' }),
+      );
+
+      const saved = await service.setAuth('engine-uuid', {
+        token: 'tok',
+        apiBaseUrl: 'http://from-the-login',
+      });
+
+      expect(saved.auth.apiBaseUrl).toBe('http://from-the-login');
+    });
+
+    it('adds nothing when the provider has no apiBaseUrl to add', async () => {
+      const service = build(entity({ apiBaseUrl: undefined }));
+      const saved = await service.setAuth('engine-uuid', { token: 'tok' });
+      expect(saved.auth).toEqual({ token: 'tok' });
+    });
+  });
 });

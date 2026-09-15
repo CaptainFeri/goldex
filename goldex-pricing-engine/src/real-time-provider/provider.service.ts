@@ -265,7 +265,7 @@ export class ProviderService implements OnApplicationBootstrap {
     // Replaced rather than merged: these came from one login, and keeping
     // stale fields from a previous session alongside them would produce a
     // credential set that never existed.
-    provider.auth = { ...auth, token };
+    provider.auth = this.withProviderContext(provider, { ...auth, token });
     provider.active = true;
     const saved = await this.providerRepo.save(provider);
 
@@ -282,6 +282,30 @@ export class ProviderService implements OnApplicationBootstrap {
       await this.rabbitMQService.publish(MessagePatterns.PROVIDER_UPDATED, saved, saved.key);
     }
     return saved;
+  }
+
+  /**
+   * Adds what the provider row knows and the credentials do not.
+   *
+   * A Talaab provider reads `config.apiBaseUrl || config.auth['apiBaseUrl']`,
+   * so where it should send an authenticated request is part of being able to
+   * use a session at all — but a login never returns it, because the site
+   * already knows where it is. Carrying it in alongside the token keeps the
+   * stored credentials usable on their own rather than only in company with
+   * the row they were saved against.
+   *
+   * Never overwrites: a value that came from the login is the provider's own
+   * word, and it wins over anything inferred here.
+   */
+  private withProviderContext(
+    provider: ProviderEntity,
+    auth: Record<string, any>,
+  ): Record<string, any> {
+    const withContext = { ...auth };
+    if (!withContext.apiBaseUrl && provider.apiBaseUrl) {
+      withContext.apiBaseUrl = provider.apiBaseUrl;
+    }
+    return withContext;
   }
 
   async verifyOtp(id: string, otp: string): Promise<ProviderEntity> {
@@ -304,6 +328,9 @@ export class ProviderService implements OnApplicationBootstrap {
       if (extra) {
         Object.assign(provider.auth, extra);
       }
+      // The same shape however the provider was activated — a session stored by
+      // the OTP path and one stored from a browser must be usable alike.
+      provider.auth = this.withProviderContext(provider, provider.auth);
       provider.active = true;
       const saved = await this.providerRepo.save(provider);
       void this.providerManager.startProvider(saved);
