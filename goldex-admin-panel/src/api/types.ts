@@ -310,6 +310,8 @@ export interface ComparePoint {
 export interface CompareSeries {
   providerKey: string;
   providerItemId: number;
+  /** What the provider calls this item; null when it offers no name. */
+  itemName: string | null;
   useBuyPrice: boolean;
   useSellPrice: boolean;
   points: ComparePoint[];

@@ -2,6 +2,16 @@ import { Injectable, Inject, OnModuleDestroy } from '@nestjs/common';
 import { ConsoleFormatterService } from '../common/console-formatter.service';
 import Redis from 'ioredis';
 import { PriceData } from '../real-time-provider/types/price-data.type';
+import {
+  ACTIVE_PROVIDERS_KEY,
+  HISTORY_LENGTH,
+  PRICE_UPDATES_CHANNEL,
+  PROVIDER_DATA_TTL_SECONDS,
+  providerHistoryKey,
+  providerItemsKey,
+  providerPricesKey,
+  providerSnapshotChannel,
+} from './keys';
 
 export { PriceData };
 
@@ -39,57 +49,90 @@ export class RedisService implements OnModuleDestroy {
     return data ? (JSON.parse(data) as PriceData) : null;
   }
 
+  /**
+   * One item's latest price.
+   *
+   * A field in the provider's price hash rather than a key of its own. The
+   * previous layout wrote a string per item, added its *name* to a set, and
+   * separately maintained a snapshot hash — three places, kept in step by
+   * whichever call site remembered to. The set in particular was never pruned:
+   * its members were key names that expired an hour later, so it grew for ever
+   * and still counted a provider as reporting long after it had stopped.
+   */
   async setCurrentPrice(providerKey: string, itemId: number, priceData: PriceData): Promise<void> {
-    const key = `price:current:${providerKey}:${itemId}`;
-    await this.redis.set(key, JSON.stringify(priceData));
-    await this.redis.expire(key, 3600);
-    await this.redis.sadd(`price:current:providers:${providerKey}`, key);
+    priceData.providerKey = providerKey;
+    const key = providerPricesKey(providerKey);
+    const pipeline = this.redis.pipeline();
+    pipeline.hset(key, String(itemId), JSON.stringify(priceData));
+    // Refreshed on every write, so the provider's data lives as long as it
+    // keeps reporting and expires as a whole when it stops.
+    pipeline.expire(key, PROVIDER_DATA_TTL_SECONDS);
+    pipeline.sadd(ACTIVE_PROVIDERS_KEY, providerKey);
+    await pipeline.exec();
   }
 
   async getCurrentPrice(providerKey: string, itemId: number): Promise<PriceData | null> {
-    const key = `price:current:${providerKey}:${itemId}`;
-    const data = await this.redis.get(key);
+    const data = await this.redis.hget(providerPricesKey(providerKey), String(itemId));
     return data ? (JSON.parse(data) as PriceData) : null;
   }
 
   async getAllCurrentPrices(providerKey?: string): Promise<PriceData[]> {
-    let keys: string[];
-    if (providerKey) {
-      keys = await this.redis.smembers(`price:current:providers:${providerKey}`);
-    } else {
-      // Each provider stores its price keys in a SET named
-      // `price:current:providers:<key>`. Enumerate those set keys first
-      // (KEYS expands the glob), then read the members of each set.
-      const providerSetKeys = await this.redis.keys('price:current:providers:*');
-      keys = [];
-      for (const setKey of providerSetKeys) {
-        const memberKeys = await this.redis.smembers(setKey);
-        keys.push(...memberKeys);
-      }
-    }
+    const providers = providerKey ? [providerKey] : await this.getActiveProviders();
     const prices: PriceData[] = [];
-    for (const key of keys) {
-      const data = await this.redis.get(key);
-      if (data) {
-        prices.push(JSON.parse(data) as PriceData);
+    for (const key of providers) {
+      const entries = await this.redis.hgetall(providerPricesKey(key));
+      for (const raw of Object.values(entries)) {
+        const parsed = this.parse<PriceData>(raw);
+        if (parsed) prices.push(parsed);
       }
     }
     return prices;
   }
 
-  async saveItems(providerKey: string, items: PriceData[]): Promise<void> {
+  /**
+   * Providers holding data, from the index rather than a scan.
+   *
+   * The index can name a provider whose data has since expired, so each one is
+   * checked. That is a handful of O(1) lookups against a `KEYS` sweep of the
+   * whole keyspace, which blocks the server for its duration and was being run
+   * on every panel page load.
+   */
+  async getActiveProviders(): Promise<string[]> {
+    const named = await this.redis.smembers(ACTIVE_PROVIDERS_KEY);
+    if (named.length === 0) return [];
+
     const pipeline = this.redis.pipeline();
-    const snapshotKey = `price:snapshot:${providerKey}`;
-    pipeline.del(snapshotKey);
+    for (const key of named) pipeline.exists(providerPricesKey(key));
+    const results = await pipeline.exec();
+
+    const live: string[] = [];
+    const dead: string[] = [];
+    named.forEach((key, i) => (results?.[i]?.[1] ? live : dead).push(key));
+    // Tidied here rather than by a sweeper: this is the only place that learns
+    // a provider has gone quiet, and an index nobody prunes is the bug this
+    // layout replaced.
+    if (dead.length) await this.redis.srem(ACTIVE_PROVIDERS_KEY, ...dead);
+    return live.sort();
+  }
+
+  /**
+   * Replace a provider's whole price hash.
+   *
+   * Written whole so the result is always a consistent set: every item the
+   * provider is quoting and nothing it has stopped quoting. Merging into the
+   * existing hash would leave withdrawn items behind until they expired —
+   * which, since the hash expires as one key, would be never.
+   */
+  async saveItems(providerKey: string, items: PriceData[]): Promise<void> {
+    const key = providerPricesKey(providerKey);
+    const pipeline = this.redis.pipeline();
+    pipeline.del(key);
     for (const item of items) {
       item.providerKey = providerKey;
-      const key = `price:current:${providerKey}:${item.itemId}`;
-      pipeline.set(key, JSON.stringify(item));
-      pipeline.expire(key, 3600);
-      pipeline.sadd(`price:current:providers:${providerKey}`, key);
-      pipeline.hset(snapshotKey, String(item.itemId), JSON.stringify(item));
+      pipeline.hset(key, String(item.itemId), JSON.stringify(item));
     }
-    pipeline.expire(snapshotKey, 3600);
+    pipeline.expire(key, PROVIDER_DATA_TTL_SECONDS);
+    pipeline.sadd(ACTIVE_PROVIDERS_KEY, providerKey);
     await pipeline.exec();
   }
 
@@ -98,17 +141,30 @@ export class RedisService implements OnModuleDestroy {
     itemId: number,
     priceData: PriceData,
   ): Promise<void> {
-    const key = `price:history:${providerKey}:${itemId}`;
+    const key = providerHistoryKey(providerKey, itemId);
     const score = new Date(priceData.timestamp).getTime();
-    const value = JSON.stringify({ ...priceData, providerKey });
-    await this.redis.zadd(key, score, value);
-    await this.redis.zremrangebyrank(key, 0, -1001);
+    const pipeline = this.redis.pipeline();
+    pipeline.zadd(key, score, JSON.stringify({ ...priceData, providerKey }));
+    pipeline.zremrangebyrank(key, 0, -(HISTORY_LENGTH + 1));
+    // The old history keys never expired. Each was capped, so none grew large,
+    // but the number of them grew without limit as items came and went.
+    pipeline.expire(key, PROVIDER_DATA_TTL_SECONDS);
+    await pipeline.exec();
   }
 
   async getPriceHistory(providerKey: string, itemId: number, limit = 100): Promise<PriceData[]> {
-    const key = `price:history:${providerKey}:${itemId}`;
+    const key = providerHistoryKey(providerKey, itemId);
     const data = await this.redis.zrevrange(key, 0, limit - 1);
-    return data.map((d) => JSON.parse(d) as PriceData);
+    return data.map((d) => this.parse<PriceData>(d)).filter((p): p is PriceData => p !== null);
+  }
+
+  /** A malformed record is skipped, not thrown: one bad row must not blank a page. */
+  private parse<T>(raw: string): T | null {
+    try {
+      return JSON.parse(raw) as T;
+    } catch {
+      return null;
+    }
   }
 
   async getStatistics(providerKey?: string): Promise<{
@@ -138,25 +194,38 @@ export class RedisService implements OnModuleDestroy {
     return { totalItems, totalRecords, lastUpdate, activeTrades };
   }
 
+  /** Drop one item: its quote, its history, and its place in the item list. */
   async deletePriceData(providerKey: string, itemId: number): Promise<void> {
-    await this.redis.del(`price:current:${providerKey}:${itemId}`);
-    await this.redis.del(`price:history:${providerKey}:${itemId}`);
-    await this.redis.srem(
-      `price:current:providers:${providerKey}`,
-      `price:current:${providerKey}:${itemId}`,
-    );
+    await this.redis
+      .pipeline()
+      .hdel(providerPricesKey(providerKey), String(itemId))
+      .hdel(providerItemsKey(providerKey), String(itemId))
+      .del(providerHistoryKey(providerKey, itemId))
+      .exec();
   }
 
+  /**
+   * Forget a provider's data, or everyone's.
+   *
+   * History is found through the item list rather than by scanning for
+   * `history:*`, so this stays O(items) instead of O(keyspace).
+   */
   async clearAllPrices(providerKey?: string): Promise<void> {
-    if (providerKey) {
-      const keys = await this.redis.smembers(`price:current:providers:${providerKey}`);
-      if (keys.length) await this.redis.del(...keys);
-      await this.redis.del(`price:current:providers:${providerKey}`);
-      const historyKeys = await this.redis.keys(`price:history:${providerKey}:*`);
-      if (historyKeys.length) await this.redis.del(...historyKeys);
-    } else {
-      const keys = await this.redis.keys('price:*');
-      if (keys.length) await this.redis.del(...keys);
+    const providers = providerKey ? [providerKey] : await this.redis.smembers(ACTIVE_PROVIDERS_KEY);
+
+    for (const key of providers) {
+      const [items, prices] = await Promise.all([
+        this.redis.hkeys(providerItemsKey(key)),
+        this.redis.hkeys(providerPricesKey(key)),
+      ]);
+      const itemIds = [...new Set([...items, ...prices])];
+
+      const pipeline = this.redis.pipeline();
+      pipeline.del(providerItemsKey(key));
+      pipeline.del(providerPricesKey(key));
+      for (const id of itemIds) pipeline.del(providerHistoryKey(key, id));
+      pipeline.srem(ACTIVE_PROVIDERS_KEY, key);
+      await pipeline.exec();
     }
   }
 
@@ -170,14 +239,14 @@ export class RedisService implements OnModuleDestroy {
   }
 
   async publishPriceUpdate(priceData: PriceData): Promise<void> {
-    await this.redis.publish('price:updates', JSON.stringify(priceData));
+    await this.redis.publish(PRICE_UPDATES_CHANNEL, JSON.stringify(priceData));
   }
 
   async subscribeToPriceUpdates(callback: (priceData: PriceData) => void): Promise<() => void> {
     this.subscriber = this.redis.duplicate();
-    await this.subscriber.subscribe('price:updates');
+    await this.subscriber.subscribe(PRICE_UPDATES_CHANNEL);
     this.subscriber.on('message', (channel: string, message: string) => {
-      if (channel === 'price:updates') {
+      if (channel === PRICE_UPDATES_CHANNEL) {
         try {
           const data = JSON.parse(message) as PriceData;
           callback(data);
@@ -190,29 +259,29 @@ export class RedisService implements OnModuleDestroy {
 
     return () => {
       if (this.subscriber) {
-        void this.subscriber.unsubscribe('price:updates');
+        void this.subscriber.unsubscribe(PRICE_UPDATES_CHANNEL);
         this.subscriber.disconnect();
         this.subscriber = null;
       }
     };
   }
 
+  /**
+   * The snapshot is the price hash.
+   *
+   * It used to be a second hash written beside the per-item strings, and only
+   * by some of the paths that wrote prices — so the two drifted and a reader
+   * could not tell which was current. There is one now, and this writes it.
+   */
   async setSnapshot(providerKey: string, items: PriceData[]): Promise<void> {
-    const key = `price:snapshot:${providerKey}`;
-    const pipeline = this.redis.pipeline();
-    pipeline.del(key);
-    for (const item of items) {
-      item.providerKey = providerKey;
-      pipeline.hset(key, String(item.itemId), JSON.stringify(item));
-    }
-    pipeline.expire(key, 3600);
-    await pipeline.exec();
+    await this.saveItems(providerKey, items);
   }
 
   async getSnapshot(providerKey: string): Promise<PriceData[]> {
-    const key = `price:snapshot:${providerKey}`;
-    const data = await this.redis.hgetall(key);
-    return Object.values(data).map((d) => JSON.parse(d) as PriceData);
+    const data = await this.redis.hgetall(providerPricesKey(providerKey));
+    return Object.values(data)
+      .map((d) => this.parse<PriceData>(d))
+      .filter((p): p is PriceData => p !== null);
   }
 
   async publishSnapshot(providerKey: string, validItemIds?: Set<number>): Promise<void> {
@@ -224,21 +293,72 @@ export class RedisService implements OnModuleDestroy {
       items,
       timestamp: new Date().toISOString(),
     });
-    await this.redis.publish(`price:snapshot:${providerKey}`, message);
+    await this.redis.publish(providerSnapshotChannel(providerKey), message);
   }
 
+  /** A provider that has stopped reporting leaves nothing behind. */
   async deleteSnapshot(providerKey: string): Promise<void> {
-    await this.redis.del(`price:snapshot:${providerKey}`);
+    await this.redis
+      .pipeline()
+      .del(providerPricesKey(providerKey))
+      .srem(ACTIVE_PROVIDERS_KEY, providerKey)
+      .exec();
   }
 
-  async setMetadata(key: string, metadata: unknown): Promise<void> {
-    await this.redis.set(key, JSON.stringify(metadata));
-    await this.redis.expire(key, 86400);
+  // ── The symbols a provider offers ─────────────────────────────────────────
+
+  /**
+   * Replace a provider's whole item list.
+   *
+   * One hash, written in one operation, so what a reader sees is always a set
+   * the provider actually offered at some single moment. The previous layout
+   * gave each item its own key with its own day-long expiry: the list did not
+   * shrink when a provider withdrew a symbol, and it *did* shrink, item by
+   * item, when metadata simply stopped being refreshed. Either way what a
+   * reader got was a list that had never existed.
+   */
+  async setProviderItems(providerKey: string, items: unknown[]): Promise<void> {
+    const key = providerItemsKey(providerKey);
+    const pipeline = this.redis.pipeline();
+    pipeline.del(key);
+    for (const item of items) {
+      const id = (item as { itemId?: number | string })?.itemId;
+      if (id === undefined || id === null) continue;
+      pipeline.hset(key, String(id), JSON.stringify(item));
+    }
+    pipeline.expire(key, PROVIDER_DATA_TTL_SECONDS);
+    pipeline.sadd(ACTIVE_PROVIDERS_KEY, providerKey);
+    await pipeline.exec();
   }
 
-  async getMetadata(key: string): Promise<unknown> {
-    const data = await this.redis.get(key);
-    return data ? JSON.parse(data) : null;
+  /**
+   * Add or replace one symbol in the list.
+   *
+   * A single field write, so two callers touching different items cannot
+   * overwrite each other — which a read-modify-write of the whole list would
+   * let them do.
+   */
+  async setProviderItem(providerKey: string, itemId: number, item: unknown): Promise<void> {
+    const key = providerItemsKey(providerKey);
+    await this.redis
+      .pipeline()
+      .hset(key, String(itemId), JSON.stringify(item))
+      .expire(key, PROVIDER_DATA_TTL_SECONDS)
+      .sadd(ACTIVE_PROVIDERS_KEY, providerKey)
+      .exec();
+  }
+
+  /** Everything a provider offers, in one round trip. */
+  async getProviderItems<T = unknown>(providerKey: string): Promise<T[]> {
+    const data = await this.redis.hgetall(providerItemsKey(providerKey));
+    return Object.values(data)
+      .map((d) => this.parse<T>(d))
+      .filter((v): v is T => v !== null);
+  }
+
+  async getProviderItem<T = unknown>(providerKey: string, itemId: number): Promise<T | null> {
+    const data = await this.redis.hget(providerItemsKey(providerKey), String(itemId));
+    return data ? this.parse<T>(data) : null;
   }
 
   async getKeys(pattern: string): Promise<string[]> {

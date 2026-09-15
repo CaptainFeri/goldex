@@ -1,5 +1,5 @@
 import { Injectable } from "@nestjs/common";
-import { PricingRedisService } from "./pricing-redis.service";
+import { PricingRedisService, ProviderPriceData } from "./pricing-redis.service";
 import { ProviderPairMappingService } from "../provider-pair-mapping/provider-pair-mapping.service";
 import {
   MappedPairRef,
@@ -17,6 +17,14 @@ export interface ComparePoint {
 export interface CompareSeries {
   providerKey: string;
   providerItemId: number;
+  /**
+   * What the provider calls this item.
+   *
+   * Carried so the panel can name the line instead of showing a raw id. The
+   * comparison is between providers, and "#101 against #4477" tells an
+   * operator nothing about whether the two are even the same thing.
+   */
+  itemName: string | null;
   useBuyPrice: boolean;
   useSellPrice: boolean;
   points: ComparePoint[];
@@ -150,6 +158,20 @@ export class AdminMonitoringService {
     const mappings = await this.mappingService.findByPair(pairId);
     const useRange = fromMs != null || toMs != null;
 
+    // One read per provider rather than one per mapping: several mappings on a
+    // pair commonly point at the same provider, and the item list is a single
+    // hash either way.
+    const itemsByProvider = new Map<string, Map<number, ProviderPriceData>>();
+    await Promise.all(
+      [...new Set(mappings.map((m) => m.providerKey))].map(async (providerKey) => {
+        const items = await this.pricingRedis.getProviderItems(providerKey);
+        itemsByProvider.set(
+          providerKey,
+          new Map(items.map((i) => [Number(i.itemId), i])),
+        );
+      }),
+    );
+
     const series = await Promise.all(
       mappings.map(async (m): Promise<CompareSeries> => {
         const history = useRange
@@ -164,9 +186,20 @@ export class AdminMonitoringService {
             spread: Number(h.spread) || 0,
           }))
           .reverse();
+        // The item list is authoritative for the name; a history record's own
+        // itemName is whatever the provider was calling it at the time, and is
+        // missing entirely from older records.
+        const item = itemsByProvider.get(m.providerKey)?.get(m.providerItemId);
+        const itemName =
+          (item?.name as string | undefined) ??
+          (item?.itemName as string | undefined) ??
+          (history[0]?.itemName as string | undefined) ??
+          null;
+
         return {
           providerKey: m.providerKey,
           providerItemId: m.providerItemId,
+          itemName,
           useBuyPrice: m.useBuyPrice,
           useSellPrice: m.useSellPrice,
           points,

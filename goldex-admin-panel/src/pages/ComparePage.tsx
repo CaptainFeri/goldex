@@ -133,7 +133,9 @@ function CompareTab() {
       const map = new Map(s.points.map((p) => [p.timestamp, p[metric]]));
       const c = colorFor(s.providerKey);
       return {
-        label: `${s.providerKey} (#${s.providerItemId})`,
+        label: s.itemName
+          ? `${s.providerKey} — ${s.itemName}`
+          : `${s.providerKey} (#${s.providerItemId})`,
         data: allTs.map((t) => (map.has(t) ? Number(map.get(t)) : null)),
         borderColor: c,
         backgroundColor: c + "20",
@@ -148,7 +150,14 @@ function CompareTab() {
 
   const series = compare.data?.series ?? [];
 
-  const seriesKeys = new Set(series.map((s) => s.providerKey));
+  // A mapping always produces a series, even one with no points, so these are
+  // two different facts: whether the provider is mapped to this pair at all,
+  // and whether it has actually reported anything for it. Showing them as one
+  // made a mapped-but-silent provider look healthy.
+  const mappedKeys = new Set(series.map((s) => s.providerKey));
+  const reportingKeys = new Set(
+    series.filter((s) => s.points.length > 0).map((s) => s.providerKey),
+  );
 
   return (
     <>
@@ -212,19 +221,23 @@ function CompareTab() {
             تأمین‌کنندگان فعال:
           </label>
           {activeProviders.data.map((p) => {
-            const hasData = seriesKeys.has(p);
+            const mapped = mappedKeys.has(p);
+            const reporting = reportingKeys.has(p);
+            const kind = reporting ? "green" : mapped ? "gold" : "gray";
+            const mark = reporting ? "●" : mapped ? "◐" : "○";
+            const title = reporting
+              ? "نگاشت شده و داده دارد"
+              : mapped
+                ? "در این جفت‌ارز نگاشت شده، اما داده‌ای در این بازه ندارد"
+                : "در این جفت‌ارز نگاشت نشده";
             return (
               <span
                 key={p}
-                className={`badge ${hasData ? "green" : "gray"}`}
-                style={{ opacity: hasData ? 1 : 0.5, cursor: "default" }}
-                title={
-                  hasData
-                    ? "داده در این جفت‌ارز دارد"
-                    : "در این جفت‌ارز نگاشت نشده"
-                }
+                className={`badge ${kind}`}
+                style={{ opacity: mapped ? 1 : 0.5, cursor: "default" }}
+                title={title}
               >
-                {hasData ? "●" : "○"} {p}
+                {mark} {p}
               </span>
             );
           })}
@@ -285,6 +298,7 @@ function CompareTab() {
                   <th>آخرین خرید (ریال)</th>
                   <th>آخرین فروش (ریال)</th>
                   <th>اسپرد (ریال)</th>
+                  <th>آخرین داده</th>
                   <th>نقاط</th>
                 </tr>
               </thead>
@@ -304,16 +318,44 @@ function CompareTab() {
                         </span>{" "}
                         {s.providerKey}
                       </td>
-                      <td className="mono">{s.providerItemId}</td>
+                      <td>
+                        {s.itemName ?? "—"}
+                        <div className="mono muted" style={{ fontSize: 11 }}>
+                          #{s.providerItemId}
+                        </div>
+                      </td>
+                      {/*
+                        A price Goldex does not read from this provider is not a
+                        price this row should present as one. The mapping says
+                        which side is used; showing both made an unused figure
+                        look like a live input.
+                      */}
                       <td className="mono">
-                        {last ? fmtNum(last.buyPrice) : "—"}
+                        {!s.useBuyPrice ? (
+                          <span className="muted" title="این سمت در نگاشت استفاده نمی‌شود">
+                            —
+                          </span>
+                        ) : last ? (
+                          fmtNum(last.buyPrice)
+                        ) : (
+                          "—"
+                        )}
                       </td>
                       <td className="mono">
-                        {last ? fmtNum(last.sellPrice) : "—"}
+                        {!s.useSellPrice ? (
+                          <span className="muted" title="این سمت در نگاشت استفاده نمی‌شود">
+                            —
+                          </span>
+                        ) : last ? (
+                          fmtNum(last.sellPrice)
+                        ) : (
+                          "—"
+                        )}
                       </td>
                       <td className="mono">
                         {last ? fmtNum(last.spread) : "—"}
                       </td>
+                      <td className="mono">{last ? fmtTime(last.timestamp) : "—"}</td>
                       <td className="mono">{s.points.length}</td>
                     </tr>
                   );

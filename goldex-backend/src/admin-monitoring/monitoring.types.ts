@@ -11,8 +11,8 @@ export interface MappedPairRef {
 /**
  * One item of a provider's live snapshot.
  *
- * Merges the engine's item metadata (`item:metadata:*`, the authoritative
- * names) with its current prices (`price:current:*`), so an item that has
+ * Merges the engine's item list (`provider:<key>:items`, the authoritative
+ * names) with its current prices (`provider:<key>:prices`), so an item that has
  * metadata but no live quote is still listed — and adds the Goldex pairs the
  * item is mapped to, which is what makes the row meaningful to an admin.
  */

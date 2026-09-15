@@ -3,8 +3,21 @@ import { ConfigService, ConfigType } from "@nestjs/config";
 import Redis from "ioredis";
 import appEnvConfig from "../config/app.env.config";
 
+/**
+ * The pricing-engine's Redis layout, as this side reads it.
+ *
+ * One key per provider per concept, each written whole by the engine. Kept
+ * beside the engine's own `src/redis/keys.ts`; the two are one contract across
+ * two repositories, so a change to either has to be a change to both.
+ */
+const providerItemsKey = (providerKey: string) => `provider:${providerKey}:items`;
+const providerPricesKey = (providerKey: string) => `provider:${providerKey}:prices`;
+const providerHistoryKey = (providerKey: string, itemId: number) =>
+  `provider:${providerKey}:history:${itemId}`;
+const ACTIVE_PROVIDERS_KEY = "providers:active";
+
 // Shape of each history record as written by the pricing-engine
-// (`price:history:{provider}:{itemId}` ZSET members).
+// (`provider:{provider}:history:{itemId}` ZSET members).
 export interface ProviderPriceData {
   itemId: number;
   itemName?: string;
@@ -62,10 +75,24 @@ export class PricingRedisService implements OnModuleDestroy {
     }
   }
 
-  /** Provider keys that currently have data in the pricing Redis. */
+  /**
+   * Provider keys that currently have data.
+   *
+   * Read from the engine's index and then checked, rather than scanned for.
+   * The old path listed providers by a set the engine never pruned, so a
+   * provider that had been off for weeks still counted as reporting — and the
+   * panel showed it green. A provider is in this list when its price hash
+   * exists, which is to say when it has reported inside the data lifetime.
+   */
   async getProviders(): Promise<string[]> {
-    const keys = await this.client.keys("price:current:providers:*");
-    return keys.map((k) => k.replace("price:current:providers:", "")).sort();
+    const named = await this.client.smembers(ACTIVE_PROVIDERS_KEY);
+    if (!named.length) return [];
+
+    const pipeline = this.client.pipeline();
+    for (const key of named) pipeline.exists(providerPricesKey(key));
+    const results = await pipeline.exec();
+
+    return named.filter((_, i) => Boolean(results?.[i]?.[1])).sort();
   }
 
   /**
@@ -106,7 +133,7 @@ export class PricingRedisService implements OnModuleDestroy {
 
   /** Most-recent-first price history for a single (provider, itemId). */
   async getHistory(providerKey: string, itemId: number, limit = 200): Promise<ProviderPriceData[]> {
-    const key = `price:history:${providerKey}:${itemId}`;
+    const key = providerHistoryKey(providerKey, itemId);
     const raw = await this.client.zrevrange(key, 0, Math.max(0, limit - 1));
     return raw
       .map((d) => this.safeParse(d))
@@ -121,7 +148,7 @@ export class PricingRedisService implements OnModuleDestroy {
     toMs?: number,
     limit = 1000
   ): Promise<ProviderPriceData[]> {
-    const key = `price:history:${providerKey}:${itemId}`;
+    const key = providerHistoryKey(providerKey, itemId);
     const max = toMs != null ? toMs : "+inf";
     const min = fromMs != null ? fromMs : "-inf";
     // Most-recent-first within the window, capped at `limit`.
@@ -131,23 +158,27 @@ export class PricingRedisService implements OnModuleDestroy {
       .filter((x): x is ProviderPriceData => x !== null);
   }
 
-  /** Current snapshot prices for a provider (from the provider SET of keys). */
+  /** A provider's latest price per item, in one round trip. */
   async getCurrent(providerKey: string): Promise<ProviderPriceData[]> {
-    const keys = await this.client.smembers(`price:current:providers:${providerKey}`);
-    if (!keys.length) return [];
-    const values = await this.client.mget(...keys);
-    return values
-      .map((v) => (v ? this.safeParse(v) : null))
+    const entries = await this.client.hgetall(providerPricesKey(providerKey));
+    return Object.values(entries)
+      .map((v) => this.safeParse(v))
       .filter((x): x is ProviderPriceData => x !== null);
   }
 
-  /** Item metadata rows for a provider (keys `item:metadata:{provider}:*`). */
+  /**
+   * The symbols a provider offers.
+   *
+   * One hash the engine replaces whole, so this is always a set the provider
+   * actually offered at some single moment. It used to be a `KEYS` sweep over
+   * one key per item — a blocking scan of the whole keyspace, run on every
+   * page load of the snapshot tab, returning a list that had been decaying an
+   * item at a time as the individual keys expired.
+   */
   async getProviderItems(providerKey: string): Promise<ProviderPriceData[]> {
-    const keys = await this.client.keys(`item:metadata:${providerKey}:*`);
-    if (!keys.length) return [];
-    const values = await this.client.mget(...keys);
-    return values
-      .map((v) => (v ? this.safeParse(v) : null))
+    const entries = await this.client.hgetall(providerItemsKey(providerKey));
+    return Object.values(entries)
+      .map((v) => this.safeParse(v))
       .filter((x): x is ProviderPriceData => x !== null);
   }
 
