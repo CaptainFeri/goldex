@@ -77,8 +77,16 @@ export default function BrowserSimulator({
         { sessionId: session.id, message, payload },
         (reply: { ok: boolean; error?: string; currentUrl?: string }) => {
           setSteering(false);
-          if (!reply?.ok) setError(reply?.error ?? "مرورگر پاسخ نداد");
-          else if (reply.currentUrl) setAddress(reply.currentUrl);
+          if (!reply?.ok) {
+            setError(reply?.error ?? "مرورگر پاسخ نداد");
+            return;
+          }
+          // A failed navigation leaves the page on Chromium's own error page.
+          // Putting that in the address bar would replace what the admin typed
+          // with something they cannot edit into the next attempt.
+          if (reply.currentUrl && !reply.currentUrl.startsWith("chrome-error:")) {
+            setAddress(reply.currentUrl);
+          }
         },
       );
     },

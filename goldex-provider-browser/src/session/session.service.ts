@@ -19,6 +19,11 @@ import {
   isAppDownload,
   isNavigationAllowed,
 } from './navigation-allowlist';
+import {
+  BROWSER_LOCALE,
+  BROWSER_TIMEZONE,
+  desktopUserAgent,
+} from './browser-identity';
 
 export interface OpenSessionRequest {
   providerKey: string;
@@ -201,6 +206,12 @@ export class SessionService implements OnModuleDestroy {
       viewport,
       proxy: this.proxyOption(request.useProxy),
       ignoreHTTPSErrors: false,
+      // Headless Chromium announces itself as HeadlessChrome on X11/Linux, and
+      // a site that sniffs that reads it as a bot — which is how this browser
+      // came to be handed an app download where the login page should be.
+      userAgent: process.env.BROWSER_USER_AGENT?.trim() || desktopUserAgent(browser.version()),
+      locale: BROWSER_LOCALE,
+      timezoneId: BROWSER_TIMEZONE,
       // This browser exists to sign in to a panel. A download is never the
       // goal, and accepting one would write a file into the container for a
       // navigation that was already going nowhere.
