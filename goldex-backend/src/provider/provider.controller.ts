@@ -28,7 +28,7 @@ import { Repository } from 'typeorm';
 import { ProviderService } from './provider.service';
 import { CreateProviderDto } from './dto/create-provider.dto';
 import { SetProviderAuthDto } from './dto/set-provider-auth.dto';
-import { RelayOtpDto, RelayedOtpDto } from './dto/relay-otp.dto';
+import { AwaitingOtpDto, RelayOtpDto, RelayedOtpDto } from './dto/relay-otp.dto';
 import { UpdateProviderDto } from './dto/update-provider.dto';
 import { AdminAuthGuard } from '../admin/auth/Guard/admin.guard';
 import { AdminRolesGuard } from '../admin/auth/Guard/admin.role.guard';
@@ -77,6 +77,19 @@ export class ProviderController {
   @ApiEnvelopeResponse(ProviderProxyStatusDto)
   async proxyStatus() {
     return { data: { configured: await this.pricingRedis.getProxyConfigured() } };
+  }
+
+  @Get('awaiting-otp')
+  @ApiOperation({
+    summary: 'The activation currently waiting for a code, if any',
+    description:
+      'A code requested from the panel arrives on a handset that had no part in requesting it. ' +
+      'This is how that handset learns which provider the code belongs to — and that one is ' +
+      'expected at all, so a device relays nothing when no activation is in progress.',
+  })
+  @ApiEnvelopeResponse(AwaitingOtpDto)
+  async awaitingOtp() {
+    return { data: await this.providerService.awaitingOtp() };
   }
 
   @Get(':id')

@@ -47,6 +47,9 @@ interface AdminApi {
     @POST("admin/providers/{id}/toggle-active")
     suspend fun toggleProvider(@Path("id") id: String): Envelope<CommandAck>
 
+    @GET("admin/providers/awaiting-otp")
+    suspend fun awaitingOtp(): Envelope<AwaitingOtp>
+
     @POST("admin/providers/relay-otp")
     suspend fun relayOtp(@Body body: RelayOtpRequest): Envelope<CommandAck>
 

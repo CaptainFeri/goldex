@@ -29,10 +29,16 @@ time.
     verification activates the provider;
   - *session*: paste a token, or the whole session as JSON, as captured from the
     provider's own web panel.
-- **Relay** — every code read on this handset is posted to
-  `POST /api/v1/admin/providers/relay-otp` under the provider it was requested
-  for, and stands for five minutes. That is what lets the panel finish an
-  activation this app started.
+- **Relay** — a code read on this handset is posted to
+  `POST /api/v1/admin/providers/relay-otp` and stands for five minutes, which is
+  what lets the panel finish an activation this app started.
+
+  It works the other way too. An activation begun at the panel leaves this
+  handset with nothing to go on — the message names no provider — so the app
+  asks `GET /admin/providers/awaiting-otp` which activation is waiting. A null
+  answer is also the answer to "should this be sent at all": when nothing is
+  expecting a code, nothing leaves the phone, which is what keeps every other
+  message on it off the wire.
 
 ## Reading the code
 

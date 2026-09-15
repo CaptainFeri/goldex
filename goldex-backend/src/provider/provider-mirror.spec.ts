@@ -53,6 +53,7 @@ describe('provider admin mirror', () => {
           return Promise.resolve('OK');
         }),
         get: jest.fn((key: string) => Promise.resolve(relayed.get(key) ?? null)),
+        del: jest.fn((key: string) => Promise.resolve(relayed.delete(key))),
       } as any,
     );
     return { service, repo, rmq };
@@ -358,6 +359,38 @@ describe('provider admin mirror', () => {
     it('refuses a provider the mirror does not know', async () => {
       const { service } = build([row]);
       await expect(service.relayOtp('nope', '12345')).rejects.toThrow();
+    });
+
+    /**
+     * The case the relay exists for: an activation begun at the panel, whose
+     * code lands on a handset that had no part in beginning it and cannot name
+     * the provider.
+     */
+    it('attributes an unattributed code to whatever asked for one', async () => {
+      const { service } = build([row]);
+      await service.sendOtp('p-1', '09123456789');
+
+      await expect(service.awaitingOtp()).resolves.toMatchObject({ providerKey: 'zaryar' });
+
+      await service.relayOtp(undefined, '12345');
+      expect((await service.relayedOtp('p-1')).code).toBe('12345');
+    });
+
+    // Otherwise every code read on the handset would be posted on the chance
+    // that something, somewhere, wanted it.
+    it('refuses an unattributed code when nothing is waiting for one', async () => {
+      const { service } = build([row]);
+      await expect(service.relayOtp(undefined, '12345')).rejects.toThrow(/awaiting/i);
+    });
+
+    it('stops waiting once the code has been used', async () => {
+      const { service } = build([row]);
+      await service.sendOtp('p-1', '09123456789');
+      await service.relayOtp(undefined, '12345');
+      await service.verifyOtp('p-1', '12345');
+
+      await expect(service.awaitingOtp()).resolves.toEqual({ providerKey: null, since: null });
+      await expect(service.relayedOtp('p-1')).resolves.toMatchObject({ code: null });
     });
 
     it('reads as empty when nothing has been relayed', async () => {

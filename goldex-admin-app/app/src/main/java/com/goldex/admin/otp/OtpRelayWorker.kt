@@ -34,14 +34,30 @@ class OtpRelayWorker(context: Context, params: WorkerParameters) :
         val message = inputData.getString(KEY_MESSAGE)
         val store = Goldex.session(applicationContext)
 
-        // Nobody is signed in, or no activation is in progress. Either way this
-        // code is not ours to forward, and a code sitting in a retry queue for
-        // a provider nobody asked about is worse than a dropped one.
-        val providerKey = store.pendingProviderKey ?: return skip("no provider is awaiting a code")
         if (store.token.value.isNullOrBlank()) return skip("nobody is signed in")
+        val repo = Goldex.repository(applicationContext)
+
+        /*
+         * Whose code this is. Normally this app asked for it and knows. When
+         * the activation was started at the panel instead, it does not — the
+         * message names no provider — so the backend is asked what it is
+         * waiting for.
+         *
+         * A null answer ends it here: nothing is expecting a code, so this is
+         * one of the ordinary messages that arrive on any phone, and it does
+         * not leave the handset.
+         */
+        val providerKey = store.pendingProviderKey ?: try {
+            repo.awaitingProviderKey()
+        } catch (e: IOException) {
+            return if (runAttemptCount < MAX_ATTEMPTS) Result.retry() else Result.failure()
+        } catch (e: Exception) {
+            Log.w(TAG, "could not ask what is awaiting a code", e)
+            return Result.failure()
+        } ?: return skip("no activation is awaiting a code")
 
         return try {
-            Goldex.repository(applicationContext).relayOtp(providerKey, code, message)
+            repo.relayOtp(providerKey, code, message)
             Log.i(TAG, "relayed a code for $providerKey")
             Result.success()
         } catch (e: IOException) {

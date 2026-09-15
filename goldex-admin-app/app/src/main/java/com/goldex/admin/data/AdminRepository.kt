@@ -77,8 +77,21 @@ class AdminRepository(
         client.api().relayedOtp(requireId(provider)).data
     }
 
+    /**
+     * Which provider the backend is waiting for a code for, if any.
+     *
+     * An activation started at the panel leaves this handset with nothing to
+     * go on: the message names no provider. The side that asked for the code
+     * knows, so it is asked — and a null answer means no code should be sent
+     * anywhere, which is what keeps every other message on this phone off the
+     * wire.
+     */
+    suspend fun awaitingProviderKey(): String? = io {
+        client.api().awaitingOtp().data.providerKey
+    }
+
     /** Hand a code read off this handset to the backend, for the panel to use. */
-    suspend fun relayOtp(providerKey: String, code: String, message: String?) = io {
+    suspend fun relayOtp(providerKey: String?, code: String, message: String?) = io {
         client.api().relayOtp(RelayOtpRequest(providerKey, code, message))
     }
 

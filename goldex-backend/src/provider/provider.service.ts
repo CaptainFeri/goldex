@@ -28,6 +28,14 @@ import { RedisService } from '../redis/redis.service';
  */
 const RELAYED_OTP_TTL_SECONDS = 300;
 
+/**
+ * How long an activation is considered to be waiting for its code.
+ *
+ * The same window as the code itself: after it, the attempt is over and any
+ * message arriving on the handset belongs to something else.
+ */
+const AWAITING_OTP_TTL_SECONDS = 300;
+
 @Injectable()
 export class ProviderService {
   constructor(
@@ -49,12 +57,36 @@ export class ProviderService {
     return `provider:otp:${providerKey}`;
   }
 
+  /** Which activation is currently waiting for a code, whoever started it. */
+  private readonly awaitingOtpKey = 'provider:otp:awaiting';
+
+  /**
+   * The activation a code arriving now would belong to.
+   *
+   * An activation started at the panel is the case this exists for: the code
+   * lands on a handset that had no part in starting it and has no way of
+   * knowing which provider it is for. The side that asked for the code does
+   * know, so it says so here.
+   */
+  async awaitingOtp(): Promise<{ providerKey: string | null; since: string | null }> {
+    const stored = await this.redis.get(this.awaitingOtpKey);
+    if (!stored?.key) return { providerKey: null, since: null };
+    return { providerKey: stored.key, since: stored.at ?? null };
+  }
+
   async relayOtp(
-    providerKey: string,
+    providerKey: string | undefined,
     code: string,
     message?: string,
   ): Promise<{ message: string }> {
-    const provider = await this.findByKey(providerKey);
+    // Unattributed codes are attributed to whatever asked for one. A handset
+    // that did not start the activation cannot name the provider, and guessing
+    // at it there would burn the attempt on the wrong one.
+    const key = providerKey?.trim() || (await this.awaitingOtp()).providerKey;
+    if (!key) {
+      throw new BadRequestException('No provider is currently awaiting an activation code');
+    }
+    const provider = await this.findByKey(key);
     await this.redis.setWithExpiration(
       this.otpKey(provider.key),
       { code, message: message ?? null, receivedAt: new Date().toISOString() },
@@ -361,6 +393,15 @@ export class ProviderService {
     provider.phone = phone;
     await this.providerRepo.save(provider);
 
+    // The code is now on its way to a handset. Saying which provider it is for
+    // is what lets that handset relay it back without being the side that
+    // asked.
+    await this.redis.setWithExpiration(
+      this.awaitingOtpKey,
+      { key: provider.key, at: new Date().toISOString() },
+      AWAITING_OTP_TTL_SECONDS,
+    );
+
     return {
       message: result?.message ?? `OTP sent to ${phone} for provider ${provider.key}`,
     };
@@ -372,9 +413,8 @@ export class ProviderService {
    * The OTP pair drives the provider's own login API, which only reaches a
    * provider whose login is a plain phone-for-code exchange. A captcha, a
    * second factor, or a login nobody has reverse-engineered puts a provider
-   * out of that path's reach entirely — this is how those get turned on, and
-   * it is the reason the panel is a complete replacement for the Android app
-   * rather than a partial one.
+   * out of that path's reach entirely — this is how those get turned on, from
+   * the panel's browser or from a session an admin captured by hand.
    */
   async setAuth(id: string, auth: Record<string, any>): Promise<{ message: string }> {
     const provider = await this.findOne(id);
@@ -412,6 +452,14 @@ export class ProviderService {
       provider.active = true;
       await this.providerRepo.save(provider);
     }
+
+    // The attempt is over: the code has been spent, and nothing is waiting for
+    // another. Leaving either behind would let the next activation fill itself
+    // in from this one.
+    await Promise.all([
+      this.redis.del(this.otpKey(provider.key)),
+      this.redis.del(this.awaitingOtpKey),
+    ]);
 
     return { message: `Provider ${provider.key} activated` };
   }

@@ -73,10 +73,13 @@ data class SendProviderOtpRequest(val phone: String)
 data class VerifyProviderOtpRequest(val otp: String)
 
 data class RelayOtpRequest(
-    val providerKey: String,
+    /** Null when this handset did not start the activation; the backend attributes it. */
+    val providerKey: String?,
     val code: String,
     val message: String?,
 )
+
+data class AwaitingOtp(val providerKey: String?, val since: String?)
 
 data class RelayedOtp(
     val code: String?,

@@ -9,11 +9,18 @@ import { IsNotEmpty, IsOptional, IsString, Length, MaxLength } from 'class-valid
  * it down the phone to whoever was at the panel.
  */
 export class RelayOtpDto {
-  @ApiProperty({ example: 'zaryar', description: 'Which provider the code is for' })
+  @ApiProperty({
+    required: false,
+    example: 'zaryar',
+    description:
+      'Which provider the code is for. Omit when the relaying device did not start the ' +
+      'activation — an activation begun at the panel says which provider it is for, and the ' +
+      'code is attributed to that.',
+  })
   @IsString()
-  @IsNotEmpty()
+  @IsOptional()
   @MaxLength(100)
-  providerKey: string;
+  providerKey?: string;
 
   @ApiProperty({ example: '12345', description: 'The digits from the message' })
   @IsString()
@@ -40,4 +47,12 @@ export class RelayedOtpDto {
 
   @ApiProperty({ nullable: true, description: 'The message it was read from' })
   message?: string | null;
+}
+
+export class AwaitingOtpDto {
+  @ApiProperty({ nullable: true, example: 'zaryar' })
+  providerKey: string | null;
+
+  @ApiProperty({ nullable: true, description: 'When the code was requested' })
+  since: string | null;
 }
