@@ -15,6 +15,7 @@ import com.goldex.admin.Goldex
 import com.goldex.admin.R
 import com.goldex.admin.ui.MainActivity
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
