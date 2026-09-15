@@ -38,6 +38,15 @@ export function buildConnectionEstablished(): string {
   });
 }
 
+/** Pusher's answer to `pusher:subscribe` — the engine waits for this one. */
+export function buildSubscriptionSucceeded(channel: string): string {
+  return JSON.stringify({
+    event: 'pusher_internal:subscription_succeeded',
+    channel,
+    data: JSON.stringify({}),
+  });
+}
+
 export function buildPong(): string {
   return JSON.stringify({ event: 'pusher:pong', data: {} });
 }

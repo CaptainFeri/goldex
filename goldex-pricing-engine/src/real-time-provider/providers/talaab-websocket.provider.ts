@@ -8,6 +8,7 @@ import { RedisService, PriceData } from '../../redis/redis.service';
 import { ItemMetadataService, ItemMetadata } from '../item-metadata.service';
 import { RabbitMQService, MessagePatterns } from '../../rabbitmq/rabbitmq.module';
 import { TalaabPricingCurrency, TalaabFeaturesData } from '../types/talaab.types';
+import { readPusherFrame } from './pusher-frames';
 import { buildWebSocketAgent } from '../../common/http/proxy.config';
 
 @Injectable()
@@ -20,6 +21,16 @@ export class TalaAbWebSocketProvider extends BaseRealtimeProvider {
   private metadataRefreshInterval: NodeJS.Timeout | null = null;
 
   private readonly silverItemIds = new Set([25, 28]);
+
+  /** Set only once the server has answered the subscribe frame. */
+  private subscribed = false;
+  private pricingFrames = 0;
+  private silenceTimer: NodeJS.Timeout | null = null;
+  private loggedHomeDataShape = false;
+  private loggedHomepageShape = false;
+
+  /** How long a subscribed, open shop may stay silent before the log says so. */
+  private readonly silenceWarningMs = 120000;
 
   constructor(
     private readonly httpService: HttpService,
@@ -53,6 +64,10 @@ export class TalaAbWebSocketProvider extends BaseRealtimeProvider {
   }
 
   disconnect(): void {
+    if (this.silenceTimer) {
+      clearTimeout(this.silenceTimer);
+      this.silenceTimer = null;
+    }
     if (this.metadataRefreshInterval) clearInterval(this.metadataRefreshInterval);
     if (this.keepAliveInterval) clearInterval(this.keepAliveInterval);
     if (this.ws) {
@@ -144,8 +159,19 @@ export class TalaAbWebSocketProvider extends BaseRealtimeProvider {
           },
         }),
       );
-      const featuresData = response.data.data.features_data;
-      if (!featuresData) return [];
+      const featuresData = response.data?.data?.features_data as TalaabFeaturesData | undefined;
+      if (!featuresData) {
+        this.formatter.error(
+          this.providerLabel,
+          `Homepage carried no features_data (keys: ${Object.keys(
+            response.data?.data ?? response.data ?? {},
+          )
+            .slice(0, 8)
+            .join(', ')})`,
+        );
+        return [];
+      }
+      this.describeHomepageRow(featuresData);
       const items: ItemMetadata[] = [];
       if (featuresData.molten) {
         for (const m of featuresData.molten) {
@@ -189,6 +215,26 @@ export class TalaAbWebSocketProvider extends BaseRealtimeProvider {
     }
   }
 
+  /**
+   * Record what a homepage row actually contains, once.
+   *
+   * The engine reads two fields off these rows and ignores the rest, so
+   * whether the homepage also carries prices — which would let a shop be
+   * seeded at connect instead of waiting for a push that may not come for
+   * hours — is not something the log can currently answer. One debug line
+   * answers it without guessing at fields that may not exist.
+   */
+  private describeHomepageRow(featuresData: TalaabFeaturesData): void {
+    if (this.loggedHomepageShape) return;
+    const first = featuresData.molten?.[0] ?? featuresData.coin?.[0] ?? featuresData.silver?.[0];
+    if (!first) return;
+    this.loggedHomepageShape = true;
+    this.formatter.debug(
+      this.providerLabel,
+      `Homepage item fields: ${Object.keys(first).slice(0, 12).join(', ')}`,
+    );
+  }
+
   private async fetchAndStoreMetadata(): Promise<void> {
     const items = await this.fetchMetadataFromApi();
     if (items.length > 0) {
@@ -217,20 +263,23 @@ export class TalaAbWebSocketProvider extends BaseRealtimeProvider {
       });
       const onFirstMessage = (data: Buffer) => {
         try {
-          const msg = JSON.parse(data.toString());
-          if (msg.event === 'pusher:connection_established') {
-            const parsed = JSON.parse(msg.data);
-            this.socketId = parsed.socket_id;
+          const frame = readPusherFrame(data.toString());
+          if (frame.kind === 'connection_established') {
+            this.socketId = frame.socketId;
             this.formatter.log(this.providerLabel, `Socket ID obtained: ${this.socketId}`);
+            const channel = this.channelName();
             this.ws?.send(
               JSON.stringify({
                 event: 'pusher:subscribe',
-                data: { channel: 'afrogh', auth: this.authToken },
+                data: { channel, auth: this.authToken },
               }),
             );
-            this.formatter.log(this.providerLabel, 'Subscribed to afrogh channel');
+            // Requested, not established: the server's answer decides, and it
+            // arrives on the listeners installed next.
+            this.formatter.log(this.providerLabel, `Subscribe requested for channel ${channel}`);
             this.ws?.removeListener('message', onFirstMessage);
             this.setupSocketListeners();
+            this.watchForSilence();
           }
         } catch (error: unknown) {
           const message = error instanceof Error ? error.message : String(error);
@@ -249,26 +298,79 @@ export class TalaAbWebSocketProvider extends BaseRealtimeProvider {
     }, 30000);
   }
 
-  private handleWebSocketMessage(raw: string): void {
-    try {
-      const msg = JSON.parse(raw);
+  private channelName(): string {
+    return this.config.auth['channel'] || this.config.key;
+  }
 
-      if (msg.event === 'app' && msg.data) {
-        const data = JSON.parse(msg.data);
-        if (data.message?.type === 'home_data') {
+  /**
+   * Notice a subscription that never produces anything.
+   *
+   * A Pusher channel that is subscribed and idle and one that is subscribed
+   * and broken look identical from the socket, and the difference only shows
+   * as an empty price list somewhere else hours later. One warning, once, the
+   * first time a shop stays silent past the point where silence is normal.
+   */
+  private watchForSilence(): void {
+    if (this.silenceTimer) clearTimeout(this.silenceTimer);
+    this.silenceTimer = setTimeout(() => {
+      if (this.pricingFrames > 0) return;
+      this.formatter.warn(
+        this.providerLabel,
+        `No pricing frame on channel ${this.channelName()} after ${this.silenceWarningMs / 1000}s ` +
+          `(subscription ${this.subscribed ? 'confirmed' : 'never confirmed'}) – prices will stay empty until one arrives`,
+      );
+    }, this.silenceWarningMs);
+    this.silenceTimer.unref?.();
+  }
+
+  private handleWebSocketMessage(raw: string): void {
+    const frame = readPusherFrame(raw);
+    switch (frame.kind) {
+      case 'subscription_succeeded':
+        this.subscribed = true;
+        this.formatter.log(this.providerLabel, `Subscription confirmed for ${frame.channel}`);
+        return;
+      case 'subscription_error':
+        if (frame.authRejected) {
+          this.reportAuthExpired({ response: { status: frame.status } }, 'pusher subscribe');
           return;
         }
-      }
-
-      if (msg.event === 'new-panel' && msg.data) {
-        const data = JSON.parse(msg.data);
-        if (data.message?.type === 'all_systems_pricing_updated') {
-          this.processPricingUpdate(data.message.data);
+        this.formatter.error(
+          this.providerLabel,
+          `Subscription to ${frame.channel || this.channelName()} refused (status ${frame.status ?? 'unknown'})`,
+        );
+        return;
+      case 'error':
+        if (frame.authRejected) {
+          this.reportAuthExpired({ response: { status: 401 } }, `pusher error ${frame.code}`);
+          return;
         }
-      }
-    } catch (error: unknown) {
-      const message = error instanceof Error ? error.message : String(error);
-      this.formatter.error(this.providerLabel, `Failed to parse WebSocket message: ${message}`);
+        this.formatter.error(
+          this.providerLabel,
+          `Pusher error ${frame.code ?? 'unknown'}: ${frame.message}`,
+        );
+        return;
+      case 'pricing':
+        this.pricingFrames++;
+        this.processPricingUpdate({ pricing: frame.pricing });
+        return;
+      case 'home_data':
+        if (!this.loggedHomeDataShape) {
+          this.loggedHomeDataShape = true;
+          this.formatter.debug(
+            this.providerLabel,
+            `Home snapshot carries: ${frame.fields.join(', ') || 'nothing'}`,
+          );
+        }
+        return;
+      case 'unreadable':
+        this.formatter.error(this.providerLabel, `Unreadable frame: ${frame.reason}`);
+        return;
+      case 'other':
+        this.formatter.debug(this.providerLabel, `Unhandled event: ${frame.event}`);
+        return;
+      default:
+        return;
     }
   }
 
@@ -276,9 +378,12 @@ export class TalaAbWebSocketProvider extends BaseRealtimeProvider {
     const pricing = data.pricing;
     if (!pricing) return;
 
+    let emitted = 0;
+    let seen = 0;
     for (const vendor of pricing) {
-      for (const currency of vendor.currencies) {
-        if (!this.trackedItemIds.has(currency.id)) continue;
+      for (const currency of vendor.currencies ?? []) {
+        seen++;
+        if (!this.shouldTrackItem(currency.id)) continue;
 
         const shouldScale = !this.silverItemIds.has(currency.id);
         const buyPriceRaw = currency.buy_price;
@@ -297,11 +402,22 @@ export class TalaAbWebSocketProvider extends BaseRealtimeProvider {
           currency.sell_status,
         );
         void this.emitPriceUpdate(priceData);
+        emitted++;
       }
+    }
+    if (emitted === 0 && seen > 0) {
+      // The push arrived and none of it was ours: the ids in the stream and
+      // the ids in the stored item list do not agree, which is a silent
+      // outage everywhere else.
+      this.formatter.warn(
+        this.providerLabel,
+        `Pricing push carried ${seen} items, none of them tracked (${this.trackedItemIds.size} tracked)`,
+      );
+      return;
     }
     this.formatter.debug(
       this.providerLabel,
-      `Processed pricing update for ${pricing.length} vendors`,
+      `Processed ${emitted}/${seen} items from ${pricing.length} vendors`,
     );
   }
 

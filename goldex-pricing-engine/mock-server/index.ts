@@ -170,6 +170,10 @@ function onWsConnect(ws: WebSocket, route: { category: Category; shop: string })
     try {
       const msg = JSON.parse(raw.toString());
       if (msg.event === 'pusher:ping') ws.send(talaab.buildPong());
+      if (msg.event === 'pusher:subscribe') {
+        const channel = msg.data?.channel ?? route.shop;
+        ws.send(talaab.buildSubscriptionSucceeded(channel));
+      }
     } catch {
       // ignore malformed client frames
     }

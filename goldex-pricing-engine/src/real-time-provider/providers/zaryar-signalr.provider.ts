@@ -10,6 +10,7 @@ import { DealView } from '../types/deal-view.type';
 import { ItemMetadata, ItemMetadataService } from '../item-metadata.service';
 import { RabbitMQService, MessagePatterns } from '../../rabbitmq/rabbitmq.module';
 import { NegotiateResponse, SignalRMessage, MazaneItem } from '../types/zaryar.types';
+import { readZaryarItemsList, toMazaneItem } from './zaryar-items-response';
 import { buildWebSocketAgent } from '../../common/http/proxy.config';
 
 @Injectable()
@@ -43,28 +44,11 @@ export class ZaryarSignalRProvider extends BaseRealtimeProvider {
       const response = await firstValueFrom(
         this.httpService.post(url, { filter: 'all' }, { headers: this.buildHeaders() }),
       );
-      const groups = response.data.Data || [];
+      const { groups } = readZaryarItemsList(response.data);
       for (const group of groups) {
-        const rawItems = group.Items || [];
-        const item = rawItems.find((i: any) => i.Id === itemId);
+        const item = group.Items.find((i) => i.Id === itemId);
         if (item) {
-          const priceData = this.mapToPriceData({
-            ItemId: item.Id,
-            FeeBuy: item.FeeBuy,
-            FeeSell: item.FeeSell,
-            FeeBuyStr: item.FeeBuyStr,
-            FeeSellStr: item.FeeSellStr,
-            BuyCanDeal: item.BuyCanDeal,
-            SellCanDeal: item.SellCanDeal,
-            BuyRange: item.BuyRange,
-            SellRange: item.SellRange,
-            MaxBuyCount: item.MaxBuyCount,
-            MaxSellCount: item.MaxSellCount,
-            UpdatedTimeStr: item.UpdatedTimeStr,
-            IBuy: item.IBuy,
-            ISell: item.ISell,
-            IsShow: item.IsShow,
-          });
+          const priceData = this.mapToPriceData(toMazaneItem(item));
           await this.redisService.setCurrentPrice(this.config.key, itemId, priceData);
           return priceData;
         }
@@ -117,9 +101,13 @@ export class ZaryarSignalRProvider extends BaseRealtimeProvider {
       const response = await firstValueFrom(
         this.httpService.post(url, { filter: 'all' }, { headers: this.buildHeaders() }),
       );
-      const groups = response.data?.Data || [];
+      const list = readZaryarItemsList(response.data);
+      if (list.failure) {
+        this.reportItemsListFailure(list.failure, list.authRejected, 'metadata');
+        return [];
+      }
       const items: ItemMetadata[] = [];
-      for (const group of groups) {
+      for (const group of list.groups) {
         const groupName = group.GroupName || '';
         let groupId = 0;
         let unit = '';
@@ -143,11 +131,10 @@ export class ZaryarSignalRProvider extends BaseRealtimeProvider {
           unit = groupId === 2 ? 'عدد' : 'گرم';
         }
 
-        const rawItems = group.Items || [];
-        for (const raw of rawItems) {
+        for (const raw of group.Items) {
           items.push({
             itemId: raw.Id,
-            name: raw.Name,
+            name: raw.Name ?? `#${raw.Id}`,
             unit,
             groupId,
             groupName,
@@ -163,6 +150,23 @@ export class ZaryarSignalRProvider extends BaseRealtimeProvider {
     }
   }
 
+  /**
+   * Say why the item list came back empty.
+   *
+   * A shop with prices and no names is the shape this takes in production,
+   * and it used to reach the log as "No metadata found" — which reports the
+   * symptom and hides every cause. The body's own account of itself goes out
+   * instead, and an envelope that refuses the session is escalated like the
+   * 401 it should have been.
+   */
+  private reportItemsListFailure(failure: string, authRejected: boolean, where: string): void {
+    if (authRejected) {
+      this.reportAuthExpired({ response: { status: 401 } }, `${where} (${failure})`);
+      return;
+    }
+    this.formatter.error(this.providerLabel, `Item list unusable for ${where}: ${failure}`);
+  }
+
   private async fetchAndStoreMetadata(): Promise<void> {
     const items = await this.fetchMetadataFromApi();
     if (items.length > 0) {
@@ -173,7 +177,7 @@ export class ZaryarSignalRProvider extends BaseRealtimeProvider {
       }
       this.formatter.log(this.providerLabel, `Initial metadata: ${items.length} items tracked`);
     } else {
-      this.formatter.warn(this.providerLabel, 'No metadata found');
+      this.formatter.warn(this.providerLabel, 'Item list held no items – nothing to track');
     }
   }
 
@@ -187,6 +191,9 @@ export class ZaryarSignalRProvider extends BaseRealtimeProvider {
     await this.establishWebSocket();
     await this.startConnection();
     await this.fetchAndStoreMetadata();
+    // The stream only speaks when a price moves, so a shop that connects
+    // during a quiet spell would otherwise hold an item list and no prices.
+    await this.fetchInitialPrices();
     this.startMetadataRefresh();
     this.setupKeepAlive();
     this.setupSocketListeners();
@@ -241,29 +248,16 @@ export class ZaryarSignalRProvider extends BaseRealtimeProvider {
         this.httpService.post(url, { filter: 'all' }, { headers: this.buildHeaders() }),
       );
 
-      const groups = response.data?.Data || [];
-      for (const group of groups) {
+      const list = readZaryarItemsList(response.data);
+      if (list.failure) {
+        this.reportItemsListFailure(list.failure, list.authRejected, 'initial prices');
+        return;
+      }
+      for (const group of list.groups) {
         for (const raw of group.Items) {
           const itemId = raw.Id;
           if (this.shouldTrackItem(itemId)) {
-            const priceData = this.mapToPriceData({
-              ItemId: raw.Id,
-              FeeBuy: raw.FeeBuy,
-              FeeSell: raw.FeeSell,
-              FeeBuyStr: raw.FeeBuyStr,
-              FeeSellStr: raw.FeeSellStr,
-              BuyCanDeal: raw.BuyCanDeal,
-              SellCanDeal: raw.SellCanDeal,
-              BuyRange: raw.BuyRange,
-              SellRange: raw.SellRange,
-              MaxBuyCount: raw.MaxBuyCount,
-              MaxSellCount: raw.MaxSellCount,
-              UpdatedTimeStr: raw.UpdatedTimeStr,
-              IBuy: raw.IBuy,
-              ISell: raw.ISell,
-              IsShow: raw.IsShow,
-            });
-            await this.emitPriceUpdate(priceData);
+            await this.emitPriceUpdate(this.mapToPriceData(toMazaneItem(raw)));
           }
         }
       }
@@ -443,7 +437,7 @@ export class ZaryarSignalRProvider extends BaseRealtimeProvider {
     return new Promise((resolve, reject) => {
       const agent = buildWebSocketAgent(wsUrl);
       this.ws = new WebSocket(wsUrl, {
-        agent: agent as any,
+        agent: agent,
         headers: {
           Origin: this.originUrl,
           Cookie: `shopkeeperId=${sId}; uId=${uId}`,
