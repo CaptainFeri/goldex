@@ -1,7 +1,6 @@
 import { randomUUID } from 'crypto';
 import {
   BadRequestException,
-  ConflictException,
   Injectable,
   Logger,
   NotFoundException,
@@ -178,11 +177,20 @@ export class SessionService implements OnModuleDestroy {
       throw new BadRequestException('The login URL is not a reachable public address');
     }
 
+    /**
+     * One browser per provider — but by replacing the old one, not by refusing
+     * the new one.
+     *
+     * Refusing it made any session that was not closed deliberately lock the
+     * provider out of the feature until its TTL ran out: a closed tab, a
+     * reload, a browser that crashed. The invariant worth keeping is that two
+     * browsers are never logging into one provider at once, and taking over
+     * keeps that just as well while leaving the admin a way forward.
+     */
     const existing = this.byProvider.get(request.providerKey);
     if (existing && this.sessions.has(existing)) {
-      throw new ConflictException(
-        `A browser session for ${request.providerKey} is already open`,
-      );
+      this.logger.log(`[${existing}] replaced by a new session for ${request.providerKey}`);
+      await this.close(existing, 'replaced by a new session');
     }
 
     const viewport = request.viewport ?? { width: 1280, height: 800 };

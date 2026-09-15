@@ -143,25 +143,51 @@ describe('browser session', () => {
     ).rejects.toThrow(/Unknown input kind/);
   });
 
-  maybe('holds one session per provider', async () => {
+  /**
+   * One browser per provider, kept by replacing rather than refusing.
+   *
+   * Refusing meant a session nobody closed deliberately — a shut tab, a reload,
+   * a crashed browser — locked the provider out of the feature until its TTL
+   * ran out. Two browsers never log into one provider either way.
+   */
+  maybe('replaces an open session rather than refusing a new one', async () => {
     const first = await service.open({
       providerKey: 'zaryar',
       loginUrl: 'https://panel.example.ir/login',
       useProxy: false,
     });
 
-    await expect(
-      service.open({ providerKey: 'zaryar', loginUrl: 'https://panel.example.ir/login' }),
-    ).rejects.toThrow(/already open/i);
-
-    // …and the provider is free again once that session ends.
-    await service.close(first.id);
     const second = await service.open({
       providerKey: 'zaryar',
       loginUrl: 'https://panel.example.ir/login',
       useProxy: false,
     });
+
     expect(second.id).not.toBe(first.id);
+    // The old one is gone, not merely forgotten.
+    expect(() => service.get(first.id)).toThrow(/not found/i);
+    expect(service.list().map((s) => s.id)).toEqual([second.id]);
+  });
+
+  maybe('leaves another provider’s session alone when one is replaced', async () => {
+    const talaab = await service.open({
+      providerKey: 'talaab',
+      loginUrl: 'https://panel.example.ir/login',
+      useProxy: false,
+    });
+    await service.open({
+      providerKey: 'zaryar',
+      loginUrl: 'https://panel.example.ir/login',
+      useProxy: false,
+    });
+    await service.open({
+      providerKey: 'zaryar',
+      loginUrl: 'https://panel.example.ir/login',
+      useProxy: false,
+    });
+
+    expect(service.get(talaab.id).id).toBe(talaab.id);
+    expect(service.list()).toHaveLength(2);
   });
 
   maybe('forgets everything about a session once it closes', async () => {

@@ -54,6 +54,11 @@ export default function BrowserSimulator({
   const [blocked, setBlocked] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
   const [address, setAddress] = useState("");
+  /**
+   * The open session, for the unmount cleanup below — which cannot read state
+   * captured at mount time.
+   */
+  const sessionRef = useRef<BrowserSession | null>(null);
   const [blockApp, setBlockApp] = useState(true);
   const [steering, setSteering] = useState(false);
 
@@ -78,6 +83,28 @@ export default function BrowserSimulator({
       );
     },
     [session],
+  );
+
+  useEffect(() => {
+    sessionRef.current = session;
+  }, [session]);
+
+  /**
+   * Closes the browser if the admin simply closes the modal.
+   *
+   * Leaving it to the ten-minute TTL meant the provider stayed occupied, and
+   * the next attempt to open one was refused as already open — so walking away
+   * from a session locked the provider out of the feature for ten minutes.
+   * Activating or stopping already closes it; this is the path where they just
+   * leave.
+   */
+  useEffect(
+    () => () => {
+      const id = sessionRef.current?.id;
+      if (!id) return;
+      void api.delete(`/admin/providers/browser-session/${id}`).catch(() => undefined);
+    },
+    [],
   );
 
   const send = useCallback((event: Record<string, unknown> | null) => {
@@ -166,6 +193,19 @@ export default function BrowserSimulator({
   useEffect(() => {
     if (!session) return;
     const onKey = (e: KeyboardEvent) => {
+      // …but not the ones meant for this panel's own fields. Forwarding every
+      // key on the window swallowed the address bar: preventDefault on keydown
+      // stops the character ever reaching the input the admin is typing into.
+      const target = e.target as HTMLElement | null;
+      if (
+        target &&
+        (target.tagName === "INPUT" ||
+          target.tagName === "TEXTAREA" ||
+          target.tagName === "SELECT" ||
+          target.isContentEditable)
+      ) {
+        return;
+      }
       if (e.key === "Escape") return; // left to the modal, to close it
       e.preventDefault();
       send(keyEvent(e.type === "keydown" ? "keyDown" : "keyUp", e));
@@ -187,7 +227,11 @@ export default function BrowserSimulator({
       const data = await api.post(`/admin/providers/${providerId}/browser-session`);
       const opened = unwrap<BrowserSession>(data.data);
       setSession(opened);
-      setAddress(opened.currentUrl || opened.loginUrl);
+      // The session is handed back before the first navigation finishes, so the
+      // page is still on about:blank — a real URL string, and a useless one to
+      // put in front of the admin. Where it is going is what they want to see.
+      const settled = opened.currentUrl && opened.currentUrl !== "about:blank";
+      setAddress(settled ? opened.currentUrl : opened.loginUrl);
       setBlockApp(opened.blockAppDownloads ?? true);
       setStatus("در حال باز کردن مرورگر…");
     } catch (err) {
