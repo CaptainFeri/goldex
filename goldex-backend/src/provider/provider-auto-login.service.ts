@@ -286,14 +286,18 @@ export class ProviderAutoLoginService {
    * automatic attempts were failing to settle, so the count of those failures
    * has nothing left to describe.
    */
-  async noteActivated(providerKey: string): Promise<void> {
+  async noteActivated(providerKey: string, note?: string): Promise<void> {
     await Promise.all([
       this.clearAttempts(providerKey),
+      // This also ends whatever claim a device was holding, which is why the
+      // device path must not release again afterwards: there would be nothing
+      // left to release, and the attempt that just succeeded would come back
+      // as an error.
       this.redis.del(this.leaseKey(providerKey)),
-      // Closes whatever a device left open. A person fixing it by hand is the
-      // end of that attempt too, and leaving it "started" forever would make
-      // the record read as though a handset were still working on it.
-      this.attempts.finished(providerKey, LoginAttemptOutcome.SUCCEEDED, 'activated by hand'),
+      // Closes whatever was left open. A person fixing it by hand is the end
+      // of that attempt too, and leaving it "started" forever would make the
+      // record read as though a handset were still working on it.
+      this.attempts.finished(providerKey, LoginAttemptOutcome.SUCCEEDED, note ?? null),
     ]);
   }
 

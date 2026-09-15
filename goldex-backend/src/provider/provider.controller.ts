@@ -30,7 +30,6 @@ import { CreateProviderDto } from './dto/create-provider.dto';
 import { SetProviderAuthDto } from './dto/set-provider-auth.dto';
 import { AwaitingOtpDto, RelayOtpDto, RelayedOtpDto } from './dto/relay-otp.dto';
 import { LoginAttemptDto, LoginCandidateDto } from './dto/auto-login.dto';
-import { ProviderAutoLoginService } from './provider-auto-login.service';
 import { UpdateProviderDto } from './dto/update-provider.dto';
 import { AdminAuthGuard } from '../admin/auth/Guard/admin.guard';
 import { AdminRolesGuard } from '../admin/auth/Guard/admin.role.guard';
@@ -49,7 +48,6 @@ import { ProviderBalanceSnapshotEntity } from '../financial/entity/provider-bala
 export class ProviderController {
   constructor(
     private readonly providerService: ProviderService,
-    private readonly autoLogin: ProviderAutoLoginService,
     private readonly pricingRedis: PricingRedisService,
     @InjectRepository(ProviderDealSnapshotEntity)
     private readonly dealRepo: Repository<ProviderDealSnapshotEntity>,

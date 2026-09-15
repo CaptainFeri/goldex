@@ -168,18 +168,14 @@ export class ProviderService {
   /**
    * Finish the login with a code the device read.
    *
-   * A success releases the claim as part of the same step. Leaving that to the
-   * device would mean a handset that crashed on the happy path holds a provider
-   * it has already fixed, and leaves a failure counted against a login that
-   * worked.
+   * No release afterwards: a successful `verifyOtp` already ends the claim and
+   * clears the run of failures behind it. Releasing again would find nothing
+   * to release and turn a login that worked into a 400.
    */
   async deviceVerifyOtp(id: string, deviceId: string, otp: string) {
     const provider = await this.findOne(id);
     await this.autoLogin.assertHolder(provider.key, deviceId);
-
-    const result = await this.verifyOtp(id, otp);
-    await this.autoLogin.release(provider, deviceId, 'success');
-    return result;
+    return this.verifyOtp(id, otp);
   }
 
   /** The record of what has been tried, for whoever asks afterwards. */
@@ -513,7 +509,7 @@ export class ProviderService {
     // However it was activated, the question the automatic attempts kept
     // failing to settle is settled, so their backoff has nothing left to
     // describe.
-    await this.autoLogin.noteActivated(provider.key);
+    await this.autoLogin.noteActivated(provider.key, 'activated by hand');
 
     return { message: `Provider ${provider.key} activated with supplied credentials` };
   }
