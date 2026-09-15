@@ -15,10 +15,15 @@ object OtpIntake {
     fun accept(context: Context, text: String?, source: CapturedOtp.Source) {
         val code = OtpExtractor.extract(text) ?: return
         val body = OtpExtractor.normalizeDigits(text.orEmpty()).trim()
+        // Decided once, here, rather than re-read downstream: the message is
+        // what the judgement is made from and this is the last place it exists.
+        val labelled = OtpExtractor.extract(text, requireLabel = true) == code
         Log.d(TAG, "captured a ${code.length}-digit code from $source")
         // The same message often reaches both readers. The bus knows whether it
         // has seen this code already, and there is no point posting it twice.
-        val isNew = OtpBus.publish(CapturedOtp(code = code, message = body, source = source))
+        val isNew = OtpBus.publish(
+            CapturedOtp(code = code, message = body, source = source, labelled = labelled),
+        )
         if (isNew) OtpRelayWorker.enqueue(context, code, body)
     }
 

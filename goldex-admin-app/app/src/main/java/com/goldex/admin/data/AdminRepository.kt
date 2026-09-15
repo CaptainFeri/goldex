@@ -110,6 +110,29 @@ class AdminRepository(
     /** Whether this handset can act without somebody signed in on it. */
     val enrolled: Boolean get() = store.isEnrolled
 
+    // ── acting on this handset's own credential ───────────────────────────────
+
+    /** Providers the engine says have stopped accepting their session. */
+    suspend fun loginCandidates(): List<LoginCandidate> = io {
+        client.deviceApi().needsLogin().data
+    }
+
+    suspend fun claimLogin(providerId: String): LoginLease = io {
+        client.deviceApi().claimLogin(providerId).data
+    }
+
+    suspend fun releaseLogin(providerId: String, outcome: String) = io {
+        client.deviceApi().releaseLogin(providerId, ReleaseLoginRequest(outcome))
+    }
+
+    suspend fun deviceSendOtp(providerId: String, phone: String) = io {
+        client.deviceApi().sendOtp(providerId, SendProviderOtpRequest(phone))
+    }
+
+    suspend fun deviceVerifyOtp(providerId: String, code: String) = io {
+        client.deviceApi().verifyOtp(providerId, VerifyProviderOtpRequest(code))
+    }
+
     // ── dashboard ─────────────────────────────────────────────────────────────
 
     suspend fun kpis(): DashboardKpis = io { client.api().kpis().data }

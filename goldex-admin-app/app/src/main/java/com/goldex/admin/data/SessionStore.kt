@@ -80,6 +80,16 @@ class SessionStore(context: Context) {
     val isEnrolled: Boolean get() = deviceToken != null
 
     /**
+     * Whether the operator has switched unattended working on.
+     *
+     * Stored rather than inferred from the service running, because the service
+     * does not survive a reboot and the decision should.
+     */
+    var autoLoginEnabled: Boolean
+        get() = prefs.getBoolean(KEY_AUTO_LOGIN, false)
+        set(value) = prefs.edit().putBoolean(KEY_AUTO_LOGIN, value).apply()
+
+    /**
      * Which provider the next incoming code belongs to.
      *
      * Set when an activation code is requested and cleared when it is used. A
@@ -130,6 +140,7 @@ class SessionStore(context: Context) {
         private const val KEY_ROLE = "role"
         private const val KEY_PENDING = "pending_provider"
         private const val KEY_DEVICE_TOKEN = "device_token"
+        private const val KEY_AUTO_LOGIN = "auto_login_enabled"
 
         /**
          * Retrofit refuses a base URL without a trailing slash, and an operator

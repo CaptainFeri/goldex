@@ -106,4 +106,28 @@ class OtpExtractorTest {
     fun `normalizes digits without touching the rest of the message`() {
         assertEquals("کد: 1234", OtpExtractor.normalizeDigits("کد: ۱۲۳۴"))
     }
+
+    /**
+     * Unattended, the reader has no operator behind it. A code guessed out of
+     * an unlabelled message would be submitted to the provider with nobody to
+     * notice it came from a delivery notification — and spend the attempt.
+     */
+    @Test
+    fun `refuses an unlabelled code when nobody is watching`() {
+        assertNull(OtpExtractor.extract("48213", requireLabel = true))
+        assertEquals("48213", OtpExtractor.extract("48213"))
+    }
+
+    @Test
+    fun `still reads a labelled code when nobody is watching`() {
+        assertEquals("48213", OtpExtractor.extract("کد ورود شما: 48213", requireLabel = true))
+        assertEquals("48213", OtpExtractor.extract("48213 کد ورود شماست", requireLabel = true))
+    }
+
+    @Test
+    fun `refuses a bare number beside an amount even when it is alone`() {
+        assertNull(
+            OtpExtractor.extract("سفارش شما 8842011 ثبت شد", requireLabel = true),
+        )
+    }
 }

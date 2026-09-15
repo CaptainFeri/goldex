@@ -14,6 +14,17 @@
     -->
     <uses-permission android:name="android.permission.RECEIVE_SMS" />
 
+    <!--
+      Unattended working. The foreground service is what keeps the handset
+      acting within a minute of a session expiring — periodic work is fifteen
+      minutes at best, and longer in Doze. Boot completion brings it back after
+      the reboots a phone left on a desk eventually has.
+    -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+    <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
+
     <application
         android:name=".GoldexAdminApp"
         android:allowBackup="false"
@@ -43,6 +54,20 @@
                 <action android:name="android.service.notification.NotificationListenerService" />
             </intent-filter>
         </service>
+
+        <service
+            android:name=".autologin.AutoLoginService"
+            android:exported="false"
+            android:foregroundServiceType="dataSync" />
+
+        <receiver
+            android:name=".autologin.BootReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <action android:name="android.intent.action.QUICKBOOT_POWERON" />
+            </intent-filter>
+        </receiver>
 
         <receiver
             android:name=".otp.SmsReceiver"

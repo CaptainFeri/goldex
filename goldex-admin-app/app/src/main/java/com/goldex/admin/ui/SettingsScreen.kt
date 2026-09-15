@@ -4,6 +4,7 @@ import android.Manifest
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.os.Build
 import android.provider.Settings
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -19,6 +20,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -35,6 +37,11 @@ import androidx.core.content.ContextCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import android.net.Uri
+import android.os.PowerManager
+import com.goldex.admin.autologin.AutoLoginService
+import com.goldex.admin.autologin.AutoLoginStatus
 import com.goldex.admin.data.SessionStore
 
 /**
@@ -51,6 +58,9 @@ fun SettingsScreen(store: SessionStore, onSignOut: () -> Unit) {
     var saved by remember { mutableStateOf(false) }
     var deviceToken by remember { mutableStateOf(store.deviceToken.orEmpty()) }
     var enrolled by remember { mutableStateOf(store.isEnrolled) }
+    var autoLogin by remember { mutableStateOf(store.autoLoginEnabled) }
+    var batteryExempt by remember { mutableStateOf(isBatteryExempt(context)) }
+    val autoStatus by AutoLoginStatus.state.collectAsStateWithLifecycle()
 
     // Both grants are made outside this screen — one in a system dialog, one in
     // a settings app — so they are re-read every time the screen comes back
@@ -65,6 +75,7 @@ fun SettingsScreen(store: SessionStore, onSignOut: () -> Unit) {
             if (event == Lifecycle.Event.ON_RESUME) {
                 smsGranted = hasSmsPermission(context)
                 listenerGranted = com.goldex.admin.otp.OtpNotificationListener.isEnabled(context)
+                batteryExempt = isBatteryExempt(context)
             }
         }
         lifecycleOwner.lifecycle.addObserver(observer)
@@ -184,6 +195,78 @@ fun SettingsScreen(store: SessionStore, onSignOut: () -> Unit) {
         }
 
         item {
+            SectionCard(title = "ورود خودکار") {
+                Text(
+                    "وقتی نشست یک تأمین‌کننده منقضی شود، این گوشی خودش وارد می‌شود: کد را " +
+                        "می‌خواهد، از پیامک می‌خواند و ورود را کامل می‌کند. سقف تلاش و فاصله‌ی " +
+                        "بین تلاش‌ها را سرور تعیین می‌کند، نه این گوشی.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Spacer(Modifier.height(12.dp))
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text("فعال باشد", style = MaterialTheme.typography.bodyMedium)
+                        Text(
+                            if (autoStatus.running) "سرویس در حال اجراست" else "سرویس متوقف است",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    Switch(
+                        checked = autoLogin,
+                        // Without a credential there is nothing to act with, and
+                        // an operator flipping a switch that cannot do anything
+                        // learns nothing from it.
+                        enabled = enrolled,
+                        onCheckedChange = { on ->
+                            autoLogin = on
+                            store.autoLoginEnabled = on
+                            if (on) AutoLoginService.start(context) else AutoLoginService.stop(context)
+                        },
+                    )
+                }
+
+                if (!enrolled) {
+                    Spacer(Modifier.height(8.dp))
+                    Text(
+                        "ابتدا اعتبارنامه‌ی دستگاه را ثبت کنید.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.error,
+                    )
+                }
+
+                if (autoLogin) {
+                    Spacer(Modifier.height(12.dp))
+                    KeyValue("آخرین نتیجه", autoStatus.lastOutcome)
+                    KeyValue("ورود موفق", autoStatus.activations.toString())
+                    KeyValue("تلاش ناموفق", autoStatus.failures.toString())
+
+                    /*
+                     * Without this exemption Android will eventually stop the
+                     * service on most handsets, and it stops it silently — the
+                     * operator sees an app that says it is enabled and a
+                     * provider that stays down.
+                     */
+                    if (!batteryExempt) {
+                        Spacer(Modifier.height(12.dp))
+                        Text(
+                            "برای اینکه سیستم این سرویس را نخواباند، بهینه‌سازی باتری باید برای " +
+                                "این برنامه خاموش شود.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.error,
+                        )
+                        Spacer(Modifier.height(8.dp))
+                        OutlinedButton(
+                            onClick = { requestBatteryExemption(context) },
+                            modifier = Modifier.fillMaxWidth(),
+                        ) { Text("خاموش کردن بهینه‌سازی باتری") }
+                    }
+                }
+            }
+        }
+
+        item {
             SectionCard(title = "حساب") {
                 KeyValue("شماره", store.adminPhone ?: "—")
                 KeyValue("نقش", store.adminRole ?: "—")
@@ -227,3 +310,28 @@ private fun PermissionRow(
 private fun hasSmsPermission(context: Context): Boolean =
     ContextCompat.checkSelfPermission(context, Manifest.permission.RECEIVE_SMS) ==
         PackageManager.PERMISSION_GRANTED
+
+private fun isBatteryExempt(context: Context): Boolean {
+    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) return true
+    val power = context.getSystemService(Context.POWER_SERVICE) as? PowerManager ?: return true
+    return power.isIgnoringBatteryOptimizations(context.packageName)
+}
+
+/**
+ * Asks the system to stop putting this app to sleep.
+ *
+ * Some builds refuse the direct request, so a failure falls back to the
+ * settings screen rather than doing nothing visible.
+ */
+private fun requestBatteryExemption(context: Context) {
+    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) return
+    val direct = Intent(
+        Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS,
+        Uri.parse("package:" + context.packageName),
+    )
+    try {
+        context.startActivity(direct)
+    } catch (e: Exception) {
+        context.startActivity(Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS))
+    }
+}

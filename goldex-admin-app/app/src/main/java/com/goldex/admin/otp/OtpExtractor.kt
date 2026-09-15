@@ -36,8 +36,13 @@ object OtpExtractor {
      * The code in this message, or null when nothing in it is one.
      *
      * @param text the message body, as received.
+     * @param requireLabel refuse a code the message does not announce as one.
+     *   Used when nobody is watching: with an operator at the screen, a lone
+     *   number in an unlabelled message is a reasonable guess they can check
+     *   against the message shown beside it. Unattended there is no one to
+     *   check it, and a wrong code spends the attempt.
      */
-    fun extract(text: String?): String? {
+    fun extract(text: String?, requireLabel: Boolean = false): String? {
         if (text.isNullOrBlank()) return null
         val normalized = normalizeDigits(text)
         val lower = normalized.lowercase()
@@ -57,7 +62,9 @@ object OtpExtractor {
 
         // Nothing in the message says "code". Returning a number anyway is a
         // guess; it is only a safe one when the message holds exactly one — a
-        // bare code is a real message shape, choosing between two is not.
+        // bare code is a real message shape, choosing between two is not — and
+        // only when somebody is there to see what it was read from.
+        if (requireLabel) return null
         return candidates.singleOrNull()?.first
     }
 

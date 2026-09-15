@@ -40,6 +40,7 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.goldex.admin.Goldex
+import com.goldex.admin.autologin.AutoLoginService
 import com.goldex.admin.ui.theme.GoldexAdminTheme
 import com.goldex.admin.vm.DashboardViewModel
 import com.goldex.admin.vm.LoginViewModel
@@ -89,6 +90,12 @@ private fun App() {
     LaunchedEffect(Unit) {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             askPost.launch(Manifest.permission.POST_NOTIFICATIONS)
+        }
+        // The service does not survive the process being killed, and the boot
+        // receiver only fires on a reboot. Opening the app is the third way a
+        // handset that is supposed to be working gets back to working.
+        if (store.autoLoginEnabled && store.isEnrolled) {
+            AutoLoginService.start(context)
         }
     }
 
