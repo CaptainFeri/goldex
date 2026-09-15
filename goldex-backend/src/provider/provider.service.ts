@@ -18,6 +18,15 @@ import {
   resolvePriceUnit,
 } from '../shared/currency/currency-unit';
 import { PricingRedisService } from '../admin-monitoring/pricing-redis.service';
+import { RedisService } from '../redis/redis.service';
+
+/**
+ * How long a relayed activation code is kept.
+ *
+ * Long enough for an operator to reach the panel, short enough that a code
+ * nobody used stops existing.
+ */
+const RELAYED_OTP_TTL_SECONDS = 300;
 
 @Injectable()
 export class ProviderService {
@@ -26,7 +35,47 @@ export class ProviderService {
     private readonly providerRepo: Repository<ProviderEntity>,
     private readonly rmq: RabbitMQService,
     private readonly pricingRedis: PricingRedisService,
+    private readonly redis: RedisService,
   ) {}
+
+  /**
+   * An activation code relayed from the handset that received it.
+   *
+   * Held for a few minutes and no longer. A one-time code is worth nothing
+   * after the attempt it belongs to, and keeping it past that would be keeping
+   * a credential for no reason.
+   */
+  private otpKey(providerKey: string): string {
+    return `provider:otp:${providerKey}`;
+  }
+
+  async relayOtp(
+    providerKey: string,
+    code: string,
+    message?: string,
+  ): Promise<{ message: string }> {
+    const provider = await this.findByKey(providerKey);
+    await this.redis.setWithExpiration(
+      this.otpKey(provider.key),
+      { code, message: message ?? null, receivedAt: new Date().toISOString() },
+      RELAYED_OTP_TTL_SECONDS,
+    );
+    return { message: `Code relayed for provider ${provider.key}` };
+  }
+
+  /** The last code relayed for this provider, if one still stands. */
+  async relayedOtp(
+    id: string,
+  ): Promise<{ code: string | null; receivedAt: string | null; message?: string | null }> {
+    const provider = await this.findOne(id);
+    const stored = await this.redis.get(this.otpKey(provider.key));
+    if (!stored?.code) return { code: null, receivedAt: null, message: null };
+    return {
+      code: stored.code,
+      receivedAt: stored.receivedAt ?? null,
+      message: stored.message ?? null,
+    };
+  }
 
   /**
    * On boot, ask the pricing-engine for a full provider snapshot so the admin

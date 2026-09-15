@@ -39,12 +39,20 @@ describe('provider admin mirror', () => {
         Promise.resolve({ ok: true, data: {} } as any),
       ),
     };
+    const relayed = new Map<string, any>();
     const service = new ProviderService(
       repo as any,
       rmq as any,
       {
         getProviders: () => Promise.resolve(live),
         getRegistry: () => Promise.resolve(registry),
+      } as any,
+      {
+        setWithExpiration: jest.fn((key: string, value: any) => {
+          relayed.set(key, value);
+          return Promise.resolve('OK');
+        }),
+        get: jest.fn((key: string) => Promise.resolve(relayed.get(key) ?? null)),
       } as any,
     );
     return { service, repo, rmq };
@@ -324,6 +332,52 @@ describe('provider admin mirror', () => {
     it('says it does not know rather than trusting a malformed value', async () => {
       await expect(read('not json')).resolves.toBeNull();
       await expect(read(JSON.stringify({ configured: 'yes' }))).resolves.toBeNull();
+    });
+  });
+
+  /**
+   * The handset is the only thing that can read the code the provider texts,
+   * and the panel is where activation happens. This is the hand-off between
+   * them.
+   */
+  describe('a code relayed from the handset that received it', () => {
+    const row = { id: 'p-1', key: 'zaryar', category: 'zaryar', baseUrl: 'https://a.ir' };
+
+    it('is readable at the panel for the provider it names', async () => {
+      const { service } = build([row]);
+      await service.relayOtp('zaryar', '12345', 'کد ورود شما: 12345');
+
+      const relayed = await service.relayedOtp('p-1');
+      expect(relayed.code).toBe('12345');
+      expect(relayed.message).toBe('کد ورود شما: 12345');
+      expect(relayed.receivedAt).toBeTruthy();
+    });
+
+    // Relaying against a key nobody defined would leave a code sitting in Redis
+    // under a name no panel row can ever read.
+    it('refuses a provider the mirror does not know', async () => {
+      const { service } = build([row]);
+      await expect(service.relayOtp('nope', '12345')).rejects.toThrow();
+    });
+
+    it('reads as empty when nothing has been relayed', async () => {
+      const { service } = build([row]);
+      await expect(service.relayedOtp('p-1')).resolves.toEqual({
+        code: null,
+        receivedAt: null,
+        message: null,
+      });
+    });
+
+    // Two providers can be mid-activation at once, and a code is only valid for
+    // the login that asked for it.
+    it('keeps each provider’s code to itself', async () => {
+      const { service } = build([row, { id: 'p-2', key: 'talaab', category: 'talaab' }]);
+      await service.relayOtp('zaryar', '11111');
+      await service.relayOtp('talaab', '22222');
+
+      expect((await service.relayedOtp('p-1')).code).toBe('11111');
+      expect((await service.relayedOtp('p-2')).code).toBe('22222');
     });
   });
 });

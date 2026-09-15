@@ -7,6 +7,7 @@ import { ProviderStatusConsumer } from '../rabbitmq/consumers/provider-status.co
 import { ProviderDealSnapshotEntity } from '../financial/entity/provider-deal-snapshot.entity';
 import { ProviderBalanceSnapshotEntity } from '../financial/entity/provider-balance-snapshot.entity';
 import { AdminMonitoringModule } from '../admin-monitoring/admin-monitoring.module';
+import { RedisModule } from '../redis/redis.module';
 
 @Module({
   imports: [
@@ -16,6 +17,7 @@ import { AdminMonitoringModule } from '../admin-monitoring/admin-monitoring.modu
       ProviderBalanceSnapshotEntity,
     ]),
     AdminMonitoringModule,
+    RedisModule,
   ],
   providers: [ProviderService, ProviderStatusConsumer],
   controllers: [ProviderController],
