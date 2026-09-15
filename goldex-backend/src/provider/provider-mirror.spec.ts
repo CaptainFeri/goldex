@@ -55,6 +55,7 @@ describe('provider admin mirror', () => {
         get: jest.fn((key: string) => Promise.resolve(relayed.get(key) ?? null)),
         del: jest.fn((key: string) => Promise.resolve(relayed.delete(key))),
       } as any,
+      { noteActivated: jest.fn(() => Promise.resolve()) } as any,
     );
     return { service, repo, rmq };
   };

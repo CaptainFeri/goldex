@@ -8,6 +8,7 @@ import { ProviderDealSnapshotEntity } from '../financial/entity/provider-deal-sn
 import { ProviderBalanceSnapshotEntity } from '../financial/entity/provider-balance-snapshot.entity';
 import { AdminMonitoringModule } from '../admin-monitoring/admin-monitoring.module';
 import { RedisModule } from '../redis/redis.module';
+import { ProviderAutoLoginService } from './provider-auto-login.service';
 
 @Module({
   imports: [
@@ -19,7 +20,7 @@ import { RedisModule } from '../redis/redis.module';
     AdminMonitoringModule,
     RedisModule,
   ],
-  providers: [ProviderService, ProviderStatusConsumer],
+  providers: [ProviderService, ProviderAutoLoginService, ProviderStatusConsumer],
   controllers: [ProviderController],
   exports: [ProviderService],
 })

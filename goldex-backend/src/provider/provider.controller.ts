@@ -29,6 +29,13 @@ import { ProviderService } from './provider.service';
 import { CreateProviderDto } from './dto/create-provider.dto';
 import { SetProviderAuthDto } from './dto/set-provider-auth.dto';
 import { AwaitingOtpDto, RelayOtpDto, RelayedOtpDto } from './dto/relay-otp.dto';
+import {
+  ClaimLoginDto,
+  ClaimLoginResultDto,
+  LoginCandidateDto,
+  ReleaseLoginDto,
+} from './dto/auto-login.dto';
+import { ProviderAutoLoginService } from './provider-auto-login.service';
 import { UpdateProviderDto } from './dto/update-provider.dto';
 import { AdminAuthGuard } from '../admin/auth/Guard/admin.guard';
 import { AdminRolesGuard } from '../admin/auth/Guard/admin.role.guard';
@@ -47,6 +54,7 @@ import { ProviderBalanceSnapshotEntity } from '../financial/entity/provider-bala
 export class ProviderController {
   constructor(
     private readonly providerService: ProviderService,
+    private readonly autoLogin: ProviderAutoLoginService,
     private readonly pricingRedis: PricingRedisService,
     @InjectRepository(ProviderDealSnapshotEntity)
     private readonly dealRepo: Repository<ProviderDealSnapshotEntity>,
@@ -90,6 +98,20 @@ export class ProviderController {
   @ApiEnvelopeResponse(AwaitingOtpDto)
   async awaitingOtp() {
     return { data: await this.providerService.awaitingOtp() };
+  }
+
+  @Get('needs-login')
+  @ApiOperation({
+    summary: 'Providers waiting to be logged in again, and whether anything may try',
+    description:
+      'A provider appears here once the engine reports that it has stopped accepting the stored ' +
+      'session. `eligible` says whether a device may claim it right now, and `reason` says why ' +
+      'not when it may not — a cooldown after a failed attempt, a daily limit, another device ' +
+      'already trying, or a provider that has failed enough times to need a person.',
+  })
+  @ApiEnvelopeResponse(LoginCandidateDto, { isArray: true })
+  async needsLogin() {
+    return { data: await this.providerService.loginCandidates() };
   }
 
   @Get(':id')
@@ -161,6 +183,28 @@ export class ProviderController {
   @ApiEnvelopeResponse(RelayedOtpDto)
   async relayedOtp(@Param('id', ParseUUIDPipe) id: string) {
     return { data: await this.providerService.relayedOtp(id) };
+  }
+
+  @Post(':id/login-lease')
+  @ApiOperation({
+    summary: 'Take a provider for one automatic login attempt',
+    description:
+      'The attempt is counted when it is claimed, not when it ends: a device that dies between ' +
+      'asking for a code and using it must not be free to ask again immediately. Releasing with ' +
+      'success clears the count; anything else leaves it standing, and the backoff with it.',
+  })
+  @ApiEnvelopeResponse(ClaimLoginResultDto, { status: 201 })
+  async claimLogin(@Param('id', ParseUUIDPipe) id: string, @Body() dto: ClaimLoginDto) {
+    return { data: await this.providerService.claimLogin(id, dto.deviceId) };
+  }
+
+  @Post(':id/login-lease/release')
+  @ApiOperation({
+    summary: 'Give a claimed provider back, saying whether the login worked',
+  })
+  @ApiEnvelopeResponse(ProviderCommandAckDto, { status: 201 })
+  async releaseLogin(@Param('id', ParseUUIDPipe) id: string, @Body() dto: ReleaseLoginDto) {
+    return { data: await this.providerService.releaseLogin(id, dto.deviceId, dto.outcome) };
   }
 
   @Post('reconcile')

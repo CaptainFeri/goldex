@@ -19,6 +19,12 @@ import {
 } from '../shared/currency/currency-unit';
 import { PricingRedisService } from '../admin-monitoring/pricing-redis.service';
 import { RedisService } from '../redis/redis.service';
+import {
+  AUTH_EXPIRED_STATUS,
+  LeaseOutcome,
+  LoginCandidate,
+  ProviderAutoLoginService,
+} from './provider-auto-login.service';
 
 /**
  * How long a relayed activation code is kept.
@@ -44,6 +50,7 @@ export class ProviderService {
     private readonly rmq: RabbitMQService,
     private readonly pricingRedis: PricingRedisService,
     private readonly redis: RedisService,
+    private readonly autoLogin: ProviderAutoLoginService,
   ) {}
 
   /**
@@ -107,6 +114,37 @@ export class ProviderService {
       receivedAt: stored.receivedAt ?? null,
       message: stored.message ?? null,
     };
+  }
+
+  // ── logging a provider back in without a person ───────────────────────────
+
+  /**
+   * Every provider the engine says has stopped accepting its session.
+   *
+   * Listed whether or not anything may act on it: a provider held off by a
+   * cooldown is still a provider that is down, and hiding it would make the
+   * list read as though the problem had gone away.
+   */
+  async loginCandidates(): Promise<LoginCandidate[]> {
+    const providers = await this.findAll();
+    const expired = providers.filter((p) => p.status === AUTH_EXPIRED_STATUS);
+    if (expired.length === 0) return [];
+
+    // A person mid-activation anywhere holds off the devices, because the code
+    // they are waiting for is the code a device would spend.
+    const awaiting = (await this.awaitingOtp()).providerKey;
+    return Promise.all(expired.map((provider) => this.autoLogin.describe(provider, awaiting)));
+  }
+
+  async claimLogin(id: string, deviceId: string) {
+    const provider = await this.findOne(id);
+    const awaiting = (await this.awaitingOtp()).providerKey;
+    return this.autoLogin.claim(provider, deviceId, awaiting);
+  }
+
+  async releaseLogin(id: string, deviceId: string, outcome: LeaseOutcome) {
+    const provider = await this.findOne(id);
+    return this.autoLogin.release(provider, deviceId, outcome);
   }
 
   /**
@@ -432,6 +470,10 @@ export class ProviderService {
 
     provider.active = true;
     await this.providerRepo.save(provider);
+    // However it was activated, the question the automatic attempts kept
+    // failing to settle is settled, so their backoff has nothing left to
+    // describe.
+    await this.autoLogin.noteActivated(provider.key);
 
     return { message: `Provider ${provider.key} activated with supplied credentials` };
   }
@@ -460,6 +502,7 @@ export class ProviderService {
       this.redis.del(this.otpKey(provider.key)),
       this.redis.del(this.awaitingOtpKey),
     ]);
+    if (result?.active) await this.autoLogin.noteActivated(provider.key);
 
     return { message: `Provider ${provider.key} activated` };
   }

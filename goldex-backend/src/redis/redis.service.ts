@@ -78,6 +78,33 @@ export class RedisService {
     return await this.client.set(key, JSON.stringify(value), 'EX', expiresIn);
   }
 
+  /**
+   * Set only if nothing holds the key — the primitive behind a claim.
+   *
+   * `setWithExpiration` overwrites, which is right for a cache and wrong for
+   * anything two callers might want at once: both would "succeed" and both
+   * would believe they held it.
+   *
+   * @returns whether this caller is the one that took it.
+   */
+  async setIfAbsent(key: string, value: any, expiresIn: number): Promise<boolean> {
+    const result = await this.client.set(key, JSON.stringify(value), 'EX', expiresIn, 'NX');
+    return result === 'OK';
+  }
+
+  /**
+   * Increment a counter that expires, for a cap measured over a window.
+   *
+   * The expiry is set on first write only, so the window runs from the first
+   * event rather than sliding forward with each one — a cap that never expires
+   * because it keeps being hit is not a window.
+   */
+  async incrementWithExpiry(key: string, expiresIn: number): Promise<number> {
+    const count = await this.client.incr(key);
+    if (count === 1) await this.client.expire(key, expiresIn);
+    return count;
+  }
+
   async get(key: string): Promise<any> {
     const result = await this.client.get(key);
     return result ? JSON.parse(result) : null;
