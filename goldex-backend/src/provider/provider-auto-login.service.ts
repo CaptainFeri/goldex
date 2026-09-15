@@ -1,6 +1,8 @@
 import { BadRequestException, ConflictException, Injectable, Logger } from '@nestjs/common';
 import { RedisService } from '../redis/redis.service';
 import { ProviderEntity } from './entity/provider.entity';
+import { LoginAttemptService } from './login-attempt.service';
+import { LoginAttemptOutcome } from './entity/provider-login-attempt.entity';
 
 /**
  * The status the engine reports for a provider whose session was refused.
@@ -85,7 +87,10 @@ interface Lease {
 export class ProviderAutoLoginService {
   private readonly logger = new Logger(ProviderAutoLoginService.name);
 
-  constructor(private readonly redis: RedisService) {}
+  constructor(
+    private readonly redis: RedisService,
+    private readonly attempts: LoginAttemptService,
+  ) {}
 
   private leaseKey(key: string) {
     return `provider:autologin:lease:${key}`;
@@ -181,6 +186,7 @@ export class ProviderAutoLoginService {
     provider: ProviderEntity,
     deviceId: string,
     awaitingProviderKey?: string | null,
+    device?: { id: string; name: string } | null,
   ): Promise<{ leaseExpiresAt: string; phone: string }> {
     const described = await this.describe(provider, awaitingProviderKey);
     if (!described.eligible) {
@@ -206,6 +212,8 @@ export class ProviderAutoLoginService {
       }),
       this.redis.incrementWithExpiry(this.dailyKey(provider.key), DAY_SECONDS),
     ]);
+
+    await this.attempts.started(provider.key, count, device);
 
     this.logger.log(`Device ${deviceId} claimed ${provider.key} for login attempt ${count}`);
     return {
@@ -239,6 +247,7 @@ export class ProviderAutoLoginService {
     provider: ProviderEntity,
     deviceId: string,
     outcome: LeaseOutcome,
+    reason?: string | null,
   ): Promise<{ message: string }> {
     const lease = await this.readLease(provider.key);
     if (!lease) throw new BadRequestException('No login attempt is in progress for this provider');
@@ -251,8 +260,19 @@ export class ProviderAutoLoginService {
     await this.redis.del(this.leaseKey(provider.key));
     if (outcome === 'success') {
       await this.clearAttempts(provider.key);
+      await this.attempts.finished(provider.key, LoginAttemptOutcome.SUCCEEDED);
       this.logger.log(`Device ${deviceId} logged ${provider.key} back in`);
       return { message: `Provider ${provider.key} logged in by ${deviceId}` };
+    }
+
+    await this.attempts.finished(provider.key, LoginAttemptOutcome.FAILED, reason);
+
+    // The moment the automatic system gives up. Without saying so here it is
+    // invisible: the handset simply stops trying and the provider stays down
+    // until somebody wonders why a price is missing.
+    const record = await this.readAttempts(provider.key);
+    if (record.count >= MAX_CONSECUTIVE_ATTEMPTS) {
+      await this.attempts.announceExhausted(provider.key, record.count, reason);
     }
 
     this.logger.warn(`Device ${deviceId} failed to log ${provider.key} in`);
@@ -270,6 +290,10 @@ export class ProviderAutoLoginService {
     await Promise.all([
       this.clearAttempts(providerKey),
       this.redis.del(this.leaseKey(providerKey)),
+      // Closes whatever a device left open. A person fixing it by hand is the
+      // end of that attempt too, and leaving it "started" forever would make
+      // the record read as though a handset were still working on it.
+      this.attempts.finished(providerKey, LoginAttemptOutcome.SUCCEEDED, 'activated by hand'),
     ]);
   }
 

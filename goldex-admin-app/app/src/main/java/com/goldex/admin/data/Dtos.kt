@@ -103,7 +103,7 @@ data class LoginCandidate(
 
 data class LoginLease(val leaseExpiresAt: String?, val phone: String?)
 
-data class ReleaseLoginRequest(val outcome: String)
+data class ReleaseLoginRequest(val outcome: String, val reason: String?)
 
 data class RelayedOtp(
     val code: String?,

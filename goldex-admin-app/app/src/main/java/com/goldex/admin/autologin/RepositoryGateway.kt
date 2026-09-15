@@ -28,8 +28,8 @@ class RepositoryGateway(private val repo: AdminRepository) : AutoLoginGateway {
         translate { repo.deviceVerifyOtp(providerId, code) }
     }
 
-    override suspend fun release(providerId: String, outcome: String) {
-        translate { repo.releaseLogin(providerId, outcome) }
+    override suspend fun release(providerId: String, outcome: String, reason: String?) {
+        translate { repo.releaseLogin(providerId, outcome, reason) }
     }
 
     private suspend fun <T> translate(block: suspend () -> T): T = try {

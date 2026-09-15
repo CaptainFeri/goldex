@@ -121,8 +121,8 @@ class AdminRepository(
         client.deviceApi().claimLogin(providerId).data
     }
 
-    suspend fun releaseLogin(providerId: String, outcome: String) = io {
-        client.deviceApi().releaseLogin(providerId, ReleaseLoginRequest(outcome))
+    suspend fun releaseLogin(providerId: String, outcome: String, reason: String? = null) = io {
+        client.deviceApi().releaseLogin(providerId, ReleaseLoginRequest(outcome, reason))
     }
 
     suspend fun deviceSendOtp(providerId: String, phone: String) = io {

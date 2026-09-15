@@ -10,6 +10,9 @@ import { AdminMonitoringModule } from '../admin-monitoring/admin-monitoring.modu
 import { RedisModule } from '../redis/redis.module';
 import { ProviderAutoLoginService } from './provider-auto-login.service';
 import { ProviderLoginDeviceEntity } from './entity/provider-login-device.entity';
+import { ProviderLoginAttemptEntity } from './entity/provider-login-attempt.entity';
+import { LoginAttemptService } from './login-attempt.service';
+import { NotificationModule } from '../notification/notification.module';
 import { LoginDeviceService } from './device/login-device.service';
 import { DeviceAuthGuard } from './device/device-auth.guard';
 import { LoginDeviceController } from './device/login-device.controller';
@@ -22,14 +25,17 @@ import { ProviderDeviceController } from './device/provider-device.controller';
       ProviderDealSnapshotEntity,
       ProviderBalanceSnapshotEntity,
       ProviderLoginDeviceEntity,
+      ProviderLoginAttemptEntity,
     ]),
     AdminMonitoringModule,
     RedisModule,
+    NotificationModule,
   ],
   providers: [
     ProviderService,
     ProviderAutoLoginService,
     LoginDeviceService,
+    LoginAttemptService,
     DeviceAuthGuard,
     ProviderStatusConsumer,
   ],

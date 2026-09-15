@@ -1,5 +1,5 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { IsIn, IsNotEmpty, IsString, Length, Matches } from 'class-validator';
+import { IsIn, IsNotEmpty, IsOptional, IsString, Length, Matches, MaxLength } from 'class-validator';
 
 /**
  * These carry no device identifier.
@@ -31,4 +31,16 @@ export class DeviceReleaseLoginDto {
   })
   @IsIn(['success', 'failure'])
   outcome: 'success' | 'failure';
+
+  @ApiProperty({
+    required: false,
+    example: 'no code arrived',
+    description:
+      'What went wrong, in the handset\'s own words. Kept with the attempt, because the record ' +
+      'of an unattended failure is the only account anyone will have of it.',
+  })
+  @IsString()
+  @IsOptional()
+  @MaxLength(300)
+  reason?: string;
 }

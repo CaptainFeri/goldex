@@ -66,3 +66,33 @@ export class ClaimLoginResultDto {
   @ApiProperty({ description: 'The number the provider will text the code to' })
   phone: string;
 }
+
+export class LoginAttemptDto {
+  @ApiProperty({ format: 'uuid' })
+  id: string;
+
+  @ApiProperty({ example: 'zaryar' })
+  providerKey: string;
+
+  @ApiProperty({
+    nullable: true,
+    example: 'گوشی میز اپراتور',
+    description: 'The handset that tried, or null when a person did it from the panel',
+  })
+  deviceName: string | null;
+
+  @ApiProperty({ enum: ['started', 'succeeded', 'failed'] })
+  outcome: string;
+
+  @ApiProperty({ nullable: true, description: 'Why it failed, in the words the provider used' })
+  reason: string | null;
+
+  @ApiProperty({ description: 'Which attempt in the run of consecutive failures this was' })
+  attempt: number;
+
+  @ApiProperty({ nullable: true })
+  startedAt: string | null;
+
+  @ApiProperty({ nullable: true })
+  finishedAt: string | null;
+}

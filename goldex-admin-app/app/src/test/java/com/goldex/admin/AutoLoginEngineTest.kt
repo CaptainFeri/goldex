@@ -48,6 +48,7 @@ class AutoLoginEngineTest {
     ) : AutoLoginGateway {
         val calls = mutableListOf<String>()
         var releasedWith: String? = null
+        var releasedReason: String? = null
 
         private fun maybeFail(step: String) {
             calls += step
@@ -68,8 +69,9 @@ class AutoLoginEngineTest {
 
         override suspend fun verifyOtp(providerId: String, code: String) = maybeFail("verifyOtp")
 
-        override suspend fun release(providerId: String, outcome: String) {
+        override suspend fun release(providerId: String, outcome: String, reason: String?) {
             releasedWith = outcome
+            releasedReason = reason
             maybeFail("release")
         }
     }
@@ -231,5 +233,24 @@ class AutoLoginEngineTest {
 
         assertTrue(outcome is AutoLoginOutcome.Failed)
         assertEquals("no code arrived", (outcome as AutoLoginOutcome.Failed).reason)
+    }
+
+    /**
+     * The record of an unattended failure is the only account anyone will have
+     * of it, so the handset says what went wrong in its own words rather than
+     * leaving the server to guess from an outcome flag.
+     */
+    @Test
+    fun `says why it failed when giving the provider back`() = runBlocking {
+        val gateway = FakeGateway(candidates = listOf(candidate()))
+        engine(gateway, FakeCodes(null)).runOnce()
+        assertEquals("no code arrived", gateway.releasedReason)
+    }
+
+    @Test
+    fun `carries the provider's own words when the code is refused`() = runBlocking {
+        val gateway = FakeGateway(candidates = listOf(candidate()), failOn = "verifyOtp")
+        engine(gateway, FakeCodes("48213")).runOnce()
+        assertEquals("verifyOtp refused", gateway.releasedReason)
     }
 }

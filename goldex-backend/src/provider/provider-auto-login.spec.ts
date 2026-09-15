@@ -42,7 +42,18 @@ describe('claiming a provider for an automatic login', () => {
       }),
       del: jest.fn((key: string) => Promise.resolve(store.delete(key))),
     };
-    return { service: new ProviderAutoLoginService(redis as any), store, redis };
+    // The record of attempts is its own concern; these are about the limits.
+    const attempts = {
+      started: jest.fn(() => Promise.resolve({})),
+      finished: jest.fn(() => Promise.resolve()),
+      announceExhausted: jest.fn(() => Promise.resolve()),
+    };
+    return {
+      service: new ProviderAutoLoginService(redis as any, attempts as any),
+      store,
+      redis,
+      attempts,
+    };
   };
 
   describe('what makes a provider a candidate at all', () => {
@@ -273,6 +284,56 @@ describe('claiming a provider for an automatic login', () => {
       await service.claim(provider(), 'phone-1');
       await service.release(provider(), 'phone-1', 'success');
       expect(store.get('provider:autologin:daily:zaryar')).toBe(1);
+    });
+  });
+
+  /**
+   * The moment the automatic system gives up is the moment somebody has to be
+   * told. Without it the handset simply stops trying, and the next person to
+   * notice is whoever wonders why a price is missing.
+   */
+  describe('when it gives up', () => {
+    it('announces the provider that has stopped being retried', async () => {
+      const { service, store, attempts } = build();
+      store.set('provider:autologin:attempts:zaryar', {
+        count: 2,
+        cooldownUntil: new Date(Date.now() - 1000).toISOString(),
+        lastAt: new Date().toISOString(),
+      });
+
+      await service.claim(provider(), 'phone-1');
+      await service.release(provider(), 'phone-1', 'failure', 'no code arrived');
+
+      expect(attempts.announceExhausted).toHaveBeenCalledWith('zaryar', 3, 'no code arrived');
+    });
+
+    // An alert on every refused attempt is an alert nobody reads.
+    it('says nothing while attempts remain', async () => {
+      const { service, attempts } = build();
+      await service.claim(provider(), 'phone-1');
+      await service.release(provider(), 'phone-1', 'failure', 'no code arrived');
+
+      expect(attempts.announceExhausted).not.toHaveBeenCalled();
+    });
+
+    it('records the attempt as it starts, not when it ends', async () => {
+      // Written at the claim because the attempts worth investigating are the
+      // ones that never finished — a handset that lost power mid-attempt
+      // leaves nothing behind otherwise.
+      const { service, attempts } = build();
+      // The name travels with it, so revoking the device later does not make
+      // its history unreadable.
+      const device = { id: 'dev-1', name: 'گوشی میز اپراتور' };
+      await service.claim(provider(), 'dev-1', null, device);
+
+      expect(attempts.started).toHaveBeenCalledWith('zaryar', 1, device);
+    });
+
+    it('closes the record with why it failed', async () => {
+      const { service, attempts } = build();
+      await service.claim(provider(), 'phone-1');
+      await service.release(provider(), 'phone-1', 'failure', 'the code was refused');
+      expect(attempts.finished).toHaveBeenCalledWith('zaryar', 'failed', 'the code was refused');
     });
   });
 });

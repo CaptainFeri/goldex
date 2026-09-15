@@ -10,6 +10,7 @@ import {
 import { parseProviderAuth } from "../lib/provider-auth-paste";
 import BrowserSimulator from "./providers/BrowserSimulator";
 import LoginDevices from "./providers/LoginDevices";
+import AutoLoginPanel from "./providers/AutoLoginPanel";
 
 interface Provider {
   id: string;
@@ -574,6 +575,8 @@ export default function ProvidersPage() {
           </div>
         )}
       </Card>
+
+      <AutoLoginPanel />
 
       <LoginDevices />
 

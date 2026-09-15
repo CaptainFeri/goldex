@@ -78,7 +78,9 @@ export class ProviderDeviceController {
   })
   @ApiEnvelopeResponse(ClaimLoginResultDto, { status: 201 })
   async claim(@Param('id', ParseUUIDPipe) id: string, @Req() req: DeviceRequest) {
-    return { data: await this.providerService.claimLogin(id, req.device!.id) };
+    return {
+      data: await this.providerService.claimLogin(id, req.device!.id, req.device!.name),
+    };
   }
 
   @Post(':id/login-lease/release')
@@ -90,7 +92,12 @@ export class ProviderDeviceController {
     @Req() req: DeviceRequest,
   ) {
     return {
-      data: await this.providerService.releaseLogin(id, req.device!.id, dto.outcome),
+      data: await this.providerService.releaseLogin(
+        id,
+        req.device!.id,
+        dto.outcome,
+        dto.reason,
+      ),
     };
   }
 

@@ -29,7 +29,7 @@ import { ProviderService } from './provider.service';
 import { CreateProviderDto } from './dto/create-provider.dto';
 import { SetProviderAuthDto } from './dto/set-provider-auth.dto';
 import { AwaitingOtpDto, RelayOtpDto, RelayedOtpDto } from './dto/relay-otp.dto';
-import { LoginCandidateDto } from './dto/auto-login.dto';
+import { LoginAttemptDto, LoginCandidateDto } from './dto/auto-login.dto';
 import { ProviderAutoLoginService } from './provider-auto-login.service';
 import { UpdateProviderDto } from './dto/update-provider.dto';
 import { AdminAuthGuard } from '../admin/auth/Guard/admin.guard';
@@ -107,6 +107,37 @@ export class ProviderController {
   @ApiEnvelopeResponse(LoginCandidateDto, { isArray: true })
   async needsLogin() {
     return { data: await this.providerService.loginCandidates() };
+  }
+
+  @Get('login-attempts')
+  @ApiOperation({
+    summary: 'What has been tried, and what came of it',
+    description:
+      'Automatic activation happens with nobody watching, so this is the only account of it. ' +
+      'An attempt is recorded when it starts, not when it ends — the ones worth investigating ' +
+      'are the ones that never ended.',
+  })
+  @ApiEnvelopeResponse(LoginAttemptDto, { isArray: true })
+  async loginAttempts(
+    @Query('providerKey') providerKey?: string,
+    @Query('limit') limit?: string,
+  ) {
+    const rows = await this.providerService.loginAttempts(
+      providerKey,
+      limit ? Number(limit) : undefined,
+    );
+    return {
+      data: rows.map((row) => ({
+        id: row.id,
+        providerKey: row.providerKey,
+        deviceName: row.deviceName ?? null,
+        outcome: row.outcome,
+        reason: row.reason ?? null,
+        attempt: row.attempt,
+        startedAt: row.createAt?.toISOString() ?? null,
+        finishedAt: row.finishedAt?.toISOString() ?? null,
+      })),
+    };
   }
 
   @Get(':id')

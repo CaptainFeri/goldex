@@ -56,6 +56,7 @@ describe('provider admin mirror', () => {
         del: jest.fn((key: string) => Promise.resolve(relayed.delete(key))),
       } as any,
       { noteActivated: jest.fn(() => Promise.resolve()) } as any,
+      { recent: jest.fn(() => Promise.resolve([])) } as any,
     );
     return { service, repo, rmq };
   };

@@ -18,7 +18,12 @@ interface AutoLoginGateway {
     suspend fun claim(providerId: String): LoginLease
     suspend fun sendOtp(providerId: String, phone: String)
     suspend fun verifyOtp(providerId: String, code: String)
-    suspend fun release(providerId: String, outcome: String)
+    /**
+     * @param reason the handset's own words for what went wrong. Kept with the
+     *   attempt, because the record of an unattended failure is the only
+     *   account anyone will have of it.
+     */
+    suspend fun release(providerId: String, outcome: String, reason: String?)
 }
 
 /** Where a code read off this handset comes from. */
@@ -99,8 +104,9 @@ class AutoLoginEngine(
 
         val phone = lease.phone ?: target.phone
         if (phone.isNullOrBlank()) {
-            gateway.releaseQuietly(id, "failure")
-            return AutoLoginOutcome.Failed(target.label, "no phone number to send a code to")
+            val why = "no phone number to send a code to"
+            gateway.releaseQuietly(id, "failure", why)
+            return AutoLoginOutcome.Failed(target.label, why)
         }
 
         // Read before the request, not after: on a fast network the message can
@@ -110,8 +116,9 @@ class AutoLoginEngine(
         try {
             gateway.sendOtp(id, phone)
         } catch (e: Exception) {
-            gateway.releaseQuietly(id, "failure")
-            return AutoLoginOutcome.Failed(target.label, e.message ?: "the provider refused to send a code")
+            val why = e.message ?: "the provider refused to send a code"
+            gateway.releaseQuietly(id, "failure", why)
+            return AutoLoginOutcome.Failed(target.label, why)
         }
         onEvent("asked ${target.label} for a code")
 
@@ -120,7 +127,7 @@ class AutoLoginEngine(
             // The message never came, or came without saying it was a code.
             // Either way this attempt is over; the backoff the server set when
             // it granted the claim decides when another may start.
-            gateway.releaseQuietly(id, "failure")
+            gateway.releaseQuietly(id, "failure", "no code arrived")
             return AutoLoginOutcome.Failed(target.label, "no code arrived")
         }
 
@@ -131,8 +138,9 @@ class AutoLoginEngine(
             onEvent("logged ${target.label} back in")
             AutoLoginOutcome.Activated(target.label)
         } catch (e: Exception) {
-            gateway.releaseQuietly(id, "failure")
-            AutoLoginOutcome.Failed(target.label, e.message ?: "the code was refused")
+            val why = e.message ?: "the code was refused"
+            gateway.releaseQuietly(id, "failure", why)
+            AutoLoginOutcome.Failed(target.label, why)
         }
     }
 
@@ -143,9 +151,9 @@ class AutoLoginEngine(
      * minutes of its lease and then frees itself, which is a smaller problem
      * than losing the reason the attempt failed.
      */
-    private suspend fun AutoLoginGateway.releaseQuietly(id: String, outcome: String) {
+    private suspend fun AutoLoginGateway.releaseQuietly(id: String, outcome: String, reason: String?) {
         try {
-            release(id, outcome)
+            release(id, outcome, reason)
         } catch (e: Exception) {
             onEvent("could not release $id: ${e.message}")
         }

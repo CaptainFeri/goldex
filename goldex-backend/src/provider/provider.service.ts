@@ -25,6 +25,7 @@ import {
   LoginCandidate,
   ProviderAutoLoginService,
 } from './provider-auto-login.service';
+import { LoginAttemptService } from './login-attempt.service';
 
 /**
  * How long a relayed activation code is kept.
@@ -51,6 +52,7 @@ export class ProviderService {
     private readonly pricingRedis: PricingRedisService,
     private readonly redis: RedisService,
     private readonly autoLogin: ProviderAutoLoginService,
+    private readonly attemptLog: LoginAttemptService,
   ) {}
 
   /**
@@ -136,15 +138,18 @@ export class ProviderService {
     return Promise.all(expired.map((provider) => this.autoLogin.describe(provider, awaiting)));
   }
 
-  async claimLogin(id: string, deviceId: string) {
+  async claimLogin(id: string, deviceId: string, deviceName?: string) {
     const provider = await this.findOne(id);
     const awaiting = (await this.awaitingOtp()).providerKey;
-    return this.autoLogin.claim(provider, deviceId, awaiting);
+    return this.autoLogin.claim(provider, deviceId, awaiting, {
+      id: deviceId,
+      name: deviceName ?? deviceId,
+    });
   }
 
-  async releaseLogin(id: string, deviceId: string, outcome: LeaseOutcome) {
+  async releaseLogin(id: string, deviceId: string, outcome: LeaseOutcome, reason?: string | null) {
     const provider = await this.findOne(id);
-    return this.autoLogin.release(provider, deviceId, outcome);
+    return this.autoLogin.release(provider, deviceId, outcome, reason);
   }
 
   /**
@@ -175,6 +180,11 @@ export class ProviderService {
     const result = await this.verifyOtp(id, otp);
     await this.autoLogin.release(provider, deviceId, 'success');
     return result;
+  }
+
+  /** The record of what has been tried, for whoever asks afterwards. */
+  async loginAttempts(providerKey?: string, limit?: number) {
+    return this.attemptLog.recent(providerKey, limit);
   }
 
   /**
