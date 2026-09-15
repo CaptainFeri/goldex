@@ -24,6 +24,14 @@ export const MessagePatterns = {
   PROVIDER_CONNECTED: 'provider.connected',
   PROVIDER_DISCONNECTED: 'provider.disconnected',
   PROVIDER_STATUS_CHANGED: 'provider.status.changed',
+  /**
+   * The provider has stopped accepting the stored session.
+   *
+   * Separate from `provider.disconnected` because they call for opposite
+   * responses: a disconnection is retried, an expired session cannot be, and
+   * only a fresh login changes it.
+   */
+  PROVIDER_AUTH_EXPIRED: 'provider.auth.expired',
   PROVIDER_ERROR: 'provider.error',
   PRICE_SNAPSHOT: 'price.snapshot',
   MARKET_MAP_UPDATE: 'market.map.update',

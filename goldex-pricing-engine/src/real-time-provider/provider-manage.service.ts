@@ -13,6 +13,19 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { RabbitMQService, MessagePatterns } from '../rabbitmq/rabbitmq.module';
 import { ProviderCategory } from './types';
+import { createHash } from 'crypto';
+
+/**
+ * A stand-in for the session, for comparing one against another.
+ *
+ * The token itself is not kept here: what is needed is only whether the
+ * session has changed since the one the provider refused, and a token in a
+ * long-lived map is a credential lying around for no reason.
+ */
+function sessionFingerprint(entity: ProviderEntity): string {
+  const token = typeof entity.auth?.token === 'string' ? entity.auth.token : '';
+  return createHash('sha256').update(token).digest('hex').slice(0, 16);
+}
 
 export interface ProviderHealthEntry {
   key: string;
@@ -30,6 +43,8 @@ export class ProviderManagerService implements OnModuleInit, OnModuleDestroy {
   private connecting = new Set<string>();
   private healthCheckTimer: NodeJS.Timeout | null = null;
   private reconciling = false;
+  /** Provider key → the session it refused, while it is waiting for a new one. */
+  private readonly authExpired = new Map<string, string>();
   private readonly healthCheckIntervalMs = parseInt(
     process.env.PROVIDER_HEALTHCHECK_INTERVAL_MS ?? '30000',
     10,
@@ -131,6 +146,19 @@ export class ProviderManagerService implements OnModuleInit, OnModuleDestroy {
 
     try {
       await provider.connect();
+      // A connect can come back without throwing and still be dead: a provider
+      // whose metadata call was refused carries on to open its socket, because
+      // that call swallows its own errors. Asking settles it.
+      if (provider.hasExpiredSession()) {
+        this.formatter.error(
+          'ProviderManager',
+          `Provider ${entity.key} needs a fresh login; not retrying until it has one`,
+        );
+        provider.stop();
+        this.providers.delete(entity.key);
+        return;
+      }
+      this.authExpired.delete(entity.key);
       this.formatter.log('ProviderManager', `Provider ${entity.key} started.`);
       await this.publishConnected(entity);
     } catch (error: unknown) {
@@ -139,8 +167,27 @@ export class ProviderManagerService implements OnModuleInit, OnModuleDestroy {
       provider.stop();
       this.providers.delete(entity.key);
     } finally {
+      // Recorded after the attempt, so the health check can tell a provider
+      // waiting on a login from one waiting on a network — and stop restarting
+      // the first every thirty seconds with the credentials it already refused.
+      if (provider.hasExpiredSession()) {
+        this.authExpired.set(entity.key, sessionFingerprint(entity));
+      }
       this.connecting.delete(entity.key);
     }
+  }
+
+  /**
+   * Whether this provider is parked waiting for a login.
+   *
+   * Keyed by the session that was refused rather than by a flag, so it clears
+   * itself: the moment a new session is stored the fingerprint stops matching,
+   * and the health check picks the provider up again with no one having to
+   * remember to reset anything.
+   */
+  private isAwaitingLogin(entity: ProviderEntity): boolean {
+    const refused = this.authExpired.get(entity.key);
+    return refused !== undefined && refused === sessionFingerprint(entity);
   }
 
   private async publishConnected(entity: ProviderEntity): Promise<void> {
@@ -186,6 +233,10 @@ export class ProviderManagerService implements OnModuleInit, OnModuleDestroy {
    * active providers that aren't running, reconnects dropped ones, retries
    * failed initial connects, and stops providers that were deactivated.
    * Safe to call concurrently — overlapping runs are skipped.
+   *
+   * One provider is deliberately left alone: one whose session the provider
+   * itself refused. Restarting that is not a retry, it is the same rejection
+   * again, and it resumes by itself once a new session is stored.
    */
   async reconcileProviders(): Promise<ProviderHealthEntry[]> {
     if (this.reconciling) return this.getHealthReport();
@@ -198,6 +249,9 @@ export class ProviderManagerService implements OnModuleInit, OnModuleDestroy {
 
         if (entity.active) {
           if (isConnecting) continue; // attempt already in flight
+          // Restarting this would present the same refused session again, every
+          // thirty seconds, forever. It waits for a login instead.
+          if (this.isAwaitingLogin(entity)) continue;
           if (!running) {
             this.formatter.log('ProviderManager', `Health: starting ${entity.key}`);
             void this.startProvider(entity);

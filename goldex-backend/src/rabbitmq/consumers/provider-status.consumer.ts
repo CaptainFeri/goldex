@@ -33,6 +33,7 @@ export class ProviderStatusConsumer implements OnModuleInit {
     this.rmq.subscribe(MessagePatterns.PROVIDER_CONNECTED, (m) => this.onConnected(m));
     this.rmq.subscribe(MessagePatterns.PROVIDER_DISCONNECTED, (m) => this.onDisconnected(m));
     this.rmq.subscribe(MessagePatterns.PROVIDER_STATUS_CHANGED, (m) => this.onStatusChanged(m));
+    this.rmq.subscribe(MessagePatterns.PROVIDER_AUTH_EXPIRED, (m) => this.onAuthExpired(m));
   }
 
   private async onLifecycle(msg: RabbitMQMessage): Promise<void> {
@@ -58,6 +59,27 @@ export class ProviderStatusConsumer implements OnModuleInit {
     this.logger.warn(
       `Activation failed for provider ${key} at ${msg.data?.stage ?? 'unknown stage'}: ${msg.data?.error ?? 'no reason given'}`,
     );
+  }
+
+  /**
+   * The provider has stopped accepting the stored session.
+   *
+   * Recorded as its own status rather than as a disconnection, because an
+   * operator seeing "disconnected" waits for it to come back and this one
+   * never will: it is waiting for somebody to log in again. The engine has
+   * already stopped retrying by the time this arrives.
+   */
+  private async onAuthExpired(msg: RabbitMQMessage): Promise<void> {
+    const key = msg.data?.key || msg.providerKey;
+    if (!key) return;
+    try {
+      await this.providerService.applyStatus(key, 'auth_expired');
+      this.logger.warn(
+        `Provider ${key} needs a fresh login: ${msg.data?.reason ?? 'session refused'}`,
+      );
+    } catch (err) {
+      this.logger.error(`provider auth-expiry sync failed: ${(err as Error).message}`);
+    }
   }
 
   private async onConnected(msg: RabbitMQMessage): Promise<void> {

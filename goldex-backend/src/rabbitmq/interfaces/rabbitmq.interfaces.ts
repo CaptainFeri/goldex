@@ -11,6 +11,12 @@ export enum MessagePatterns {
   PROVIDER_CONNECTED = 'provider.connected',
   PROVIDER_DISCONNECTED = 'provider.disconnected',
   PROVIDER_STATUS_CHANGED = 'provider.status.changed',
+  /**
+   * The provider has stopped accepting the stored session. Separate from
+   * `provider.disconnected`: a disconnection is retried, an expired session
+   * cannot be, and only a fresh login changes it.
+   */
+  PROVIDER_AUTH_EXPIRED = 'provider.auth.expired',
   PRICE_PAIR_UPDATE = 'price.pair.update',
   ORDER_PLACE_REQUEST = 'provider.order.place.request',
   ORDER_PLACED = 'provider.order.placed',

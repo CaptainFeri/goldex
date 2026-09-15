@@ -217,13 +217,36 @@ export class ProviderService implements OnApplicationBootstrap {
     return saved;
   }
 
+  /**
+   * Whether a login would disturb a provider that is working.
+   *
+   * `active` says a provider is meant to be running, not that it is: one whose
+   * session has expired is still active, and refusing to log it back in
+   * because of that flag is what made a session, once expired, stay expired.
+   * What must not be disturbed is a provider that is actually connected — and
+   * that is a question about the runtime, not about a column.
+   */
+  private isServing(provider: ProviderEntity): boolean {
+    const running = this.providerManager.getProvider(provider.key);
+    return !!running && running.isConnected() && !running.hasExpiredSession();
+  }
+
   async sendOtp(id: string, phone: string): Promise<{ message: string }> {
     const provider = await this.findOne(id);
-    if (provider.active) {
-      throw new BadRequestException('Provider is already active; cannot send OTP');
+    if (this.isServing(provider)) {
+      throw new BadRequestException(
+        `Provider ${provider.key} is connected and serving prices; deactivate it first if you mean to log in again`,
+      );
     }
     provider.phone = phone;
-    delete provider.auth.token;
+    // The stored session is deliberately left alone.
+    //
+    // It used to be deleted here, before the provider had even answered. For a
+    // first activation there was nothing to lose; for a provider being logged
+    // back in there is, and a send that fails — a wrong number, a provider that
+    // is down — would have left it with no session at all. That is strictly
+    // worse than the expired one it had, which at least says who it was. The
+    // new session replaces it in verifyOtp, once there is one.
     delete provider.auth.otp;
     await this.providerRepo.save(provider);
 
@@ -310,8 +333,10 @@ export class ProviderService implements OnApplicationBootstrap {
 
   async verifyOtp(id: string, otp: string): Promise<ProviderEntity> {
     const provider = await this.findOne(id);
-    if (provider.active) {
-      throw new BadRequestException('Provider is already active');
+    if (this.isServing(provider)) {
+      throw new BadRequestException(
+        `Provider ${provider.key} is connected and serving prices; deactivate it first if you mean to log in again`,
+      );
     }
     if (!provider.phone) {
       throw new BadRequestException('No phone number stored; send OTP first');
@@ -324,13 +349,12 @@ export class ProviderService implements OnApplicationBootstrap {
 
     try {
       const { token, extra } = await handler.verifyOtp(provider, otp);
-      provider.auth.token = token;
-      if (extra) {
-        Object.assign(provider.auth, extra);
-      }
-      // The same shape however the provider was activated — a session stored by
-      // the OTP path and one stored from a browser must be usable alike.
-      provider.auth = this.withProviderContext(provider, provider.auth);
+      // Replaced, not merged. These came from one login, and now that a
+      // provider can be logged in again while it still holds an old session,
+      // merging would leave the previous session's fields — a stale sessionId,
+      // a shopkeeperId from another shift — beside the new token, making a set
+      // of credentials that never existed.
+      provider.auth = this.withProviderContext(provider, { token, ...(extra ?? {}) });
       provider.active = true;
       const saved = await this.providerRepo.save(provider);
       void this.providerManager.startProvider(saved);

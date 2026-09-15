@@ -36,6 +36,7 @@ const STATUS_KIND: Record<string, "green" | "red" | "gray" | "gold"> = {
   connecting: "gold",
   reconnecting: "gold",
   disconnected: "red",
+  auth_expired: "red",
   stopped: "gray",
   inactive: "gray",
   error: "red",
@@ -45,7 +46,11 @@ const STATUS_LABEL: Record<string, string> = {
   connected: "متصل",
   connecting: "در حال اتصال",
   reconnecting: "در حال اتصال مجدد",
+  // Not "قطع": a disconnected provider is coming back on its own and this one
+  // is not. It is waiting for somebody to log in again, and the label has to
+  // say so or an operator will wait for a recovery that never happens.
   disconnected: "قطع",
+  auth_expired: "نیازمند ورود مجدد",
   stopped: "متوقف",
   inactive: "غیرفعال",
   error: "خطا",

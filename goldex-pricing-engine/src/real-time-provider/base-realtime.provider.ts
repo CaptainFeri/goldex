@@ -7,6 +7,7 @@ import { ItemMetadata, ItemMetadataService } from './item-metadata.service';
 import { RabbitMQService, MessagePatterns } from '../rabbitmq/rabbitmq.module';
 import { ItemUnit } from './types';
 import { CurrencyUnit, formatRial, resolvePriceUnit, toRial } from '../common/currency-unit';
+import { authFailureReason, isAuthFailure } from '../common/http/auth-failure';
 
 export abstract class BaseRealtimeProvider implements IRealtimePriceProvider, OnModuleDestroy {
   protected formatter!: ConsoleFormatterService;
@@ -19,6 +20,8 @@ export abstract class BaseRealtimeProvider implements IRealtimePriceProvider, On
   protected reconnectDelay = 3000;
   protected reconnectTimer: NodeJS.Timeout | null = null;
   protected trackedItemIds: Set<number> = new Set();
+  /** Set once the provider has refused the stored session. */
+  protected authExpired = false;
   private updateCount = 0;
   private lastLogTime = 0;
 
@@ -35,6 +38,7 @@ export abstract class BaseRealtimeProvider implements IRealtimePriceProvider, On
   async init(config: ProviderConfig): Promise<void> {
     this.config = config;
     this.stopped = false;
+    this.authExpired = false;
   }
 
   setFormatter(formatter: ConsoleFormatterService): void {
@@ -157,9 +161,60 @@ export abstract class BaseRealtimeProvider implements IRealtimePriceProvider, On
     return this.trackedItemIds.size === 0 || this.trackedItemIds.has(itemId);
   }
 
+  /**
+   * The provider has stopped accepting the stored session.
+   *
+   * Announced once and then acted on by not trying again: every reconnection
+   * from here would present the same dead token and be refused for the same
+   * reason, and the only thing that can change that is a fresh login, which
+   * happens elsewhere. Retrying instead would keep the engine busy, the log
+   * full, and the provider down.
+   */
+  protected reportAuthExpired(error: unknown, where: string): void {
+    if (this.authExpired) return;
+    this.authExpired = true;
+    this.connected = false;
+    const reason = authFailureReason(error, where);
+    this.formatter.error(
+      this.providerLabel,
+      `Session rejected (${reason}) – a fresh login is needed`,
+    );
+    if (this.reconnectTimer) {
+      clearTimeout(this.reconnectTimer);
+      this.reconnectTimer = null;
+    }
+    void this.rabbitMQService?.publish(
+      MessagePatterns.PROVIDER_AUTH_EXPIRED,
+      { key: this.config.key, category: this.config.category, reason, at: new Date().toISOString() },
+      this.config.key,
+    );
+  }
+
+  /** Whether this provider is waiting on a login rather than on a network. */
+  hasExpiredSession(): boolean {
+    return this.authExpired;
+  }
+
+  /**
+   * Report an error if it is the session being refused.
+   *
+   * Call sites that already swallow their errors — a metadata fetch that
+   * returns an empty list rather than failing the connection — pass through
+   * here so that the one error they must not swallow still gets out.
+   *
+   * @returns whether the error was an expired session.
+   */
+  protected noteIfAuthFailure(error: unknown, where: string): boolean {
+    if (!isAuthFailure(error)) return false;
+    this.reportAuthExpired(error, where);
+    return true;
+  }
+
   protected handleDisconnect(): void {
     this.connected = false;
     if (this.stopped) return;
+    // Nothing to reconnect to: the session, not the socket, is what failed.
+    if (this.authExpired) return;
     this.formatter.warn(this.providerLabel, 'Connection lost – scheduling reconnection');
     this.formatter.printConnectionEvent(this.providerLabel, 'reconnecting', {
       attempt: this.reconnectAttempts + 1,
@@ -168,6 +223,7 @@ export abstract class BaseRealtimeProvider implements IRealtimePriceProvider, On
   }
 
   private scheduleReconnect(): void {
+    if (this.authExpired) return;
     if (this.reconnectAttempts >= this.maxReconnect) {
       this.formatter.error(this.providerLabel, 'Max reconnection attempts reached');
       return;
@@ -181,8 +237,9 @@ export abstract class BaseRealtimeProvider implements IRealtimePriceProvider, On
           this.reconnectAttempts = 0;
           this.formatter.printConnectionEvent(this.providerLabel, 'connected');
         })
-        .catch(() => {
+        .catch((error: unknown) => {
           if (this.stopped) return;
+          if (this.noteIfAuthFailure(error, 'reconnect')) return;
           this.formatter.error(
             this.providerLabel,
             `Reconnect attempt ${this.reconnectAttempts} failed`,

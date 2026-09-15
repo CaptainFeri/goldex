@@ -157,6 +157,7 @@ export class ZaryarSignalRProvider extends BaseRealtimeProvider {
       return items;
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : String(error);
+      this.noteIfAuthFailure(error, 'metadata');
       this.formatter.error(this.providerLabel, `Failed to fetch metadata from API: ${message}`);
       return [];
     }
@@ -272,6 +273,7 @@ export class ZaryarSignalRProvider extends BaseRealtimeProvider {
       );
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : String(error);
+      this.noteIfAuthFailure(error, 'initial prices');
       this.formatter.error(this.providerLabel, `Failed to fetch initial prices: ${message}`);
     }
   }
@@ -358,6 +360,7 @@ export class ZaryarSignalRProvider extends BaseRealtimeProvider {
       }
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : String(error);
+      this.noteIfAuthFailure(error, 'shop status');
       this.formatter.error(this.providerLabel, `Failed to check shop status: ${message}`);
     }
   }
@@ -423,6 +426,7 @@ export class ZaryarSignalRProvider extends BaseRealtimeProvider {
       this.formatter.log(this.providerLabel, `Negotiation OK, ConnectionId: ${this.connectionId}`);
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : String(error);
+      this.noteIfAuthFailure(error, 'signalr negotiate');
       this.formatter.error(this.providerLabel, `Negotiation failed: ${message}`);
       throw error;
     }
@@ -475,6 +479,7 @@ export class ZaryarSignalRProvider extends BaseRealtimeProvider {
       this.formatter.log(this.providerLabel, 'Connection started');
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : String(error);
+      this.noteIfAuthFailure(error, 'signalr start');
       this.formatter.error(this.providerLabel, `Start connection failed: ${message}`);
       throw error;
     }

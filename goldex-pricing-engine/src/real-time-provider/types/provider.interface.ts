@@ -10,6 +10,13 @@ export interface IRealtimePriceProvider {
   disconnect(): void;
   stop(): void;
   isConnected(): boolean;
+  /**
+   * Whether the provider has refused the stored session.
+   *
+   * The difference between waiting on a network and waiting on a login, which
+   * decides whether reconnecting is worth doing at all.
+   */
+  hasExpiredSession(): boolean;
   getShopProfile(): Promise<any>;
   getPrice(itemId: number): Promise<PriceData | null>;
   getDealView(itemId: number, dealType?: number): Promise<DealView>;

@@ -183,6 +183,7 @@ export class TalaAbWebSocketProvider extends BaseRealtimeProvider {
       return items;
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : String(error);
+      this.noteIfAuthFailure(error, 'metadata');
       this.formatter.error(this.providerLabel, `Failed to fetch metadata: ${message}`);
       return [];
     }
@@ -387,6 +388,7 @@ export class TalaAbWebSocketProvider extends BaseRealtimeProvider {
       }
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : String(error);
+      this.noteIfAuthFailure(error, 'shop status');
       this.formatter.error(this.providerLabel, `Failed to check shop status: ${message}`);
     }
   }
